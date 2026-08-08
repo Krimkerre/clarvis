@@ -20,6 +20,16 @@ reads as alive, not looping. See [`avatar.html`](./avatar.html) for the live,
 interactive version — open it directly in a browser to try every state and read the
 quip line under each.
 
+## In action
+
+<img src="media/mockup.png" alt="Mockup of VS Code with Clarvis docked in the sidebar: an editor showing checkout.js with an accidental global variable highlighted, Clarvis in its judging state with the quip &quot;A global variable. Bold. Historic, even.&quot;, a flagged-lines note, and a build-finished toast notification." width="100%">
+
+*Mockup, not a real screenshot* — illustrates the target experience end to end: a real
+bug (`cache` leaking to global scope) caught and called out in character, plus the
+M3 walk-away notification. The panel and avatar are real (§ Avatar states); the task
+watching, pattern flagging, and chat surfaces shown here are still on the roadmap
+(§ Progress).
+
 ## What it does
 
 **Unprompted (the Jarvis half):**
@@ -72,7 +82,12 @@ the full per-milestone build notes and exit criteria.
       ships with **no** bundled Git extension; in-webview mic/speech (Tier 0) is
       blocked regardless of OS permission, confirming voice input needs the
       server-side (Tier 1) path.
-- [ ] **M2 — Avatar In A Webview.** Not started.
+- [x] **M2 — Avatar In A Webview.** Renders live in a real VS Code window via
+      `WebviewViewProvider`; `setState()` bridge confirmed end-to-end from a command
+      through to the most complex state (`surprised`). A few polish checks (theme
+      live-switch, CSP boundary probe, dock-location sanity) are deferred to manual
+      verification — GUI scripting in this dev environment proved too unreliable to
+      finish blind (see `plan.md` M2 exit checklist for exactly what's left).
 - [ ] **M3 — Task Watching.** Not started. *(First real, ship-worthy-alone value.)*
 - [ ] **M4 — Briefing.** Not started.
 - [ ] **M5 — Pattern Memory.** Not started.

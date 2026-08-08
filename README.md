@@ -17,7 +17,9 @@ The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**nte
 <img src="media/states-strip.png" alt="Clarvis avatar in its six expression states: Neutral, Judging, Impressed, Thinking, Talking, Surprised" width="100%">
 
 Driven by a single `setState(name)` call — the whole integration surface between the
-extension host and the webview. Six states: `neutral`, `judging`, `impressed`,
+extension host and the webview. The face reacts to what's actually happening: builds and
+tests (built), agent runs, and the tone of Clarvis's own replies — mild contempt at a
+global variable, genuine approval at something neat, alarm at "I force-pushed to main". Six states: `neutral`, `judging`, `impressed`,
 `thinking`, `talking`, `surprised`. Idle animation (bob, blink) runs autonomously so it
 reads as alive, not looping. See [`avatar.html`](./avatar.html) for the live,
 interactive version — open it directly in a browser to try every state and read the

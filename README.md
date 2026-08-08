@@ -57,9 +57,11 @@ watching, pattern flagging, and chat surfaces shown here are still on the roadma
   questions go to a model (bring-your-own Anthropic key, or the host's own LM API
   where one exists). Context sent with a question is explicit, bounded, and visible.
 - **Agent** — hand it a real task ("fix the failing test", "rename this everywhere")
-  and it edits, runs commands, reads the results, and iterates until it's done. Every
-  file it touches is listed live with a clickable diff, the whole run is undoable in
-  one command, and it stops to ask before anything destructive or outward-facing.
+  and it edits, runs commands, reads the results, and iterates until it's done. Work
+  happens on its own `clarvis/<task>` branch, committed step by step, so your
+  uncommitted changes stay yours and the whole run is reviewable — or discardable in
+  one command. Every file it touches is listed live with a clickable diff, and it stops
+  to ask before anything destructive or outward-facing. Merging and pushing are yours.
 - **Voice output** *(optional, off by default)* — briefings and completions spoken via
   OS voices, or a Fish Audio voice with your own key.
 - **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat

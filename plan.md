@@ -5,6 +5,9 @@
 A VS Code extension that lives inside your editor window, watches your builds so you
 don't have to, remembers the error you keep making, and occasionally judges you for it.
 
+The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**ntelligent
+**S**ystem — Clippy's presence, with something closer to Jarvis's competence.
+
 ---
 
 ## 0. Working Process — Plan Mode vs. Code Mode
@@ -253,6 +256,8 @@ Events (§4) map to states:
 | Chat reply streaming (§4.6) | `talking` |
 | Waiting on a chat reply | `thinking` |
 | Build or long task running | `thinking` |
+| Build or task **fails** (nonzero exit) | `surprised` |
+| Work ends with no exit code (cancelled by the user, debug session closing) | `judging` |
 | Test failed, 3rd retry of same command | `judging` |
 | Green suite, clean build, resolved pattern | `impressed` |
 | Speaking a briefing or notification | `talking` |

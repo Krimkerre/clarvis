@@ -9,6 +9,9 @@ with it. No tray icon, no background daemon, no screen reading, no editing your 
 on its own initiative. It watches your builds so you don't have to, remembers the
 error you keep making, and occasionally judges you for it.
 
+The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**ntelligent
+**S**ystem — Clippy's presence, with something closer to Jarvis's competence.
+
 ## Avatar states
 
 <img src="media/states-strip.png" alt="Clarvis avatar in its six expression states: Neutral, Judging, Impressed, Thinking, Talking, Surprised" width="100%">

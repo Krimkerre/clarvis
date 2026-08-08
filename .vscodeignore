@@ -9,6 +9,7 @@ plan.md
 avatar.html
 media/previews/**
 media/states-strip.svg
+media/mockup.png
 clarvis-probe-log.jsonl
 *.map
 .git/**

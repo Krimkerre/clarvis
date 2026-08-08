@@ -1,5 +1,55 @@
-<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>Clarvis — mockup</title><style>
+import os, re
+
+OUT = "/Users/mathias/Documents/coding/clarvis/media"
+
+# ---------------------------------------------------------------- avatar SVG
+def avatar(state):
+    """Minimal butler head in a given expression. Geometry cribbed from avatar.html."""
+    if state == "thinking":
+        lid, browL, browR = 68, "translateY(-4px)", "translateY(-2px)"
+        pupil_dx, pupil_dy = -8, -3
+        mouth = '<path d="M88 117 q12 2 24 -2" stroke="#34e6f2" stroke-width="4.5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 5px rgba(52,230,242,.5))"/>'
+        extra = ('<g fill="#34e6f2"><circle cx="92" cy="126" r="2.6" opacity=".3"/>'
+                 '<circle cx="100" cy="130" r="2.6"/><circle cx="108" cy="126" r="2.6" opacity=".6"/></g>')
+    else:  # talking
+        lid, browL, browR = 62, "translateY(-3px)", "translateY(-6px) rotate(-6deg)"
+        pupil_dx, pupil_dy = 0, 0
+        mouth = ""
+        bars = ""
+        for x, h in zip([80, 90, 100, 110, 120], [16, 9, 16, 6, 12]):
+            bars += f'<rect x="{x}" y="{116-h/2:.1f}" width="5" height="{h}" rx="2" fill="#34e6f2" style="filter:drop-shadow(0 0 6px rgba(52,230,242,.7))"/>'
+        extra = f"<g>{bars}</g>"
+    lx, ly = 74 + pupil_dx, 84 + pupil_dy
+    rx, ry = 126 + pupil_dx, 84 + pupil_dy
+    return f'''
+      <rect x="36" y="36" width="128" height="106" rx="34" fill="url(#shell)"/>
+      <rect x="36" y="36" width="128" height="106" rx="34" fill="none" stroke="#34e6f2" stroke-opacity=".7" stroke-width="1.6" style="filter:drop-shadow(0 0 3px rgba(52,230,242,.4))"/>
+      <rect x="44" y="43" width="112" height="46" rx="24" fill="url(#gloss)"/>
+      <path d="M100 36 V22" stroke="#39465b" stroke-width="3.5" stroke-linecap="round"/>
+      <circle cx="100" cy="18" r="5" fill="#34e6f2" style="filter:drop-shadow(0 0 8px rgba(52,230,242,.9))"/>
+      <rect x="60" y="72" width="28" height="22" rx="11" fill="#080b11"/>
+      <rect x="112" y="72" width="28" height="22" rx="11" fill="#080b11"/>
+      <g clip-path="url(#eyeL)"><circle cx="{lx}" cy="{ly}" r="7.5" fill="#34e6f2" style="filter:drop-shadow(0 0 7px rgba(52,230,242,.85))"/><circle cx="{lx+2.5}" cy="{ly-2.5}" r="2.4" fill="#eafeff"/></g>
+      <g clip-path="url(#eyeR)"><circle cx="{rx}" cy="{ry}" r="7.5" fill="#34e6f2" style="filter:drop-shadow(0 0 7px rgba(52,230,242,.85))"/><circle cx="{rx+2.5}" cy="{ry-2.5}" r="2.4" fill="#eafeff"/></g>
+      <g clip-path="url(#eyeL)"><rect x="58" y="{lid}" width="32" height="14" fill="#1b222e"/></g>
+      <g clip-path="url(#eyeR)"><rect x="110" y="{lid}" width="32" height="14" fill="#1b222e"/></g>
+      <g><circle cx="126" cy="83" r="21" fill="rgba(52,230,242,.05)" stroke="#34e6f2" stroke-opacity=".55" stroke-width="2"/><path d="M143 94 q7 14 1 26" stroke="#1b8a92" stroke-width="1.6" fill="none" opacity=".8"/></g>
+      <path d="M62 60 q12 -6 24 -1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 4px rgba(52,230,242,.55));transform:{browL};transform-origin:74px 60px"/>
+      <path d="M114 59 q12 -5 24 1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 4px rgba(52,230,242,.55));transform:{browR};transform-origin:126px 60px"/>
+      {mouth}{extra}
+      <path d="M100 152 L78 143 L78 161 Z" fill="url(#tie)"/>
+      <path d="M100 152 L122 143 L122 161 Z" fill="url(#tie)"/>
+      <circle cx="100" cy="152" r="5.5" fill="#0e1620" stroke="#34e6f2" stroke-opacity=".8" stroke-width="1.6"/>'''
+
+DEFS = '''<defs>
+      <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3546"/><stop offset=".55" stop-color="#1a2130"/><stop offset="1" stop-color="#10151f"/></linearGradient>
+      <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+      <linearGradient id="tie" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2ad3e0"/><stop offset="1" stop-color="#127a83"/></linearGradient>
+      <clipPath id="eyeL"><rect x="60" y="72" width="28" height="22" rx="11"/></clipPath>
+      <clipPath id="eyeR"><rect x="112" y="72" width="28" height="22" rx="11"/></clipPath>
+    </defs>'''
+
+CSS = '''
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { width: 1360px; height: 800px; background: #1e1e1e; color: #ccc;
@@ -87,7 +137,9 @@
     border-radius: 8px; padding: 8px 10px; }
   .input .ph { color: #5a6472; font-size: 12.5px; flex: 1; }
   .input svg { width: 15px; height: 15px; }
+'''
 
+ANIM_CSS = '''
   @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   @keyframes flash { from { background: rgba(255,182,72,0); box-shadow: none; } }
   @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
@@ -100,7 +152,32 @@
   .sb-state { position: relative; }
   #sb-think { animation: swap .3s ease forwards; animation-delay: 4.3s; }
   #sb-talk { opacity: 0; animation: swapIn .3s ease forwards; animation-delay: 4.4s; margin-left: -72px; }
-</style></head>
+'''
+
+def steps_html(anim):
+    d = (lambda t: f' style="animation-delay:{t}s"') if anim else (lambda t: '')
+    cls = "step seq" if anim else "step"
+    return f'''
+      <div class="{cls} done"{d(1.0)}><span class="ic">✓</span><span>Read <code>checkout.js</code>, <code>checkout.test.js</code></span></div>
+      <div class="{cls} done"{d(1.8)}><span class="ic">✓</span><span>Ran <code>npm test</code> — 1 failing</span></div>
+      <div class="{cls} done"{d(2.6)}><span class="ic">✓</span><span>Edited <code>checkout.js</code> — scoped <code>cache</code></span></div>
+      <div class="{cls} run"{d(3.4)}><span class="ic">⟳</span><span>Running <code>npm test</code>…</span></div>'''
+
+def page(anim):
+    d = (lambda t: f' style="animation-delay:{t}s"') if anim else (lambda t: '')
+    sb_state = ('<span id="sb-think">◐ thinking</span><span id="sb-talk">💬 talking</span>'
+                if anim else '💬 talking')
+    seq = " seq" if anim else ""
+    bob = " bob" if anim else ""
+    if anim:
+        face = (f'<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">{DEFS}'
+                f'<g class="{bob.strip()}"><g id="face-think">{avatar("thinking")}</g>'
+                f'<g id="face-talk">{avatar("talking")}</g></g></svg>')
+    else:
+        face = f'<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">{DEFS}<g>{avatar("talking")}</g></svg>'
+
+    return f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Clarvis — mockup</title><style>{CSS}{ANIM_CSS if anim else ""}</style></head>
 <body>
 <div class="titlebar">
   <div class="dots"><div class="dot" style="background:#ff5f57"></div><div class="dot" style="background:#febc2e"></div><div class="dot" style="background:#28c840"></div></div>
@@ -126,87 +203,41 @@
     <div class="code">
       <div class="line"><span class="ln">1</span><span class="src"><span class="cm">// checkout.js — totals the cart, applies the promo cache</span></span></div>
       <div class="line"><span class="ln">2</span><span class="src"></span></div>
-      <div class="line del seq" style="animation-delay:2.6s"><span class="ln">3</span><span class="src">- <span class="glob">cache</span> = {};</span></div>
-      <div class="line add seq" style="animation-delay:2.8s"><span class="ln">3</span><span class="src">+ <span class="kw">const</span> cache = {};</span></div>
+      <div class="line del{seq}"{d(2.6)}><span class="ln">3</span><span class="src">- <span class="glob">cache</span> = {{}};</span></div>
+      <div class="line add{seq}"{d(2.8)}><span class="ln">3</span><span class="src">+ <span class="kw">const</span> cache = {{}};</span></div>
       <div class="line"><span class="ln">4</span><span class="src"></span></div>
-      <div class="line"><span class="ln">5</span><span class="src"><span class="kw">function</span> <span class="fn">computeTotal</span>(items) {</span></div>
+      <div class="line"><span class="ln">5</span><span class="src"><span class="kw">function</span> <span class="fn">computeTotal</span>(items) {{</span></div>
       <div class="line"><span class="ln">6</span><span class="src">  <span class="kw">let</span> total = <span class="num">0</span>;</span></div>
-      <div class="line"><span class="ln">7</span><span class="src">  <span class="kw">for</span> (<span class="kw">const</span> item <span class="kw">of</span> items) {</span></div>
+      <div class="line"><span class="ln">7</span><span class="src">  <span class="kw">for</span> (<span class="kw">const</span> item <span class="kw">of</span> items) {{</span></div>
       <div class="line"><span class="ln">8</span><span class="src">    total += item.<span class="prop">price</span> * item.<span class="prop">qty</span>;</span></div>
-      <div class="line"><span class="ln">9</span><span class="src">  }</span></div>
+      <div class="line"><span class="ln">9</span><span class="src">  }}</span></div>
       <div class="line"><span class="ln">10</span><span class="src">  cache[items.<span class="prop">id</span>] = total;</span></div>
       <div class="line"><span class="ln">11</span><span class="src">  <span class="kw">return</span> total;</span></div>
-      <div class="line"><span class="ln">12</span><span class="src">}</span></div>
+      <div class="line"><span class="ln">12</span><span class="src">}}</span></div>
       <div class="line"><span class="ln">13</span><span class="src"></span></div>
-      <div class="line"><span class="ln">14</span><span class="src"><span class="kw">module</span>.<span class="prop">exports</span> = { <span class="fn">computeTotal</span> };</span></div>
+      <div class="line"><span class="ln">14</span><span class="src"><span class="kw">module</span>.<span class="prop">exports</span> = {{ <span class="fn">computeTotal</span> }};</span></div>
     </div>
   </div>
 
   <div class="clarvis">
-    <div class="clarvis-header">CLARVIS<span class="branch seq" style="animation-delay:0.5s">⎇ clarvis/fix-checkout-test</span></div>
-    <div class="stage"><svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><defs>
-      <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3546"/><stop offset=".55" stop-color="#1a2130"/><stop offset="1" stop-color="#10151f"/></linearGradient>
-      <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-      <linearGradient id="tie" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2ad3e0"/><stop offset="1" stop-color="#127a83"/></linearGradient>
-      <clipPath id="eyeL"><rect x="60" y="72" width="28" height="22" rx="11"/></clipPath>
-      <clipPath id="eyeR"><rect x="112" y="72" width="28" height="22" rx="11"/></clipPath>
-    </defs><g class="bob"><g id="face-think">
-      <rect x="36" y="36" width="128" height="106" rx="34" fill="url(#shell)"/>
-      <rect x="36" y="36" width="128" height="106" rx="34" fill="none" stroke="#34e6f2" stroke-opacity=".7" stroke-width="1.6" style="filter:drop-shadow(0 0 3px rgba(52,230,242,.4))"/>
-      <rect x="44" y="43" width="112" height="46" rx="24" fill="url(#gloss)"/>
-      <path d="M100 36 V22" stroke="#39465b" stroke-width="3.5" stroke-linecap="round"/>
-      <circle cx="100" cy="18" r="5" fill="#34e6f2" style="filter:drop-shadow(0 0 8px rgba(52,230,242,.9))"/>
-      <rect x="60" y="72" width="28" height="22" rx="11" fill="#080b11"/>
-      <rect x="112" y="72" width="28" height="22" rx="11" fill="#080b11"/>
-      <g clip-path="url(#eyeL)"><circle cx="66" cy="81" r="7.5" fill="#34e6f2" style="filter:drop-shadow(0 0 7px rgba(52,230,242,.85))"/><circle cx="68.5" cy="78.5" r="2.4" fill="#eafeff"/></g>
-      <g clip-path="url(#eyeR)"><circle cx="118" cy="81" r="7.5" fill="#34e6f2" style="filter:drop-shadow(0 0 7px rgba(52,230,242,.85))"/><circle cx="120.5" cy="78.5" r="2.4" fill="#eafeff"/></g>
-      <g clip-path="url(#eyeL)"><rect x="58" y="68" width="32" height="14" fill="#1b222e"/></g>
-      <g clip-path="url(#eyeR)"><rect x="110" y="68" width="32" height="14" fill="#1b222e"/></g>
-      <g><circle cx="126" cy="83" r="21" fill="rgba(52,230,242,.05)" stroke="#34e6f2" stroke-opacity=".55" stroke-width="2"/><path d="M143 94 q7 14 1 26" stroke="#1b8a92" stroke-width="1.6" fill="none" opacity=".8"/></g>
-      <path d="M62 60 q12 -6 24 -1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 4px rgba(52,230,242,.55));transform:translateY(-4px);transform-origin:74px 60px"/>
-      <path d="M114 59 q12 -5 24 1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 4px rgba(52,230,242,.55));transform:translateY(-2px);transform-origin:126px 60px"/>
-      <path d="M88 117 q12 2 24 -2" stroke="#34e6f2" stroke-width="4.5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 5px rgba(52,230,242,.5))"/><g fill="#34e6f2"><circle cx="92" cy="126" r="2.6" opacity=".3"/><circle cx="100" cy="130" r="2.6"/><circle cx="108" cy="126" r="2.6" opacity=".6"/></g>
-      <path d="M100 152 L78 143 L78 161 Z" fill="url(#tie)"/>
-      <path d="M100 152 L122 143 L122 161 Z" fill="url(#tie)"/>
-      <circle cx="100" cy="152" r="5.5" fill="#0e1620" stroke="#34e6f2" stroke-opacity=".8" stroke-width="1.6"/></g><g id="face-talk">
-      <rect x="36" y="36" width="128" height="106" rx="34" fill="url(#shell)"/>
-      <rect x="36" y="36" width="128" height="106" rx="34" fill="none" stroke="#34e6f2" stroke-opacity=".7" stroke-width="1.6" style="filter:drop-shadow(0 0 3px rgba(52,230,242,.4))"/>
-      <rect x="44" y="43" width="112" height="46" rx="24" fill="url(#gloss)"/>
-      <path d="M100 36 V22" stroke="#39465b" stroke-width="3.5" stroke-linecap="round"/>
-      <circle cx="100" cy="18" r="5" fill="#34e6f2" style="filter:drop-shadow(0 0 8px rgba(52,230,242,.9))"/>
-      <rect x="60" y="72" width="28" height="22" rx="11" fill="#080b11"/>
-      <rect x="112" y="72" width="28" height="22" rx="11" fill="#080b11"/>
-      <g clip-path="url(#eyeL)"><circle cx="74" cy="84" r="7.5" fill="#34e6f2" style="filter:drop-shadow(0 0 7px rgba(52,230,242,.85))"/><circle cx="76.5" cy="81.5" r="2.4" fill="#eafeff"/></g>
-      <g clip-path="url(#eyeR)"><circle cx="126" cy="84" r="7.5" fill="#34e6f2" style="filter:drop-shadow(0 0 7px rgba(52,230,242,.85))"/><circle cx="128.5" cy="81.5" r="2.4" fill="#eafeff"/></g>
-      <g clip-path="url(#eyeL)"><rect x="58" y="62" width="32" height="14" fill="#1b222e"/></g>
-      <g clip-path="url(#eyeR)"><rect x="110" y="62" width="32" height="14" fill="#1b222e"/></g>
-      <g><circle cx="126" cy="83" r="21" fill="rgba(52,230,242,.05)" stroke="#34e6f2" stroke-opacity=".55" stroke-width="2"/><path d="M143 94 q7 14 1 26" stroke="#1b8a92" stroke-width="1.6" fill="none" opacity=".8"/></g>
-      <path d="M62 60 q12 -6 24 -1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 4px rgba(52,230,242,.55));transform:translateY(-3px);transform-origin:74px 60px"/>
-      <path d="M114 59 q12 -5 24 1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none" style="filter:drop-shadow(0 0 4px rgba(52,230,242,.55));transform:translateY(-6px) rotate(-6deg);transform-origin:126px 60px"/>
-      <g><rect x="80" y="108.0" width="5" height="16" rx="2" fill="#34e6f2" style="filter:drop-shadow(0 0 6px rgba(52,230,242,.7))"/><rect x="90" y="111.5" width="5" height="9" rx="2" fill="#34e6f2" style="filter:drop-shadow(0 0 6px rgba(52,230,242,.7))"/><rect x="100" y="108.0" width="5" height="16" rx="2" fill="#34e6f2" style="filter:drop-shadow(0 0 6px rgba(52,230,242,.7))"/><rect x="110" y="113.0" width="5" height="6" rx="2" fill="#34e6f2" style="filter:drop-shadow(0 0 6px rgba(52,230,242,.7))"/><rect x="120" y="110.0" width="5" height="12" rx="2" fill="#34e6f2" style="filter:drop-shadow(0 0 6px rgba(52,230,242,.7))"/></g>
-      <path d="M100 152 L78 143 L78 161 Z" fill="url(#tie)"/>
-      <path d="M100 152 L122 143 L122 161 Z" fill="url(#tie)"/>
-      <circle cx="100" cy="152" r="5.5" fill="#0e1620" stroke="#34e6f2" stroke-opacity=".8" stroke-width="1.6"/></g></g></svg></div>
+    <div class="clarvis-header">CLARVIS<span class="branch{seq}"{d(0.5)}>⎇ clarvis/fix-checkout-test</span></div>
+    <div class="stage">{face}</div>
     <div class="task">
       <div class="label">TASK</div>
       <div class="goal">"fix the failing checkout test"</div>
     </div>
     <div class="divider"></div>
-    <div class="steps">
-      <div class="step seq done" style="animation-delay:1.0s"><span class="ic">✓</span><span>Read <code>checkout.js</code>, <code>checkout.test.js</code></span></div>
-      <div class="step seq done" style="animation-delay:1.8s"><span class="ic">✓</span><span>Ran <code>npm test</code> — 1 failing</span></div>
-      <div class="step seq done" style="animation-delay:2.6s"><span class="ic">✓</span><span>Edited <code>checkout.js</code> — scoped <code>cache</code></span></div>
-      <div class="step seq run" style="animation-delay:3.4s"><span class="ic">⟳</span><span>Running <code>npm test</code>…</span></div></div>
-    <div class="changed seq" style="animation-delay:3.0s">
+    <div class="steps">{steps_html(anim)}</div>
+    <div class="changed{seq}"{d(3.0)}>
       <div class="hd">FILES CHANGED</div>
       <div class="row">checkout.js<span class="plus">+1</span><span class="minus">−1</span></div>
     </div>
-    <div class="gate seq" style="animation-delay:4.4s">
+    <div class="gate{seq}"{d(4.4)}>
       <div class="hd">⚠ NEEDS YOUR APPROVAL</div>
       <div class="body">Wants to run <code>npm install lodash</code>. Dependency changes don't happen without you.</div>
       <div class="btns"><button class="primary">Approve</button><button>Skip</button></div>
     </div>
-    <div class="undo seq" style="animation-delay:5.0s">Everything happens on its own branch —
+    <div class="undo{seq}"{d(5.0)}>Everything happens on its own branch —
       <code>Clarvis: Undo Last Agent Run</code> puts it all back.</div>
     <div class="foot">
       <div class="meter"><span>step 4/40 · 12.4k tokens</span><span class="stop">■ Stop</span></div>
@@ -220,6 +251,11 @@
 </div>
 <div class="statusbar">
   <span>⎇ clarvis/fix-checkout-test</span><span>⚠ 0 ⓧ 0</span>
-  <div class="right"><span class="sb-state"><span id="sb-think">◐ thinking</span><span id="sb-talk">💬 talking</span></span><span>Ln 3, Col 12</span><span>JavaScript</span></div>
+  <div class="right"><span class="sb-state">{sb_state}</span><span>Ln 3, Col 12</span><span>JavaScript</span></div>
 </div>
-</body></html>
+</body></html>'''
+
+os.makedirs(OUT, exist_ok=True)
+open(os.path.join(OUT, "mockup-demo.html"), "w").write(page(anim=True))
+open(os.path.join(OUT, "_mockup_static.html"), "w").write(page(anim=False))
+print("wrote mockup-demo.html + _mockup_static.html")

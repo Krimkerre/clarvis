@@ -38,7 +38,9 @@
 
   .statusbar { height: 24px; background: #34e6f2; display: flex; align-items: center; padding: 0 10px;
     font-size: 12px; color: #062226; font-weight: 600; gap: 16px; flex-shrink: 0; }
-  .statusbar .right { margin-left: auto; display: flex; gap: 16px; }
+  .statusbar .right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+  .statusbar span { display: inline-flex; align-items: center; line-height: 1; }
+  .sb-state { min-width: 74px; }
 
   .clarvis { width: 340px; background: #1a1d24; border-left: 1px solid #000; display: flex;
     flex-direction: column; flex-shrink: 0; }
@@ -92,18 +94,69 @@
   .input .ph { color: #5a6472; font-size: 12.5px; flex: 1; }
   .input svg { width: 15px; height: 15px; }
 
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes flash { from { background: rgba(255,182,72,0); box-shadow: none; } }
   @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
-  @keyframes swap { to { opacity: 0; } }
-  @keyframes swapIn { to { opacity: 1; } }
-  .seq { opacity: 0; animation: fadeUp .45s ease forwards; }
+  @keyframes seq0_5 {
+    0%, 5.0% { opacity: 0; transform: translateY(6px); }
+    9.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq1_0 {
+    0%, 10.0% { opacity: 0; transform: translateY(6px); }
+    14.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq1_8 {
+    0%, 18.0% { opacity: 0; transform: translateY(6px); }
+    22.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq2_6 {
+    0%, 26.0% { opacity: 0; transform: translateY(6px); }
+    30.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq2_8 {
+    0%, 28.0% { opacity: 0; transform: translateY(6px); }
+    32.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq3_0 {
+    0%, 30.0% { opacity: 0; transform: translateY(6px); }
+    34.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq3_4 {
+    0%, 34.0% { opacity: 0; transform: translateY(6px); }
+    38.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq4_4 {
+    0%, 44.0% { opacity: 0; transform: translateY(6px); }
+    48.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes seq5_0 {
+    0%, 50.0% { opacity: 0; transform: translateY(6px); }
+    54.5%, 86.0% { opacity: 1; transform: translateY(0); }
+    91.0%, 100% { opacity: 0; transform: translateY(0); }
+  }
+  @keyframes faceThink {
+    0%, 43.0% { opacity: 1; }
+    46.0%, 100% { opacity: 0; }
+  }
+  @keyframes faceTalk {
+    0%, 43.0% { opacity: 0; }
+    46.0%, 86.0% { opacity: 1; }
+    91.0%, 100% { opacity: 0; }
+  }
+  .seq { opacity: 0; animation-duration: 10.0s; animation-iteration-count: infinite;
+         animation-timing-function: ease; }
   .bob { animation: bob 4s ease-in-out infinite; transform-origin: 100px 100px; }
-  #face-think { animation: swap .3s ease forwards; animation-delay: 4.3s; }
-  #face-talk { opacity: 0; animation: swapIn .3s ease forwards; animation-delay: 4.4s; }
+  #face-think { animation: faceThink 10.0s ease infinite; }
+  #face-talk  { opacity: 0; animation: faceTalk 10.0s ease infinite; }
+  #sb-think { animation: faceThink 10.0s ease infinite; }
+  #sb-talk   { opacity: 0; animation: faceTalk 10.0s ease infinite; position: absolute; }
   .sb-state { position: relative; }
-  #sb-think { animation: swap .3s ease forwards; animation-delay: 4.3s; }
-  #sb-talk { opacity: 0; animation: swapIn .3s ease forwards; animation-delay: 4.4s; margin-left: -72px; }
 </style></head>
 <body>
 <div class="titlebar">
@@ -130,8 +183,8 @@
     <div class="code">
       <div class="line"><span class="ln">1</span><span class="src"><span class="cm">// checkout.js — totals the cart, applies the promo cache</span></span></div>
       <div class="line"><span class="ln">2</span><span class="src"></span></div>
-      <div class="line del seq" style="animation-delay:2.6s"><span class="ln">3</span><span class="src">- <span class="glob">cache</span> = {};</span></div>
-      <div class="line add seq" style="animation-delay:2.8s"><span class="ln">3</span><span class="src">+ <span class="kw">const</span> cache = {};</span></div>
+      <div class="line del seq" style="animation-name:seq2_6"><span class="ln">3</span><span class="src">- <span class="glob">cache</span> = {};</span></div>
+      <div class="line add seq" style="animation-name:seq2_8"><span class="ln">3</span><span class="src">+ <span class="kw">const</span> cache = {};</span></div>
       <div class="line"><span class="ln">4</span><span class="src"></span></div>
       <div class="line"><span class="ln">5</span><span class="src"><span class="kw">function</span> <span class="fn">computeTotal</span>(items) {</span></div>
       <div class="line"><span class="ln">6</span><span class="src">  <span class="kw">let</span> total = <span class="num">0</span>;</span></div>
@@ -147,7 +200,7 @@
   </div>
 
   <div class="clarvis">
-    <div class="clarvis-header">CLARVIS<span class="branch seq" style="animation-delay:0.5s">⎇ clarvis/fix-checkout-test</span></div>
+    <div class="clarvis-header">CLARVIS<span class="branch seq" style="animation-name:seq0_5">⎇ clarvis/fix-checkout-test</span></div>
     <div class="stage"><svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><defs>
       <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b3546"/><stop offset=".55" stop-color="#1a2130"/><stop offset="1" stop-color="#10151f"/></linearGradient>
       <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
@@ -197,15 +250,15 @@
     </div>
     <div class="divider"></div>
     <div class="steps">
-      <div class="step seq done" style="animation-delay:1.0s"><span class="ic">✓</span><span>Read <code>checkout.js</code>, <code>checkout.test.js</code></span></div>
-      <div class="step seq done" style="animation-delay:1.8s"><span class="ic">✓</span><span>Ran <code>npm test</code> — 1 failing</span></div>
-      <div class="step seq done" style="animation-delay:2.6s"><span class="ic">✓</span><span>Edited <code>checkout.js</code> — scoped <code>cache</code></span></div>
-      <div class="step seq run" style="animation-delay:3.4s"><span class="ic">⟳</span><span>Running <code>npm test</code>…</span></div></div>
-    <div class="changed seq" style="animation-delay:3.0s">
+      <div class="step seq done" style="animation-name:seq1_0"><span class="ic">✓</span><span>Read <code>checkout.js</code>, <code>checkout.test.js</code></span></div>
+      <div class="step seq done" style="animation-name:seq1_8"><span class="ic">✓</span><span>Ran <code>npm test</code> — 1 failing</span></div>
+      <div class="step seq done" style="animation-name:seq2_6"><span class="ic">✓</span><span>Edited <code>checkout.js</code> — scoped <code>cache</code></span></div>
+      <div class="step seq run" style="animation-name:seq3_4"><span class="ic">⟳</span><span>Running <code>npm test</code>…</span></div></div>
+    <div class="changed seq" style="animation-name:seq3_0">
       <div class="hd">FILES CHANGED</div>
       <div class="row">checkout.js<span class="plus">+1</span><span class="minus">−1</span></div>
     </div>
-    <div class="gate seq" style="animation-delay:4.4s">
+    <div class="gate seq" style="animation-name:seq4_4">
       <div class="hd">⚠ NEEDS YOUR APPROVAL — REVERSIBLE</div>
       <div class="cmd">npm install lodash</div>
       <div class="body">Installing a package runs its install scripts with your
@@ -215,7 +268,7 @@
         anything an install script did outside the project stays done.</div>
       <div class="btns"><button class="primary">Approve</button><button>Skip</button></div>
     </div>
-    <div class="undo seq" style="animation-delay:5.0s">Everything happens on its own branch —
+    <div class="undo seq" style="animation-name:seq5_0">Everything happens on its own branch —
       <code>Clarvis: Undo Last Agent Run</code> puts it all back.</div>
     <div class="foot">
       <div class="meter"><span>step 4/40 · 12.4k tokens</span><span class="stop">■ Stop</span></div>
@@ -229,6 +282,6 @@
 </div>
 <div class="statusbar">
   <span>⎇ clarvis/fix-checkout-test</span><span>⚠ 0 ⓧ 0</span>
-  <div class="right"><span class="sb-state"><span id="sb-think">◐ thinking</span><span id="sb-talk">💬 talking</span></span><span>Ln 3, Col 12</span><span>JavaScript</span></div>
+  <div class="right"><span class="sb-state"><span id="sb-think">◐ thinking</span><span id="sb-talk">◉ talking</span></span><span>Ln 3, Col 12</span><span>JavaScript</span></div>
 </div>
 </body></html>

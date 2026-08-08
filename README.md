@@ -40,7 +40,7 @@ For the animated version — a self-contained HTML page in the same spirit as
 `avatar.html`: real CSS keyframes, no recording, no compression — open
 [`media/mockup-demo.html`](./media/mockup-demo.html) in a browser and watch the steps
 stream in, the diff land, and Clarvis switch from `thinking` to `talking` as he stops to
-ask. The panel and avatar are built and working today; the agent surfaces shown here are
+ask. It loops. The panel and avatar are built and working today; the agent surfaces shown here are
 still on the roadmap (§ Progress).
 
 ## What it does

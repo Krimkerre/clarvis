@@ -11,7 +11,21 @@
   "categories": ["Other"],
   "activationEvents": ["onStartupFinished"],
   "main": "./dist/extension.js",
-  "contributes": {},
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "clarvis", "title": "Clarvis", "icon": "media/bowtie.svg" }
+      ]
+    },
+    "views": {
+      "clarvis": [
+        { "id": "clarvis.butler", "name": "Clarvis", "type": "webview" }
+      ]
+    },
+    "commands": [
+      { "command": "clarvis.debug.setState", "title": "Clarvis: Set Avatar State (Debug)" }
+    ]
+  },
   "scripts": {
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",

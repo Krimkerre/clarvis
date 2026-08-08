@@ -6,5 +6,9 @@ node_modules/**
 esbuild.js
 tsconfig.json
 plan.md
+avatar.html
+media/previews/**
+media/states-strip.svg
+clarvis-probe-log.jsonl
 *.map
 .git/**

@@ -76,8 +76,11 @@ still on the roadmap (§ Progress).
   uncommitted changes stay yours and the whole run is reviewable — or discardable in
   one command. Every file it touches is listed live with a clickable diff, and it stops
   to ask before anything destructive or outward-facing. Merging and pushing are yours.
-- **Voice output** *(optional, off by default)* — briefings and completions spoken via
-  OS voices, or a Fish Audio voice with your own key.
+- **Voice** — not a bolt-on. Half the character is in the writing, the other half is in
+  the delivery, so briefings and completions are spoken by a voice chosen to match:
+  gravelly, impatient, casually brilliant, bored of having to explain. Fish Audio by
+  default (your key), OS voices as a fallback. Still off until you enable it — a voice
+  that surprises you once is a voice you disable forever.
 - **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat
   box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched
   English jargon. Never auto-sends; the transcript is always editable text.
@@ -196,12 +199,13 @@ the full per-milestone build notes and exit criteria.
 - [ ] **M4 — Briefing.** Not started.
 - [ ] **M5 — Pattern Memory.** Not started.
 - [ ] **M6 — Personality Pass.** Not started.
-- [ ] **M7 — Chat & Agent.** Not started. *(The big one: local answers, then the
+- [ ] **M7 — Voice.** Not started. *(Core, not a stretch: the delivery is half the
+      personality. Lands right after the personality pass.)*
+- [ ] **M8 — Chat & Agent.** Not started. *(The big one: local answers, then the
       Answer path, then a real agentic harness — tool layer and gates built and tested
       before the model can reach them.)*
-- [ ] **M8 — Project Planning.** Not started. *(The front door: interview → analysis →
+- [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
       `plan.md` → sign-off → hand milestone one to the agent.)*
-- [ ] **M9 — Voice Output.** Not started. *(Stretch — cut without guilt.)*
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M11 — Polish & Release.** Not started.
 

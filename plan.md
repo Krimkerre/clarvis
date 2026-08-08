@@ -727,6 +727,60 @@ instead of dead-ending in a notification.
   asked is never an interruption, and neither is a task you started.
 - `Clarvis: Stop` aborts a running task at the next tool boundary, always available.
 
+#### The avatar during a reply
+
+Answers get a face too, not just agent runs. The tone of a reply is exactly the thing
+the avatar exists to carry: mild contempt at a global variable, genuine approval at a
+neat solution, alarm at *"I force-pushed to main"*.
+
+**The model picks the expression.** Alongside each reply it emits a state from the §3
+enum as **structured metadata, never inline text**. The visible answer must never
+contain `[judging]` — the tag travels beside the reply, not in it.
+
+**Validated, never trusted.** The returned value goes through the existing
+`isButlerState()` guard (M2) and falls back to `talking` on anything unrecognized. A
+model inventing `smug` costs nothing; it just talks normally. This is the same
+trust-boundary discipline as everything else crossing into the extension.
+
+**Default is `talking`, and that should be the common case.** If every answer changes
+the face it becomes wallpaper and stops carrying information. Expressive states are for
+when the content genuinely earns one — which is §2 rule 2 (*sass must be earned*)
+applied to the face rather than the words, and it gates the same way as M6's earned-sass
+logic.
+
+**Timing.** `thinking` while waiting for the first token; the chosen state applies at the
+*start* of the stream so the face matches the tone while it's being read rather than
+arriving after; back to `neutral` after the reply settles.
+
+Local answers (no model involved) use a simple fixed mapping — a pattern-memory hit is
+`judging`, a clean-build report is `impressed` — since there's no model to ask and the
+categories are known ahead of time.
+
+#### Who drives the avatar — arbitration
+
+By M7 there are three things wanting to set an expression: the watcher (§4.1,
+unsolicited), chat replies, and agent runs. Last-writer-wins is not good enough with
+three writers — the face would fight itself.
+
+Priority, highest first:
+
+| Source | Why it wins where it does |
+|---|---|
+| **Agent run** | User-initiated, long-lived, and the user is watching it happen |
+| **Chat reply** | User-initiated and brief; a reply's tone outranks background noise |
+| **Watcher (§4.1)** | Unsolicited background observation — yields to anything the user actually asked for |
+| **Idle** | `neutral`, the resting state |
+
+A lower-priority source doesn't queue or fight; it simply doesn't write while a
+higher-priority one holds the avatar, and the resting state is re-evaluated when the
+holder releases.
+
+**This is a change to M3's `AvatarController`, and a known, deliberate deferral rather
+than an oversight.** M3 shipped with a single writer, which was correct then — building
+arbitration before a second writer existed would have been speculative. M7 adds the
+second and third, and that's when it gets built. Recorded here so it's designed
+deliberately at M7 rather than rediscovered as flicker.
+
 #### The avatar during a run
 
 Clarvis shuts up while working (above), but the face keeps reporting — it's ambient
@@ -1280,6 +1334,11 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
 - Outcome → message: small template function, `exitCode === 0` → success line pool,
   nonzero → failure line pool (§5 tone, but the *quip* bank from M6 doesn't exist yet —
   M3 ships with 2–3 hardcoded lines per outcome, M6 replaces the pool wholesale).
+- **Single-writer avatar, deliberately.** M3 is the only thing setting avatar state, so
+  `AvatarController` takes last-writer-wins and that is correct here. Chat replies and
+  agent runs become the second and third writers at M7, which is where priority
+  arbitration gets built (§4.6 *Who drives the avatar*, M7e2). Building it now would be
+  speculative; recording it now means it gets designed rather than discovered as flicker.
 - Delivery: `postMessage({type:'state', name:'impressed'|'judging'})` to the avatar +
   `window.showInformationMessage(text)`. No rate limiting yet beyond the duration floor
   — M3 predates M6's interruption budget; note this explicitly as a known gap closed
@@ -1533,14 +1592,19 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   model, streaming its steps into the panel: each tool call, each file touched, each
   command run, with a live step and token counter. `clarvis.agent.maxStepsPerTask`
   hard-stops and asks. `Clarvis: Stop` aborts at the next tool boundary.
-- **M7e2 — Avatar during a run.** The agent becomes the single writer of avatar state
-  for the duration (§4.6 *The avatar during a run*), mapping its phase to an expression
-  per §3. Requires two changes to existing M3 code, both easy to miss: `WatchPresenter`
-  must **yield avatar control** while a run is active, and must **suppress its
-  completion notifications for commands the agent started** — otherwise the face
-  flickers between two controllers and the user gets walk-away toasts about work they're
-  watching happen. Minimum dwell time (~800ms) with repeat-collapsing prevents strobing
-  on fast tool sequences.
+- **M7e2 — Avatar arbitration.** `AvatarController` (M2/M3) gains priority-based
+  ownership per §4.6 *Who drives the avatar*: agent run > chat reply > watcher > idle.
+  A lower-priority source stops writing while a higher one holds it, rather than
+  fighting. This is the deliberate deferral M3 recorded — it shipped single-writer
+  because a second writer didn't exist yet.
+  Also required, both easy to miss: `WatchPresenter` must **suppress its completion
+  notifications for commands the agent started** (otherwise the user gets walk-away
+  toasts about work they're watching happen), and state changes need a **minimum dwell
+  time (~800ms) with repeat-collapsing** so fast tool sequences don't strobe the face.
+- **M7e3 — Expressive replies.** The model emits a §3 state alongside each reply as
+  structured metadata, validated through `isButlerState()` with a `talking` fallback
+  (§4.6 *The avatar during a reply*). Local answers use a fixed mapping instead. The tag
+  must never leak into the visible reply text.
 - **M7f — Routing.** Decides between Local / Answer / Agent, announces the choice in
   the panel before starting, and resolves ambiguity toward answering. An unsolicited
   surface (§4.2 pattern hit, §5 quip) can be escalated by the user replying to it, and
@@ -1642,6 +1706,17 @@ end-to-end ones:
 - [ ] No quips during a running task; §5 material returns after it finishes.
 - [ ] Avatar tracks the run: `thinking` while working, `talking` when explaining or
       asking at a gate, `impressed` on success, `judging` when stopped or given up on.
+- [ ] Replies drive the face: ask something that warrants approval, something that
+      warrants contempt, and something alarming ("I force-pushed to main") — each gets a
+      fitting expression, and a plain factual question just gets `talking`.
+- [ ] **The state tag never appears in the reply text.** Check the transcript for stray
+      `[judging]`-style markers, including on streamed and interrupted replies.
+- [ ] Feed a deliberately invalid state (mock the provider returning `smug`) — falls
+      back to `talking`, no crash, nothing odd in the UI.
+- [ ] **Arbitration:** trigger a background build (watcher) *during* an agent run and
+      confirm the watcher never takes the face. Then ask a question mid-run and confirm
+      the reply's expression doesn't override the run's. Confirm the avatar returns to
+      the correct resting state when each holder releases.
 - [ ] **No strobing.** Run a task with many fast tool calls and watch the avatar — it
       must not flicker. Confirm the minimum dwell time is doing its job.
 - [ ] **A red test mid-loop does not trigger `surprised`.** Give it a fix-the-tests
@@ -1897,7 +1972,9 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 | Agent runs away — loops, burns tokens, never finishes | `clarvis.agent.maxStepsPerTask` (default 40) hard-stops and asks before continuing; live step and token counters in the panel; `Clarvis: Stop` always available |
 | Agent does something destructive or outward-facing | Gates are enforced in the tool layer, not the system prompt — a model cannot talk its way past them. Destructive shell, `git push`, publishing, and dependency installs all stop and ask; anything outside the workspace is refused outright, symlinks included |
 | Agent edits outside the workspace | Every path is resolved and checked against the workspace root before use. Not a gate — a refusal |
-| Avatar fought over by the agent and M3's watcher, or strobing on fast tool calls | The agent is the single writer during a run; `WatchPresenter` yields and also suppresses completion toasts for agent-started commands. Minimum dwell time with repeat-collapsing prevents flicker |
+| Expressive states fire so often they stop meaning anything | Default is `talking`; expressive faces are earned from content, gated the same way as M6's earned-sass logic |
+| Model emits a bogus or injected avatar state | Validated through `isButlerState()` with a `talking` fallback — the same trust-boundary rule as every other value crossing into the extension |
+| Avatar fought over by the agent, chat, and M3's watcher, or strobing on fast tool calls | The agent is the single writer during a run; `WatchPresenter` yields and also suppresses completion toasts for agent-started commands. Minimum dwell time with repeat-collapsing prevents flicker |
 | Agent's work tangles with the user's uncommitted changes | Each run gets its own `clarvis/<task-slug>` branch and commits **only the paths it touched, never `git add -A`** — the user's uncommitted work stays uncommitted and theirs. A dirty tree is flagged before the task starts |
 | Branch isolation silently unavailable (VSCodium ships no Git extension; folder isn't a repo) | Probed, not assumed (§4.0). Falls back to checkpoint-only with a one-time notice; the agent path stays fully functional rather than refusing to run |
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |

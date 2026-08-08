@@ -151,9 +151,11 @@ afterwards. The avatar tracks it too: thinking while it works, talking when it's
 explaining or asking permission, and unimpressed when it gives up — so a glance at the
 sidebar (or the status-bar glyph, with the panel closed) tells you where things stand.
 
-**Where git isn't available** — VSCodium ships without the Git extension, and plenty of
-folders aren't repos — it says so once and falls back to checkpoint-only. The agent
-still works; you still get one-command undo.
+**Where git isn't available**, it offers the fix instead of silently degrading — `git
+init` if the folder isn't a repository, enabling the Git extension if it's switched off,
+or install instructions if `git` itself is missing. Decline and you get checkpoint-only
+protection, which is still a complete one-command undo; you're asked once per workspace,
+never again.
 
 ## Platform
 
@@ -172,10 +174,12 @@ the full per-milestone build notes and exit criteria.
       throwaway extension on real VS Code + VSCodium. Key findings: no stable
       third-party test-results API exists (changes M5's design); raw terminal
       commands don't fire task events; debug sessions fire in pairs
-      (wrapper + child); Git's change event is a ~5s poll, not reactive; VSCodium
-      ships with **no** bundled Git extension; in-webview mic/speech (Tier 0) is
-      blocked regardless of OS permission, confirming voice input needs the
-      server-side (Tier 1) path.
+      (wrapper + child); Git's change event is a ~5s poll, not reactive; in-webview
+      mic/speech (Tier 0) is blocked regardless of OS permission, confirming voice
+      input needs the server-side (Tier 1) path. One finding was later **retracted as
+      wrong** — VSCodium does bundle the Git extension; `--list-extensions` simply
+      doesn't show built-ins. Kept in `plan.md` rather than deleted, since it had
+      shaped design decisions.
 - [x] **M2 — Avatar In A Webview.** Renders live in a real VS Code window via
       `WebviewViewProvider`; `setState()` bridge confirmed end-to-end from a command
       through to the most complex state (`surprised`). A few polish checks (theme

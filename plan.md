@@ -702,12 +702,28 @@ watch the work happen, and it breaks §1's "the workspace it was born in". Same-
 branching keeps the work visible in the editor you're already looking at, which matters
 more than maximal isolation.
 
-**Degrading when there's no git.** This is a real case, not a hypothetical: VSCodium
-ships without the Git extension at all (§4.0, confirmed in M1), and plenty of folders
-aren't repos. When git is unavailable or the workspace isn't a repository, Clarvis says
-so once and falls back to **checkpoint-only** protection (§ *Undo* above) — which still
-gives a complete one-command restore, just without the commit history. The agent path
-stays fully available; it does not require git to function.
+**When git isn't available, offer the fix rather than just degrading.** Falling back
+silently is a worse experience than saying "this would work better if…" — especially
+when the fix is one click. Clarvis distinguishes the three causes, because they need
+different answers:
+
+| Cause | What Clarvis does |
+|---|---|
+| **Folder isn't a repository** (much the most common) | Offers to run `git init` — with a plain note that it only creates a local repository, commits nothing, and sends nothing anywhere. Declining is fine and remembered |
+| **Git extension present but disabled** | Offers to enable it via `workbench.extensions.action.showExtensions` focused on the Git extension, with a one-line explanation of why Clarvis wants it |
+| **`git` binary missing from the system** | Cannot be fixed from inside the editor, so it gives platform-specific instructions (`xcode-select --install` on macOS, the distro package on Linux, git-scm.com on Windows) rather than a button that would fail |
+
+**Asked once, per workspace, and never again if declined.** Recorded in
+`workspaceState`. A prompt that returns every session is nagware, and this one shows up
+at exactly the moment the user is trying to start a task.
+
+**Declining costs nothing.** Checkpoint-only protection (§ *Undo* above) still gives a
+complete one-command restore — just without the commit history and per-step diffs. The
+agent path stays fully available; git makes it better, it isn't a dependency.
+
+**`git init` is itself gated**, obviously: it creates files and changes the folder's
+nature, so it goes through the normal approval flow (§ *Gates*) with the same
+what/why/reversibility explanation, including that undoing it means deleting `.git`.
 
 **Starting dirty.** If the working tree is already dirty when a task starts, Clarvis
 notes it before beginning. The path-scoped commits mean your changes can't be swept
@@ -1252,13 +1268,19 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
    continuously throughout the session regardless of whether anything changed.
    **Decision:** M4/M5 must debounce/diff `HEAD`+`workingTreeChanges` before reacting,
    never treat `onDidChange` itself as a meaningful signal.
-5. **Git extension is not bundled on VSCodium.** It ships with *zero* built-in
-   extensions (`--list-extensions` showed only the probe) — no `vscode.git`, confirmed
-   via `repoCount: 0` and an absent extension lookup. This makes §4.0's "probe, never
-   assume" rule load-bearing, not defensive boilerplate: on VSCodium, every
-   git-dependent feature (briefing's branch/dirty line, §5's "first commit after
-   silence" quip) goes silent by default unless the user installs a Git extension from
-   Open VSX themselves.
+5. ~~**Git extension is not bundled on VSCodium.**~~ **Retracted — this finding was
+   wrong.** VSCodium bundles `git`, `git-base`, `github`, and `github-authentication`
+   in `Contents/Resources/app/extensions/`, identical to VS Code. The error came from
+   reading `--list-extensions`, which **does not list built-in extensions on any host**,
+   and from overlooking that the probe itself logged `git API_AVAILABLE` on VSCodium —
+   the accompanying `repoCount: 0` was activation-time scan lag, which VS Code showed
+   too. Recorded rather than quietly deleted, because a wrong finding that shaped
+   several design decisions is worth being able to trace.
+
+   What survives: git availability is still **probed, never assumed** — the extension
+   can be disabled by the user, the `git` binary can be missing, and plenty of folders
+   simply aren't repositories. The degradation path (§4.6) is sound engineering; it just
+   isn't VSCodium-specific, and VSCodium needs no special handling here.
 6. **Mic/speech Tier 0 is not viable via the webview, on either host tested,
    regardless of OS-level permission.** `getUserMedia` returned `NotAllowedError`
    consistently on VS Code stable and VSCodium — including *after* explicitly granting
@@ -1614,9 +1636,10 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   `Clarvis: Undo Last Agent Run` to restore), and `src/agent/AgentBranch.ts` (create
   and switch to `clarvis/<task-slug>`, commit touched paths only, restore the user's
   branch on undo). All unit-tested standalone. Gates refuse at the tool boundary — no
-  prompt involvement, so no prompt injection can lift them. `AgentBranch` must degrade
-  cleanly with no Git extension (VSCodium) and in non-repo folders: checkpoint-only,
-  agent still fully functional.
+  prompt involvement, so no prompt injection can lift them. `AgentBranch` must probe git
+  availability and, per §4.6, offer the *cause-specific* fix — `git init` for a non-repo
+  folder, enabling the extension if disabled, install instructions if the binary is
+  missing — asking once per workspace and falling back to checkpoint-only when declined.
 - **M7e — The agent loop.** `src/agent/AgentRunner.ts` — tool-calling loop over the
   model, streaming its steps into the panel: each tool call, each file touched, each
   command run, with a live step and token counter. `clarvis.agent.maxStepsPerTask`
@@ -1709,9 +1732,18 @@ end-to-end ones:
       that makes branch isolation worth having.
 - [ ] Merging is left to the user: after a successful run, nothing has been merged into
       the original branch and nothing has been pushed.
-- [ ] **No-git degradation:** run the same task in a non-repo folder, and again on
-      VSCodium (no Git extension — M1). Clarvis says so once, falls back to
-      checkpoint-only, and the agent path still works end to end.
+- [ ] **Non-repo folder:** Clarvis offers `git init`, explains that it's local-only and
+      sends nothing anywhere, and the offer goes through the normal gate format.
+      Accepting produces a working branch-isolated run.
+- [ ] **Decline the offer:** falls back to checkpoint-only, the agent path still works
+      end to end, and **the prompt does not reappear next session** — verify against
+      `workspaceState`.
+- [ ] **Git extension disabled:** Clarvis offers to enable it rather than showing the
+      `git init` prompt — right fix for the right cause.
+- [ ] **`git` binary missing** (rename it on PATH for the test): platform-appropriate
+      install instructions, and *no* button that would just fail.
+- [ ] Confirm on VSCodium that git works normally with no special handling — it bundles
+      the Git extension like VS Code (M1 finding #5, retracted).
 - [ ] Per-file VS Code undo (`Cmd+Z`) works normally on an agent edit — confirms edits
       went through `WorkspaceEdit` rather than raw disk writes.
 - [ ] `Clarvis: Stop` mid-task aborts at the next tool boundary, leaves the workspace in
@@ -2015,7 +2047,7 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 | Model emits a bogus or injected avatar state | Validated through `isButlerState()` with a `talking` fallback — the same trust-boundary rule as every other value crossing into the extension |
 | Avatar fought over by the agent, chat, and M3's watcher, or strobing on fast tool calls | The agent is the single writer during a run; `WatchPresenter` yields and also suppresses completion toasts for agent-started commands. Minimum dwell time with repeat-collapsing prevents flicker |
 | Agent's work tangles with the user's uncommitted changes | Each run gets its own `clarvis/<task-slug>` branch and commits **only the paths it touched, never `git add -A`** — the user's uncommitted work stays uncommitted and theirs. A dirty tree is flagged before the task starts |
-| Branch isolation silently unavailable (VSCodium ships no Git extension; folder isn't a repo) | Probed, not assumed (§4.0). Falls back to checkpoint-only with a one-time notice; the agent path stays fully functional rather than refusing to run |
+| Branch isolation unavailable — Git extension disabled, `git` binary missing, or the folder isn't a repository | Probed, not assumed (§4.0). Clarvis offers the specific fix for the specific cause (enable the extension, install git, or `git init`), and falls back to checkpoint-only if declined — the agent path stays fully functional either way |
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |
 | The agent path widens the privacy story | Answered by restating it honestly (§4.6 *Privacy*) rather than keeping a promise that no longer holds: the Answer path keeps its bounded visible context; the Agent path reads what the task needs and shows every file it opened; everything stays inside the activating workspace |
 | Clarvis acts when the user only asked a question | Routing is explicit and announced before work starts; ambiguity resolves toward answering, never toward editing |

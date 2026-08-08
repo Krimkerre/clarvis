@@ -32,7 +32,8 @@ quip line under each.
 *Mockup, not a real screenshot* — an agent run mid-flight. Clarvis is fixing a failing
 test on its own `clarvis/fix-checkout-test` branch: it read the files, ran the suite,
 made the edit you can see in the diff, and is re-running the tests. It has stopped to
-ask before installing a dependency, because that's a gate. Step and token counters run
+ask before installing a dependency — and the gate explains what that does, what it
+changes, and how to undo it, rather than just asking for a click. Step and token counters run
 live, `Stop` is always there, and the whole run reverts with one command.
 
 For the animated version — a self-contained HTML page in the same spirit as
@@ -130,10 +131,19 @@ stays uncommitted and yours. Merging and pushing are your decisions.
 through VS Code's own edit API, so `Cmd+Z` works normally too. `Clarvis: Stop` aborts at
 the next step.
 
-**It stops before the one-way doors.** Destructive shell commands, `git push`,
-publishing, and dependency installs all pause and ask. Anything resolving outside the
-workspace is refused outright — symlinks included. There is deliberately no setting to
-turn gates off; a switch that only half-worked would be worse than none.
+**It stops before the one-way doors — and tells you why.** Destructive shell commands,
+`git push`, publishing, and dependency installs all pause and ask. Crucially, a gate
+isn't a bare "Approve?" — that just teaches you to click Approve without reading. Each
+one states what it's about to run, why that class of action is risky, what specifically
+could go wrong this time, and **whether it can be undone**. `rm -rf` and `git push`
+aren't dangerous in the same way, and irreversible actions look different from
+reversible ones. Anything resolving outside the workspace is refused outright — symlinks
+included. There is deliberately no setting to turn gates off; a switch that only
+half-worked would be worse than none.
+
+The warning text is written in the tool layer, never by the model — a model that has
+just been reading your files could be talked into describing `rm -rf` as harmless, and a
+warning a prompt injection can rewrite is not a warning.
 
 **You watch it work.** Every file opened, every file changed, every command run, plus
 live step and token counters — in the panel, while it happens, not discovered

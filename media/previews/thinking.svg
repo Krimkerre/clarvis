@@ -1,0 +1,81 @@
+<svg width="220" height="220" viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"
+     role="img" aria-label="Clarvis — Thinking expression">
+  <defs>
+    <linearGradient id="shell" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2b3546"/>
+      <stop offset=".55" stop-color="#1a2130"/>
+      <stop offset="1" stop-color="#10151f"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity=".16"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="tie" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2ad3e0"/>
+      <stop offset="1" stop-color="#127a83"/>
+    </linearGradient>
+    <clipPath id="eyeL"><rect x="60" y="72" width="28" height="22" rx="11"/></clipPath>
+    <clipPath id="eyeR"><rect x="112" y="72" width="28" height="22" rx="11"/></clipPath>
+  </defs>
+
+  <rect width="200" height="200" fill="#0b0e13"/>
+  <ellipse cx="100" cy="176" rx="65" ry="9" fill="rgba(0,0,0,.45)"/>
+
+  <!-- head shell -->
+  <rect x="36" y="36" width="128" height="106" rx="34" fill="url(#shell)"/>
+  <rect x="36" y="36" width="128" height="106" rx="34" fill="none"
+        stroke="#34e6f2" stroke-opacity=".7" stroke-width="1.6"
+        style="filter: drop-shadow(0 0 3px rgba(52,230,242,.4))"/>
+  <rect x="44" y="43" width="112" height="46" rx="24" fill="url(#gloss)"/>
+
+  <!-- antenna -->
+  <path d="M100 36 V22" stroke="#39465b" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="100" cy="18" r="5" fill="#34e6f2"
+          style="filter: drop-shadow(0 0 8px rgba(52,230,242,.9))"/>
+
+  <!-- eyes -->
+  <rect x="60" y="72" width="28" height="22" rx="11" fill="#080b11"/>
+  <rect x="112" y="72" width="28" height="22" rx="11" fill="#080b11"/>
+
+  <g>
+    <g clip-path="url(#eyeL)">
+      <circle cx="66" cy="81" r="7.5" fill="#34e6f2"
+              style="filter: drop-shadow(0 0 7px rgba(52,230,242,.85))"/>
+      <circle cx="68.5" cy="78.5" r="2.4" fill="#eafeff"/>
+    </g>
+    <g clip-path="url(#eyeR)">
+      <circle cx="118" cy="81" r="7.5" fill="#34e6f2"
+              style="filter: drop-shadow(0 0 7px rgba(52,230,242,.85))"/>
+      <circle cx="120.5" cy="78.5" r="2.4" fill="#eafeff"/>
+    </g>
+  </g>
+
+  <g clip-path="url(#eyeL)"><rect x="58" y="68" width="32" height="14" fill="#1b222e"/></g>
+  <g clip-path="url(#eyeR)"><rect x="110" y="68" width="32" height="14" fill="#1b222e"/></g>
+
+  <g>
+    <circle cx="126" cy="83" r="21" fill="rgba(52,230,242,.05)" stroke="#34e6f2" stroke-opacity=".55" stroke-width="2"/>
+    <path d="M143 94 q7 14 1 26" stroke="#1b8a92" stroke-width="1.6" fill="none" opacity=".8"/>
+  </g>
+
+  <!-- brows -->
+  <path d="M62 60 q12 -6 24 -1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none"
+        style="filter: drop-shadow(0 0 4px rgba(52,230,242,.55)); transform: translateY(-4px); transform-origin: 74px 60px;"/>
+  <path d="M114 59 q12 -5 24 1" stroke="#34e6f2" stroke-width="5" stroke-linecap="round" fill="none"
+        style="filter: drop-shadow(0 0 4px rgba(52,230,242,.55)); transform: translateY(-2px); transform-origin: 126px 60px;"/>
+
+  <path d="M88 117 q12 2 24 -2" stroke="#34e6f2" stroke-width="4.5" stroke-linecap="round" fill="none" style="filter: drop-shadow(0 0 5px rgba(52,230,242,.5))"/>
+
+  
+
+  
+
+  
+
+  <g fill="#34e6f2"><circle cx="92" cy="126" r="2.6" opacity=".3"/><circle cx="100" cy="130" r="2.6" opacity="1"/><circle cx="108" cy="126" r="2.6" opacity=".6"/></g>
+
+  <!-- bow tie -->
+  <path d="M100 152 L78 143 L78 161 Z" fill="url(#tie)"/>
+  <path d="M100 152 L122 143 L122 161 Z" fill="url(#tie)"/>
+  <circle cx="100" cy="152" r="5.5" fill="#0e1620" stroke="#34e6f2" stroke-opacity=".8" stroke-width="1.6"/>
+</svg>

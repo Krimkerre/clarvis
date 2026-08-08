@@ -935,25 +935,53 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
   — M3 predates M6's interruption budget; note this explicitly as a known gap closed
   at M6, not a bug to chase now.
 **Exit checklist:**
-- [ ] Start a long build (`npm run build`-style, >30s), walk away, get notified with
-      correct exit code and duration.
-- [ ] Same, but under 30s — confirm no notification, no avatar-state change at all.
-- [ ] Trigger the same watch from a task, then again from raw terminal command
-      (no Tasks UI) — both correctly flip `BusyTracker` to `busy` and back, per M1's
-      decision on which sources are primary/fallback.
-- [ ] Overlap two watched things (start a task, then run a terminal command before it
-      finishes) — tracker doesn't flicker `idle` when only one of the two ends;
-      confirm the "busy" model's concurrency behavior matches what M1 assumed.
-- [ ] Fail the same command 3× in a row — 3 distinct notifications, each with its own
-      correct exit code, no coalescing or dropped events.
-- [ ] Cancel a task mid-run (kill it) — tracker returns to `idle`, no stuck "busy"
-      state, no misleading "success" notification.
-- [ ] Disable shell integration and rerun the terminal-command case — confirm the
-      fallback path M1 identified actually carries the signal (or confirm the
-      documented gap if it doesn't).
-- [ ] Avatar state sequence is `thinking` (while busy) → `impressed`/`judging` (on
-      completion) → back to `neutral` — no state stuck on `thinking` after outcome
-      is known.
+Verified against a real VS Code host using the `clarvis-probe/testbed` workspace,
+with `clarvis.watch.minDurationSeconds` lowered to 1 so "long" and "short" are
+testable in seconds. Behavior was read from the `Clarvis` output channel, which logs
+every state transition and outcome. Concurrency and sequencing are additionally
+covered by unit tests (`npm test`, 14 tests) — `BusyTracker` deliberately imports
+nothing from `vscode` precisely so this logic is testable without a host.
+
+- [x] Start a long build, walk away, get notified with correct exit code and
+      duration. Confirmed: `outcome task "probe-build-ok" exitCode=0 durationMs=2324`.
+- [x] Same, but under threshold — no notification, no reaction. Confirmed:
+      `probe-build-short` (663ms) logged the outcome, went straight back to `neutral`,
+      never entered `impressed`.
+- [x] Task and raw terminal command both tracked. Confirmed: tasks report via the
+      `task` source, `echo hi` typed into a terminal reports via `terminal`.
+- [x] Overlapping work doesn't flicker `idle` when only one job ends. Covered by
+      unit test (`stays busy while overlapping jobs are still running`).
+- [x] Three failures in a row produce three distinct outcomes with correct exit
+      codes, no coalescing. Confirmed live, and covered by unit test.
+- [x] Cancel a task mid-run — returns to `idle`, no stuck `busy`, no false success.
+      Confirmed: `exitCode=undefined` → `judging`, and the *next* task produced a
+      fresh `thinking` transition, proving the tracker had genuinely gone idle.
+- [ ] Disable shell integration and rerun the terminal-command case. **Not tested** —
+      tasks and debug sessions carry the busy model without it (M1's fallback spine),
+      so this affects raw-terminal tracking only. Worth closing before M10.
+- [x] Avatar sequence is `thinking` → `impressed`/`judging` → `neutral`, never stuck
+      on `thinking`. Confirmed across every run in the log.
+
+**Two defects found and fixed during this verification** (both invisible to the
+build and to typechecking — only a real host surfaced them):
+
+1. **Every task double-notified.** Running a task fires *both* a task event and a
+   terminal shell-execution event for the same work, so one build produced two
+   outcomes and two notifications. M1 established that raw terminal commands fire no
+   task event; the converse is *not* true, and the original wiring assumed it was.
+   Fixed by ignoring a shell execution that belongs to a running task's own terminal.
+   The tell is the terminal's name: VS Code fires the task event first and names the
+   task's terminal afterwards, so a task's shell execution starts while its terminal
+   is still nameless, whereas a user's terminal always has a name.
+2. **A cancelled task pinned Clarvis "busy" forever.** Killing a task ends the task
+   event but never its shell execution, leaving a phantom entry in the tracker — so
+   `busy` never cleared and no later job could produce a `thinking` transition. Fixed
+   by the same change: the phantom entry is never created in the first place.
+
+Also hardened: shell integration sometimes mis-parses a shell prompt into the command
+line (observed: `echo hi` arriving with the prompt, ANSI decoration, and newlines
+attached). Labels are now whitespace-collapsed and truncated for display, and phantom
+executions with an empty command line are ignored outright.
 - **Exit:** start a long build, walk away, get correctly notified with accurate outcome
   and duration. Ship-worthy alone.
 

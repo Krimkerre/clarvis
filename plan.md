@@ -272,6 +272,11 @@ Events (§4) map to states:
 | Test failed, 3rd retry of same command | `judging` |
 | Green suite, clean build, resolved pattern | `impressed` |
 | Speaking a briefing or notification | `talking` |
+| **Agent** reasoning, reading, searching, editing, running (§4.6) | `thinking` |
+| **Agent** explaining, or asking at an approval gate | `talking` |
+| **Agent** hits an *unexpected* error — tool failure, not a red test it's working on | `surprised` |
+| **Agent** finishes the task successfully | `impressed` |
+| **Agent** gives up, is stopped, or is blocked at a gate it can't pass | `judging` |
 
 ---
 
@@ -721,6 +726,40 @@ instead of dead-ending in a notification.
 - Rate limits (§7) do **not** apply — those govern *unsolicited* surfaces. A question
   asked is never an interruption, and neither is a task you started.
 - `Clarvis: Stop` aborts a running task at the next tool boundary, always available.
+
+#### The avatar during a run
+
+Clarvis shuts up while working (above), but the face keeps reporting — it's ambient
+status rather than chatter, which is exactly what the avatar is for. Mapping is in §3's
+event table.
+
+**The agent owns the avatar for the duration of a run.** This matters because M3's
+watcher (§4.1) is *already* driving the avatar from task and terminal events — and the
+agent runs commands, so both would be steering at once. Two concrete consequences:
+
+1. **The watcher yields.** While an agent run is active, `WatchPresenter` stops setting
+   avatar state; the agent is the single writer. Without this the face flickers between
+   two controllers on every tool call.
+2. **The watcher also suppresses its notifications for the agent's own commands.** A
+   *"Build finished. Green. Four minutes twelve."* toast while Clarvis is mid-task is
+   noise about work the user can already watch happening — and the walk-away framing
+   (§4.1) is nonsense when they're sitting there watching him do it. Commands the agent
+   started are its own business to report, in the panel.
+
+**No strobing.** A twelve-step task must not flash the avatar on every tool call. State
+changes during a run observe a **minimum dwell time** (~800ms) and collapse repeats:
+`thinking` → `thinking` is not a transition. The same lesson as M3's reaction hold, which
+exists for the same reason.
+
+**Failure isn't alarm.** A red test *during* a fix-the-tests loop is the agent working as
+intended, not a surprise — it stays `thinking`. `surprised` is reserved for genuinely
+unexpected failure: a tool erroring, a command that can't run at all, a state the agent
+didn't plan for. Otherwise the alarm face fires constantly through normal iteration and
+stops meaning anything.
+
+**Gates get attention.** When a run stops at an approval gate, the avatar goes `talking`
+— he's asking you something — and the status-bar glyph follows (§3), so a user with the
+panel closed still sees that he's waiting rather than working.
 
 #### Cost
 
@@ -1493,8 +1532,15 @@ alone, so the milestone can stop early without leaving a half-built thing behind
 - **M7e — The agent loop.** `src/agent/AgentRunner.ts` — tool-calling loop over the
   model, streaming its steps into the panel: each tool call, each file touched, each
   command run, with a live step and token counter. `clarvis.agent.maxStepsPerTask`
-  hard-stops and asks. `Clarvis: Stop` aborts at the next tool boundary. Avatar holds
-  `thinking` for the duration.
+  hard-stops and asks. `Clarvis: Stop` aborts at the next tool boundary.
+- **M7e2 — Avatar during a run.** The agent becomes the single writer of avatar state
+  for the duration (§4.6 *The avatar during a run*), mapping its phase to an expression
+  per §3. Requires two changes to existing M3 code, both easy to miss: `WatchPresenter`
+  must **yield avatar control** while a run is active, and must **suppress its
+  completion notifications for commands the agent started** — otherwise the face
+  flickers between two controllers and the user gets walk-away toasts about work they're
+  watching happen. Minimum dwell time (~800ms) with repeat-collapsing prevents strobing
+  on fast tool sequences.
 - **M7f — Routing.** Decides between Local / Answer / Agent, announces the choice in
   the panel before starting, and resolves ambiguity toward answering. An unsolicited
   surface (§4.2 pattern hit, §5 quip) can be escalated by the user replying to it, and
@@ -1594,6 +1640,17 @@ end-to-end ones:
       without editing anything. Then "fix it" and confirm it acts. Ambiguous phrasing
       resolves toward answering.
 - [ ] No quips during a running task; §5 material returns after it finishes.
+- [ ] Avatar tracks the run: `thinking` while working, `talking` when explaining or
+      asking at a gate, `impressed` on success, `judging` when stopped or given up on.
+- [ ] **No strobing.** Run a task with many fast tool calls and watch the avatar — it
+      must not flicker. Confirm the minimum dwell time is doing its job.
+- [ ] **A red test mid-loop does not trigger `surprised`.** Give it a fix-the-tests
+      task: failing tests are the work, not a shock, so the face stays `thinking`.
+      Reserve `surprised` for a genuine tool failure and confirm that *does* fire.
+- [ ] **M3 yields properly:** during an agent run that executes builds or tests,
+      confirm no duplicate `WatchPresenter` state changes and **no completion toasts**
+      for commands the agent started. Run a build yourself immediately afterwards and
+      confirm normal watching resumed.
 - **Exit:** a user hands Clarvis a real task, watches it work, and either takes the
   result or undoes it in one command. A user asks a question and gets an answer with
   nothing touched. With no key set, M7a alone still answers what it can and says
@@ -1840,6 +1897,7 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 | Agent runs away — loops, burns tokens, never finishes | `clarvis.agent.maxStepsPerTask` (default 40) hard-stops and asks before continuing; live step and token counters in the panel; `Clarvis: Stop` always available |
 | Agent does something destructive or outward-facing | Gates are enforced in the tool layer, not the system prompt — a model cannot talk its way past them. Destructive shell, `git push`, publishing, and dependency installs all stop and ask; anything outside the workspace is refused outright, symlinks included |
 | Agent edits outside the workspace | Every path is resolved and checked against the workspace root before use. Not a gate — a refusal |
+| Avatar fought over by the agent and M3's watcher, or strobing on fast tool calls | The agent is the single writer during a run; `WatchPresenter` yields and also suppresses completion toasts for agent-started commands. Minimum dwell time with repeat-collapsing prevents flicker |
 | Agent's work tangles with the user's uncommitted changes | Each run gets its own `clarvis/<task-slug>` branch and commits **only the paths it touched, never `git add -A`** — the user's uncommitted work stays uncommitted and theirs. A dirty tree is flagged before the task starts |
 | Branch isolation silently unavailable (VSCodium ships no Git extension; folder isn't a repo) | Probed, not assumed (§4.0). Falls back to checkpoint-only with a one-time notice; the agent path stays fully functional rather than refusing to run |
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |

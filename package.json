@@ -12,22 +12,37 @@
   "engines": {
     "vscode": "^1.93.0"
   },
-  "categories": ["Other"],
-  "activationEvents": ["onStartupFinished"],
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
       "activitybar": [
-        { "id": "clarvis", "title": "Clarvis", "icon": "media/bowtie.svg" }
+        {
+          "id": "clarvis",
+          "title": "Clarvis",
+          "icon": "media/bowtie.svg"
+        }
       ]
     },
     "views": {
       "clarvis": [
-        { "id": "clarvis.butler", "name": "Clarvis", "type": "webview" }
+        {
+          "id": "clarvis.butler",
+          "name": "Clarvis",
+          "type": "webview"
+        }
       ]
     },
     "commands": [
-      { "command": "clarvis.debug.setState", "title": "Clarvis: Set Avatar State (Debug)" }
+      {
+        "command": "clarvis.debug.setState",
+        "title": "Clarvis: Set Avatar State (Debug)"
+      }
     ],
     "configuration": {
       "title": "Clarvis",
@@ -45,7 +60,7 @@
     "watch": "node esbuild.js --watch",
     "package": "vsce package",
     "check-types": "tsc --noEmit",
-    "test": "tsc --outDir out && node --test out/**/*.test.js"
+    "test": "rm -rf out && tsc --outDir out && node --test out/**/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -28,39 +28,61 @@ export function wireBusyTracker(tracker: BusyTracker, context: vscode.ExtensionC
   const taskIds = new WeakMap<vscode.TaskExecution, string>();
   const terminalIds = new WeakMap<vscode.TerminalShellExecution, string>();
 
-  /**
-   * Names of tasks currently running. VS Code names a task's terminal after the
-   * task itself, which is how runsInsideATask() below tells a task's own shell
-   * apart from a terminal the user is typing in.
-   */
+  /** Names of tasks currently running. */
   const runningTaskNames = new Set<string>();
 
+  /** Every task name seen this session — a reused terminal keeps its old name. */
+  const knownTaskNames = new Set<string>();
+
   /**
-   * True when this shell execution is a running task's own terminal.
+   * Terminals we've positively identified as belonging to the Tasks system.
    *
-   * Running a task fires BOTH a task event and a terminal shell-execution event
-   * for the same work. Counting both meant one build produced two notifications,
-   * and a cancelled task left its never-ending terminal half stuck in the tracker,
+   * Learned rather than guessed, because the event order isn't stable: for a
+   * freshly created task terminal the task event fires first, but for a *reused*
+   * one the shell execution starts before it. A WeakSet keyed on the Terminal
+   * object sidesteps ordering entirely — once a terminal has been identified, it
+   * stays identified, and it's forgotten automatically when VS Code drops it.
+   */
+  const taskTerminals = new WeakSet<vscode.Terminal>();
+
+  /**
+   * True when this shell execution is the Tasks system running a task, rather than
+   * a command the user typed.
+   *
+   * Running a task fires BOTH a task event and a terminal shell-execution event for
+   * the same work. Counting both meant one build produced two notifications, and a
+   * cancelled task left its never-ending terminal half stuck in the tracker,
    * pinning Clarvis "busy" for the rest of the session. Tasks win: they report a
    * real exit code even when cancelled, which shell integration doesn't.
    *
-   * The tell is the terminal's name. VS Code fires the task event first and only
-   * names the task's terminal afterwards, so a task's own shell execution starts
-   * while its terminal is still nameless — whereas a terminal the user typed into
-   * always has one ("zsh", "bash", …). Both conditions are required: an unnamed
-   * terminal with no task running is still tracked.
-   *
-   * Only the start side needs this guard. Skipping start means the matching end
-   * arrives with an id BusyTracker never saw, which it already ignores.
+   * Two ways to recognize one:
+   *  - the terminal is already known to be a task terminal, or
+   *  - a task is running and this terminal has no name yet, which is how a
+   *    brand-new task terminal looks before VS Code names it.
    */
-  const belongsToRunningTask = (event: vscode.TerminalShellExecutionStartEvent) =>
-    runningTaskNames.size > 0 && event.terminal.name === '';
+  const isTaskExecution = (event: vscode.TerminalShellExecutionStartEvent) =>
+    taskTerminals.has(event.terminal) ||
+    (runningTaskNames.size > 0 && event.terminal.name === '');
+
+  /**
+   * Records a terminal as task-owned once its name matches a task we've run.
+   *
+   * By the time an execution ends, VS Code has named the task's terminal after the
+   * task — so this is the first reliable moment to identify it. Doing so means the
+   * *next* execution in that terminal is recognized at start time, which is what
+   * the ordering flip on reused terminals otherwise defeats.
+   */
+  const rememberIfTaskTerminal = (terminal: vscode.Terminal) => {
+    if (knownTaskNames.has(terminal.name)) taskTerminals.add(terminal);
+  };
 
   context.subscriptions.push(
     // Tasks: tasks.json-defined work run through the Tasks system.
     vscode.tasks.onDidStartTask((event) => {
-      runningTaskNames.add(event.execution.task.name);
-      tracker.start(idFor(taskIds, event.execution), 'task', event.execution.task.name);
+      const taskName = event.execution.task.name;
+      runningTaskNames.add(taskName);
+      knownTaskNames.add(taskName);
+      tracker.start(idFor(taskIds, event.execution), 'task', taskName);
     }),
     vscode.tasks.onDidEndTaskProcess((event) => {
       runningTaskNames.delete(event.execution.task.name);
@@ -71,7 +93,7 @@ export function wireBusyTracker(tracker: BusyTracker, context: vscode.ExtensionC
     // terminal. Requires VS Code ≥1.93 and a shell that supports integration —
     // silently absent otherwise (no error, just no events).
     vscode.window.onDidStartTerminalShellExecution((event) => {
-      if (belongsToRunningTask(event)) return;
+      if (isTaskExecution(event)) return;
 
       // Shell integration reports a phantom execution with an empty command line
       // when a shell starts up. There's no job there to watch.
@@ -81,6 +103,9 @@ export function wireBusyTracker(tracker: BusyTracker, context: vscode.ExtensionC
       tracker.start(idFor(terminalIds, event.execution), 'terminal', commandLine);
     }),
     vscode.window.onDidEndTerminalShellExecution((event) => {
+      // The terminal has its task's name by now, if it is one. Learn it here so the
+      // next execution in this terminal is recognized the moment it starts.
+      rememberIfTaskTerminal(event.terminal);
       tracker.end(idFor(terminalIds, event.execution), event.exitCode);
     }),
 

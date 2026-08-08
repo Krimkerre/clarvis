@@ -2,9 +2,10 @@ import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { BusyTracker, Outcome } from './BusyTracker';
 import { outcomeMessage } from './outcomeMessages';
+import { reactionTo } from './reactions';
 
 /**
- * How long an outcome reaction (impressed/judging) stays on the avatar's face
+ * How long an outcome reaction (impressed/judging/surprised) stays on the avatar's face
  * before it settles back to neutral, assuming nothing else starts running.
  */
 const REACTION_HOLD_MS = 4000;
@@ -75,10 +76,7 @@ export class WatchPresenter {
 
     if (outcome.durationMs < minDurationSeconds * 1000) return;
 
-    // exitCode 0 reads as success; anything else — including `undefined`, which is
-    // what a debug session reports — earns a skeptical look.
-    const succeeded = outcome.exitCode === 0;
-    this.avatar.setState(succeeded ? 'impressed' : 'judging');
+    this.avatar.setState(reactionTo(outcome));
     vscode.window.showInformationMessage(outcomeMessage(outcome));
     this.startReactionHold();
   }

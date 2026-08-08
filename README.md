@@ -132,7 +132,9 @@ turn gates off; a switch that only half-worked would be worse than none.
 
 **You watch it work.** Every file opened, every file changed, every command run, plus
 live step and token counters — in the panel, while it happens, not discovered
-afterwards.
+afterwards. The avatar tracks it too: thinking while it works, talking when it's
+explaining or asking permission, and unimpressed when it gives up — so a glance at the
+sidebar (or the status-bar glyph, with the panel closed) tells you where things stand.
 
 **Where git isn't available** — VSCodium ships without the Git extension, and plenty of
 folders aren't repos — it says so once and falls back to checkpoint-only. The agent

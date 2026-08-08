@@ -3,6 +3,9 @@ import { ButlerViewProvider, BUTLER_STATES, isButlerState } from './panels/Butle
 import { AvatarController } from './AvatarController';
 import { StatusBarMirror } from './StatusBarMirror';
 import { ClarvisLog } from './ClarvisLog';
+import { BusyTracker } from './watch/BusyTracker';
+import { wireBusyTracker } from './watch/wireBusyTracker';
+import { WatchPresenter } from './watch/WatchPresenter';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -22,6 +25,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const avatar = createAvatar(context, log);
   registerDebugStateCommand(context, avatar);
+  startTaskWatching(context, avatar, log);
 }
 
 /**
@@ -66,6 +70,27 @@ function registerDebugStateCommand(
       if (isButlerState(picked)) avatar.setState(picked);
     })
   );
+}
+
+/**
+ * Starts watching tasks, terminal commands, and debug sessions (M3), and reacting
+ * to them on screen.
+ *
+ * BusyTracker answers "is anything running?", wireBusyTracker feeds it from the
+ * three VS Code event sources M1's spike validated, and WatchPresenter decides
+ * what the user sees when something finishes.
+ */
+function startTaskWatching(
+  context: vscode.ExtensionContext,
+  avatar: AvatarController,
+  log: ClarvisLog
+): void {
+  const tracker = new BusyTracker();
+  wireBusyTracker(tracker, context);
+
+  const presenter = new WatchPresenter(avatar, (message) => log.write(message));
+  presenter.attachTo(tracker);
+  context.subscriptions.push({ dispose: () => presenter.dispose() });
 }
 
 /**

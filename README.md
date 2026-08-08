@@ -92,7 +92,13 @@ the full per-milestone build notes and exit criteria.
       live-switch, CSP boundary probe, dock-location sanity) are deferred to manual
       verification — GUI scripting in this dev environment proved too unreliable to
       finish blind (see `plan.md` M2 exit checklist for exactly what's left).
-- [ ] **M3 — Task Watching.** Not started. *(First real, ship-worthy-alone value.)*
+- [x] **M3 — Task Watching.** Tracks tasks, terminal commands, and debug sessions;
+      notifies on completion with outcome and duration. Verified against a real VS
+      Code host, which surfaced two defects the build couldn't: every task
+      double-notified (tasks fire terminal events too), and a cancelled task pinned
+      Clarvis permanently "busy". Both fixed. Concurrency logic is covered by unit
+      tests (`npm test`). One item deferred: behavior with shell integration
+      disabled.
 - [ ] **M4 — Briefing.** Not started.
 - [ ] **M5 — Pattern Memory.** Not started.
 - [ ] **M6 — Personality Pass.** Not started.

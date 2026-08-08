@@ -5,6 +5,9 @@
 A VS Code extension that lives inside your editor window, watches your builds so you
 don't have to, remembers the error you keep making, and occasionally judges you for it.
 
+The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**ntelligent
+**S**ystem — Clippy's presence, with something closer to Jarvis's competence.
+
 ---
 
 ## 0. Working Process — Plan Mode vs. Code Mode
@@ -253,6 +256,8 @@ Events (§4) map to states:
 | Chat reply streaming (§4.6) | `talking` |
 | Waiting on a chat reply | `thinking` |
 | Build or long task running | `thinking` |
+| Build or task **fails** (nonzero exit) | `surprised` |
+| Work ends with no exit code (cancelled by the user, debug session closing) | `judging` |
 | Test failed, 3rd retry of same command | `judging` |
 | Green suite, clean build, resolved pattern | `impressed` |
 | Speaking a briefing or notification | `talking` |
@@ -956,6 +961,9 @@ nothing from `vscode` precisely so this logic is testable without a host.
 - [x] Cancel a task mid-run — returns to `idle`, no stuck `busy`, no false success.
       Confirmed: `exitCode=undefined` → `judging`, and the *next* task produced a
       fresh `thinking` transition, proving the tracker had genuinely gone idle.
+- [x] Run the same task twice in a row — the second run behaves like the first (one
+      outcome, its own `thinking`). Added after the first fix passed a single run but
+      broke on the repeat, which is what exposed the event-ordering problem below.
 - [ ] Disable shell integration and rerun the terminal-command case. **Not tested** —
       tasks and debug sessions carry the busy model without it (M1's fallback spine),
       so this affects raw-terminal tracking only. Worth closing before M10.
@@ -969,14 +977,33 @@ build and to typechecking — only a real host surfaced them):
    terminal shell-execution event for the same work, so one build produced two
    outcomes and two notifications. M1 established that raw terminal commands fire no
    task event; the converse is *not* true, and the original wiring assumed it was.
-   Fixed by ignoring a shell execution that belongs to a running task's own terminal.
-   The tell is the terminal's name: VS Code fires the task event first and names the
-   task's terminal afterwards, so a task's shell execution starts while its terminal
-   is still nameless, whereas a user's terminal always has a name.
 2. **A cancelled task pinned Clarvis "busy" forever.** Killing a task ends the task
    event but never its shell execution, leaving a phantom entry in the tracker — so
-   `busy` never cleared and no later job could produce a `thinking` transition. Fixed
-   by the same change: the phantom entry is never created in the first place.
+   `busy` never cleared and no later job could produce a `thinking` transition. The
+   tell in the log: every post-cancel `neutral` landed exactly 4000ms after the
+   outcome (the reaction-hold timer expiring) rather than arriving with the outcome,
+   and subsequent jobs produced no `thinking` at all.
+
+**Both come down to identifying a task's own terminal, which took three attempts —
+the first two failed because the event order isn't stable:**
+
+- On a **fresh** task terminal, `onDidStartTask` fires *first*, and the terminal has
+  no name yet when its shell execution starts.
+- On a **reused** task terminal, the shell execution starts *before* `onDidStartTask`,
+  and the terminal still carries its name from the previous run.
+
+So no single per-event check works — anything based on "is a task running right now"
+or "what is this terminal called" is right for one case and wrong for the other.
+Instead, task terminals are now **learned by object identity**: when a shell
+execution ends, VS Code has named the terminal after its task, so a terminal whose
+name matches a task we've run is recorded in a `WeakSet<Terminal>`. Every later
+execution in that terminal is recognized at start time regardless of event order,
+and the entry disappears on its own when VS Code drops the terminal. The
+nameless-terminal check is kept as the first-run case.
+
+The lesson worth carrying forward: **for anything driven by these events, ordering
+between the task and terminal APIs cannot be assumed** — reach for object identity
+rather than timing or naming.
 
 Also hardened: shell integration sometimes mis-parses a shell prompt into the command
 line (observed: `echo hi` arriving with the prompt, ANSI decoration, and newlines

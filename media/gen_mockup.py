@@ -88,7 +88,9 @@ CSS = '''
 
   .statusbar { height: 24px; background: #34e6f2; display: flex; align-items: center; padding: 0 10px;
     font-size: 12px; color: #062226; font-weight: 600; gap: 16px; flex-shrink: 0; }
-  .statusbar .right { margin-left: auto; display: flex; gap: 16px; }
+  .statusbar .right { margin-left: auto; display: flex; gap: 16px; align-items: center; }
+  .statusbar span { display: inline-flex; align-items: center; line-height: 1; }
+  .sb-state { min-width: 74px; }
 
   .clarvis { width: 340px; background: #1a1d24; border-left: 1px solid #000; display: flex;
     flex-direction: column; flex-shrink: 0; }
@@ -143,23 +145,53 @@ CSS = '''
   .input svg { width: 15px; height: 15px; }
 '''
 
-ANIM_CSS = '''
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  @keyframes flash { from { background: rgba(255,182,72,0); box-shadow: none; } }
+CYCLE = 10.0          # seconds for one full loop
+FADE = 0.45           # element fade-in duration
+OUT_START, OUT_END = 8.6, 9.1   # everything clears here so the loop restarts clean
+
+def pct(t):
+    return round(t / CYCLE * 100, 3)
+
+def seq_keyframes(delays):
+    """One @keyframes per distinct delay, so the whole scene loops on a single clock."""
+    out = []
+    for d in sorted(set(delays)):
+        name = "seq%s" % str(d).replace(".", "_")
+        out.append(f"""  @keyframes {name} {{
+    0%, {pct(d)}% {{ opacity: 0; transform: translateY(6px); }}
+    {pct(d + FADE)}%, {pct(OUT_START)}% {{ opacity: 1; transform: translateY(0); }}
+    {pct(OUT_END)}%, 100% {{ opacity: 0; transform: translateY(0); }}
+  }}""")
+    return "\n".join(out)
+
+# every delay used in the scene
+DELAYS = [0.5, 1.0, 1.8, 2.6, 2.8, 3.0, 3.4, 4.4, 5.0]
+
+ANIM_CSS = """
   @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
-  @keyframes swap { to { opacity: 0; } }
-  @keyframes swapIn { to { opacity: 1; } }
-  .seq { opacity: 0; animation: fadeUp .45s ease forwards; }
-  .bob { animation: bob 4s ease-in-out infinite; transform-origin: 100px 100px; }
-  #face-think { animation: swap .3s ease forwards; animation-delay: 4.3s; }
-  #face-talk { opacity: 0; animation: swapIn .3s ease forwards; animation-delay: 4.4s; }
-  .sb-state { position: relative; }
-  #sb-think { animation: swap .3s ease forwards; animation-delay: 4.3s; }
-  #sb-talk { opacity: 0; animation: swapIn .3s ease forwards; animation-delay: 4.4s; margin-left: -72px; }
-'''
+""" + seq_keyframes(DELAYS) + f"""
+  @keyframes faceThink {{
+    0%, {pct(4.3)}% {{ opacity: 1; }}
+    {pct(4.6)}%, 100% {{ opacity: 0; }}
+  }}
+  @keyframes faceTalk {{
+    0%, {pct(4.3)}% {{ opacity: 0; }}
+    {pct(4.6)}%, {pct(OUT_START)}% {{ opacity: 1; }}
+    {pct(OUT_END)}%, 100% {{ opacity: 0; }}
+  }}
+  .seq {{ opacity: 0; animation-duration: {CYCLE}s; animation-iteration-count: infinite;
+         animation-timing-function: ease; }}
+  .bob {{ animation: bob 4s ease-in-out infinite; transform-origin: 100px 100px; }}
+  #face-think {{ animation: faceThink {CYCLE}s ease infinite; }}
+  #face-talk  {{ opacity: 0; animation: faceTalk {CYCLE}s ease infinite; }}
+  #sb-think {{ animation: faceThink {CYCLE}s ease infinite; }}
+  #sb-talk   {{ opacity: 0; animation: faceTalk {CYCLE}s ease infinite; position: absolute; }}
+  .sb-state {{ position: relative; }}
+"""
 
 def steps_html(anim):
-    d = (lambda t: f' style="animation-delay:{t}s"') if anim else (lambda t: '')
+    d = ((lambda t: ' style="animation-name:seq%s"' % str(t).replace('.', '_'))
+         if anim else (lambda t: ''))
     cls = "step seq" if anim else "step"
     return f'''
       <div class="{cls} done"{d(1.0)}><span class="ic">✓</span><span>Read <code>checkout.js</code>, <code>checkout.test.js</code></span></div>
@@ -168,9 +200,10 @@ def steps_html(anim):
       <div class="{cls} run"{d(3.4)}><span class="ic">⟳</span><span>Running <code>npm test</code>…</span></div>'''
 
 def page(anim):
-    d = (lambda t: f' style="animation-delay:{t}s"') if anim else (lambda t: '')
-    sb_state = ('<span id="sb-think">◐ thinking</span><span id="sb-talk">💬 talking</span>'
-                if anim else '💬 talking')
+    d = ((lambda t: ' style="animation-name:seq%s"' % str(t).replace('.', '_'))
+         if anim else (lambda t: ''))
+    sb_state = ('<span id="sb-think">◐ thinking</span><span id="sb-talk">◉ talking</span>'
+                if anim else '◉ talking')
     seq = " seq" if anim else ""
     bob = " bob" if anim else ""
     if anim:

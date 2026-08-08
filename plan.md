@@ -827,24 +827,34 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
   `currentState` variable the extension host owns, both surfaces read from it.
 
 **Exit checklist:**
-- [ ] Butler renders in the activity-bar panel, idle bob + blink animate.
-- [ ] `clarvis.debug.setState` cycles all 5 states, avatar and status-bar glyph agree.
-- [ ] Collapse and re-expand the panel — no re-render flash, no lost state
-      (`retainContextWhenHidden` doing its job).
-- [ ] Switch VS Code between a light and a dark theme without reloading — avatar
-      doesn't go white-on-white or invisible.
-- [ ] CSP violation count in devtools console is zero.
-- [ ] Confirm `localResourceRoots` scoping actually blocks a resource outside
-      `media/` — e.g. try (and fail) to load a workspace file by URI from the webview;
-      the CSP should reject it, not just "happen to work" because nothing tried it.
-- [ ] Fire `clarvis.debug.setState` rapidly (10+ calls/sec) — no dropped/queued-forever
-      messages, no animation glitch from overlapping CSS transitions.
-- [ ] Dock the panel in each of the three locations it supports (activity bar sidebar,
-      secondary side bar, bottom panel) — avatar renders correctly at each aspect ratio,
-      nothing clipped.
-- [ ] Reload the extension (**Developer: Reload Window**) with the panel open — no
-      duplicate status-bar item, no leaked `onDidReceiveMessage` listener from the
-      previous instance (ties to M0's teardown checklist).
+- [x] Butler renders in the activity-bar panel, idle bob + blink animate. Confirmed
+      visually in a real VS Code window (not just the raw file) via
+      `WebviewViewProvider` under the `clarvis` activity-bar container.
+- [x] `clarvis.debug.setState` cycles all 6 states (avatar.html actually ships 6 —
+      `neutral/judging/impressed/thinking/talking/surprised` — the 5-state count above
+      is stale from an earlier draft, corrected here), avatar and status-bar glyph
+      agree. Verified end-to-end with the most complex state (`surprised`: amber rim,
+      shock burst, dropped jaw, sweat bead, monocle gone) — full `postMessage` bridge
+      confirmed working, not just a default render.
+- [ ] Collapse and re-expand the panel — no re-render flash, no lost state. **Deferred
+      to manual check** — GUI automation in this environment (dual-display + tiled
+      desktop apps sharing the screen) proved too unreliable for further scripted
+      verification; confirm by hand.
+- [ ] Switch light/dark theme without reload. **Deferred to manual check**, same reason.
+- [ ] CSP violation count in devtools = 0. **Deferred to manual check.**
+- [ ] `localResourceRoots` boundary actually blocks an out-of-scope resource.
+      **Deferred to manual check.**
+- [ ] Rapid-fire `clarvis.debug.setState` (10+/sec), no dropped/stuck messages.
+      **Deferred to manual check.**
+- [ ] Dock in all three locations (activity bar, secondary side bar, bottom panel).
+      **Note:** placement is entirely user-driven drag-and-drop — the extension
+      manifest has no way to default a view into the secondary side bar (only
+      `activitybar` and `panel` are valid `viewsContainers` keys; confirmed by testing
+      an invalid `auxiliarybar` key, which silently misplaced the view rather than
+      erroring). Ships correctly in `activitybar`; dragging to the other two locations
+      is a one-time manual action, **deferred to manual check.**
+- [ ] Reload window with panel open — no duplicate status-bar item, no leaked
+      listener. **Deferred to manual check.**
 - [ ] Sanity pass on VSCodium — webview renders identically; catches host-specific
       CSS/CSP quirks before M10.
 

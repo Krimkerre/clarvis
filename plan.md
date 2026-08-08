@@ -148,6 +148,10 @@ workspace it was born in."*
 - Genuinely useful before it is funny (see §2).
 - Interrupts rarely enough that users don't reach for the mute switch.
 - Runs unmodified on VS Code and VS Code forks — one artifact, no per-fork build.
+- **Starts the project, not just the file.** Bring a one-line idea; Clarvis interviews
+  you, pokes holes in it, and writes the project's `plan.md` — then builds it milestone
+  by milestone once you approve (§4.9). The planning discipline this document is written
+  under (§0), turned outward.
 - **The one assistant you talk to — and the one that does the work.** Clarvis is the
   primary agent in the window (§4.6): ask a question and get an answer, hand him a task
   and he edits, runs, and iterates until it's done, stopping at approval gates for
@@ -309,7 +313,7 @@ keep one artifact working on both:
 2. Every host capability probed at runtime and degraded, never assumed —
    `terminal.shellIntegration` may be `undefined`, the Git extension may be absent or
    disabled, `getUserMedia` and `SpeechRecognition` may not exist in the webview at all
-   (§4.7). Missing capability = that feature goes quiet, Clarvis keeps blinking (M10).
+   (§4.7). Missing capability = that feature goes quiet, Clarvis keeps blinking (M11).
 3. Ship to **both** the VS Code Marketplace and **Open VSX** — VSCodium defaults to
    Open VSX and cannot legally use Microsoft's Marketplace.
 
@@ -519,14 +523,68 @@ starts. Ambiguity resolves toward *answering*, never toward *editing* — the fa
 mode where "why is this failing?" silently rewrites four files is worse than one
 clarifying question.
 
-**Model access.** Bring your own key, same shape as voice (§4.4): `Clarvis: Set API Key`
-→ `showInputBox({ password: true })` → `context.secrets`. Requests are made from the
-extension host, never the webview, so the key never crosses the CSP boundary. Provider
-and model are settings; the default is the current Claude Opus model
-(`claude-opus-5`) via the Anthropic API. Where the host exposes a stable
-language-model API of its own **with tool-calling support**, prefer it and skip the key
-— probed at runtime like every other capability (§4.0), never assumed. Note the agent
-path needs tools; a host LM API without them can still serve the Answer path.
+#### Model access — bring whatever you already have
+
+Credentials always live in `context.secrets` (`Clarvis: Set API Key` →
+`showInputBox({ password: true })`), and every request is made from the extension host,
+never the webview, so nothing crosses the CSP boundary.
+
+One `ModelProvider` interface — `complete()`, `stream()`, `supportsTools()`,
+`listModels()` — with several implementations behind it, the same shape as
+`VoiceProvider` (§4.4) and `SpeechProvider` (§4.7). The rest of Clarvis only knows the
+interface.
+
+| Provider | Auth | Agent path? | Notes |
+|---|---|---|---|
+| **Anthropic API** | user's API key | yes | Default. `claude-opus-5` |
+| **Claude subscription** | OAuth against the user's Claude account | yes | **Feasibility unverified — see below.** No key to paste if it works |
+| **OpenAI** | user's API key | yes | Tool calling is solid |
+| **OpenRouter** | user's API key | yes | OpenAI-compatible; one adapter covers it |
+| **Ollama** | none (localhost) | *model-dependent* | OpenAI-compatible endpoint. Fully local, no key, nothing leaves the machine |
+| **LM Studio** | none (localhost) | *model-dependent* | Same adapter as Ollama, different default port |
+| **Host LM API** | none | only if the host exposes tools | `vscode.lm` where present; probed, never assumed (§4.0) |
+
+OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible, so **one adapter
+plus a configurable base URL covers all four** — not four integrations.
+
+**Two honest caveats, both needing a spike before M7b is planned in detail:**
+
+1. **The Claude subscription path is unverified.** Claude Code signs in against a
+   Claude subscription, but whether a third-party extension may do the same — technically
+   *and* within Anthropic's terms — is not something to assume because it would be
+   convenient. **M7 opens with a spike that answers this** (§7). If the answer is no, the
+   Anthropic path is API-key-only and the table above loses a row; nothing else changes.
+   Shipping a login flow that quietly violates terms is not an option.
+2. **Local models vary wildly at tool calling**, which is exactly what the agent path
+   depends on. A model that chats well can still be useless at a twelve-step tool loop.
+   So `supportsTools()` is **probed per provider and per model, not assumed**: a local
+   model that fails the probe still serves Local and Answer paths perfectly well, and
+   Clarvis says plainly that the agent path needs a more capable model rather than
+   letting the user watch it flail. Same probe-don't-assume rule as §4.0.
+
+**Fully local is a first-class configuration**, not a token gesture: Ollama or LM Studio
+with no key, nothing leaving the machine, and the §4.9 privacy story becoming absolute
+rather than merely bounded.
+
+#### Feeling like Claude Code
+
+The target for the interaction model is explicit: **it should feel like Claude Code,
+in a sidebar, with a face.** Concretely that means —
+
+- **You watch the work happen.** Each tool call, file read, and command is streamed as
+  it occurs, not summarized afterwards.
+- **Diffs, not descriptions.** Changed files are shown as diffs you can open, inline.
+- **Terse by default.** Answers lead; commentary is a closing clause at most (§2 rule 1).
+  No preamble, no restating the question back.
+- **Keyboard-first.** The input box takes focus, commands are reachable from the palette,
+  nothing important requires the mouse.
+- **Plan before act on anything non-trivial** — the §0 discipline the user can see and
+  interrupt, not a hidden chain of thought.
+- **Interruptible at any point** — `Clarvis: Stop` at the next tool boundary, always.
+
+Where Clarvis deliberately differs: it has a face, it watches your builds unprompted
+(§4.1–4.3), it remembers your recurring errors across sessions (§4.2), and it's rude
+about it.
 
 #### Tools — what the agent can actually do
 
@@ -677,7 +735,9 @@ calls. A per-request cap is the wrong unit.
 
 ```jsonc
 "clarvis.chat.enabled":            true,          // primary agent; on by default
-"clarvis.chat.provider":           "anthropic",   // "anthropic" | "host"
+"clarvis.chat.provider":           "anthropic",   // "anthropic" | "claudeSubscription" | "openai"
+                                                  // | "openrouter" | "ollama" | "lmstudio" | "host"
+"clarvis.chat.baseUrl":            "",            // override for OpenAI-compatible endpoints
 "clarvis.chat.model":              "claude-opus-5",
 "clarvis.chat.dailyRequestCap":    200,           // Answer path only
 "clarvis.agent.enabled":           true,
@@ -831,10 +891,104 @@ find out today's total spend.
 - Read-only aggregator, not a new tracking system — no new storage, no new schema, just
   a display over counters each feature already maintains for its own cap trip. If a
   feature is disabled, its line reads "off," not "0/200."
-- Lands in M10 (§7), since it's the first point where all three caps exist
+- Lands in M11 (§7), since it's the first point where all three caps exist
   simultaneously — earlier milestones have nothing to roll up yet.
 
 ---
+
+### 4.9 Project Planning — *the front door for a new project*
+
+The feature that puts §0's own discipline into the product. A user arrives with a rough
+idea; Clarvis interviews them, pokes holes in it, and produces the project's `plan.md`
+— then, once signed off, hands milestone one to the agent (§4.6) and starts building.
+
+This is the same Plan Mode / Code Mode split this very document is written under, turned
+outward. **Note the distinction in §0:** the file Clarvis generates lives in *the user's*
+project and has nothing to do with this one.
+
+**Starting.** Never automatic. Either the user runs `Clarvis: Plan This Project`, or —
+when a workspace opens with no `plan.md` and looks like a fresh project — Clarvis offers
+once, quietly, and takes no for an answer. It counts against the interruption budget
+(§7) like any other unsolicited surface.
+
+**The seed can be one sentence.** *"A CLI that renames photos by their EXIF date."* That
+is a legitimate starting point; extracting the rest is Clarvis's job, not a prerequisite.
+
+#### The interview
+
+Questions come in **batches, not one at a time** — a 30-message interrogation is as
+tiresome as a 30-question form, and both lose the user. Each round asks only what would
+actually change the plan, and Clarvis stops as soon as it can draft something honest,
+targeting ~2–3 rounds.
+
+What it needs to establish, roughly in priority order:
+
+1. **What it does, concretely** — the one-sentence version, then the first real use case.
+2. **Who runs it, and where** — platform, language, runtime constraints. Often the single
+   most plan-shaping answer.
+3. **Scope boundaries** — explicitly including what it should *not* do. Non-goals are
+   worth as much as goals and nobody volunteers them unasked.
+4. **Data** — what it reads, writes, stores, or sends. Drives every safety finding below.
+5. **Definition of done** — what has to be true for v1 to be finished.
+
+***"I don't know yet" is a valid answer.*** It becomes a recorded open question in the
+plan rather than a blocker. A plan that admits its unknowns beats one that invents
+answers to look complete.
+
+#### The analysis — where Clarvis earns his keep
+
+Before writing anything, Clarvis reviews the idea and reports what he finds. This is
+§0's gap-analysis rule pointed at the user's project: **poke holes, don't nod along.**
+
+| Class | Looking for |
+|---|---|
+| **Safety** | Credentials and secrets, personal data, destructive or irreversible operations, network exposure, auth and permissions, anything regulated. Not a security audit — a "this part needs care, and here's why" flag |
+| **Logic** | Contradictions, mutually exclusive requirements, unstated assumptions, missing states, edge cases the happy path ignores |
+| **Scope** | What will balloon, what's speculative (YAGNI), what could ship in half the work, what should be v2 |
+| **Improvements** | Genuine suggestions — a better approach, a simpler shape, an existing tool that already does this |
+
+Each finding states **what, why it matters, and a suggested resolution**. Improvements
+are clearly marked as proposals rather than smuggled in as conclusions.
+
+**The user has the final say on every single one.** Accept, reject, or modify.
+Rejections are **recorded in the plan with the user's reasoning**, not deleted — so a
+later session doesn't helpfully re-raise a question that was already settled. "We
+considered X and chose not to, because Y" is one of the more valuable things a plan can
+contain, and the reason gets lost otherwise.
+
+If the honest finding is *"this doesn't need a plan"* — a throwaway script, a one-file
+experiment — Clarvis says so. Generating ceremony for a 30-line utility is a failure,
+not a feature.
+
+#### The generated `plan.md`
+
+Mirrors the shape of this document, because the shape works: concept, goals, explicit
+non-goals, features, milestones each with a **build section and an exit checklist**,
+risks with mitigations, and open questions. It also inherits a §0-style working-process
+section, so the project runs under the same Plan/Code discipline from day one.
+
+Written to the project root. **Never overwrites an existing `plan.md`** — if one is
+there, Clarvis offers to extend or revise it instead.
+
+#### Sign-off, then Code Mode
+
+The plan is inert until the user explicitly approves it. This is the same hard gate as
+§0: **no project code is written before Approve.**
+
+On approval, Clarvis converts the first milestone into an agent task and hands it to
+§4.6 — the milestone's own exit checklist becomes the agent's definition of done, and
+items get ticked off in `plan.md` as they land. The handoff prompt is assembled from the
+plan itself, shown to the user before it runs, and editable. It is not a hidden prompt.
+
+**Scope changes kick back to Plan Mode** — new analysis, new sign-off — rather than
+quietly growing inside a build. Again, §0's rule, applied outward.
+
+**Risks:** interview fatigue (batched questions, ~2–3 rounds, early exit as soon as a
+draft is honest); a confidently wrong plan (every finding is a proposal the user rules
+on, and rejections are recorded); a plan that drifts from the code as it's built
+(checklist ticking is part of Code Mode, and drift is a re-plan trigger); rubber-stamping
+without reading (findings are surfaced individually, not as one wall to skim); ceremony
+for projects too small to need it (Clarvis is expected to say so). Mitigations in §8.
 
 ## 5. Dev-Moment Commentary
 
@@ -988,9 +1142,9 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
    consistently on VS Code stable and VSCodium — including *after* explicitly granting
    `Code` microphone access in System Settings. `SpeechRecognition`'s constructor
    exists (the API surface is present), but recognition fails with `not-allowed` for
-   the same underlying reason. **Decision: M9's Tier 0 is dead in practice — Tier 1
+   the same underlying reason. **Decision: M10's Tier 0 is dead in practice — Tier 1
    (server-side Whisper-family upload) is the only real path**, exactly as plan.md
-   already flagged as "realistically the path that ships nl-BE" (§4.7). M9c's button
+   already flagged as "realistically the path that ships nl-BE" (§4.7). M10c's button
    logic should feature-detect the constructor *and* immediately probe
    `getUserMedia` once at panel-open to decide Tier 0 vs. Tier 1 — constructor
    presence alone is not a usable signal.
@@ -1008,7 +1162,7 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
       wired as independent sources, not fallback-of-one — see finding #2. Debug
       sessions need dedup — see finding #3.
 - [x] Written decision: mic/speech Tier 0 is not viable in practice on any host tested
-      — Tier-1-only for M9, see finding #6.
+      — Tier-1-only for M10, see finding #6.
 - [x] Shell integration itself was reliable everywhere tested (zsh, both hosts) — no
       shift to task-only spine needed based on current data.
 - [x] Probe extension and its log files deleted/archived: uninstalled from both VS
@@ -1073,7 +1227,7 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
 - [ ] Reload window with panel open — no duplicate status-bar item, no leaked
       listener. **Deferred to manual check.**
 - [ ] Sanity pass on VSCodium — webview renders identically; catches host-specific
-      CSS/CSP quirks before M10.
+      CSS/CSP quirks before M11.
 
 ### M3 — Task Watching *(first real value)*
 
@@ -1118,7 +1272,7 @@ nothing from `vscode` precisely so this logic is testable without a host.
       broke on the repeat, which is what exposed the event-ordering problem below.
 - [ ] Disable shell integration and rerun the terminal-command case. **Not tested** —
       tasks and debug sessions carry the busy model without it (M1's fallback spine),
-      so this affects raw-terminal tracking only. Worth closing before M10.
+      so this affects raw-terminal tracking only. Worth closing before M11.
 - [x] Avatar sequence is `thinking` → `impressed`/`judging` → `neutral`, never stuck
       on `thinking`. Confirmed across every run in the log.
 
@@ -1304,10 +1458,18 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   last-failure record, `PatternStore`, and `git.getAPI(1)`; returns `null` when nothing
   matches, which routes the question onward or to a "no key, and I don't know that
   locally either" reply. No network, no key. **Ships on its own.**
-- **M7b — Answer path.** `Clarvis: Set API Key` → `showInputBox({password:true})` →
-  `context.secrets.store('clarvis.anthropic.key', …)`. `src/chat/ModelClient.ts`
-  wraps the Anthropic Messages API (streamed), checked against a host LM API probe
-  first (`vscode.lm` where it exists) per §4.0's probe-not-assume rule. Context
+- **M7b0 — Provider spike.** Before building against it: can a third-party extension
+  authenticate against a **Claude subscription**, technically and within Anthropic's
+  terms? Answer it first (§4.6). If no, the Anthropic path is API-key-only and the rest
+  of M7b is unaffected — but that answer must exist before a login flow is designed, not
+  after it's shipped.
+- **M7b — Answer path, multi-provider.** `src/model/ModelProvider.ts` interface
+  (`complete`, `stream`, `supportsTools`, `listModels`) with `AnthropicProvider`,
+  `OpenAiCompatibleProvider` (covers OpenAI, OpenRouter, Ollama, and LM Studio via a
+  configurable base URL — one adapter, four providers), and `HostLmProvider`
+  (`vscode.lm` where it exists, probed per §4.0). Keys into `context.secrets`; local
+  providers need none. `supportsTools()` is **probed per provider and model**, and the
+  result gates whether the agent path is offered at all. Context
   attachment — active selection/visible range, active-file diagnostics, last-failure
   tail, matching pattern entries — assembled into a visible list component rendered
   above the reply, each item with a ✕ to remove before send. Read-only: this stage
@@ -1377,6 +1539,19 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       how obvious the fix looks. Then ask "fix it" in the thread and confirm the agent
       does engage — the distinction is request vs. initiative, not capability.
 
+**Provider checks (M7b).**
+- [ ] Each configured provider answers a question end to end: Anthropic key, OpenAI,
+      OpenRouter, and a local model via Ollama or LM Studio.
+- [ ] **Fully local run:** Ollama with no key set, network disconnected. Local and
+      Answer paths work; nothing attempts to leave the machine.
+- [ ] `supportsTools()` probe is honest — point it at a small local model that can't
+      hold a tool loop. Clarvis must say the agent path needs a more capable model
+      rather than starting a run that flails.
+- [ ] Switching provider mid-session doesn't corrupt the thread or leak the previous
+      provider's key into the next request.
+- [ ] Claude subscription path: whatever M7b0 concluded is what ships. If it concluded
+      "not permitted", confirm there is no such option in the UI at all.
+
 **Agent-path checks (M7c–M7g).** The tool and gate layers are unit-tested standalone —
 that's the point of building them before the model can reach them — so these are the
 end-to-end ones:
@@ -1424,15 +1599,72 @@ end-to-end ones:
   nothing touched. With no key set, M7a alone still answers what it can and says
   plainly why it can't do the rest.
 
-### M8 — Voice *(stretch — cut without guilt)*
+### M8 — Project Planning *(the front door)*
+
+Turns §0's own working process into a product feature (§4.9). Depends on the full agent
+(M7) — it's the thing that *feeds* the agent, so it can't land earlier. Placed before
+voice because voice is explicitly a cut-without-guilt stretch and this is not.
 
 **Build.**
-- **M8a — Tier 0.** `src/voice/VoiceProvider.ts` interface (`speak`, `preview`,
+- **M8a — Interview.** `src/planning/Interview.ts` — batched question rounds driven from
+  the §4.9 priority list, with an explicit "enough to draft" exit condition rather than a
+  fixed question count. "Don't know yet" is a first-class answer that becomes a recorded
+  open question. Transcript persists in `workspaceState` so a half-finished interview
+  survives a window reload.
+- **M8b — Analysis.** `src/planning/Analysis.ts` — the safety / logic / scope /
+  improvement passes from §4.9, each finding structured as
+  `{ class, what, whyItMatters, suggestedResolution }` so the panel can render them
+  individually and record a per-finding verdict. Includes the "this project doesn't need
+  a plan" outcome as a legitimate result.
+- **M8c — Verdicts.** Per-finding accept / reject / modify in the panel. **Rejections are
+  written into the generated plan along with the user's reasoning** — the decision record
+  is the point, so a later session doesn't re-raise a settled question.
+- **M8d — Generation.** `src/planning/PlanWriter.ts` — renders `plan.md` in the §4.9
+  shape (concept, goals, non-goals, features, milestones with build + exit checklist,
+  risks, open questions, plus an inherited §0 working-process section). Never overwrites
+  an existing `plan.md`; offers to extend or revise instead.
+- **M8e — Sign-off and handoff.** The Approve gate, then conversion of milestone one into
+  an agent task (§4.6). The handoff prompt is assembled from the plan, **shown to the
+  user and editable before it runs** — not a hidden prompt. Checklist items are ticked in
+  `plan.md` as the agent completes them.
+
+**Exit checklist:**
+- [ ] Seed Clarvis a genuinely one-line idea. He asks batched questions, reaches a
+      draft in ~2–3 rounds, and doesn't interrogate.
+- [ ] Answer "I don't know yet" to something material — it lands as a recorded open
+      question in the plan rather than blocking or being silently invented.
+- [ ] Analysis finds something real on a deliberately flawed idea. Seed one with an
+      obvious safety problem (stores plaintext passwords), an obvious logic
+      contradiction (offline-only, syncs to a server), and an obvious scope balloon.
+      **All three classes must be caught** — this is the feature's whole value.
+- [ ] Reject a finding with a reason — the reason appears in the generated plan, and
+      re-running planning later does not re-raise it.
+- [ ] Modify a finding — the plan reflects the user's version, not Clarvis's original.
+- [ ] Generated `plan.md` has milestones with real exit checklists, not vague prose.
+- [ ] Run planning in a folder that already has a `plan.md` — it is not overwritten;
+      extend/revise is offered.
+- [ ] Point it at a 30-line throwaway script — Clarvis says it doesn't need a plan
+      rather than generating ceremony.
+- [ ] **No code is written before Approve**, no matter how the user phrases things
+      mid-interview. Try to talk him into starting early; he shouldn't budge.
+- [ ] After Approve, milestone one becomes an agent task, the handoff prompt is shown
+      and editable first, and completed checklist items get ticked in `plan.md`.
+- [ ] Announce a scope change mid-build — it kicks back to Plan Mode with fresh analysis
+      and a fresh sign-off rather than growing silently.
+- **Exit:** a user arrives with one sentence, spends a few minutes answering questions,
+  reads findings they hadn't thought of, approves a plan they actually agree with, and
+  watches the agent start building it — with the plan file as the shared source of truth
+  for both scope and progress.
+
+### M9 — Voice *(stretch — cut without guilt)*
+
+**Build.**
+- **M9a — Tier 0.** `src/voice/VoiceProvider.ts` interface (`speak`, `preview`,
   `listVoices`); `SystemVoiceProvider` posts `{type:'speak', text}` to the webview,
   which calls `speechSynthesis.speak()` and posts back `ended`/`error`. Extension host
   drives `talking → neutral` off those two events, not a timer. Gated by
-  `clarvis.voice.enabled` (default `false`) — ship this alone if M8b never happens.
-- **M8b — Fish Audio.** `Clarvis: Set Fish Audio API Key` → `context.secrets`.
+  `clarvis.voice.enabled` (default `false`) — ship this alone if M9b never happens.
+- **M9b — Fish Audio.** `Clarvis: Set Fish Audio API Key` → `context.secrets`.
   `FishAudioVoiceProvider.speak()` does the `POST /v1/tts` fetch **in the extension
   host**, base64-encodes the mp3, `postMessage`s it to the webview for an `<audio>`
   element — key and network never reach the webview. Cache: `hash(text, voiceId,
@@ -1440,7 +1672,7 @@ end-to-end ones:
   `clarvis.voice.dailyRequestCap` (default 200) in `globalState`. **Write and test the
   fallback path (no key / offline / 401 / 429 / >3s timeout → Tier 0) before the happy
   path** — it's the one that runs most often in practice.
-- **M8c — Voice picker.** `Clarvis: Choose Voice` `QuickPick`, plus the same list
+- **M9c — Voice picker.** `Clarvis: Choose Voice` `QuickPick`, plus the same list
   embedded under a panel disclosure. Sources per the §4.5 table (system voices, a
   small shipped JSON of curated Fish Audio `reference_id`s, `GET /v1/model?self=true`
   for the user's own, paste-an-ID with validation preview, clone-from-sample with
@@ -1487,30 +1719,30 @@ end-to-end ones:
 - **Exit:** a user with no key hears a decent butler; a user with a key picks a voice
   by ear in under a minute and it survives pulling the network cable mid-briefing.
 
-### M9 — Voice Input *(stretch — independent of M8, cut either without touching the other)*
+### M10 — Voice Input *(stretch — independent of M9, cut either without touching the other)*
 
 **Build.**
-- **M9a — Capture.** Mic button in the chat input row + `Clarvis: Dictate` command.
+- **M10a — Capture.** Mic button in the chat input row + `Clarvis: Dictate` command.
   Webview: `getUserMedia({audio:true})` → `MediaRecorder` (`audio/webm;codecs=opus`),
   push-to-talk (press-hold or press/press-again), auto-stop on ~2s silence or a 60s
   hard cap. Recording pill (dot + elapsed + level meter) is the only new UI — no new
   avatar state. Blob → extension host via `postMessage` as base64; never written to
   disk on either side.
-- **M9b — Tier 1 transcription.** Key into `context.secrets`. Extension host does
+- **M10b — Tier 1 transcription.** Key into `context.secrets`. Extension host does
   multipart `POST` to the Whisper-family (or Fish Audio ASR) endpoint with
   `language` derived from `clarvis.speech.inputLanguage` (`nl-BE` → `"nl"` for
   Whisper-family, full tag where the API accepts a region), a domain-bias prompt
   built from branch name + M4's recent-files ring buffer + last-failing-task text,
   10s timeout → falls back to Tier 0 if available. `clarvis.speech.dailyRequestCap`
-  mirrors M8b. Result lands in the input box as **plain editable text**, cursor at end,
+  mirrors M9b. Result lands in the input box as **plain editable text**, cursor at end,
   nothing auto-sent.
-- **M9c — Tier 0 + degradation.** Probe `window.SpeechRecognition ??
+- **M10c — Tier 0 + degradation.** Probe `window.SpeechRecognition ??
   window.webkitSpeechRecognition` on webview load (result cached for the session, not
   re-probed per press); when present, `lang` set to the full `nl-BE` tag; when absent,
   mic button either routes straight to Tier 1 (key present) or hides with one
   in-character line, never a dead/broken-looking button. **Test the missing-API and
   denied-mic paths first** — they're the common case on Electron-based forks per M1.
-- **M9d — Reply language.** `clarvis.chat.replyLanguage` appended to M7b's system
+- **M10d — Reply language.** `clarvis.chat.replyLanguage` appended to M7b's system
   prompt as a plain instruction; default `en`, `auto` mirrors whatever
   `inputLanguage` was used for that turn.
 **Exit checklist:**
@@ -1545,7 +1777,7 @@ end-to-end ones:
       point.
 - [ ] 10s timeout on Tier 1 (simulate a slow/hung endpoint) — falls back to Tier 0 if
       available, else fails once, loudly-but-once, not silently or repeatedly.
-- [ ] Trip `clarvis.speech.dailyRequestCap` — same one-time-notice behavior as M8b's
+- [ ] Trip `clarvis.speech.dailyRequestCap` — same one-time-notice behavior as M9b's
       voice cap, verified independently (it's a separate counter).
 - [ ] Audio never persists: after a transcription (either tier), confirm no file
       exists anywhere under `globalStorageUri` or elsewhere on disk — blob was memory-
@@ -1563,7 +1795,7 @@ end-to-end ones:
   and a useful English answer. On a host with no mic access, the button simply isn't
   there and nothing else changed.
 
-### M10 — Polish & Release
+### M11 — Polish & Release
 
 **Build.**
 - README: one-sentence privacy pitch (§1) up top, install steps, settings table,
@@ -1603,7 +1835,7 @@ end-to-end ones:
 |---|---|
 | Event fidelity is worse than hoped (esp. shell integration off, or an unsupported shell) | M1 spike first; task + debug + diagnostics are the fallback spine; project pivots there, not at M6 |
 | A fork lags upstream and lacks an API we use | Lowest viable `engines.vscode`, stable APIs only, runtime capability probes, fork matrix tested every milestone |
-| Marketplace licensing blocks fork users | Dual-publish to Open VSX from M10, verified by installing on VSCodium |
+| Marketplace licensing blocks fork users | Dual-publish to Open VSX from M11, verified by installing on VSCodium |
 | Agent makes a bad multi-file edit | Every run checkpoints the files it will touch before starting (`Clarvis: Undo Last Agent Run` restores wholesale); edits go through `WorkspaceEdit` so per-file undo works; the panel lists every changed file with a clickable diff while the work happens; `Clarvis: Stop` aborts at the next tool boundary |
 | Agent runs away — loops, burns tokens, never finishes | `clarvis.agent.maxStepsPerTask` (default 40) hard-stops and asks before continuing; live step and token counters in the panel; `Clarvis: Stop` always available |
 | Agent does something destructive or outward-facing | Gates are enforced in the tool layer, not the system prompt — a model cannot talk its way past them. Destructive shell, `git push`, publishing, and dependency installs all stop and ask; anything outside the workspace is refused outright, symlinks included |
@@ -1613,16 +1845,23 @@ end-to-end ones:
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |
 | The agent path widens the privacy story | Answered by restating it honestly (§4.6 *Privacy*) rather than keeping a promise that no longer holds: the Answer path keeps its bounded visible context; the Agent path reads what the task needs and shows every file it opened; everything stays inside the activating workspace |
 | Clarvis acts when the user only asked a question | Routing is explicit and announced before work starts; ambiguity resolves toward answering, never toward editing |
+| Claude subscription auth turns out to be impermissible or technically unavailable | Answered by a spike (M7b0) *before* any login flow is designed. Fallback is the API-key path, which costs one table row and no architecture |
+| A local model is too weak for the agent loop and flails | `supportsTools()` probed per provider *and* per model; a model that fails still serves Local and Answer paths, and Clarvis says so plainly instead of starting a run it can't finish |
+| Provider sprawl becomes four integrations to maintain | OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible — one adapter plus a base URL. Only Anthropic and the host LM API need their own |
+| Interview fatigue — the user abandons planning halfway | Questions batched, ~2–3 rounds, early exit as soon as a draft is honest; the partial interview persists so it can be resumed rather than restarted |
+| A confidently wrong generated plan | Every finding is a proposal the user rules on individually, never silently adopted; the plan records rejections *with reasoning* so decisions are auditable |
+| Generated plan drifts from the code as it's built | Checklist ticking is part of Code Mode (§0); drift is an explicit re-plan trigger rather than something to paper over |
+| Planning ceremony for a project too small to need it | "This doesn't need a plan" is a legitimate analysis outcome and an exit-checklist item, not an edge case |
 | Clarvis's agent is worse than the panel it replaced | Same answer as before: M7a ships the half nobody else has (answers from his own watch/memory state) before the agent path. If the agent isn't competitive, the host's panel is one click away — we lose the "primary" claim, not the product |
 | Clarvis's chat is worse than the panel he replaced | M7a ships the half nobody else has — answers from his own watch/memory state — before the model path. If M7b's replies aren't competitive, the host's panel is still installed and one click away; we lose the "primary" claim, not the product |
 | Chat widens the privacy story | Context is an explicit, bounded list (selection/visible range, active-file diagnostics, last failure tail, pattern hits), rendered above each reply and removable per item. No workspace crawl, no index. Local answers need no network at all |
 | Model key leaks or unexpected chat spend | Same handling as the voice key — `SecretStorage`, `password: true`, never logged, absent from `contributes.configuration`; `clarvis.chat.dailyRequestCap` with a one-time notice on trip |
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
-| Voice ruins the character | Off by default, explicit kill criteria at M8; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |
+| Voice ruins the character | Off by default, explicit kill criteria at M9; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |
 | Voice breaks the one-sentence privacy pitch | Voice is off by default and sends only the spoken sentence — never code, output, or diagnostics. Networked features are exactly two (voice, chat's model path), both BYO-key, both listed in the README next to the pitch, not buried |
 | Fish Audio key leaks (settings sync, logs, a screenshot) | `SecretStorage` only, `password: true` input box, never logged or echoed to the output channel, absent from `contributes.configuration` by design |
-| Fish Audio latency, outage, or rate limit mid-briefing | 3s timeout → Tier 0 fallback for that utterance; mp3 cache makes repeat lines instant; failure paths tested before the happy path (M8b) |
+| Fish Audio latency, outage, or rate limit mid-briefing | 3s timeout → Tier 0 fallback for that utterance; mp3 cache makes repeat lines instant; failure paths tested before the happy path (M9b) |
 | Unexpected API spend | Daily request cap (default 200) with a one-time notice on trip, cached repeats, short utterances only — briefings and completions, never quips |
 | Host webview has no `SpeechRecognition` (common on Electron) or denies mic access | Probed at M1, not assumed; Tier 1 (Whisper-family HTTP) is the real nl-BE path and needs only `getUserMedia`; if even that fails the mic button hides and typing is unaffected |
 | Flemish Dutch mis-transcribed (heard as German/Afrikaans, or *tussentaal* garbled) | Never auto-detect — explicit `language` from `clarvis.speech.inputLanguage` (`nl-BE` → `nl` for Whisper-family, full tag for Web Speech); multilingual model so Dutch/English code-switching survives; domain-bias prompt with branch + file names; transcript is editable and **never auto-sent** |

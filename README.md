@@ -53,10 +53,17 @@ here are still on the roadmap (§ Progress).
   is the default response.
 
 **On request (the primary interactive surface):**
+- **Project planning** — arrive with one sentence ("a CLI that renames photos by EXIF
+  date"). Clarvis asks the questions that actually shape the plan, then reports what he
+  found wrong with the idea: safety problems, logic contradictions, scope that will
+  balloon, and genuine suggestions. You rule on every finding — and your rejections are
+  recorded *with your reasoning*, so nothing gets re-litigated later. The result is a
+  `plan.md` with real milestones and exit checklists. Approve it, and the agent starts
+  building against it.
 - **Chat** — the assistant you talk to in this window, replacing the default chat
   panel. Answers from its own watch/memory state need no key or network; harder
-  questions go to a model (bring-your-own Anthropic key, or the host's own LM API
-  where one exists). Context sent with a question is explicit, bounded, and visible.
+  questions go to whichever model you bring (see *Models* below). Context sent with a
+  question is explicit, bounded, and visible.
 - **Agent** — hand it a real task ("fix the failing test", "rename this everywhere")
   and it edits, runs commands, reads the results, and iterates until it's done. Work
   happens on its own `clarvis/<task>` branch, committed step by step, so your
@@ -70,6 +77,33 @@ here are still on the roadmap (§ Progress).
   English jargon. Never auto-sends; the transcript is always editable text.
 
 Full spec, including every setting, API, and edge case: [`plan.md`](./plan.md).
+
+## Models — bring whatever you already have
+
+The goal is for Clarvis to feel like Claude Code in a sidebar, with a face: you watch
+each tool call and command as it happens, changed files show up as diffs, answers are
+terse, and you can interrupt at any point.
+
+| Provider | Auth | Agent path |
+|---|---|---|
+| Anthropic API | your API key | ✅ |
+| Claude subscription | sign in with your Claude account | ⏳ feasibility being verified first |
+| OpenAI | your API key | ✅ |
+| OpenRouter | your API key | ✅ |
+| Ollama *(local)* | none | depends on the model |
+| LM Studio *(local)* | none | depends on the model |
+| Host LM API | none | only where the host provides tools |
+
+**Fully local is a first-class setup**, not an afterthought: point it at Ollama or LM
+Studio and nothing leaves your machine at all.
+
+Two things stated plainly rather than glossed over. Whether a third-party extension may
+authenticate against a **Claude subscription** — technically and under Anthropic's terms
+— is being verified before any login flow gets built; if the answer is no, that row
+disappears and the API-key path is unaffected. And **local models vary a lot at tool
+calling**, which is what the agent depends on, so Clarvis probes each model's tool
+support and will tell you it needs a more capable one rather than starting a run it
+can't finish.
 
 ## Keeping an agent honest
 
@@ -144,9 +178,11 @@ the full per-milestone build notes and exit criteria.
 - [ ] **M7 — Chat & Agent.** Not started. *(The big one: local answers, then the
       Answer path, then a real agentic harness — tool layer and gates built and tested
       before the model can reach them.)*
-- [ ] **M8 — Voice Output.** Not started. *(Stretch — cut without guilt.)*
-- [ ] **M9 — Voice Input.** Not started. *(Stretch, independent of M8.)*
-- [ ] **M10 — Polish & Release.** Not started.
+- [ ] **M8 — Project Planning.** Not started. *(The front door: interview → analysis →
+      `plan.md` → sign-off → hand milestone one to the agent.)*
+- [ ] **M9 — Voice Output.** Not started. *(Stretch — cut without guilt.)*
+- [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
+- [ ] **M11 — Polish & Release.** Not started.
 
 ## Development process
 

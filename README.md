@@ -22,7 +22,7 @@ quip line under each.
 
 ## In action
 
-<img src="media/mockup.png" alt="Mockup of VS Code with Clarvis docked in the sidebar: an editor showing checkout.js with an accidental global variable highlighted, Clarvis in its judging state with the quip &quot;A global variable. Bold. Historic, even.&quot;, a flagged-lines note, a chat thread following up on the flag, and a build-finished toast notification." width="100%">
+<img src="media/mockup-demo.gif" alt="Animated mockup of VS Code with Clarvis docked in the sidebar: the buggy line in checkout.js highlights, then Clarvis's judging-state quip, a flagged-lines note, a chat follow-up, and a build-finished toast reveal in sequence." width="100%">
 
 *Mockup, not a real screenshot* — illustrates the target experience end to end: a real
 bug (`cache` leaking to global scope) caught and called out in character, a chat

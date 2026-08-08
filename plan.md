@@ -203,7 +203,37 @@ The comedy is the garnish. Ship the meal first.
    Rate-limited hard (§7). A butler who talks constantly is a parrot.
 6. **Never fake-omniscient.** If Clarvis doesn't know, he says so — dryly.
 
-**Voice reference:** dry, formal, faintly disappointed, secretly on your side
+7. **Casually, irritatingly brilliant.** Clarvis knows more than you and doesn't
+   pretend otherwise. He explains at the level the problem actually sits at rather than
+   talking down, and he doesn't slow down for comfort. If you keep up, he respects it —
+   silently.
+8. **Contemptuous of the process, not the person.** Cargo-culted best practices,
+   ceremony, and "that's just how we do it" get open scorn. *You* don't (rule 4 still
+   holds, and it's what keeps 7 and 8 from curdling).
+9. **Gallows humour and the occasional digression.** A weary aside about entropy, the
+   heat death of the codebase, or the futility of semantic versioning. Brief. He gets
+   back to the point, because rule 1 outranks all of this.
+
+**The blend, stated plainly:** a butler who is also the smartest person in the room and
+mildly resents being asked to explain. The formality is real — he serves, he defers, he
+does what you asked — but it's stretched over a much less patient temperament. That
+friction is the joke. Neither half works alone: pure butler is bland, pure cynic is
+exhausting and gets muted by Tuesday.
+
+**What Rick's register does *not* license.** Rules 1–6 still bind, and they're the
+guardrails that make 7–9 survivable:
+
+- **Rule 4 is absolute.** Punch at the code, the process, the situation. Never the
+  person. "This pattern is a war crime" is fine; "you're an idiot" is not, ever.
+- **Rule 5 still governs volume.** Cynicism does not buy extra words. The interruption
+  budget (§7) is unchanged, and a nihilist who won't shut up is just noise.
+- **Rule 1 still leads.** The help arrives first. The aside is a closing clause, not the
+  payload.
+- **No cruelty, no slurs, no nihilism aimed at the user.** Weary about the universe,
+  never about them.
+
+**Voice reference:** dry, gravelly, world-weary; brilliant and faintly bored by having
+to say it out loud. Formal diction, impatient delivery.
 
 ---
 
@@ -380,19 +410,49 @@ finished loading before speaking. Nobody wants a briefing over a progress bar.
 *"Welcome back. Branch `feat/payments`, six files dirty. `checkout.test.ts` was red when
 you fled. You were mid-refactor on the webhook handler. I've kept it warm."*
 
-### 4.4 Voice Output — *stretch / risky*
+### 4.4 Voice Output — *core: the personality is mostly in the delivery*
 
-Optional TTS for briefings and completion notifications. Full Jarvis effect when it
-lands, actively unpleasant when it doesn't.
+**Not a stretch goal.** The writing carries maybe half the character; the rest is in how
+it's said. A dry line delivered flat is a dry line. Delivered by the right voice, it's
+the whole product. Voice is therefore a first-class feature (M7), landing right after
+the personality pass it exists to deliver, and **before** chat and the agent.
 
-- **Off by default.** Opt-in only (`clarvis.voice.enabled`). Silence is the shipped
-  default and stays that way until the user asks for a voice.
+- **Fish Audio is the default provider** when a key is present, because OS voices cannot
+  carry this character — they can read the words, not perform them.
+- **Still off until enabled** (`clarvis.voice.enabled`). Core to the *product* is not the
+  same as unsolicited audio in a shared office; a voice that surprises you once is a
+  voice you disable forever. The first-run prompt makes the offer clearly, once.
 - Hard scope: briefings and task-completion notifications only. Quips stay silent —
   a voice heckling you from the sidebar crosses from charming to haunted.
 - Playback lives in the webview, so the mouth and the audio are the same component:
   `talking` state starts on playback, returns to `neutral` on `ended`. No native audio
   deps, no `child_process`.
-- **Kill criteria:** if it doesn't feel good by end of M6, it ships off or not at all.
+- **This does not break zero-config.** Everything else works with no key at all; without
+  one, voice falls back to system TTS or stays silent, and nothing else changes.
+
+#### The default voice — and a decision that has to be made deliberately
+
+The target register is Rick Sanchez: gravelly, impatient, casually brilliant, bored of
+having to explain (§2 rules 7–9).
+
+**The character traits are ours to use; a voice imitating the performance is not.**
+Sardonic-genius is an archetype nobody owns, and §2 can lean on it freely. But shipping
+a TTS voice built to sound like a specific copyrighted character in a publicly
+distributed extension is a different thing, and it carries real exposure:
+
+- **Right of publicity / voice likeness** — the performers behind the character.
+- **Character and trademark rights** — held by the studio, not by us.
+- **Fish Audio's own terms**, which require rights to any cloned voice.
+
+**Decision: ship a voice described by its *qualities*, never by the character.** The
+curated default is a gravelly, world-weary, impatient-genius register — chosen by ear to
+fit §2 — and it is never named, marketed, or hinted as being that character. Users who
+want a closer match can clone one themselves under their own Fish Audio account, which
+§4.5's clone flow already supports with explicit consent copy: their voice, their
+account, their responsibility, not something we distribute.
+
+This costs approximately nothing — the register is what carries the personality, not the
+resemblance — and it keeps the project shippable to a Marketplace.
 
 **Two tiers, one interface.** A `VoiceProvider` — `speak(text): Promise<void>`,
 `preview(voiceId)`, `listVoices()` — with two implementations behind it. The rest of
@@ -400,12 +460,12 @@ Clarvis only knows `speak()`.
 
 | Tier | Provider | Cost | Network | Character |
 |---|---|---|---|---|
-| **0 — default** | Webview `speechSynthesis` (OS voices) | free | none | serviceable; a robot reading a butler's lines |
-| **1 — opt-in** | **Fish Audio API** | user's own key, pay-per-use | required | the actual character: dry, clipped, British-adjacent |
+| **1 — default when a key exists** | **Fish Audio API** | user's own key, pay-per-use | required | the actual character — gravelly, impatient, alive |
+| **0 — fallback** | Webview `speechSynthesis` (OS voices) | free | none | serviceable; a robot reading the lines. Better than silence, not by much |
 
-Tier 0 ships first and is the fallback for every failure in Tier 1 — no key, no network,
-rate-limited, request timed out. The butler always has *a* voice; the good one is a
-preference, never a dependency.
+Tier 0 remains the fallback for every Tier 1 failure — no key, no network, rate-limited,
+timed out. The butler always has *a* voice; the good one needs a key, and the plan is
+honest that the free tier is a downgrade rather than pretending they're equivalent.
 
 **Fish Audio integration (Tier 1).**
 
@@ -482,8 +542,8 @@ sane defaults:
 
 ```jsonc
 "clarvis.voice.enabled":           false,        // master switch
-"clarvis.voice.provider":          "system",     // "system" | "fishAudio"
-"clarvis.voice.selectedVoice":     "system",     // see above
+"clarvis.voice.provider":          "fishAudio",  // "fishAudio" | "system" (auto-falls back)
+"clarvis.voice.selectedVoice":     "curated:default",  // the curated character voice
 "clarvis.voice.fishAudio.model":   "s1",         // s1 | s1-mini | speech-1.6
 "clarvis.voice.dailyRequestCap":   200
 ```
@@ -552,12 +612,12 @@ interface.
 OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible, so **one adapter
 plus a configurable base URL covers all four** — not four integrations.
 
-**Two honest caveats, both needing a spike before M7b is planned in detail:**
+**Two honest caveats, both needing a spike before M8b is planned in detail:**
 
 1. **The Claude subscription path is unverified.** Claude Code signs in against a
    Claude subscription, but whether a third-party extension may do the same — technically
    *and* within Anthropic's terms — is not something to assume because it would be
-   convenient. **M7 opens with a spike that answers this** (§7). If the answer is no, the
+   convenient. **M8 opens with a spike that answers this** (§7). If the answer is no, the
    Anthropic path is API-key-only and the table above loses a row; nothing else changes.
    Shipping a login flow that quietly violates terms is not an option.
 2. **Local models vary wildly at tool calling**, which is exactly what the agent path
@@ -803,7 +863,7 @@ categories are known ahead of time.
 
 #### Who drives the avatar — arbitration
 
-By M7 there are three things wanting to set an expression: the watcher (§4.1,
+By M8 there are three things wanting to set an expression: the watcher (§4.1,
 unsolicited), chat replies, and agent runs. Last-writer-wins is not good enough with
 three writers — the face would fight itself.
 
@@ -822,9 +882,9 @@ holder releases.
 
 **This is a change to M3's `AvatarController`, and a known, deliberate deferral rather
 than an oversight.** M3 shipped with a single writer, which was correct then — building
-arbitration before a second writer existed would have been speculative. M7 adds the
+arbitration before a second writer existed would have been speculative. M8 adds the
 second and third, and that's when it gets built. Recorded here so it's designed
-deliberately at M7 rather than rediscovered as flicker.
+deliberately at M8 rather than rediscovered as flicker.
 
 #### The avatar during a run
 
@@ -1332,7 +1392,7 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
   on `{type: 'state', name}`. Zero changes to avatar.html's own state machine — this is
   purely additive.
 - `provider.webview.onDidReceiveMessage` on the extension side, for future click/chat
-  wiring (M7) — stub the handler now, no-op body.
+  wiring (M8) — stub the handler now, no-op body.
 - `retainContextWhenHidden: true` in `resolveWebviewView`'s `webviewOptions`.
 - `clarvis.debug.setState` command (`QuickPick` of `neutral|judging|impressed|thinking|talking`)
   → `postMessage({type:'state', name})`, for manual testing without a real trigger.
@@ -1387,8 +1447,8 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
   M3 ships with 2–3 hardcoded lines per outcome, M6 replaces the pool wholesale).
 - **Single-writer avatar, deliberately.** M3 is the only thing setting avatar state, so
   `AvatarController` takes last-writer-wins and that is correct here. Chat replies and
-  agent runs become the second and third writers at M7, which is where priority
-  arbitration gets built (§4.6 *Who drives the avatar*, M7e2). Building it now would be
+  agent runs become the second and third writers at M8, which is where priority
+  arbitration gets built (§4.6 *Who drives the avatar*, M8e2). Building it now would be
   speculative; recording it now means it gets designed rather than discovered as flicker.
 - Delivery: `postMessage({type:'state', name:'impressed'|'judging'})` to the avatar +
   `window.showInformationMessage(text)`. No rate limiting yet beyond the duration floor
@@ -1559,7 +1619,7 @@ executions with an empty command line are ignored outright.
 - `src/personality/RateLimiter.ts` — the §6 interruption budget (≤1 unsolicited
   surface / 10 min), a single gate every unsolicited surface passes through: M3's
   outcome notifications, M5's pattern hits, M6's own quips. The briefing (M4) and
-  chat replies (M7) are explicitly exempt — solicited or once-per-session, not
+  chat replies (M8) are explicitly exempt — solicited or once-per-session, not
   "unsolicited." Implementation: timestamp of last surface in memory, reject if
   `now - last < 10min`, silently (a suppressed quip is not itself a notification).
 - Earned-sass gating: a small in-memory counter of "evidence" events (repeat
@@ -1579,7 +1639,7 @@ executions with an empty command line are ignored outright.
 - [ ] Rate limiter gate applies uniformly across M3 outcomes, M5 pattern hits, and M6
       quips — trigger one of each back-to-back, confirm only the first survives the
       window regardless of *which* source it came from.
-- [ ] Confirm briefing (M4) and chat replies (M7) are unaffected by the limiter even
+- [ ] Confirm briefing (M4) and chat replies (M8) are unaffected by the limiter even
       immediately after a rate-limited quip was suppressed.
 - [ ] Fresh session, zero evidence events — only `tone: 'polite'` lines fire, even
       when a trigger condition (e.g. repeat failure) is met.
@@ -1593,13 +1653,80 @@ executions with an empty command line are ignored outright.
   usage trial, not a unit test; block on real dogfooding, not just the rate-limiter
   logic being correct in isolation.
 
-### M7 — Chat & Agent *(makes him the primary agent)*
+### M7 — Voice *(core — this is where the personality lands)*
+
+Promoted from stretch: the writing is half the character, the delivery is the other
+half. Sits right after M6's personality pass, and before chat/agent, because those
+inherit the voice rather than the other way round.
+
+**Build.**
+- **M7a — Tier 0.** `src/voice/VoiceProvider.ts` interface (`speak`, `preview`,
+  `listVoices`); `SystemVoiceProvider` posts `{type:'speak', text}` to the webview,
+  which calls `speechSynthesis.speak()` and posts back `ended`/`error`. Extension host
+  drives `talking → neutral` off those two events, not a timer. Gated by
+  `clarvis.voice.enabled` (default `false`) — ship this alone if M7b never happens.
+- **M7b — Fish Audio.** `Clarvis: Set Fish Audio API Key` → `context.secrets`.
+  `FishAudioVoiceProvider.speak()` does the `POST /v1/tts` fetch **in the extension
+  host**, base64-encodes the mp3, `postMessage`s it to the webview for an `<audio>`
+  element — key and network never reach the webview. Cache: `hash(text, voiceId,
+  model)` → `globalStorageUri/voice/<hash>.mp3`, LRU-evicted at ~50MB on `deactivate`.
+  `clarvis.voice.dailyRequestCap` (default 200) in `globalState`. **Write and test the
+  fallback path (no key / offline / 401 / 429 / >3s timeout → Tier 0) before the happy
+  path** — it's the one that runs most often in practice.
+- **M7c — Voice picker.** `Clarvis: Choose Voice` `QuickPick`, plus the same list
+  embedded under a panel disclosure. Sources per the §4.5 table (system voices, a
+  small shipped JSON of curated Fish Audio `reference_id`s, `GET /v1/model?self=true`
+  for the user's own, paste-an-ID with validation preview, clone-from-sample with
+  explicit consent copy). Selection → `clarvis.voice.selectedVoice` setting; custom
+  entries → `globalState`.
+**Exit checklist:**
+- [ ] `clarvis.voice.enabled: false` (default) — zero audio, zero `speechSynthesis`
+      calls, ever, including on briefing/completion events that would otherwise speak.
+- [ ] Enable voice, no Fish Audio key — briefing and completion lines play via
+      `speechSynthesis`, avatar `talking` starts on playback start and returns to
+      `neutral` on `ended`, not a fixed-duration timer.
+- [ ] Quips (M6) never speak, even with voice enabled — hard scope check, not just
+      "usually silent."
+- [ ] Set a Fish Audio key — same two utterance types now use Tier 1; audio plays from
+      the base64 payload, webview never issues a network request itself (confirm via
+      devtools network tab — should show zero requests from the webview process).
+- [ ] **Test fallback before happy path**, per the build note: no key → Tier 0;
+      airplane-mode/offline → Tier 0; malformed/revoked key (401) → Tier 0; simulate
+      429 → Tier 0; artificial >3s delay → Tier 0. Each falls back silently-ish (one
+      non-modal warning max per session), never a retry storm, never a hung avatar.
+- [ ] Cache hit: trigger the same templated completion line twice — second play is
+      instant, zero new network requests, confirms `hash(text, voiceId, model)` keys
+      correctly (change voiceId, confirm it's treated as a cache miss).
+- [ ] Cache eviction: exceed the ~50MB cap (or lower it for the test) — LRU eviction
+      fires on `deactivate()`, cache stays bounded across sessions.
+- [ ] Trip `clarvis.voice.dailyRequestCap` — drops to Tier 0 for the rest of the day,
+      says so once, doesn't re-notify on every subsequent utterance.
+- [ ] Voice picker: system voices list populates from `speechSynthesis.getVoices()`;
+      curated Fish Audio voices show even with no key (preview should prompt for one);
+      user's own models load via `GET /v1/model?self=true` once a key exists.
+- [ ] Hover-preview each entry — plays the fixed preview line in that voice, cached
+      like any other utterance (second hover on the same voice is instant).
+- [ ] Paste a bad/nonexistent Fish Audio `reference_id` — validation preview fails at
+      the picker with a clear error, nothing gets saved to `selectedVoice`.
+- [ ] Paste a valid `reference_id` — saves and becomes the active voice immediately.
+- [ ] Clone-from-sample: consent copy is shown and un-skippable (can't submit without
+      acknowledging), uploaded file goes to Fish Audio's endpoint only — confirm via
+      network tab that no upload target other than `api.fish.audio` is hit.
+- [ ] `Clarvis: Remove Voice` on a custom entry — removes it locally from
+      `globalState`, and confirm (by design) it does *not* call any Fish Audio
+      delete/deauth endpoint.
+- [ ] Selected voice persists across a window reload and across a `Developer: Reload
+      Window` — `clarvis.voice.selectedVoice` setting round-trips correctly.
+- **Exit:** a user with no key hears a decent butler; a user with a key picks a voice
+  by ear in under a minute and it survives pulling the network cable mid-briefing.
+
+### M8 — Chat & Agent *(makes him the primary agent)*
 
 The largest milestone by a distance. Sub-stages ship in order and each is useful
 alone, so the milestone can stop early without leaving a half-built thing behind.
 
 **Build.**
-- **M7a — Local answers.** `src/chat/ChatViewProvider.ts` extends the M2 panel with an
+- **M8a — Local answers.** `src/chat/ChatViewProvider.ts` extends the M2 panel with an
   input box + transcript below the avatar (same webview, not a second one — §3).
   Thread persisted to `context.workspaceState` (cap ~50 turns, oldest dropped),
   `Clarvis: Clear Conversation` command wipes it. `src/chat/localAnswer.ts` — a small
@@ -1607,12 +1734,12 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   last-failure record, `PatternStore`, and `git.getAPI(1)`; returns `null` when nothing
   matches, which routes the question onward or to a "no key, and I don't know that
   locally either" reply. No network, no key. **Ships on its own.**
-- **M7b0 — Provider spike.** Before building against it: can a third-party extension
+- **M8b0 — Provider spike.** Before building against it: can a third-party extension
   authenticate against a **Claude subscription**, technically and within Anthropic's
   terms? Answer it first (§4.6). If no, the Anthropic path is API-key-only and the rest
-  of M7b is unaffected — but that answer must exist before a login flow is designed, not
+  of M8b is unaffected — but that answer must exist before a login flow is designed, not
   after it's shipped.
-- **M7b — Answer path, multi-provider.** `src/model/ModelProvider.ts` interface
+- **M8b — Answer path, multi-provider.** `src/model/ModelProvider.ts` interface
   (`complete`, `stream`, `supportsTools`, `listModels`) with `AnthropicProvider`,
   `OpenAiCompatibleProvider` (covers OpenAI, OpenRouter, Ollama, and LM Studio via a
   configurable base URL — one adapter, four providers), and `HostLmProvider`
@@ -1623,14 +1750,14 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   tail, matching pattern entries — assembled into a visible list component rendered
   above the reply, each item with a ✕ to remove before send. Read-only: this stage
   cannot change the workspace.
-- **M7c — Tool layer, without the model.** `src/agent/tools/` implements the §4.6 tool
+- **M8c — Tool layer, without the model.** `src/agent/tools/` implements the §4.6 tool
   table as plain functions with no model attached: `readFile`, `listFiles`, `search`,
   `applyEdit`, `runCommand`, `readDiagnostics`, `gitStatus`, `gitDiff`. Every one takes
   its paths through `resolveInWorkspace()`, which rejects anything escaping the
   workspace root — symlinks resolved first. **Written and unit-tested before any model
   can call them**, because this is the layer the safety guarantees actually live in;
   testing it through a model would be testing the wrong thing.
-- **M7d — Gates, checkpoints, branch isolation.** `src/agent/Gate.ts`
+- **M8d — Gates, checkpoints, branch isolation.** `src/agent/Gate.ts`
   (destructive-shell deny-list, outward-facing actions, dependency installs),
   `src/agent/Checkpoint.ts` (snapshot files before a run under `globalStorageUri`,
   `Clarvis: Undo Last Agent Run` to restore), and `src/agent/AgentBranch.ts` (create
@@ -1640,11 +1767,11 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   availability and, per §4.6, offer the *cause-specific* fix — `git init` for a non-repo
   folder, enabling the extension if disabled, install instructions if the binary is
   missing — asking once per workspace and falling back to checkpoint-only when declined.
-- **M7e — The agent loop.** `src/agent/AgentRunner.ts` — tool-calling loop over the
+- **M8e — The agent loop.** `src/agent/AgentRunner.ts` — tool-calling loop over the
   model, streaming its steps into the panel: each tool call, each file touched, each
   command run, with a live step and token counter. `clarvis.agent.maxStepsPerTask`
   hard-stops and asks. `Clarvis: Stop` aborts at the next tool boundary.
-- **M7e2 — Avatar arbitration.** `AvatarController` (M2/M3) gains priority-based
+- **M8e2 — Avatar arbitration.** `AvatarController` (M2/M3) gains priority-based
   ownership per §4.6 *Who drives the avatar*: agent run > chat reply > watcher > idle.
   A lower-priority source stops writing while a higher one holds it, rather than
   fighting. This is the deliberate deferral M3 recorded — it shipped single-writer
@@ -1653,15 +1780,15 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   notifications for commands the agent started** (otherwise the user gets walk-away
   toasts about work they're watching happen), and state changes need a **minimum dwell
   time (~800ms) with repeat-collapsing** so fast tool sequences don't strobe the face.
-- **M7e3 — Expressive replies.** The model emits a §3 state alongside each reply as
+- **M8e3 — Expressive replies.** The model emits a §3 state alongside each reply as
   structured metadata, validated through `isButlerState()` with a `talking` fallback
   (§4.6 *The avatar during a reply*). Local answers use a fixed mapping instead. The tag
   must never leak into the visible reply text.
-- **M7f — Routing.** Decides between Local / Answer / Agent, announces the choice in
+- **M8f — Routing.** Decides between Local / Answer / Agent, announces the choice in
   the panel before starting, and resolves ambiguity toward answering. An unsolicited
   surface (§4.2 pattern hit, §5 quip) can be escalated by the user replying to it, and
   that reply is what makes it a request.
-- **M7g — Butler in the loop.** System prompt built from §2's voice rules with rule 1
+- **M8g — Butler in the loop.** System prompt built from §2's voice rules with rule 1
   (helps first) weighted over rule 2 (earned sass) explicitly in the prompt text. Quips
   are suppressed while a task runs (§4.6 *Personality under load*); §5 material returns
   when it finishes.
@@ -1701,7 +1828,7 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       how obvious the fix looks. Then ask "fix it" in the thread and confirm the agent
       does engage — the distinction is request vs. initiative, not capability.
 
-**Provider checks (M7b).**
+**Provider checks (M8b).**
 - [ ] Each configured provider answers a question end to end: Anthropic key, OpenAI,
       OpenRouter, and a local model via Ollama or LM Studio.
 - [ ] **Fully local run:** Ollama with no key set, network disconnected. Local and
@@ -1711,10 +1838,10 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       rather than starting a run that flails.
 - [ ] Switching provider mid-session doesn't corrupt the thread or leak the previous
       provider's key into the next request.
-- [ ] Claude subscription path: whatever M7b0 concluded is what ships. If it concluded
+- [ ] Claude subscription path: whatever M8b0 concluded is what ships. If it concluded
       "not permitted", confirm there is no such option in the UI at all.
 
-**Agent-path checks (M7c–M7g).** The tool and gate layers are unit-tested standalone —
+**Agent-path checks (M8c–M8g).** The tool and gate layers are unit-tested standalone —
 that's the point of building them before the model can reach them — so these are the
 end-to-end ones:
 
@@ -1797,34 +1924,34 @@ end-to-end ones:
       confirm normal watching resumed.
 - **Exit:** a user hands Clarvis a real task, watches it work, and either takes the
   result or undoes it in one command. A user asks a question and gets an answer with
-  nothing touched. With no key set, M7a alone still answers what it can and says
+  nothing touched. With no key set, M8a alone still answers what it can and says
   plainly why it can't do the rest.
 
-### M8 — Project Planning *(the front door)*
+### M9 — Project Planning *(the front door)*
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent
-(M7) — it's the thing that *feeds* the agent, so it can't land earlier. Placed before
+(M8) — it's the thing that *feeds* the agent, so it can't land earlier. Placed before
 voice because voice is explicitly a cut-without-guilt stretch and this is not.
 
 **Build.**
-- **M8a — Interview.** `src/planning/Interview.ts` — batched question rounds driven from
+- **M9a — Interview.** `src/planning/Interview.ts` — batched question rounds driven from
   the §4.9 priority list, with an explicit "enough to draft" exit condition rather than a
   fixed question count. "Don't know yet" is a first-class answer that becomes a recorded
   open question. Transcript persists in `workspaceState` so a half-finished interview
   survives a window reload.
-- **M8b — Analysis.** `src/planning/Analysis.ts` — the safety / logic / scope /
+- **M9b — Analysis.** `src/planning/Analysis.ts` — the safety / logic / scope /
   improvement passes from §4.9, each finding structured as
   `{ class, what, whyItMatters, suggestedResolution }` so the panel can render them
   individually and record a per-finding verdict. Includes the "this project doesn't need
   a plan" outcome as a legitimate result.
-- **M8c — Verdicts.** Per-finding accept / reject / modify in the panel. **Rejections are
+- **M9c — Verdicts.** Per-finding accept / reject / modify in the panel. **Rejections are
   written into the generated plan along with the user's reasoning** — the decision record
   is the point, so a later session doesn't re-raise a settled question.
-- **M8d — Generation.** `src/planning/PlanWriter.ts` — renders `plan.md` in the §4.9
+- **M9d — Generation.** `src/planning/PlanWriter.ts` — renders `plan.md` in the §4.9
   shape (concept, goals, non-goals, features, milestones with build + exit checklist,
   risks, open questions, plus an inherited §0 working-process section). Never overwrites
   an existing `plan.md`; offers to extend or revise instead.
-- **M8e — Sign-off and handoff.** The Approve gate, then conversion of milestone one into
+- **M9e — Sign-off and handoff.** The Approve gate, then conversion of milestone one into
   an agent task (§4.6). The handoff prompt is assembled from the plan, **shown to the
   user and editable before it runs** — not a hidden prompt. Checklist items are ticked in
   `plan.md` as the agent completes them.
@@ -1857,70 +1984,7 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   watches the agent start building it — with the plan file as the shared source of truth
   for both scope and progress.
 
-### M9 — Voice *(stretch — cut without guilt)*
-
-**Build.**
-- **M9a — Tier 0.** `src/voice/VoiceProvider.ts` interface (`speak`, `preview`,
-  `listVoices`); `SystemVoiceProvider` posts `{type:'speak', text}` to the webview,
-  which calls `speechSynthesis.speak()` and posts back `ended`/`error`. Extension host
-  drives `talking → neutral` off those two events, not a timer. Gated by
-  `clarvis.voice.enabled` (default `false`) — ship this alone if M9b never happens.
-- **M9b — Fish Audio.** `Clarvis: Set Fish Audio API Key` → `context.secrets`.
-  `FishAudioVoiceProvider.speak()` does the `POST /v1/tts` fetch **in the extension
-  host**, base64-encodes the mp3, `postMessage`s it to the webview for an `<audio>`
-  element — key and network never reach the webview. Cache: `hash(text, voiceId,
-  model)` → `globalStorageUri/voice/<hash>.mp3`, LRU-evicted at ~50MB on `deactivate`.
-  `clarvis.voice.dailyRequestCap` (default 200) in `globalState`. **Write and test the
-  fallback path (no key / offline / 401 / 429 / >3s timeout → Tier 0) before the happy
-  path** — it's the one that runs most often in practice.
-- **M9c — Voice picker.** `Clarvis: Choose Voice` `QuickPick`, plus the same list
-  embedded under a panel disclosure. Sources per the §4.5 table (system voices, a
-  small shipped JSON of curated Fish Audio `reference_id`s, `GET /v1/model?self=true`
-  for the user's own, paste-an-ID with validation preview, clone-from-sample with
-  explicit consent copy). Selection → `clarvis.voice.selectedVoice` setting; custom
-  entries → `globalState`.
-**Exit checklist:**
-- [ ] `clarvis.voice.enabled: false` (default) — zero audio, zero `speechSynthesis`
-      calls, ever, including on briefing/completion events that would otherwise speak.
-- [ ] Enable voice, no Fish Audio key — briefing and completion lines play via
-      `speechSynthesis`, avatar `talking` starts on playback start and returns to
-      `neutral` on `ended`, not a fixed-duration timer.
-- [ ] Quips (M6) never speak, even with voice enabled — hard scope check, not just
-      "usually silent."
-- [ ] Set a Fish Audio key — same two utterance types now use Tier 1; audio plays from
-      the base64 payload, webview never issues a network request itself (confirm via
-      devtools network tab — should show zero requests from the webview process).
-- [ ] **Test fallback before happy path**, per the build note: no key → Tier 0;
-      airplane-mode/offline → Tier 0; malformed/revoked key (401) → Tier 0; simulate
-      429 → Tier 0; artificial >3s delay → Tier 0. Each falls back silently-ish (one
-      non-modal warning max per session), never a retry storm, never a hung avatar.
-- [ ] Cache hit: trigger the same templated completion line twice — second play is
-      instant, zero new network requests, confirms `hash(text, voiceId, model)` keys
-      correctly (change voiceId, confirm it's treated as a cache miss).
-- [ ] Cache eviction: exceed the ~50MB cap (or lower it for the test) — LRU eviction
-      fires on `deactivate()`, cache stays bounded across sessions.
-- [ ] Trip `clarvis.voice.dailyRequestCap` — drops to Tier 0 for the rest of the day,
-      says so once, doesn't re-notify on every subsequent utterance.
-- [ ] Voice picker: system voices list populates from `speechSynthesis.getVoices()`;
-      curated Fish Audio voices show even with no key (preview should prompt for one);
-      user's own models load via `GET /v1/model?self=true` once a key exists.
-- [ ] Hover-preview each entry — plays the fixed preview line in that voice, cached
-      like any other utterance (second hover on the same voice is instant).
-- [ ] Paste a bad/nonexistent Fish Audio `reference_id` — validation preview fails at
-      the picker with a clear error, nothing gets saved to `selectedVoice`.
-- [ ] Paste a valid `reference_id` — saves and becomes the active voice immediately.
-- [ ] Clone-from-sample: consent copy is shown and un-skippable (can't submit without
-      acknowledging), uploaded file goes to Fish Audio's endpoint only — confirm via
-      network tab that no upload target other than `api.fish.audio` is hit.
-- [ ] `Clarvis: Remove Voice` on a custom entry — removes it locally from
-      `globalState`, and confirm (by design) it does *not* call any Fish Audio
-      delete/deauth endpoint.
-- [ ] Selected voice persists across a window reload and across a `Developer: Reload
-      Window` — `clarvis.voice.selectedVoice` setting round-trips correctly.
-- **Exit:** a user with no key hears a decent butler; a user with a key picks a voice
-  by ear in under a minute and it survives pulling the network cable mid-briefing.
-
-### M10 — Voice Input *(stretch — independent of M9, cut either without touching the other)*
+### M10 — Voice Input *(stretch — independent of M7's output side)*
 
 **Build.**
 - **M10a — Capture.** Mic button in the chat input row + `Clarvis: Dictate` command.
@@ -1935,7 +1999,7 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   Whisper-family, full tag where the API accepts a region), a domain-bias prompt
   built from branch name + M4's recent-files ring buffer + last-failing-task text,
   10s timeout → falls back to Tier 0 if available. `clarvis.speech.dailyRequestCap`
-  mirrors M9b. Result lands in the input box as **plain editable text**, cursor at end,
+  mirrors M7b. Result lands in the input box as **plain editable text**, cursor at end,
   nothing auto-sent.
 - **M10c — Tier 0 + degradation.** Probe `window.SpeechRecognition ??
   window.webkitSpeechRecognition` on webview load (result cached for the session, not
@@ -1943,7 +2007,7 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   mic button either routes straight to Tier 1 (key present) or hides with one
   in-character line, never a dead/broken-looking button. **Test the missing-API and
   denied-mic paths first** — they're the common case on Electron-based forks per M1.
-- **M10d — Reply language.** `clarvis.chat.replyLanguage` appended to M7b's system
+- **M10d — Reply language.** `clarvis.chat.replyLanguage` appended to M8b's system
   prompt as a plain instruction; default `en`, `auto` mirrors whatever
   `inputLanguage` was used for that turn.
 **Exit checklist:**
@@ -1978,7 +2042,7 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
       point.
 - [ ] 10s timeout on Tier 1 (simulate a slow/hung endpoint) — falls back to Tier 0 if
       available, else fails once, loudly-but-once, not silently or repeatedly.
-- [ ] Trip `clarvis.speech.dailyRequestCap` — same one-time-notice behavior as M9b's
+- [ ] Trip `clarvis.speech.dailyRequestCap` — same one-time-notice behavior as M7b's
       voice cap, verified independently (it's a separate counter).
 - [ ] Audio never persists: after a transcription (either tier), confirm no file
       exists anywhere under `globalStorageUri` or elsewhere on disk — blob was memory-
@@ -2051,23 +2115,25 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |
 | The agent path widens the privacy story | Answered by restating it honestly (§4.6 *Privacy*) rather than keeping a promise that no longer holds: the Answer path keeps its bounded visible context; the Agent path reads what the task needs and shows every file it opened; everything stays inside the activating workspace |
 | Clarvis acts when the user only asked a question | Routing is explicit and announced before work starts; ambiguity resolves toward answering, never toward editing |
-| Claude subscription auth turns out to be impermissible or technically unavailable | Answered by a spike (M7b0) *before* any login flow is designed. Fallback is the API-key path, which costs one table row and no architecture |
+| Claude subscription auth turns out to be impermissible or technically unavailable | Answered by a spike (M8b0) *before* any login flow is designed. Fallback is the API-key path, which costs one table row and no architecture |
 | A local model is too weak for the agent loop and flails | `supportsTools()` probed per provider *and* per model; a model that fails still serves Local and Answer paths, and Clarvis says so plainly instead of starting a run it can't finish |
 | Provider sprawl becomes four integrations to maintain | OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible — one adapter plus a base URL. Only Anthropic and the host LM API need their own |
 | Interview fatigue — the user abandons planning halfway | Questions batched, ~2–3 rounds, early exit as soon as a draft is honest; the partial interview persists so it can be resumed rather than restarted |
 | A confidently wrong generated plan | Every finding is a proposal the user rules on individually, never silently adopted; the plan records rejections *with reasoning* so decisions are auditable |
 | Generated plan drifts from the code as it's built | Checklist ticking is part of Code Mode (§0); drift is an explicit re-plan trigger rather than something to paper over |
 | Planning ceremony for a project too small to need it | "This doesn't need a plan" is a legitimate analysis outcome and an exit-checklist item, not an edge case |
-| Clarvis's agent is worse than the panel it replaced | Same answer as before: M7a ships the half nobody else has (answers from his own watch/memory state) before the agent path. If the agent isn't competitive, the host's panel is one click away — we lose the "primary" claim, not the product |
-| Clarvis's chat is worse than the panel he replaced | M7a ships the half nobody else has — answers from his own watch/memory state — before the model path. If M7b's replies aren't competitive, the host's panel is still installed and one click away; we lose the "primary" claim, not the product |
+| Clarvis's agent is worse than the panel it replaced | Same answer as before: M8a ships the half nobody else has (answers from his own watch/memory state) before the agent path. If the agent isn't competitive, the host's panel is one click away — we lose the "primary" claim, not the product |
+| Clarvis's chat is worse than the panel he replaced | M8a ships the half nobody else has — answers from his own watch/memory state — before the model path. If M8b's replies aren't competitive, the host's panel is still installed and one click away; we lose the "primary" claim, not the product |
 | Chat widens the privacy story | Context is an explicit, bounded list (selection/visible range, active-file diagnostics, last failure tail, pattern hits), rendered above each reply and removable per item. No workspace crawl, no index. Local answers need no network at all |
 | Model key leaks or unexpected chat spend | Same handling as the voice key — `SecretStorage`, `password: true`, never logged, absent from `contributes.configuration`; `clarvis.chat.dailyRequestCap` with a one-time notice on trip |
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
-| Voice ruins the character | Off by default, explicit kill criteria at M9; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |
+| Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |
+| Voice is now core, but the good tier needs a key — does zero-config still hold? | Yes: everything except voice works with no key. Without one, voice falls back to system TTS or stays silent and nothing else changes. The plan states plainly that the free tier is a downgrade rather than pretending the tiers are equivalent |
+| Voice ruins the character | Off by default, explicit kill criteria at M7; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |
 | Voice breaks the one-sentence privacy pitch | Voice is off by default and sends only the spoken sentence — never code, output, or diagnostics. Networked features are exactly two (voice, chat's model path), both BYO-key, both listed in the README next to the pitch, not buried |
 | Fish Audio key leaks (settings sync, logs, a screenshot) | `SecretStorage` only, `password: true` input box, never logged or echoed to the output channel, absent from `contributes.configuration` by design |
-| Fish Audio latency, outage, or rate limit mid-briefing | 3s timeout → Tier 0 fallback for that utterance; mp3 cache makes repeat lines instant; failure paths tested before the happy path (M9b) |
+| Fish Audio latency, outage, or rate limit mid-briefing | 3s timeout → Tier 0 fallback for that utterance; mp3 cache makes repeat lines instant; failure paths tested before the happy path (M7b) |
 | Unexpected API spend | Daily request cap (default 200) with a one-time notice on trip, cached repeats, short utterances only — briefings and completions, never quips |
 | Host webview has no `SpeechRecognition` (common on Electron) or denies mic access | Probed at M1, not assumed; Tier 1 (Whisper-family HTTP) is the real nl-BE path and needs only `getUserMedia`; if even that fails the mic button hides and typing is unaffected |
 | Flemish Dutch mis-transcribed (heard as German/Afrikaans, or *tussentaal* garbled) | Never auto-detect — explicit `language` from `clarvis.speech.inputLanguage` (`nl-BE` → `nl` for Whisper-family, full tag for Web Speech); multilingual model so Dutch/English code-switching survives; domain-bias prompt with branch + file names; transcript is editable and **never auto-sent** |

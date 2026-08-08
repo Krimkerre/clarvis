@@ -49,6 +49,66 @@ time it's used there — that's where Clarvis and that user brainstorm and check
 relationship to the extension's own development history. One `plan.md` per project,
 always freshly created for that project, never this one reused or appended to.
 
+### Clean code rules
+
+All Clarvis code follows these practices (adapted from
+[luongnv89/claude-howto — clean-code-rules.md](https://github.com/luongnv89/claude-howto/blob/main/clean-code-rules.md)).
+They apply to every milestone from M0 onward, and existing code gets brought up to
+them as it's touched (Boy Scout Rule).
+
+**Naming.** Intention-revealing names that explain *why* something exists. No
+disinformation, no meaningless distinctions (`data`, `info`, `manager`). Pronounceable
+and searchable. Classes are nouns (`BusyTracker`, `ButlerViewProvider`); methods are
+verbs (`buildBriefing`, `fingerprintError`). No Hungarian notation or type prefixes.
+
+**Functions.** Small (under ~20 lines ideal). One thing only. One level of abstraction
+per function. 0–2 arguments ideal, 3 max, no boolean flag arguments — split into two
+named functions instead. No surprise side effects: a function does what its name says.
+Separate commands (change state) from queries (return information).
+
+**Formatting.** Small, focused files. Related concepts vertically close, blank lines
+between distinct concepts. Lines capped around 100 characters. Related functions
+grouped together.
+
+**Objects vs. data structures.** Objects hide data behind abstractions and expose
+behavior; data structures expose data and carry minimal behavior — pick one, don't
+build hybrids. Respect the Law of Demeter: no `a.getB().getC().doSomething()` chains.
+Don't add getters/setters reflexively.
+
+**Error handling.** Exceptions over error codes and error flags. Exception messages
+carry context (what was being attempted, with what input). Never return `null` for a
+collection — return an empty one. Don't pass `null` as an argument.
+
+**Classes.** Small, measured by responsibilities rather than line count. One reason to
+change (SRP). High cohesion, low coupling. Open for extension, closed for modification.
+
+**Tests.** F.I.R.S.T. — Fast, Independent, Repeatable, Self-validating, Timely. One
+concept asserted per test. Arrange-Act-Assert structure. Test names describe the
+behavior under test. Test code is held to production standards.
+
+**Principles.** DRY, YAGNI, KISS, Boy Scout Rule (leave code cleaner than you found
+it). Refactor continuously in small steps, never in big batches, always with a passing
+build on both sides of the change.
+
+**Smells to avoid.** Long functions/classes, duplicated code, dead code, feature envy,
+inappropriate intimacy, long parameter lists, primitive obsession, switch/case where
+polymorphism fits, temporary fields.
+
+**System design.** Separate construction from use. Program to interfaces, not
+implementations (see §4.4's `VoiceProvider` and §4.7's `SpeechProvider`). Favor
+composition over inheritance. Reach for a design pattern only when it genuinely
+simplifies.
+
+**One deliberate deviation — comments.** The source ruleset argues code should be
+self-explanatory and comments are a last resort ("if you need a comment, consider
+refactoring instead"). **We override that for this project:** code carries explanatory
+comments throughout by default — what a function does, why a block exists, what a
+non-obvious constraint is — because this codebase doubles as a worked example and is
+read far more often than it's written. The rest of the ruleset (especially good
+naming) still applies in full: comments are *additive* here, never a substitute for
+clear code, and a comment that only restates the line above it (`i++ // increment i`)
+is still noise worth deleting.
+
 ---
 
 ## 1. Concept

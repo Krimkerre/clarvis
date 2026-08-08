@@ -565,6 +565,13 @@ Gates are a **hard architectural stop**, not a system-prompt request. The tool l
 refuses; the model cannot talk its way past it. This is the same lesson as rule 3 being
 enforced in code rather than in prompt copy.
 
+**There is deliberately no setting to disable gates.** An earlier draft had one; it was
+cut because it would have been a lie — destructive and outward-facing gates were always
+going to stay on regardless, so the toggle only ever governed dependency installs while
+appearing to govern all of them. A setting that overstates what it controls is worse
+than no setting. If gates prove too chatty in practice, the fix is a narrower gate list,
+not a switch that pretends to turn them off.
+
 #### Undo — the thing that makes autonomy survivable
 
 An agent that edits twelve files is only acceptable if getting back is trivial.
@@ -676,7 +683,6 @@ calls. A per-request cap is the wrong unit.
 "clarvis.agent.enabled":           true,
 "clarvis.agent.maxStepsPerTask":   40,
 "clarvis.agent.dailyTokenBudget":  2000000,
-"clarvis.agent.requireGateApproval": true,        // off = fewer stops; destructive/outward gates stay regardless
 "clarvis.agent.useBranch":           true,         // false = work on the current branch, checkpoint-only
 "clarvis.agent.branchPrefix":        "clarvis/"
 ```

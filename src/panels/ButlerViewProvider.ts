@@ -7,6 +7,17 @@ import * as fs from 'fs';
 export const BUTLER_STATES = ['neutral', 'judging', 'impressed', 'thinking', 'talking', 'surprised'] as const;
 export type ButlerState = (typeof BUTLER_STATES)[number];
 
+/**
+ * Narrows an arbitrary string to a ButlerState.
+ *
+ * Used at the extension's trust boundaries — the QuickPick (which is typed as plain
+ * `string`) and messages arriving from the webview — so neither needs a cast that
+ * would merely assert correctness rather than check it.
+ */
+export function isButlerState(value: unknown): value is ButlerState {
+  return typeof value === 'string' && (BUTLER_STATES as readonly string[]).includes(value);
+}
+
 // Random per-load token required by the webview's CSP (script-src 'nonce-...').
 // A fresh nonce each time buildHtml() runs means a script tag from a stale/cached
 // render can never execute against the current page.
@@ -26,13 +37,17 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   public static readonly viewId = 'clarvis.butler';
   private view?: vscode.WebviewView;
 
-  constructor(
-    private readonly extensionUri: vscode.Uri,
-    // Called when the webview reports its own state change (nothing does this yet —
-    // reserved for M7's click/chat wiring, where the avatar might react to being
-    // clicked without the extension host initiating it).
-    private readonly onState: (state: ButlerState) => void
-  ) {}
+  // Fires when the webview reports a state change of its own (nothing does this yet —
+  // reserved for M7's click/chat wiring, where the avatar might react to being clicked
+  // without the extension host initiating it).
+  //
+  // An event rather than a constructor callback so the provider doesn't need to know
+  // its consumer at construction time. That keeps wiring order flexible in
+  // extension.ts, where the consumer (AvatarController) needs the provider itself.
+  private readonly stateReported = new vscode.EventEmitter<ButlerState>();
+  readonly onDidReportState: vscode.Event<ButlerState> = this.stateReported.event;
+
+  constructor(private readonly extensionUri: vscode.Uri) {}
 
   // VS Code calls this once when the view becomes visible for the first time (or
   // again after being fully disposed — collapsing the panel does NOT dispose it,
@@ -51,11 +66,16 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
     // anything else (future click/chat payloads) is silently ignored rather than
     // erroring, so an older webview build never crashes a newer extension host.
     webviewView.webview.onDidReceiveMessage((msg) => {
-      if (msg?.type === 'state' && BUTLER_STATES.includes(msg.name)) {
-        this.onState(msg.name);
+      if (msg?.type === 'state' && isButlerState(msg.name)) {
+        this.stateReported.fire(msg.name);
       }
       // click/chat wiring lands in M7 — no-op for now
     });
+  }
+
+  /** Hands the event emitter to context.subscriptions for automatic teardown. */
+  get disposable(): vscode.Disposable {
+    return this.stateReported;
   }
 
   // The extension host's side of the bridge: push a state change INTO the webview.

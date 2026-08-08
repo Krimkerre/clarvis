@@ -5,6 +5,10 @@
   "version": "0.0.1",
   "publisher": "Krimkerre",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Krimkerre/clarvis.git"
+  },
   "engines": {
     "vscode": "^1.93.0"
   },

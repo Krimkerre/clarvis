@@ -10,6 +10,7 @@ avatar.html
 media/previews/**
 media/states-strip.svg
 media/mockup-demo.html
+media/mockup.png
 clarvis-probe-log.jsonl
 *.map
 .git/**

@@ -22,14 +22,17 @@ quip line under each.
 
 ## In action
 
-*Mockup, not a real screenshot* — a self-contained, animated HTML page in the same
-spirit as `avatar.html`: real CSS keyframes, no recording, no compression. Open
-[`media/mockup-demo.html`](./media/mockup-demo.html) directly in a browser and watch
-it play: the buggy line in `checkout.js` highlights, Clarvis's judging-state quip
-appears, then a flagged-lines note, a chat follow-up answered from Clarvis's own
-memory (no model call needed), and the M3 walk-away toast — all in sequence. The
-panel and avatar are real (§ Avatar states); the task watching, pattern flagging, and
-chat surfaces shown here are still on the roadmap (§ Progress).
+<img src="media/mockup.png" alt="Mockup of VS Code with Clarvis docked in the sidebar: an editor showing checkout.js with an accidental global variable highlighted, Clarvis in its judging state with the quip &quot;A global variable. Bold. Historic, even.&quot;, a flagged-lines note, a chat thread following up on the flag, and a build-finished toast notification." width="100%">
+
+*Mockup, not a real screenshot* — the fully-revealed end state. For the animated
+version — same page, in the same spirit as `avatar.html`: real CSS keyframes, no
+recording, no compression — open [`media/mockup-demo.html`](./media/mockup-demo.html)
+directly in a browser and watch it play: the buggy line in `checkout.js` highlights,
+Clarvis's judging-state quip appears, then a flagged-lines note, a chat follow-up
+answered from Clarvis's own memory (no model call needed), and the M3 walk-away toast
+— all in sequence. The panel and avatar are real (§ Avatar states); the task
+watching, pattern flagging, and chat surfaces shown here are still on the roadmap
+(§ Progress).
 
 ## What it does
 

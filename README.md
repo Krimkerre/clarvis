@@ -2,12 +2,12 @@
 
 > Clippy's presence. Jarvis's competence. A butler's disdain.
 
-**It can only see the editor window it was born in.**
+**It can only see — and only touch — the workspace it was born in.**
 
 Clarvis is a sarcastic butler VS Code extension: it activates with a window and dies
-with it. No tray icon, no background daemon, no screen reading, no editing your files
-on its own initiative. It watches your builds so you don't have to, remembers the
-error you keep making, and occasionally judges you for it.
+with it. No tray icon, no background daemon, no screen reading. It watches your builds
+so you don't have to, remembers the error you keep making, occasionally judges you for
+it — and when you ask, it does the work: edits, runs, iterates until the task is done.
 
 The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**ntelligent
 **S**ystem — Clippy's presence, with something closer to Jarvis's competence.
@@ -55,16 +55,22 @@ watching, pattern flagging, and chat surfaces shown here are still on the roadma
 - **Chat** — the assistant you talk to in this window, replacing the default chat
   panel. Answers from its own watch/memory state need no key or network; harder
   questions go to a model (bring-your-own Anthropic key, or the host's own LM API
-  where one exists). Context sent with a question is explicit, bounded, and visible —
-  no workspace crawl, no silent file reads.
+  where one exists). Context sent with a question is explicit, bounded, and visible.
+- **Agent** — hand it a real task ("fix the failing test", "rename this everywhere")
+  and it edits, runs commands, reads the results, and iterates until it's done. Every
+  file it touches is listed live with a clickable diff, the whole run is undoable in
+  one command, and it stops to ask before anything destructive or outward-facing.
 - **Voice output** *(optional, off by default)* — briefings and completions spoken via
   OS voices, or a Fish Audio voice with your own key.
 - **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat
   box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched
   English jargon. Never auto-sends; the transcript is always editable text.
 
-**Hard rule, enforced architecturally, not by prompt politeness:** Clarvis suggests,
-never acts. No file writes, no shell execution, no git operations, ever, uninvited.
+**The one hard rule, enforced architecturally rather than by prompt politeness:**
+Clarvis acts only when asked. It will happily rewrite your file — but never because it
+decided on its own that your file needed rewriting. Everything it notices unprompted
+comes out as a remark, not a commit. Everything it does stays inside the workspace that
+activated it: paths that escape are refused, not gated.
 
 Full spec, including every setting, API, and edge case: [`plan.md`](./plan.md).
 
@@ -105,7 +111,9 @@ the full per-milestone build notes and exit criteria.
 - [ ] **M4 — Briefing.** Not started.
 - [ ] **M5 — Pattern Memory.** Not started.
 - [ ] **M6 — Personality Pass.** Not started.
-- [ ] **M7 — Chat.** Not started. *(Makes Clarvis the primary agent in the window.)*
+- [ ] **M7 — Chat & Agent.** Not started. *(The big one: local answers, then the
+      Answer path, then a real agentic harness — tool layer and gates built and tested
+      before the model can reach them.)*
 - [ ] **M8 — Voice Output.** Not started. *(Stretch — cut without guilt.)*
 - [ ] **M9 — Voice Input.** Not started. *(Stretch, independent of M8.)*
 - [ ] **M10 — Polish & Release.** Not started.

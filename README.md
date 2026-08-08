@@ -22,11 +22,12 @@ quip line under each.
 
 ## In action
 
-<img src="media/mockup.png" alt="Mockup of VS Code with Clarvis docked in the sidebar: an editor showing checkout.js with an accidental global variable highlighted, Clarvis in its judging state with the quip &quot;A global variable. Bold. Historic, even.&quot;, a flagged-lines note, and a build-finished toast notification." width="100%">
+<img src="media/mockup.png" alt="Mockup of VS Code with Clarvis docked in the sidebar: an editor showing checkout.js with an accidental global variable highlighted, Clarvis in its judging state with the quip &quot;A global variable. Bold. Historic, even.&quot;, a flagged-lines note, a chat thread following up on the flag, and a build-finished toast notification." width="100%">
 
 *Mockup, not a real screenshot* — illustrates the target experience end to end: a real
-bug (`cache` leaking to global scope) caught and called out in character, plus the
-M3 walk-away notification. The panel and avatar are real (§ Avatar states); the task
+bug (`cache` leaking to global scope) caught and called out in character, a chat
+follow-up answered from Clarvis's own memory (no model call needed), plus the M3
+walk-away notification. The panel and avatar are real (§ Avatar states); the task
 watching, pattern flagging, and chat surfaces shown here are still on the roadmap
 (§ Progress).
 

@@ -736,24 +736,75 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
 
 | Host | 1 Task | 2 Task-no-UI | 3 Shell/shell | 4 Shell-off | 5 Repeat | 6 Debug | 7 Tests | 8 Diag | 9 Save | 10 Git | 11 Mic | 12 Speech(nl-BE) | Open VSX install |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| VS Code stable (1.132) | | | | | | | | | | | | | n/a |
-| Antigravity | | | | | | | | | | | | | |
-| Cursor | | | | | | | | | | | | | |
-| VSCodium | | | | | | | | | | | | | |
+| VS Code stable (1.132.0) | ✅ | ⚠️ silent (no task event; shell-exec fires) | ✅ zsh only tested | not tested | ✅ 3× independent, correct order | ⚠️ fires 2× (wrapper+child) each way | ❌ no stable observer API | ✅ independent of terminal/save | ✅ correct URIs/order (4 saves for 3 edits — investigate) | ✅ but polls ~5s regardless of real change | ❌ `NotAllowedError`, even after OS grant | ⚠️ constructor exists, `not-allowed` at runtime | not tested |
+| VSCodium (1.126.04524) | ✅ same as stable | not re-tested | not re-tested | not tested | not re-tested | not re-tested | ❌ same — no git-independent API surface change expected | not re-tested | not re-tested | ❌ **no `vscode.git`, not bundled at all** (`repoCount: 0`, extension absent) | ❌ same `NotAllowedError` | not re-tested | not tested |
+| Antigravity | | | | | | | | | | | | | *(descoped this pass — user chose VSCodium-only; still open before M10)* |
+| Cursor | | | | | | | | | | | | | *(descoped this pass — see above)* |
+
+**Findings written up:**
+
+1. **Tests API doesn't exist for third parties.** Checked `@types/vscode` directly:
+   `vscode.tests` namespace exposes only `createTestController`. There is no stable
+   API for an extension to observe *another* extension/framework's test results.
+   §4.0's "Test results | `tests.*` observer events" row is wrong as written — M5's
+   red→green trigger (§5) must fall back to diagnostics + the exit code of whatever
+   terminal/task command ran the tests (`npm test`, etc.), not a dedicated test event.
+2. **Raw terminal commands are invisible to the Tasks API.** Confirmed on VS Code
+   stable: typing a command directly into a terminal fires
+   `onDidStartTerminalShellExecution` but **no** `tasks.onDidStartTask`. Task events
+   only fire for real `tasks.json`-defined tasks run through the Tasks system.
+   **Decision:** `BusyTracker` (M3) must treat terminal shell-execution and task
+   events as two independent, always-both-wired sources — task events are not a
+   superset of terminal activity.
+3. **Debug sessions fire twice per run** — a wrapper session plus a child `app.js`
+   session, both on start and terminate. **Decision:** M3's debug tracking must dedupe
+   by top-level session (ignore nested child sessions, or count matched pairs) rather
+   than treating each event 1:1 with "one debug run."
+4. **Git extension state events are a ~5s poll, not purely reactive** — fired
+   continuously throughout the session regardless of whether anything changed.
+   **Decision:** M4/M5 must debounce/diff `HEAD`+`workingTreeChanges` before reacting,
+   never treat `onDidChange` itself as a meaningful signal.
+5. **Git extension is not bundled on every fork.** VSCodium ships with *zero*
+   built-in extensions (`--list-extensions` showed only the probe) — no `vscode.git`,
+   confirmed via `repoCount: 0` and an absent extension lookup. This makes §4.0's
+   "probe, never assume" rule load-bearing, not defensive boilerplate: on VSCodium,
+   every git-dependent feature (briefing's branch/dirty line, §5's "first commit after
+   silence" quip) goes silent by default unless the user installs a Git extension from
+   Open VSX themselves.
+6. **Mic/speech Tier 0 is not viable via the webview, on either host tested,
+   regardless of OS-level permission.** `getUserMedia` returned `NotAllowedError`
+   consistently on VS Code stable and VSCodium — including *after* explicitly granting
+   `Code` microphone access in System Settings. `SpeechRecognition`'s constructor
+   exists (the API surface is present), but recognition fails with `not-allowed` for
+   the same underlying reason. **Decision: M9's Tier 0 is dead in practice — Tier 1
+   (server-side Whisper-family upload) is the only real path**, exactly as plan.md
+   already flagged as "realistically the path that ships nl-BE" (§4.7). M9c's button
+   logic should feature-detect the constructor *and* immediately probe
+   `getUserMedia` once at panel-open to decide Tier 0 vs. Tier 1 — constructor
+   presence alone is not a usable signal.
+7. **Task/terminal/diagnostics/save fidelity is identical between VS Code stable and
+   VSCodium** where re-tested — no fork-specific divergence found for the core event
+   surface, only for bundled-extension availability (git) and the media sandbox (both
+   affected identically).
 
 **Exit checklist:**
 
-- [ ] Probe extension built, all 12 scenarios run on VS Code stable at minimum.
-- [ ] Fork matrix filled in for all four hosts (blank cell = not yet tested, not "assumed fine").
-- [ ] Written decision: which source is primary vs. fallback for the "busy" model (§4.1) —
-      task events, terminal shell integration, or both, and in what priority.
-- [ ] Written decision: is mic/speech (M9) viable at all on any host, or Tier-1-only
-      everywhere — this changes whether M9c ships a Tier-0 path at all.
-- [ ] If shell integration is unreliable on ≥1 fork: note it here, and the M3 plan
-      shifts to task + debug + diagnostics as the primary spine, terminal as enrichment
-      only, not fallback-of-last-resort.
-- [ ] Probe extension and its log files deleted/archived — nothing from the throwaway
-      probe ships in the real extension's code.
+- [x] Probe extension built, all 12 scenarios run on VS Code stable at minimum.
+- [ ] Fork matrix filled in for all four hosts — **VS Code stable and VSCodium done;
+      Antigravity and Cursor explicitly descoped this pass by user decision.** Real
+      gap, not an oversight — must close before M10's mandatory full re-run.
+- [x] Written decision: task events and terminal shell-execution are both required,
+      wired as independent sources, not fallback-of-one — see finding #2. Debug
+      sessions need dedup — see finding #3.
+- [x] Written decision: mic/speech Tier 0 is not viable in practice on any host tested
+      — Tier-1-only for M9, see finding #6.
+- [x] Shell integration itself was reliable everywhere tested (zsh, both hosts) — no
+      shift to task-only spine needed based on current data; revisit if Antigravity/
+      Cursor testing later turns up a shell where it's flaky.
+- [x] Probe extension and its log files deleted/archived: uninstalled from both VS
+      Code stable and VSCodium, log `.jsonl` deleted. Source kept archived (not in
+      `clarvis/` — lives in a sibling `clarvis-probe/` folder, never shipped) for
+      reuse before M10's Antigravity/Cursor pass.
 
 ### M2 — Avatar In A Webview
 

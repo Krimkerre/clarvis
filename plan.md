@@ -513,7 +513,8 @@ for people who live in the Command Palette, one for people who don't. No config 
 | *System voice* | `speechSynthesis.getVoices()` | Tier 0; the OS voices, listed by name and locale |
 | *Curated butler voices* | Fish Audio public models, 3–5 hand-picked | Shipped as a small JSON of `reference_id`s + labels. Vetted so the default sounds right without the user hunting |
 | *Your Fish Audio voices* | `GET https://api.fish.audio/v1/model?self=true` | Every model on the user's account, fetched live once a key exists |
-| *Add a voice…* | see below | The escape hatch |
+| **Paste a Fish Audio voice ID** | any `reference_id` | **First-class, not buried.** Its own always-visible row, because it's the answer to "I want a different voice than the ones you picked" |
+| *Clone from a sample* | see below | For a voice the user has audio of and rights to |
 
 Each row previews on hover-select — a fixed line, spoken in that voice
 (*"Your build finished. I've alerted no one."*), so the choice is made by ear, not by
@@ -521,9 +522,21 @@ name. Previews are cached like any other utterance.
 
 **Adding a voice — two paths, both one step:**
 
-1. **Paste a voice ID.** Any Fish Audio model `reference_id` from their playground or a
-   shared link. Validated with a preview request before it's saved; a bad ID fails at the
-   picker, not mid-briefing.
+1. **Paste a voice ID — the deliberate escape hatch.** Any Fish Audio model
+   `reference_id`, from their playground, a shared link, or anywhere else the user found
+   it. Validated with a preview request before saving, so a bad ID fails at the picker
+   rather than mid-briefing.
+
+   This is the **counterpart to §4.4's shipping decision** and the reason that decision
+   costs the user nothing. We ship a curated voice described by its qualities and named
+   after no one. If someone wants a voice that sounds like a particular character,
+   they paste its ID and Clarvis uses it — **their choice, their account, their call.**
+
+   The line is about who is doing the distributing: we don't bundle, name, recommend,
+   preconfigure, or hint at a character imitation. The field is a **neutral affordance**
+   — labelled "Paste a Fish Audio voice ID", with no example, no wink, and no suggestion
+   about what to put in it. A user pointing their own tool at a voice they chose is a
+   different act from us shipping one.
 2. **Clone from a sample.** `Clarvis: Add Voice from Audio` → file picker → 10–30s of
    clean audio → `POST /v1/model` (multipart: `voices` file + `title`) → the returned
    model ID is stored and selected. Consent copy is explicit and unskippable: **only

@@ -22,14 +22,14 @@ quip line under each.
 
 ## In action
 
-<img src="media/mockup-demo.gif" alt="Animated mockup of VS Code with Clarvis docked in the sidebar: the buggy line in checkout.js highlights, then Clarvis's judging-state quip, a flagged-lines note, a chat follow-up, and a build-finished toast reveal in sequence." width="100%">
-
-*Mockup, not a real screenshot* — illustrates the target experience end to end: a real
-bug (`cache` leaking to global scope) caught and called out in character, a chat
-follow-up answered from Clarvis's own memory (no model call needed), plus the M3
-walk-away notification. The panel and avatar are real (§ Avatar states); the task
-watching, pattern flagging, and chat surfaces shown here are still on the roadmap
-(§ Progress).
+*Mockup, not a real screenshot* — a self-contained, animated HTML page in the same
+spirit as `avatar.html`: real CSS keyframes, no recording, no compression. Open
+[`media/mockup-demo.html`](./media/mockup-demo.html) directly in a browser and watch
+it play: the buggy line in `checkout.js` highlights, Clarvis's judging-state quip
+appears, then a flagged-lines note, a chat follow-up answered from Clarvis's own
+memory (no model call needed), and the M3 walk-away toast — all in sequence. The
+panel and avatar are real (§ Avatar states); the task watching, pattern flagging, and
+chat surfaces shown here are still on the roadmap (§ Progress).
 
 ## What it does
 

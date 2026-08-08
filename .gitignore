@@ -3,3 +3,4 @@ dist/
 out/
 *.vsix
 clarvis-probe-log.jsonl
+.DS_Store

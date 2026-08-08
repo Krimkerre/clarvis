@@ -62,8 +62,8 @@ No "Clarvis has been running for 6 days."
 
 Shipping as a VS Code extension means the host does the hard parts: lifecycle,
 packaging, updates, rendering, and a stable event surface. The same `.vsix` runs
-unmodified on VS Code and its forks — **Google's Antigravity IDE**, Cursor, Windsurf,
-VSCodium — because they all speak the same extension API (§4.0).
+unmodified on VS Code and **VSCodium** because they speak the same extension API
+(§4.0).
 
 **Why this scope is the feature, not a limitation:**
 
@@ -227,9 +227,10 @@ No spawned process, no IPC, no lifecycle code of our own: `activate()` subscribe
 | Audio in | Webview `getUserMedia` + `MediaRecorder` | Push-to-talk capture; transcription happens in the extension host (§4.7). Host mic permission is **not** guaranteed — probe it (M1) |
 | Notifications | `window.showInformationMessage`, status bar | Rate-limited (§7) |
 
-**Fork compatibility.** Antigravity, Cursor, Windsurf, and VSCodium are VS Code forks
-that run standard `.vsix` extensions, but they rebase on upstream at their own pace.
-Three rules keep one artifact working everywhere:
+**Fork compatibility.** VSCodium is a VS Code fork that runs standard `.vsix`
+extensions, but it rebases on upstream at its own pace and — confirmed in M1 — ships
+with zero bundled extensions (no `vscode.git`, unlike VS Code stable). Three rules
+keep one artifact working on both:
 
 1. `engines.vscode` pinned to the **lowest** version we truly need. Every API above is
    stable; shell integration sets the floor at `^1.93.0`.
@@ -237,13 +238,8 @@ Three rules keep one artifact working everywhere:
    `terminal.shellIntegration` may be `undefined`, the Git extension may be absent or
    disabled, `getUserMedia` and `SpeechRecognition` may not exist in the webview at all
    (§4.7). Missing capability = that feature goes quiet, Clarvis keeps blinking (M10).
-3. Ship to **both** the VS Code Marketplace and **Open VSX** — forks default to Open
-   VSX and cannot legally use Microsoft's Marketplace.
-
-Fork-specific agent panes (Antigravity's agent manager, Cursor's chat) are **not**
-integration targets — we don't drive them, read them, or depend on them existing.
-Clarvis brings his own chat (§4.6) and expects to be the one the user actually opens; the
-host's panel is left alone, and uninstalling Clarvis leaves it exactly where it was.
+3. Ship to **both** the VS Code Marketplace and **Open VSX** — VSCodium defaults to
+   Open VSX and cannot legally use Microsoft's Marketplace.
 
 ### 4.1 Task & Build Watching — *the walk-away feature*
 
@@ -730,16 +726,15 @@ expected:**
 | 11 | Webview media (mic) | From a bare webview panel, call `getUserMedia({audio:true})` | resolves with a stream, or rejects — and does the **host chrome** show a permission prompt at all | resolve / reject / silently unavailable |
 | 12 | Webview media (speech) | Same webview, check `window.SpeechRecognition ?? window.webkitSpeechRecognition`, then attempt a short recognition with `lang: 'nl-BE'` | constructor exists; recognizes Flemish at any accuracy | exists / missing; nl-BE output quality, rough |
 
-**Fork matrix.** Package the probe as a `.vsix`, install unmodified on all four hosts,
+**Fork matrix.** Package the probe as a `.vsix`, install unmodified on both target
+hosts (VS Code stable, VSCodium — Antigravity and Cursor are out of scope, §1),
 repeat scenarios 1–12 on each. One row per host, one column per scenario, cell =
 ✅ works as expected / ⚠️ fires but degraded (note how) / ❌ silent or broken.
 
 | Host | 1 Task | 2 Task-no-UI | 3 Shell/shell | 4 Shell-off | 5 Repeat | 6 Debug | 7 Tests | 8 Diag | 9 Save | 10 Git | 11 Mic | 12 Speech(nl-BE) | Open VSX install |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| VS Code stable (1.132.0) | ✅ | ⚠️ silent (no task event; shell-exec fires) | ✅ zsh only tested | not tested | ✅ 3× independent, correct order | ⚠️ fires 2× (wrapper+child) each way | ❌ no stable observer API | ✅ independent of terminal/save | ✅ correct URIs/order (4 saves for 3 edits — investigate) | ✅ but polls ~5s regardless of real change | ❌ `NotAllowedError`, even after OS grant | ⚠️ constructor exists, `not-allowed` at runtime | not tested |
+| VS Code stable (1.132.0) | ✅ | ⚠️ silent (no task event; shell-exec fires) | ✅ zsh only tested | not tested | ✅ 3× independent, correct order | ⚠️ fires 2× (wrapper+child) each way | ❌ no stable observer API | ✅ independent of terminal/save | ✅ correct URIs/order (4 saves for 3 edits — investigate) | ✅ but polls ~5s regardless of real change | ❌ `NotAllowedError`, even after OS grant | ⚠️ constructor exists, `not-allowed` at runtime | n/a |
 | VSCodium (1.126.04524) | ✅ same as stable | not re-tested | not re-tested | not tested | not re-tested | not re-tested | ❌ same — no git-independent API surface change expected | not re-tested | not re-tested | ❌ **no `vscode.git`, not bundled at all** (`repoCount: 0`, extension absent) | ❌ same `NotAllowedError` | not re-tested | not tested |
-| Antigravity | | | | | | | | | | | | | *(descoped this pass — user chose VSCodium-only; still open before M10)* |
-| Cursor | | | | | | | | | | | | | *(descoped this pass — see above)* |
 
 **Findings written up:**
 
@@ -764,11 +759,11 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
    continuously throughout the session regardless of whether anything changed.
    **Decision:** M4/M5 must debounce/diff `HEAD`+`workingTreeChanges` before reacting,
    never treat `onDidChange` itself as a meaningful signal.
-5. **Git extension is not bundled on every fork.** VSCodium ships with *zero*
-   built-in extensions (`--list-extensions` showed only the probe) — no `vscode.git`,
-   confirmed via `repoCount: 0` and an absent extension lookup. This makes §4.0's
-   "probe, never assume" rule load-bearing, not defensive boilerplate: on VSCodium,
-   every git-dependent feature (briefing's branch/dirty line, §5's "first commit after
+5. **Git extension is not bundled on VSCodium.** It ships with *zero* built-in
+   extensions (`--list-extensions` showed only the probe) — no `vscode.git`, confirmed
+   via `repoCount: 0` and an absent extension lookup. This makes §4.0's "probe, never
+   assume" rule load-bearing, not defensive boilerplate: on VSCodium, every
+   git-dependent feature (briefing's branch/dirty line, §5's "first commit after
    silence" quip) goes silent by default unless the user installs a Git extension from
    Open VSX themselves.
 6. **Mic/speech Tier 0 is not viable via the webview, on either host tested,
@@ -790,21 +785,18 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
 **Exit checklist:**
 
 - [x] Probe extension built, all 12 scenarios run on VS Code stable at minimum.
-- [ ] Fork matrix filled in for all four hosts — **VS Code stable and VSCodium done;
-      Antigravity and Cursor explicitly descoped this pass by user decision.** Real
-      gap, not an oversight — must close before M10's mandatory full re-run.
+- [x] Fork matrix filled in for both target hosts (VS Code stable, VSCodium) —
+      Antigravity and Cursor are out of project scope (§1), not a gap to close.
 - [x] Written decision: task events and terminal shell-execution are both required,
       wired as independent sources, not fallback-of-one — see finding #2. Debug
       sessions need dedup — see finding #3.
 - [x] Written decision: mic/speech Tier 0 is not viable in practice on any host tested
       — Tier-1-only for M9, see finding #6.
 - [x] Shell integration itself was reliable everywhere tested (zsh, both hosts) — no
-      shift to task-only spine needed based on current data; revisit if Antigravity/
-      Cursor testing later turns up a shell where it's flaky.
+      shift to task-only spine needed based on current data.
 - [x] Probe extension and its log files deleted/archived: uninstalled from both VS
       Code stable and VSCodium, log `.jsonl` deleted. Source kept archived (not in
-      `clarvis/` — lives in a sibling `clarvis-probe/` folder, never shipped) for
-      reuse before M10's Antigravity/Cursor pass.
+      `clarvis/` — lives in a sibling `clarvis-probe/` folder, never shipped).
 
 ### M2 — Avatar In A Webview
 
@@ -853,8 +845,8 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
 - [ ] Reload the extension (**Developer: Reload Window**) with the panel open — no
       duplicate status-bar item, no leaked `onDidReceiveMessage` listener from the
       previous instance (ties to M0's teardown checklist).
-- [ ] Sanity pass on at least one fork from the M1 matrix (Antigravity or Cursor) —
-      webview renders identically; catches host-specific CSS/CSP quirks before M10.
+- [ ] Sanity pass on VSCodium — webview renders identically; catches host-specific
+      CSS/CSP quirks before M10.
 
 ### M3 — Task Watching *(first real value)*
 
@@ -1236,7 +1228,7 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
   shell integration, disable/uninstall the Git extension, deny mic, run somewhere
   `SpeechRecognition` doesn't exist) and confirm Clarvis stays up — sits, blinks,
   admits what he can't do, never throws in the output channel.
-- Re-run the full M1 fork matrix (all 12 scenarios, all 4 hosts) against the actual
+- Re-run the full M1 fork matrix (all 12 scenarios, both hosts) against the actual
   release build, not the throwaway probe — this is the real "does one `.vsix` work
   everywhere" answer, and the last chance to catch drift since M1.
 - `vsce package` → `vsce publish` (Marketplace) and `ovsx publish` (Open VSX) — Open
@@ -1260,7 +1252,7 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
 |---|---|
 | Event fidelity is worse than hoped (esp. shell integration off, or an unsupported shell) | M1 spike first; task + debug + diagnostics are the fallback spine; project pivots there, not at M6 |
 | A fork lags upstream and lacks an API we use | Lowest viable `engines.vscode`, stable APIs only, runtime capability probes, fork matrix tested every milestone |
-| Marketplace licensing blocks fork users | Dual-publish to Open VSX from M10, verified by installing on Antigravity/VSCodium |
+| Marketplace licensing blocks fork users | Dual-publish to Open VSX from M10, verified by installing on VSCodium |
 | Chat invites agentic expectations we won't meet ("just fix it for me") | Rule 3 holds: he answers and proposes, never applies. Stated in the README and in his own refusal copy, in character. Scope answer, not a feature backlog |
 | Clarvis's chat is worse than the panel he replaced | M7a ships the half nobody else has — answers from his own watch/memory state — before the model path. If M7b's replies aren't competitive, the host's panel is still installed and one click away; we lose the "primary" claim, not the product |
 | Chat widens the privacy story | Context is an explicit, bounded list (selection/visible range, active-file diagnostics, last failure tail, pattern hits), rendered above each reply and removable per item. No workspace crawl, no index. Local answers need no network at all |

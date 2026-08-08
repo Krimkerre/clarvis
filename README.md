@@ -32,10 +32,10 @@ version — same page, in the same spirit as `avatar.html`: real CSS keyframes, 
 recording, no compression — open [`media/mockup-demo.html`](./media/mockup-demo.html)
 directly in a browser and watch it play: the buggy line in `checkout.js` highlights,
 Clarvis's judging-state quip appears, then a flagged-lines note, a chat follow-up
-answered from Clarvis's own memory (no model call needed), and the M3 walk-away toast
-— all in sequence. The panel and avatar are real (§ Avatar states); the task
-watching, pattern flagging, and chat surfaces shown here are still on the roadmap
-(§ Progress).
+answered from Clarvis's own memory (no model call needed), and the walk-away
+completion toast — all in sequence. The panel, the avatar, and the build-watching
+toast are built and working today; the pattern flagging and chat/agent surfaces shown
+here are still on the roadmap (§ Progress).
 
 ## What it does
 
@@ -44,7 +44,8 @@ watching, pattern flagging, and chat surfaces shown here are still on the roadma
   notifies on completion with outcome and duration, not just "done." Walk away from a
   build, come back to an answer.
 - **Pattern memory** — fingerprints recurring errors per project; on the 3rd occurrence
-  in a week, surfaces what fixed it last time. Heuristic, never applied automatically.
+  in a week, surfaces what fixed it last time. Heuristic, and never applied on its own —
+  it's an unsolicited surface, so it suggests. Reply "go on then" and the agent takes it.
 - **Session briefing** — on launch: branch + dirty state, what was failing when you
   left, recent files touched, one open pattern-memory item. Four lines, then silence.
 - **Dev-moment commentary** — a slow build, a third identical failure, a suite going
@@ -68,13 +69,40 @@ watching, pattern flagging, and chat surfaces shown here are still on the roadma
   box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched
   English jargon. Never auto-sends; the transcript is always editable text.
 
-**The one hard rule, enforced architecturally rather than by prompt politeness:**
-Clarvis acts only when asked. It will happily rewrite your file — but never because it
-decided on its own that your file needed rewriting. Everything it notices unprompted
-comes out as a remark, not a commit. Everything it does stays inside the workspace that
-activated it: paths that escape are refused, not gated.
-
 Full spec, including every setting, API, and edge case: [`plan.md`](./plan.md).
+
+## Keeping an agent honest
+
+An agent that edits your code is only worth having if getting back out is trivial and
+its limits are real. Clarvis's are enforced in the tool layer, not asked for in a
+system prompt — a model can't talk its way past code that refuses.
+
+**It acts only when asked.** It will happily rewrite your file; it will never decide on
+its own that your file needed rewriting. Everything it notices unprompted comes out as
+a remark, not a commit. Ambiguity resolves toward answering — "why is this failing?"
+gets you an explanation, not four rewritten files.
+
+**It works somewhere you aren't.** Each task runs on its own `clarvis/<task>` branch,
+committing only the paths it touched — never `git add -A` — so your uncommitted work
+stays uncommitted and yours. Merging and pushing are your decisions.
+
+**It's undoable in one command.** Every run checkpoints the files it's about to touch.
+`Clarvis: Undo Last Agent Run` restores them and puts you back on your branch. Edits go
+through VS Code's own edit API, so `Cmd+Z` works normally too. `Clarvis: Stop` aborts at
+the next step.
+
+**It stops before the one-way doors.** Destructive shell commands, `git push`,
+publishing, and dependency installs all pause and ask. Anything resolving outside the
+workspace is refused outright — symlinks included. There is deliberately no setting to
+turn gates off; a switch that only half-worked would be worse than none.
+
+**You watch it work.** Every file opened, every file changed, every command run, plus
+live step and token counters — in the panel, while it happens, not discovered
+afterwards.
+
+**Where git isn't available** — VSCodium ships without the Git extension, and plenty of
+folders aren't repos — it says so once and falls back to checkpoint-only. The agent
+still works; you still get one-command undo.
 
 ## Platform
 
@@ -125,6 +153,13 @@ the full per-milestone build notes and exit criteria.
 This repo plans and builds itself under a two-mode discipline (`plan.md` §0): a Plan
 Mode where only `plan.md` gets touched and every milestone needs explicit sign-off
 before any project code is written, and a Code Mode where `plan.md`'s own checklists
-get ticked off as each step lands. Branch layout: `main` ← `testing` ← one branch per
+get ticked off as each step lands. Scope changes kick back to Plan Mode rather than
+growing quietly inside a build. Branch layout: `main` ← `testing` ← one branch per
 milestone (`m0-skeleton`, `m1-event-surface-spike`, …), merged up through `testing`
 before reaching `main`.
+
+Code follows a documented set of clean-code rules (`plan.md` §0), with one deliberate
+deviation: comments are used liberally rather than treated as a last resort, because
+this codebase doubles as a worked example. Pure logic is kept in modules that import
+nothing from `vscode`, which is what makes it unit-testable without an extension host —
+`npm test` runs those against Node's built-in runner, no test framework required.

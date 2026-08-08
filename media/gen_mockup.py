@@ -121,7 +121,11 @@ CSS = '''
 
   .gate { margin: 12px 16px 0; background: #2b2415; border: 1px solid #ffb648; border-radius: 8px; padding: 11px 12px; }
   .gate .hd { font-size: 10.5px; color: #ffb648; letter-spacing: .06em; font-weight: 600; margin-bottom: 5px; }
-  .gate .body { font-size: 12.5px; color: #e3dcc8; line-height: 1.45; }
+  .gate .cmd { font-family: "SF Mono", Menlo, monospace; font-size: 11.5px; color: #ffd79a;
+    background: rgba(0,0,0,.25); border-radius: 4px; padding: 3px 7px; display: inline-block; margin-bottom: 7px; }
+  .gate .body { font-size: 11.5px; color: #d8d0bd; line-height: 1.5; }
+  .gate .body b { color: #ffd79a; font-weight: 600; }
+  .gate .rev { font-size: 11px; color: #9ec9a4; margin-top: 6px; line-height: 1.45; }
   .gate code { font-family: "SF Mono", Menlo, monospace; font-size: 11.5px; color: #ffd79a; }
   .gate .btns { display: flex; gap: 7px; margin-top: 9px; }
   .gate button { font: inherit; font-size: 11.5px; border-radius: 5px; padding: 4px 12px; border: 1px solid #4a4132;
@@ -233,8 +237,13 @@ def page(anim):
       <div class="row">checkout.js<span class="plus">+1</span><span class="minus">−1</span></div>
     </div>
     <div class="gate{seq}"{d(4.4)}>
-      <div class="hd">⚠ NEEDS YOUR APPROVAL</div>
-      <div class="body">Wants to run <code>npm install lodash</code>. Dependency changes don't happen without you.</div>
+      <div class="hd">⚠ NEEDS YOUR APPROVAL — REVERSIBLE</div>
+      <div class="cmd">npm install lodash</div>
+      <div class="body">Installing a package runs its install scripts with your
+        permissions. <b>Adds 1 direct and 4 transitive dependencies</b>, and modifies
+        <b>package.json</b> and <b>package-lock.json</b>.</div>
+      <div class="rev">↩ Undoable — <b>Undo Last Agent Run</b> restores both files, though
+        anything an install script did outside the project stays done.</div>
       <div class="btns"><button class="primary">Approve</button><button>Skip</button></div>
     </div>
     <div class="undo{seq}"{d(5.0)}>Everything happens on its own branch —

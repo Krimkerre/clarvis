@@ -11,7 +11,7 @@ error you keep making, and occasionally judges you for it.
 
 ## Avatar states
 
-<img src="media/states-strip.svg" alt="Clarvis avatar in its six expression states: Neutral, Judging, Impressed, Thinking, Talking, Surprised" width="100%">
+<img src="media/states-strip.png" alt="Clarvis avatar in its six expression states: Neutral, Judging, Impressed, Thinking, Talking, Surprised" width="100%">
 
 Driven by a single `setState(name)` call — the whole integration surface between the
 extension host and the webview. Six states: `neutral`, `judging`, `impressed`,

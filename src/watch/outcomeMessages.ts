@@ -1,5 +1,9 @@
-// "125s" is meaningless at a glance; "2m 5s" isn't. Used to render the duration
-// tacked onto every outcome message.
+import { Outcome } from './BusyTracker';
+
+/**
+ * "125s" is meaningless at a glance; "2m 5s" isn't. Renders the duration that gets
+ * tacked onto every outcome message.
+ */
 function formatDuration(ms: number): string {
   const totalSeconds = Math.round(ms / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -7,9 +11,11 @@ function formatDuration(ms: number): string {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
-// Hardcoded pool — M6 replaces this wholesale with the real quip bank (§5), which
-// adds weighted random selection, no-repeat-within-session tracking, and earned-
-// sass gating. This is deliberately minimal until then.
+/**
+ * Hardcoded line pools — M6 replaces these wholesale with the real quip bank (§5),
+ * which adds weighted selection, no-repeat-within-session tracking, and earned-sass
+ * gating. Deliberately minimal until then.
+ */
 const SUCCESS_LINES = [
   'Finished. Green. I amused myself in your absence.',
   "Done, and clean. I'll allow it.",
@@ -19,10 +25,19 @@ const FAILURE_LINES = [
   'Done. Not the outcome either of us wanted.',
 ];
 
-// Picks a line matching the outcome and appends what actually happened (label +
-// duration), so the butler voice and the hard facts always travel together.
-export function outcomeMessage(label: string, exitCode: number | undefined, durationMs: number): string {
-  const pool = exitCode === 0 ? SUCCESS_LINES : FAILURE_LINES;
-  const line = pool[Math.floor(Math.random() * pool.length)];
-  return `${line} (${label}, ${formatDuration(durationMs)})`;
+function pickRandom(lines: readonly string[]): string {
+  return lines[Math.floor(Math.random() * lines.length)];
+}
+
+/**
+ * Composes the notification text for a finished job: a butler line matching the
+ * result, followed by what actually happened.
+ *
+ * Takes the whole Outcome rather than its fields individually — the caller always
+ * has one, and passing three loose primitives invites getting their order wrong.
+ */
+export function outcomeMessage(outcome: Outcome): string {
+  const succeeded = outcome.exitCode === 0;
+  const line = pickRandom(succeeded ? SUCCESS_LINES : FAILURE_LINES);
+  return `${line} (${outcome.label}, ${formatDuration(outcome.durationMs)})`;
 }

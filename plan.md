@@ -541,6 +541,7 @@ root before use; anything resolving outside it is refused, symlinks included.
 | `runCommand` | In a dedicated Clarvis terminal, visible to the user, never a hidden process |
 | `readDiagnostics` | The same source §4.2 already uses |
 | `gitStatus` / `gitDiff` | Read-only git via the Git extension API, when present (absent on VSCodium — §4.0) |
+| `gitCommit` | **Only onto Clarvis's own branch, only files this run touched.** Never `git add -A`. See *Branch isolation* below |
 
 Deliberately **not** tools: network fetches, package installs, `git push`, credential
 access. Those either sit behind a gate or stay out of reach entirely.
@@ -552,7 +553,9 @@ The agent runs a task end to end without pestering the user for each edit. It st
 1. **Destructive shell** — `rm`, `git reset --hard`, `git clean`, anything matching a
    deny-list, plus anything that would delete files outside its own edits.
 2. **Outward-facing actions** — `git push`, publishing, posting, sending. Nothing leaves
-   the machine without a human pressing the button.
+   the machine without a human pressing the button. (Committing to Clarvis's *own*
+   branch is not gated — see *Branch isolation* — but merging into yours and pushing
+   anywhere both are.)
 3. **Dependency changes** — installing or upgrading packages; supply chain is not a
    thing to be casual about.
 4. **Anything outside the workspace** — refused rather than gated.
@@ -572,7 +575,45 @@ An agent that edits twelve files is only acceptable if getting back is trivial.
   normally.
 - The panel shows a **running list of files changed** during the task, each one clickable
   to a diff. The user watches the work happen rather than discovering it afterward.
-- Clarvis never commits. Git history is the user's to write (a gate, per above).
+- Work happens on Clarvis's own branch, committed step by step — see *Branch
+  isolation* directly below. Your branch is never committed to.
+
+#### Branch isolation — the agent works somewhere you aren't
+
+An agent editing your working tree while you have uncommitted work in it is the
+scenario that turns one bad run into a bad afternoon. So every run gets its own branch.
+
+- On starting a task, Clarvis creates and switches to **`clarvis/<task-slug>`** off the
+  current HEAD, and says so before touching anything.
+- It **commits its own work as it goes**, one commit per meaningful step. This is what
+  makes the run reviewable (`git log`, per-step diffs) and trivially discardable — far
+  better than one opaque pile of edits at the end.
+- It commits **only the files it touched, by explicit path. Never `git add -A`.** Your
+  uncommitted work rides along in the working tree untouched and uncommitted, which is
+  the whole point: your changes stay yours.
+- When the task finishes it **stays on the branch** and tells you how to take it
+  (`git merge`, a diff view, or `Clarvis: Undo Last Agent Run` to bin it and switch
+  back). Merging into your branch is your call — it's an outward-facing decision.
+- `git push` remains gated. Being on his own branch makes committing safe; it does not
+  make publishing safe.
+
+**Branch, not worktree.** A git worktree would isolate more completely, but it puts the
+files in a different directory — outside the workspace VS Code has open, so you couldn't
+watch the work happen, and it breaks §1's "the workspace it was born in". Same-tree
+branching keeps the work visible in the editor you're already looking at, which matters
+more than maximal isolation.
+
+**Degrading when there's no git.** This is a real case, not a hypothetical: VSCodium
+ships without the Git extension at all (§4.0, confirmed in M1), and plenty of folders
+aren't repos. When git is unavailable or the workspace isn't a repository, Clarvis says
+so once and falls back to **checkpoint-only** protection (§ *Undo* above) — which still
+gives a complete one-command restore, just without the commit history. The agent path
+stays fully available; it does not require git to function.
+
+**Starting dirty.** If the working tree is already dirty when a task starts, Clarvis
+notes it before beginning. The path-scoped commits mean your changes can't be swept
+into his, but a file you're both editing is still a conflict waiting to happen, and
+saying so up front is cheaper than discovering it later.
 
 #### Privacy — restated honestly
 
@@ -635,7 +676,9 @@ calls. A per-request cap is the wrong unit.
 "clarvis.agent.enabled":           true,
 "clarvis.agent.maxStepsPerTask":   40,
 "clarvis.agent.dailyTokenBudget":  2000000,
-"clarvis.agent.requireGateApproval": true         // off = fewer stops; destructive/outward gates stay regardless
+"clarvis.agent.requireGateApproval": true,        // off = fewer stops; destructive/outward gates stay regardless
+"clarvis.agent.useBranch":           true,         // false = work on the current branch, checkpoint-only
+"clarvis.agent.branchPrefix":        "clarvis/"
 ```
 
 API key deliberately absent — `SecretStorage`, like the voice key.
@@ -1270,11 +1313,15 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   workspace root — symlinks resolved first. **Written and unit-tested before any model
   can call them**, because this is the layer the safety guarantees actually live in;
   testing it through a model would be testing the wrong thing.
-- **M7d — Gates and checkpoints.** `src/agent/Gate.ts` (destructive-shell deny-list,
-  outward-facing actions, dependency installs) and `src/agent/Checkpoint.ts` (snapshot
-  files before a run under `globalStorageUri`, `Clarvis: Undo Last Agent Run` to
-  restore). Also unit-tested standalone. Gates refuse at the tool boundary — no prompt
-  involvement, so no prompt injection can lift them.
+- **M7d — Gates, checkpoints, branch isolation.** `src/agent/Gate.ts`
+  (destructive-shell deny-list, outward-facing actions, dependency installs),
+  `src/agent/Checkpoint.ts` (snapshot files before a run under `globalStorageUri`,
+  `Clarvis: Undo Last Agent Run` to restore), and `src/agent/AgentBranch.ts` (create
+  and switch to `clarvis/<task-slug>`, commit touched paths only, restore the user's
+  branch on undo). All unit-tested standalone. Gates refuse at the tool boundary — no
+  prompt involvement, so no prompt injection can lift them. `AgentBranch` must degrade
+  cleanly with no Git extension (VSCodium) and in non-repo folders: checkpoint-only,
+  agent still fully functional.
 - **M7e — The agent loop.** `src/agent/AgentRunner.ts` — tool-calling loop over the
   model, streaming its steps into the panel: each tool call, each file touched, each
   command run, with a live step and token counter. `clarvis.agent.maxStepsPerTask`
@@ -1331,8 +1378,20 @@ end-to-end ones:
 - [ ] Ask for a real change ("fix the failing test"). Clarvis announces it's taking the
       agent path, edits, re-runs, and stops when green. Panel lists every file touched
       and every command run, live.
-- [ ] `Clarvis: Undo Last Agent Run` after that task restores every file it changed.
-      Verify against `git diff` that nothing is left behind.
+- [ ] `Clarvis: Undo Last Agent Run` after that task restores every file it changed
+      *and* returns you to the branch you started on. Verify against `git diff` that
+      nothing is left behind.
+- [ ] The run happens on `clarvis/<task-slug>`, announced before any edit, with one
+      commit per step and a readable `git log`.
+- [ ] **Start a task with uncommitted work in the tree, including in a file the agent
+      will also edit.** Your changes must remain uncommitted and intact — confirm the
+      agent committed only its own paths and never ran `git add -A`. This is the case
+      that makes branch isolation worth having.
+- [ ] Merging is left to the user: after a successful run, nothing has been merged into
+      the original branch and nothing has been pushed.
+- [ ] **No-git degradation:** run the same task in a non-repo folder, and again on
+      VSCodium (no Git extension — M1). Clarvis says so once, falls back to
+      checkpoint-only, and the agent path still works end to end.
 - [ ] Per-file VS Code undo (`Cmd+Z`) works normally on an agent edit — confirms edits
       went through `WorkspaceEdit` rather than raw disk writes.
 - [ ] `Clarvis: Stop` mid-task aborts at the next tool boundary, leaves the workspace in
@@ -1543,6 +1602,8 @@ end-to-end ones:
 | Agent runs away — loops, burns tokens, never finishes | `clarvis.agent.maxStepsPerTask` (default 40) hard-stops and asks before continuing; live step and token counters in the panel; `Clarvis: Stop` always available |
 | Agent does something destructive or outward-facing | Gates are enforced in the tool layer, not the system prompt — a model cannot talk its way past them. Destructive shell, `git push`, publishing, and dependency installs all stop and ask; anything outside the workspace is refused outright, symlinks included |
 | Agent edits outside the workspace | Every path is resolved and checked against the workspace root before use. Not a gate — a refusal |
+| Agent's work tangles with the user's uncommitted changes | Each run gets its own `clarvis/<task-slug>` branch and commits **only the paths it touched, never `git add -A`** — the user's uncommitted work stays uncommitted and theirs. A dirty tree is flagged before the task starts |
+| Branch isolation silently unavailable (VSCodium ships no Git extension; folder isn't a repo) | Probed, not assumed (§4.0). Falls back to checkpoint-only with a one-time notice; the agent path stays fully functional rather than refusing to run |
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |
 | The agent path widens the privacy story | Answered by restating it honestly (§4.6 *Privacy*) rather than keeping a promise that no longer holds: the Answer path keeps its bounded visible context; the Agent path reads what the task needs and shows every file it opened; everything stays inside the activating workspace |
 | Clarvis acts when the user only asked a question | Routing is explicit and announced before work starts; ambiguity resolves toward answering, never toward editing |

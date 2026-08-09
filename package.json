@@ -209,7 +209,7 @@
     "watch": "node esbuild.js --watch",
     "package": "vsce package",
     "check-types": "tsc --noEmit",
-    "test": "rm -rf out && tsc --outDir out && node --test out/**/*.test.js"
+    "test": "rm -rf out && tsc --outDir out && node --test \"out/**/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

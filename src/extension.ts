@@ -16,6 +16,7 @@ import { ModelService } from './model/ModelService';
 import { probeTools } from './agent/tools/toolProbe';
 import { buildStamp } from './buildStamp';
 import { AgentTerminal } from './agent/tools/commandTools';
+import { Checkpoint } from './agent/Checkpoint';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -104,6 +105,40 @@ export function activate(context: vscode.ExtensionContext): void {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
       await vscode.window.showTextDocument(document);
     }),
+    // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
+    // the escape hatch exists before the thing it rescues you from.
+    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const record = Checkpoint.stored(context);
+
+      if (!record || record.entries.length === 0) {
+        void vscode.window.showInformationMessage('Clarvis: there is nothing to undo.');
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(
+        `Undo the last run — "${record.task}"?`,
+        {
+          modal: true,
+          detail:
+            `${record.entries.length} file(s) go back to how they were before it started. ` +
+            'Anything you changed since then in those files goes too.',
+        },
+        'Undo it'
+      );
+      if (confirmed !== 'Undo it') return;
+
+      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
+      const summary =
+        `Clarvis: restored ${result.restored}, removed ${result.deleted}` +
+        (result.failed.length > 0 ? `, failed on ${result.failed.join(', ')}` : '.');
+
+      // A partial restore is reported as a warning, not an information message: half
+      // undone is a state someone needs to look at rather than be reassured about.
+      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
+      else void vscode.window.showInformationMessage(summary);
+    }),
+
     vscode.commands.registerCommand('clarvis.debug.tools', () =>
       probeTools(
         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,

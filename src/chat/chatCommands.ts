@@ -52,7 +52,11 @@ const INTENTS: Intent[] = [
   {
     action: 'help',
     slash: ['/help', '/?', '/manual'],
-    phrases: [/\b(help|manual|documentation|docs|how do i use)\b/],
+    // No phrases: `wantsManual()` owns every non-slash form. Leaving a bare /help/
+    // pattern here meant "can you help with the failing test" matched — because
+    // "test" counts as a request verb — and answered a debugging question with a
+    // documentation page.
+    phrases: [],
   },
   {
     action: 'chooseEngine',
@@ -129,8 +133,11 @@ export function chatAction(question: string): ChatAction | null {
     if (intent.slash.includes(text)) return intent.action;
   }
 
-  // Help is special: someone typing "help" alone means it, verb or not.
-  if (/^(help|manual|docs)\b/.test(text)) return 'help';
+  // Help is deliberately eager, unlike everything else here. Opening the manual is
+  // harmless and one keystroke to close, whereas opening a picker interrupts. So it
+  // does not need the imperative verb the other intents demand — "do you have a help
+  // page?" is a request for the manual however it is phrased.
+  if (wantsManual(text)) return 'help';
 
   if (!isRequest(text)) return null;
 
@@ -139,6 +146,35 @@ export function chatAction(question: string): ChatAction | null {
   }
 
   return null;
+}
+
+/**
+ * Whether the user is asking for the manual.
+ *
+ * The trap: **"help me" is not a request for documentation.** "Help me fix the build"
+ * is the single most natural thing to type at an assistant, and answering it with a
+ * documentation page would be both useless and smug — so those are excluded before
+ * anything else is considered.
+ */
+function wantsManual(text: string): boolean {
+  // Asking for assistance with a task. Not a docs request, whatever else it contains.
+  if (/\bhelp\s+(me|us|with|fix|debug|understand|write|figure)\b/.test(text)) return false;
+
+  // Talking *about* the command rather than invoking it.
+  if (/\bwhat\s+does\s+\/?help\b/.test(text)) return false;
+
+  // "help", "help?", "manual", "docs" on their own.
+  if (/^(help|manual|docs|documentation)\b[\s?!.]*$/.test(text)) return true;
+
+  // The thing itself, named: "help page", "user guide", "the manual".
+  if (/\b(help page|help file|help docs?|user guide|manual|documentation|instructions)\b/.test(text)) {
+    return true;
+  }
+
+  // "do you have any docs", "is there a guide", "where are the docs"
+  return /\b(do you have|have you got|is there|are there|where('s| is| are)?|got any)\b[^?]{0,30}\b(help|docs?|guide)\b/.test(
+    text
+  );
 }
 
 /** Whether this reads as "do something" rather than "tell me something". */

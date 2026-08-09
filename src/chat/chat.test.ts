@@ -154,6 +154,42 @@ test('narrower intents win over broader ones', () => {
 });
 
 test('bare help is understood without a verb', () => {
+  // "help me" deliberately no longer counts — see the assistance test below. This
+  // expectation changed on purpose when the two meanings were separated.
   assert.equal(chatAction('help'), 'help');
-  assert.equal(chatAction('help me'), 'help');
+  assert.equal(chatAction('help me'), null);
+});
+
+test('asking for the manual opens it, however it is phrased', () => {
+  // The reported miss: this needed an imperative verb and fell through to the model.
+  // Opening docs is harmless and instantly closable, so it earns a lower bar than
+  // actions that change settings.
+  for (const question of [
+    'do you have a help page?',
+    'is there a manual?',
+    'where are the docs?',
+    'got any documentation?',
+    'show me the user guide',
+    'help',
+    'help?',
+  ]) {
+    assert.equal(chatAction(question), 'help', question);
+  }
+});
+
+test('"help me" is a request for assistance, not for documentation', () => {
+  // The most natural thing to type at an assistant. Answering it with a docs page
+  // would be useless and faintly smug.
+  for (const question of [
+    'help me fix the build',
+    'help me understand this error',
+    'can you help with the failing test',
+    'help us debug this',
+  ]) {
+    assert.equal(chatAction(question), null, question);
+  }
+});
+
+test('talking about the help command does not invoke it', () => {
+  assert.equal(chatAction('what does /help do?'), null);
 });

@@ -46,6 +46,18 @@ stream in, the diff land, and Clarvis switch from `thinking` to `talking` as he 
 ask. It loops. The panel and avatar are built and working today; the agent surfaces shown here are
 still on the roadmap (§ Progress).
 
+### Starting a project
+
+<img src="media/mockup-planning.png" alt="Mockup of Clarvis in plan mode on an empty project: a chat thread where Clarvis asks for a one-sentence idea, the user replies 'a CLI that renames photos by their EXIF date', Clarvis asks three batched follow-up questions, and then surfaces a logic finding about in-place renaming with Accept, Reject and Modify buttons. A draft plan.md is open in the editor." width="100%">
+
+*Mockup* — the other half of the product, before any code exists. You give it a
+sentence; it asks the questions that actually change the plan, records "no idea" as an
+open question instead of inventing an answer, and then tells you what's wrong with your
+idea. Here it's spotted that in-place renaming with no dry run makes the first bad EXIF
+tag permanent — a real problem you get to accept, reject, or modify. `plan.md` fills in
+as you go, and nothing gets built until you press Approve. Animated version:
+[`media/mockup-planning.html`](./media/mockup-planning.html).
+
 ## What it does
 
 **Unprompted (the Jarvis half):**

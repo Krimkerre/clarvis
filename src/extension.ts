@@ -7,6 +7,8 @@ import { BusyTracker } from './watch/BusyTracker';
 import { wireBusyTracker } from './watch/wireBusyTracker';
 import { WatchPresenter } from './watch/WatchPresenter';
 import { BriefingService } from './briefing/BriefingService';
+import { PatternStore } from './memory/PatternStore';
+import { PatternMemory } from './memory/PatternMemory';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -27,7 +29,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const avatar = createAvatar(context, log);
   registerDebugStateCommand(context, avatar);
   const tracker = startTaskWatching(context, avatar, log);
-  startBriefing(context, avatar, tracker, log);
+  const memory = startPatternMemory(context, avatar, tracker, log);
+  startBriefing(context, avatar, tracker, log, memory);
 }
 
 /**
@@ -104,13 +107,40 @@ function startTaskWatching(
  * Shares M3's tracker rather than subscribing to VS Code events again — the failing
  * job is the same fact both features care about, just on different timescales.
  */
-function startBriefing(
+function startPatternMemory(
   context: vscode.ExtensionContext,
   avatar: AvatarController,
   tracker: BusyTracker,
   log: ClarvisLog
+): PatternMemory {
+  const memory = new PatternMemory(
+    new PatternStore(context),
+    (message) => log.write(message),
+    (message) => {
+      // A suggestion, never an action (rule 3): it says what worked last time and
+      // stops there. Nothing here writes a file or runs a command.
+      avatar.setState('judging');
+      void vscode.window.showInformationMessage(message);
+      setTimeout(() => avatar.setState('neutral'), 4000);
+    }
+  );
+
+  void memory.start(tracker, context);
+  return memory;
+}
+
+function startBriefing(
+  context: vscode.ExtensionContext,
+  avatar: AvatarController,
+  tracker: BusyTracker,
+  log: ClarvisLog,
+  memory: PatternMemory
 ): void {
   const briefing = new BriefingService(context, (message) => log.write(message));
+
+  // M5 supplies the briefing's fourth line. M4 needed no changes for this — it was
+  // built to omit the line until something could provide it.
+  briefing.setPatternHint(() => memory.briefingLine());
 
   briefing.start(tracker, (lines) => {
     // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;

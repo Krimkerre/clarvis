@@ -28,6 +28,8 @@ const STARTUP_DELAY_MS = 1500;
 export class BriefingService {
   private readonly recentFiles: RecentFiles;
   private startupTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Supplied by M5's pattern memory; absent until then. */
+  private patternHint: (() => string | undefined) | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -38,6 +40,11 @@ export class BriefingService {
     const stored = context.workspaceState.get<unknown>(RECENT_FILES_KEY);
     const restored = Array.isArray(stored) ? stored.filter((p): p is string => typeof p === 'string') : [];
     this.recentFiles = new RecentFiles(5, restored);
+  }
+
+  /** Lets pattern memory (M5) contribute the fourth line without M4 knowing about it. */
+  setPatternHint(hint: () => string | undefined): void {
+    this.patternHint = hint;
   }
 
   /**
@@ -94,7 +101,7 @@ export class BriefingService {
       git: await readGitSummary(),
       failure,
       recentFiles: this.recentFiles.list(),
-      // patternHint arrives with M5; until then the briefing is one line shorter.
+      patternHint: this.patternHint?.(),
     });
   }
 }

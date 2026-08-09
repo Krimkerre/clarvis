@@ -241,6 +241,9 @@ the full per-milestone build notes and exit criteria.
 - [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
       `plan.md` → sign-off → hand milestone one to the agent.)*
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
+- [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
+      people learning to program on a real project of their own. Opt-in per project,
+      and designed to be outgrown — see **[TUTOR-README.md](TUTOR-README.md)**.
 - [ ] **M11 — Polish & Release.** Not started.
 
 ## Development process

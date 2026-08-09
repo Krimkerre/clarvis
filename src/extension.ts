@@ -11,6 +11,9 @@ import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
+import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
+import { VoiceService } from './voice/VoiceService';
+import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -31,7 +34,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');
 
-  const avatar = createAvatar(context, logger);
+  const { avatar, panel } = createAvatar(context, logger);
   registerDebugStateCommand(context, avatar);
 
   // One budget for everything unsolicited (§6). M3's notices, M5's pattern hits and
@@ -40,9 +43,23 @@ export function activate(context: vscode.ExtensionContext): void {
   const announcer = new Announcer(avatar, (message) => logger.write(message));
   context.subscriptions.push({ dispose: () => announcer.dispose() });
 
+  // Voice (M7). Tier 1 (Fish Audio) lands behind the same interface; until a key and
+  // a curated voice exist, the system voice is the whole implementation.
+  const fish = new FishAudioProvider(context, (message) => logger.write(message));
+  const voice = new VoiceService(
+    avatar,
+    fish,
+    new SystemVoiceProvider(panel),
+    (message) => logger.write(message)
+  );
+  registerVoiceCommands(context, voice, fish, panel);
+  // Housekeeping at shutdown rather than mid-briefing, where it would add latency to
+  // the thing it exists to speed up.
+  context.subscriptions.push({ dispose: () => void fish.evictCache() });
+
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  startBriefing(context, avatar, tracker, logger, memory);
+  startBriefing(context, avatar, tracker, logger, memory, voice);
   startPersonality(context, tracker, logger, announcer);
 }
 
@@ -50,7 +67,10 @@ export function activate(context: vscode.ExtensionContext): void {
  * Builds the avatar's two surfaces (webview panel + status-bar glyph) and the
  * controller that keeps them in sync, and registers all of it with VS Code.
  */
-function createAvatar(context: vscode.ExtensionContext, log: ClarvisLog): AvatarController {
+function createAvatar(
+  context: vscode.ExtensionContext,
+  log: ClarvisLog
+): { avatar: AvatarController; panel: ButlerViewProvider } {
   const provider = new ButlerViewProvider(context.extensionUri);
   const statusBar = new StatusBarMirror('neutral');
   const avatar = new AvatarController(provider, statusBar, log);
@@ -69,7 +89,11 @@ function createAvatar(context: vscode.ExtensionContext, log: ClarvisLog): Avatar
     })
   );
 
-  return avatar;
+  // One-off report of what the audio APIs look like in the webview. M1 checked speech
+  // *input* and found it blocked; output was never tested, and Tier 0 rests on it.
+  provider.onDidProbeAudio((probe) => log.write(`audio probe: ${JSON.stringify(probe)}`));
+
+  return { avatar, panel: provider };
 }
 
 /**
@@ -143,7 +167,8 @@ function startBriefing(
   avatar: AvatarController,
   tracker: BusyTracker,
   log: ClarvisLog,
-  memory: PatternMemory
+  memory: PatternMemory,
+  voice: VoiceService
 ): void {
   const briefing = new BriefingService(context, (message) => log.write(message));
 
@@ -154,13 +179,65 @@ function startBriefing(
   briefing.start(tracker, (lines) => {
     // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;
     // for now the notification is the delivery and the face just marks the moment.
-    avatar.setState('talking');
     void vscode.window.showInformationMessage(lines.join(' '));
-    setTimeout(() => avatar.setState('neutral'), 3000);
     lines.forEach((line) => log.write(`briefing | ${line}`));
+
+    // Spoken if voice is on; the avatar's talking/neutral cycle is driven by actual
+    // playback rather than a timer, so it's the voice service's job, not ours.
+    voice.say(lines.join(' '), 'briefing');
   });
 
   context.subscriptions.push({ dispose: () => briefing.dispose() });
+}
+
+/**
+ * Key handling and a way to hear the current voice without waiting for a build.
+ *
+ * The key is captured through a password input straight into `SecretStorage` (the OS
+ * keychain) — it is never placed in settings, never written to the log, and never
+ * echoed back.
+ */
+function registerVoiceCommands(
+  context: vscode.ExtensionContext,
+  voice: VoiceService,
+  fish: FishAudioProvider,
+  panel: ButlerViewProvider
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.setFishKey', async () => {
+      const key = await vscode.window.showInputBox({
+        prompt: 'Fish Audio API key',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (!key) return;
+
+      await context.secrets.store(FISH_KEY_SECRET, key.trim());
+      void vscode.window.showInformationMessage('Clarvis: key stored in the system keychain.');
+    }),
+
+    vscode.commands.registerCommand('clarvis.clearFishKey', async () => {
+      await context.secrets.delete(FISH_KEY_SECRET);
+      void vscode.window.showInformationMessage('Clarvis: key removed.');
+    }),
+
+    vscode.commands.registerCommand('clarvis.openVoiceCache', async () => {
+      // Reveals the folder holding rendered speech. Anything already in here plays
+      // without touching the API, which is most of why repeated lines are instant.
+      await vscode.commands.executeCommand('revealFileInOS', fish.cacheLocation);
+    }),
+
+    vscode.commands.registerCommand('clarvis.testVoice', async () => {
+      const available = await fish.isAvailable();
+      const reason = !panel.audioUnlocked
+        ? 'Clarvis: click once inside the Clarvis panel — the editor blocks audio until you do. Using the system voice meanwhile.'
+        : 'Clarvis: no key or cap reached — using the system voice.';
+      void vscode.window.showInformationMessage(
+        available ? 'Clarvis: speaking via Fish Audio…' : reason
+      );
+      voice.say('Your build finished. I have alerted no one.', 'completion');
+    })
+  );
 }
 
 /**

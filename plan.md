@@ -499,7 +499,7 @@ No spawned process, no IPC, no lifecycle code of our own: `activate()` subscribe
 | Storage | `context.workspaceState`, `context.globalStorageUri` | Per-project memory (§4.2), cached voice audio (§4.4) |
 | Secrets | `context.secrets` (`SecretStorage`) | OS keychain-backed; where the chat (§4.6) and Fish Audio (§4.4) keys live — never `settings.json` |
 | Chat UI | Same webview panel (§3) | Input + transcript under the avatar; no `chatParticipant` API — it's not in every fork |
-| Audio out | Webview `speechSynthesis` / `<audio>` | No native deps, no `child_process` (§4.4) |
+| Audio out | Webview `speechSynthesis` (Tier 0) + OS player via `child_process` (Tier 1) | **Revised at M7** — see §4.4. Webview `<audio>` is blocked by Chromium's autoplay policy until the panel has had a click, which the launch briefing can never satisfy |
 | Audio in | Webview `getUserMedia` + `MediaRecorder` | Push-to-talk capture; transcription happens in the extension host (§4.7). Host mic permission is **not** guaranteed — probe it (M1) |
 | Notifications | `window.showInformationMessage`, status bar | Rate-limited (§7) |
 
@@ -1946,6 +1946,34 @@ Promoted from stretch: the writing is half the character, the delivery is the ot
 half. Sits right after M6's personality pass, and before chat/agent, because those
 inherit the voice rather than the other way round.
 
+**Finding — rendered audio cannot play in the webview, and this changed a §4.0
+decision.** Chromium blocks `audio.play()` with `NotAllowedError` until the webview
+document has received a user gesture. There is no opt-out available to an extension:
+`AudioContext` is gated identically, and VS Code exposes no setting. That makes webview
+playback unusable for the feature's main purpose — **the launch briefing fires ~1.5s
+after startup, long before anyone could click**, so the good voice would essentially
+never be heard, and voice would additionally require the panel to be open at all
+(contradicting §3, where the status bar exists precisely for people who keep it closed).
+
+So Tier 1 plays through the OS's own **headless** player instead — `afplay` on macOS,
+a hidden PowerShell MediaPlayer on Windows, `paplay`/`ffplay -nodisp`/`mpg123` on Linux.
+No window, no dock icon, no focus stolen. This revisits §4.0's "no native deps, no
+`child_process`" line, which was written on the assumption that webview audio worked;
+that assumption is now disproved. Two things improve as a side effect: the cached mp3 is
+also the file that gets played, so there is no temp file to manage, and **the player
+process exiting is the "finished playing" signal**, so the avatar tracks real playback
+with no timer and no round-trip through the webview.
+
+Tier 0 is unaffected — `speechSynthesis` is not governed by autoplay policy and works
+from the first second.
+
+**Finding — speech *output* works in the webview, unlike input.** M1 probed
+`SpeechRecognition` and found it blocked, and that result was easy to over-generalise
+into "audio doesn't work in webviews". It doesn't hold: an `audio-probe` on webview
+load reports `speechSynthesis: true, audioElement: true` on VS Code stable. Different
+API, no permission prompt. Tier 0 and Fish Audio playback are both viable in-webview;
+only *capture* is blocked.
+
 **Build.**
 - **M7a — Tier 0.** `src/voice/VoiceProvider.ts` interface (`speak`, `preview`,
   `listVoices`); `SystemVoiceProvider` posts `{type:'speak', text}` to the webview,
@@ -1973,23 +2001,44 @@ inherit the voice rather than the other way round.
   engine list at build time; an unknown or retired engine falls back to the default
   with a one-time notice rather than failing every utterance.
 **Exit checklist:**
-- [ ] `clarvis.voice.enabled: false` (default) — zero audio, zero `speechSynthesis`
-      calls, ever, including on briefing/completion events that would otherwise speak.
-- [ ] Enable voice, no Fish Audio key — briefing and completion lines play via
-      `speechSynthesis`, avatar `talking` starts on playback start and returns to
-      `neutral` on `ended`, not a fixed-duration timer.
-- [ ] Quips (M6) never speak, even with voice enabled — hard scope check, not just
-      "usually silent."
-- [ ] Set a Fish Audio key — same two utterance types now use Tier 1; audio plays from
-      the base64 payload, webview never issues a network request itself (confirm via
-      devtools network tab — should show zero requests from the webview process).
+- [x] `clarvis.voice.enabled: false` (default) — the enabled check is the first line of
+      `VoiceService.say()`, before any provider is touched.
+- [x] Enable voice, no key — the briefing speaks via `speechSynthesis`. Confirmed live:
+      `talking` → `neutral` **5.7s apart**, which is the utterance's real length rather
+      than a fixed timer (and not the 30s timeout, which would indicate a hang).
+- [x] Quips never speak, and neither do pattern hits — enforced by `mayBeSpoken()`,
+      a pure rule with a test asserting the spoken set is **exactly** briefing and
+      completion, so a future occasion can't silently inherit speech.
+- [x] With a key, briefing and completion use Tier 1. Confirmed live: the **launch
+      briefing** rendered and spoke through Fish Audio with no click and no panel
+      interaction (`talking` → `neutral` 9.6s apart, no fallback logged). The webview
+      makes no network request — the fetch happens in the extension host and the key
+      never crosses the CSP boundary.
 - [ ] **Test fallback before happy path**, per the build note: no key → Tier 0;
       airplane-mode/offline → Tier 0; malformed/revoked key (401) → Tier 0; simulate
       429 → Tier 0; artificial >3s delay → Tier 0. Each falls back silently-ish (one
       non-modal warning max per session), never a retry storm, never a hung avatar.
-- [ ] Cache hit: trigger the same templated completion line twice — second play is
-      instant, zero new network requests, confirms `hash(text, voiceId, engine)` keys
-      correctly (change voiceId, confirm it's treated as a cache miss).
+- [x] Cache verified live: repeated lines replay from disk with no API call, and
+      changing **engine** (same text, same voice) produced a fresh render — so all three
+      parts of the key matter. Measured render: **1354ms for 90KB on `s1`**. Cached
+      audio lives in `globalStorageUri/voice/`, alongside an `index.json` mapping each
+      hash to its text, voice and engine so the cache is inspectable rather than opaque;
+      `Clarvis: Open Voice Cache Folder` reveals it.
+- [ ] **Watch: intermittent mid-word cutoff.** Reported during M7 testing. Ruled out by
+      measurement: the rendered file is complete (speech to 5.54s, trailing silence at
+      −61 dB), and both cached and fresh-render playback exit cleanly
+      (`code=0 signal=null`, full duration). The probable cause was **unserialised
+      utterances** — the system voice calls `speechSynthesis.cancel()` before speaking,
+      so a second utterance chopped the first off mid-word, and two native players
+      would have talked over each other. Fixed with a queue, and not yet reproduced
+      since. Left open rather than ticked: one clean run doesn't prove an intermittent
+      bug gone. Playback now logs pid, exit code and **signal**, which distinguishes
+      "killed mid-word" from "audio was short" the moment it recurs.
+- [x] **Request timeout corrected from 3s to 15s.** §4.4's 3s was speculative and wrong
+      twice over: real renders of a two-line briefing routinely exceed it, and nothing
+      is blocked while waiting — the notification is already on screen and speech is
+      fire-and-forget. Late audio costs nothing; falling back to the wrong voice costs
+      the feature. Only first-time lines pay it, since repeats come from cache.
 - [ ] Cache eviction: exceed the ~50MB cap (or lower it for the test) — LRU eviction
       fires on `deactivate()`, cache stays bounded across sessions.
 - [ ] Trip `clarvis.voice.dailyRequestCap` — drops to Tier 0 for the rest of the day,

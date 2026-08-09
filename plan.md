@@ -2573,7 +2573,19 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   branding constraint found alongside it, in §4.6.
   *Cost of having spiked it first: one afternoon of reading. Cost of not having:
   a designed and possibly shipped login flow that had to be withdrawn.*
-- **M8b — Answer path, multi-provider.** `src/model/ModelProvider.ts` interface
+- **M8b — Answer path, multi-provider. ✅ Built and verified live.** Five providers
+  (Anthropic, OpenAI, OpenRouter, Ollama, LM Studio), streaming replies, per-provider
+  keys kept in the keychain, and **separate models for chat and coding** so trivia does
+  not cost frontier prices. Model lists are fetched from each provider's own API and
+  filtered to what actually works — exactly on OpenRouter, which publishes capability
+  metadata, and by naming heuristic elsewhere, with `supportsTools()` as the
+  authoritative check. Nothing is hardcoded, so a model released tomorrow appears
+  without shipping a new build.
+  *Two corrections to this plan, both found by checking rather than assuming: Anthropic
+  **does** publish `GET /v1/models` (an earlier draft said otherwise and hardcoded a
+  default), and markdown had to be stripped before speech — a model reply read aloud
+  says "asterisk asterisk not asterisk asterisk".*
+- **M8b — original spec.** `src/model/ModelProvider.ts` interface
   (`complete`, `stream`, `supportsTools`, `listModels`) with `AnthropicProvider`,
   `OpenAiCompatibleProvider` (covers OpenAI, OpenRouter, Ollama, and LM Studio via a
   configurable base URL — one adapter, four providers), and `HostLmProvider`
@@ -2690,9 +2702,12 @@ alone, so the milestone can stop early without leaving a half-built thing behind
 - [ ] Kill the window uncleanly (force quit) — the conversation is still filed on next
       launch, since roll-over happens at startup rather than in `deactivate`.
 - [ ] Exceed the ~50-turn cap — oldest turns drop, most recent 50 remain, no crash.
-- [ ] Set a key, ask a question local answers can't cover — request streams, avatar
-      goes `thinking` → `talking` → `neutral` in sync with the actual stream lifecycle
-      (not a fixed timer).
+- [x] Verified live on OpenRouter: the request streams, the avatar tracks the real
+      stream lifecycle, Stop aborts cleanly mid-answer, and the reply is spoken once
+      complete. **One defect found only in a live host**: an unmatched string edit had
+      left the webview unable to render a streamed turn, so replies arrived and were
+      spoken aloud while the transcript stayed empty. A missing start frame now adopts
+      the fragment instead of discarding it.
 - [ ] Context panel shows exactly the attached items (selection, diagnostics, last-
       failure tail, pattern hits) *before* the request is sent — remove one via ✕,
       confirm the removed item is genuinely absent from what the model receives, not
@@ -2736,12 +2751,15 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       nothing errors on the no-op stop.
 - [ ] Where a host LM API exists (probe per §4.0), confirm it's preferred over the
       Anthropic key path, and that behavior is visually indistinguishable to the user
-      (same streaming, same context panel).
+      (same streaming, same context panel). *(Deferred: `vscode.lm` provider not built —
+      the five configured providers cover every case anyone has asked for so far.)*
 - [ ] Trip `clarvis.chat.dailyRequestCap` — one-time notice fires, further requests in
       the same session are refused (or downgraded — confirm which) without repeating
       the notice.
 - [ ] Invalid/revoked API key — clear in-character error, not a raw HTTP error dumped
-      into the transcript; local answers keep working regardless.
+      into the transcript; local answers keep working regardless. *(Implemented and unit
+      tested per status code, including that the response body never reaches the
+      transcript; not yet exercised against a real revoked key.)*
 - [ ] Ask a follow-up to a M5 pattern hit or M6 quip via the "why?" affordance —
       correct context is prefilled, referencing the actual event, not a generic prompt.
 - [ ] Chat activity never trips the M6 rate limiter — fire several questions inside a

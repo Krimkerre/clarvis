@@ -254,3 +254,64 @@ test('a missing recorder is distinguishable from a failed recording', () => {
   assert.equal(isRecorderMissing(new Error('no recorder available')), true);
   assert.equal(isRecorderMissing(new Error('ffmpeg exited 1 (no signal)')), false);
 });
+
+test('markdown emphasis becomes a pause, never a spoken asterisk', () => {
+  // The complaint this fixes: "**not**" read aloud as "asterisk asterisk not".
+  // The author meant a beat, and silence carries emphasis better than a symbol.
+  assert.equal(speakable('That is **not** how it works.'), 'That is, not, how it works.');
+  assert.equal(speakable('A *small* change.'), 'A, small, change.');
+  assert.ok(!speakable('**bold** and *italic* and _under_').includes('*'));
+});
+
+test('long emphasised runs are unwrapped without commas', () => {
+  // Commas around a whole clause make the delivery stutter.
+  assert.equal(
+    speakable('*this entire clause is emphasised here*'),
+    'this entire clause is emphasised here'
+  );
+});
+
+test('bullets and headings are pauses, not spoken punctuation', () => {
+  const spoken = speakable('## Findings\n- first thing\n- second thing');
+
+  assert.ok(!spoken.includes('#'));
+  assert.ok(!spoken.includes('-'));
+  assert.match(spoken, /Findings/);
+  assert.match(spoken, /first thing/);
+});
+
+test('links are spoken as their words, never their URL', () => {
+  // "https colon slash slash" is the worst thing TTS can do to a sentence.
+  assert.equal(
+    speakable('See [the manual](https://example.com/docs/x?y=1) for more.'),
+    'See the manual for more.'
+  );
+});
+
+test('fenced code is dropped rather than read aloud', () => {
+  const spoken = speakable('Try this:\n```ts\nconst x = a && b ? c : d;\n```\nThat should do it.');
+
+  assert.ok(!spoken.includes('const'));
+  assert.ok(!spoken.includes('&&'));
+  assert.match(spoken, /That should do it/);
+});
+
+test('table pipes and rules are silent', () => {
+  const spoken = speakable('| a | b |\n---\n| 1 | 2 |');
+
+  assert.ok(!spoken.includes('|'));
+  assert.ok(!spoken.includes('---'));
+});
+
+test('underscores inside identifiers survive', () => {
+  // snake_case is not emphasis. Treating it as such would silently rename things
+  // in the spoken version of an answer about code.
+  assert.equal(speakable('Call some_helper_function next.'), 'Call some_helper_function next.');
+});
+
+test('collapsed markup never leaves a stutter of commas', () => {
+  const spoken = speakable('**a** *b* **c**');
+
+  assert.ok(!/,\s*,/.test(spoken), spoken);
+  assert.ok(!spoken.startsWith(','), spoken);
+});

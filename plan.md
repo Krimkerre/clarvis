@@ -1265,8 +1265,11 @@ rest of Clarvis only knows `transcribe()`.
 
 **Tier 1 carries an install cost, unlike voice output.** `afplay` ships with macOS;
 `ffmpeg` ships with nothing. Capture therefore probes for a recorder and, when none is
-present, says so once with the install line for the platform rather than failing per
-press. Linux gets `arecord` as a second candidate since alsa-utils is common where
+present, **names what is missing and offers the install command to copy — never runs
+it**. Installing software on someone's machine is their decision, and the rest of
+Clarvis works without it, so the message says so plainly rather than presenting the
+absence as a fault. A mic button that silently does nothing teaches the user the
+feature is broken; one that explains teaches them it's optional. Linux gets `arecord` as a second candidate since alsa-utils is common where
 ffmpeg isn't. This cost is the price of the sandbox escape, and it belongs in the
 first-run copy rather than being discovered by a user pressing a dead mic button.
 

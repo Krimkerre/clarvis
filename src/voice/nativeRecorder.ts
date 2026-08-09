@@ -108,6 +108,57 @@ export function recordClip(
 }
 
 /**
+ * What's missing and how to get it, per platform.
+ *
+ * `afplay` ships with macOS; `ffmpeg` ships with nothing, so voice *input* can fail
+ * for a reason voice output never does — a tool that simply isn't there. That is not
+ * an error to report, it's a decision to hand back: the user may reasonably not want
+ * another dependency, and a mic button that silently does nothing teaches them the
+ * feature is broken rather than optional.
+ *
+ * The command is offered to copy, never run. Installing software on someone's machine
+ * is their call, and a package manager invoked on their behalf is exactly the kind of
+ * thing this project asks permission for everywhere else.
+ */
+export interface InstallHint {
+  /** What is missing, in plain words. */
+  missing: string;
+  /** A command the user can run themselves, if they want to. */
+  command: string;
+  /** Where the command comes from, so an unfamiliar one isn't just pasted blind. */
+  note: string;
+}
+
+export function installHint(platform: NodeJS.Platform = process.platform): InstallHint {
+  if (platform === 'darwin') {
+    return {
+      missing: 'ffmpeg',
+      command: 'brew install ffmpeg',
+      note: 'Needs Homebrew (brew.sh). macOS ships no recorder of its own.',
+    };
+  }
+
+  if (platform === 'win32') {
+    return {
+      missing: 'ffmpeg',
+      command: 'winget install Gyan.FFmpeg',
+      note: 'Or grab a build from ffmpeg.org and put it on your PATH.',
+    };
+  }
+
+  return {
+    missing: 'ffmpeg or arecord',
+    command: 'sudo apt install ffmpeg   # or: sudo apt install alsa-utils',
+    note: 'Whichever your distro packages — alsa-utils is often already present.',
+  };
+}
+
+/** True when nothing on this machine can record. Distinguishes "absent" from "failed". */
+export function isRecorderMissing(error: unknown): boolean {
+  return String(error).includes('no recorder available');
+}
+
+/**
  * Below this, a recording carries no usable speech.
  *
  * Not zero: a muted or dead input device returns samples of ±1 rather than exact

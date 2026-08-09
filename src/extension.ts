@@ -10,7 +10,7 @@ import { BriefingService } from './briefing/BriefingService';
 import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
 import { ChatService } from './chat/ChatService';
-import { recordClip, peakDbfs, hasAudio } from './voice/nativeRecorder';
+import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -262,6 +262,31 @@ function startChat(
  * keychain) — it is never placed in settings, never written to the log, and never
  * echoed back.
  */
+/**
+ * Tells the user what's missing for voice input, and lets them decide.
+ *
+ * Copy, not run: installing software on someone's machine is their call. The command
+ * goes to the clipboard so they can read it before pasting it anywhere.
+ */
+async function offerRecorderInstall(log: (message: string) => void): Promise<void> {
+  const hint = installHint();
+  log(`mic: no recorder found; suggested "${hint.command}"`);
+
+  const choice = await vscode.window.showInformationMessage(
+    `Clarvis: I'd need ${hint.missing} to hear you, and it isn't installed. Entirely your call — everything else works without it.`,
+    { detail: hint.note, modal: false },
+    'Copy install command',
+    'Not now'
+  );
+
+  if (choice === 'Copy install command') {
+    await vscode.env.clipboard.writeText(hint.command);
+    void vscode.window.showInformationMessage(
+      `Clarvis: copied \`${hint.command}\` — run it yourself when you feel like it, then reload.`
+    );
+  }
+}
+
 function registerVoiceCommands(
   context: vscode.ExtensionContext,
   voice: VoiceService,
@@ -320,6 +345,14 @@ function registerVoiceCommands(
         void vscode.window.showInformationMessage(`Clarvis mic probe: ${verdict}. See the Clarvis output channel.`);
       } catch (error) {
         log(`mic probe: failed (${String(error)})`);
+
+        // Nothing installed to record with is a choice to offer, not a failure to
+        // report — see installHint().
+        if (isRecorderMissing(error)) {
+          await offerRecorderInstall(log);
+          return;
+        }
+
         void vscode.window.showErrorMessage(`Clarvis mic probe failed: ${String(error)}`);
       }
     }),

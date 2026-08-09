@@ -234,3 +234,23 @@ test('a dead input device reads as silence, despite not being digital zero', () 
   assert.equal(hasAudio(deadDevice), false);
   assert.equal(hasAudio(wav([0, 6000, -9000])), true);
 });
+
+import { installHint, isRecorderMissing } from './nativeRecorder';
+
+test('every platform gets something the user can actually act on', () => {
+  // A "not installed" message with no install line is just a dead end.
+  for (const platform of ['darwin', 'win32', 'linux'] as NodeJS.Platform[]) {
+    const hint = installHint(platform);
+
+    assert.ok(hint.missing.length > 0, platform);
+    assert.ok(hint.command.length > 0, platform);
+    assert.ok(hint.note.length > 0, platform);
+  }
+});
+
+test('a missing recorder is distinguishable from a failed recording', () => {
+  // These need different responses: one is an offer to install something, the other
+  // is a genuine error. Conflating them means a real fault reads as "go install X".
+  assert.equal(isRecorderMissing(new Error('no recorder available')), true);
+  assert.equal(isRecorderMissing(new Error('ffmpeg exited 1 (no signal)')), false);
+});

@@ -33,7 +33,10 @@ quip line under each.
 test on its own `clarvis/fix-checkout-test` branch: it read the files, ran the suite,
 made the edit you can see in the diff, and is re-running the tests. It has stopped to
 ask before installing a dependency — and the gate explains what that does, what it
-changes, and how to undo it, rather than just asking for a click. Step and token counters run
+changes, and how to undo it, rather than just asking for a click. Note where the
+character does and doesn't appear: the tool steps stay factual (he shuts up while
+working), the safety copy stays plain because it's templated rather than written by the
+model, and the personality shows up in the one place he's actually addressing you. Step and token counters run
 live, `Stop` is always there, and the whole run reverts with one command.
 
 For the animated version — a self-contained HTML page in the same spirit as

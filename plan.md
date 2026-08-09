@@ -2368,8 +2368,13 @@ executions with an empty command line are ignored outright.
 **Exit checklist:**
 - [x] Each trigger draws only from its own pool (unit-tested; exhausting one trigger
       leaves the others untouched). `repeatFailure` and `suiteWentGreen` confirmed live;
-      `buildSlow` (>5min), `firstCommitAfterSilence` and `bigDiff` (200 files) are
-      wired but need a real project to fire naturally — see the dogfood item.
+      `buildSlow` (>5min) and `bigDiff` (200 files) are wired but still need a real
+      project to fire naturally — see the dogfood item.
+      **`firstCommitAfterSilence` confirmed in the wild** (2026-08-10): fired "It
+      lives." while Clarvis was open on his own repository and the extension author
+      committed to it. Polite register, correctly — the earned-sass threshold had not
+      been crossed in that workspace, so the sharper variant was withheld exactly as
+      §5 specifies.
 - [x] No repeats until a trigger's pool is exhausted. **Decided: exhaustion clears
       that trigger's used-set and lines become reusable, rather than going silent.**
       Silence reads as broken, and the interruption budget is what actually governs

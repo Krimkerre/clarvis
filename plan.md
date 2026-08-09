@@ -590,9 +590,19 @@ the personality pass it exists to deliver, and **before** chat and the agent.
 
 - **Fish Audio is the default provider** when a key is present, because OS voices cannot
   carry this character — they can read the words, not perform them.
-- **Still off until enabled** (`clarvis.voice.enabled`). Core to the *product* is not the
-  same as unsolicited audio in a shared office; a voice that surprises you once is a
-  voice you disable forever. The first-run prompt makes the offer clearly, once.
+- **On by default** (`clarvis.voice.enabled`, default `true`). **Reversed at M8a.** The
+  original rule was off-until-asked, on the reasoning that a voice which surprises you
+  once is a voice you disable forever. That reasoning is still sound and the risk is
+  real — this is a deliberate trade, not a correction. What changed: the delivery
+  carries half the character (this section's own premise), so a default-silent install
+  showed new users the dull half and asked them to go hunting for the rest, and almost
+  nobody does.
+  What makes the trade defensible is that the exits are now immediate and obvious,
+  which they were not when the rule was written: **Mute sits beside the chat prompt**
+  and stops him mid-sentence, the §6 budget caps him at one unsolicited surface per
+  minute, and this setting turns it off permanently. The first thing he ever says is
+  also a briefing on window open — expected, brief, and not while you are on a call.
+  **If a shared-office dogfood says otherwise, this reverts**: one default, one line.
 - **Everything he says may be spoken** — briefings, completion notices, chat replies,
   pattern hits and quips alike. **Reversed at M8a**, twice: the original rule allowed
   only briefings and completions, then gained chat replies, and now allows the lot.
@@ -799,7 +809,7 @@ Audio account).
 sane defaults:
 
 ```jsonc
-"clarvis.voice.enabled":           false,        // master switch
+"clarvis.voice.enabled":           true,         // master switch (default on since M8a)
 "clarvis.voice.provider":          "fishAudio",  // "fishAudio" | "system" (auto-falls back)
 "clarvis.voice.selectedVoice":     "curated:default",  // PLACEHOLDER — real ID chosen at M7
 "clarvis.voice.fishAudio.engine": "s2.1-pro-free",  // "s2.1-pro-free" | "s2.1-pro" | "s2-pro"
@@ -2410,7 +2420,7 @@ only *capture* is blocked.
   `listVoices`); `SystemVoiceProvider` posts `{type:'speak', text}` to the webview,
   which calls `speechSynthesis.speak()` and posts back `ended`/`error`. Extension host
   drives `talking → neutral` off those two events, not a timer. Gated by
-  `clarvis.voice.enabled` (default `false`) — ship this alone if M7b never happens.
+  `clarvis.voice.enabled` (default `true` since M8a) — ship this alone if M7b never happens.
 - **M7b — Fish Audio.** `Clarvis: Set Fish Audio API Key` → `context.secrets`.
   `FishAudioVoiceProvider.speak()` does the `POST /v1/tts` fetch **in the extension
   host**, base64-encodes the mp3, `postMessage`s it to the webview for an `<audio>`
@@ -2432,7 +2442,7 @@ only *capture* is blocked.
   engine list at build time; an unknown or retired engine falls back to the default
   with a one-time notice rather than failing every utterance.
 **Exit checklist:**
-- [x] `clarvis.voice.enabled: false` (default) — the enabled check is the first line of
+- [x] `clarvis.voice.enabled` — the enabled check is the first line of
       `VoiceService.say()`, before any provider is touched.
 - [x] Enable voice, no key — the briefing speaks via `speechSynthesis`. Confirmed live:
       `talking` → `neutral` **5.7s apart**, which is the utterance's real length rather

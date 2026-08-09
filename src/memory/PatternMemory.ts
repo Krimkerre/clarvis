@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { fingerprint } from './fingerprint';
 import { PatternStore } from './PatternStore';
-import { recordOccurrence, recordResolution, topPattern, THRESHOLD } from './patterns';
+import { recordOccurrence, recordResolution, topPattern, THRESHOLD, Pattern } from './patterns';
 import { PendingFix, beginPending, noteOutcome } from './resolution';
 
 /**
@@ -32,6 +32,11 @@ export class PatternMemory {
     private readonly log: (message: string) => void,
     private readonly surface: (message: string) => void
   ) {}
+
+  /** Every error pattern seen so far, for chat's "have we seen this?" question. */
+  get known(): Pattern[] {
+    return Object.values(this.store.current.patterns);
+  }
 
   async start(tracker: BusyTracker, context: vscode.ExtensionContext): Promise<void> {
     await this.store.load();

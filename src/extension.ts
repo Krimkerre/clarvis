@@ -9,6 +9,8 @@ import { WatchPresenter } from './watch/WatchPresenter';
 import { BriefingService } from './briefing/BriefingService';
 import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
+import { ChatService } from './chat/ChatService';
+import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -60,10 +62,29 @@ export function activate(context: vscode.ExtensionContext): void {
   // the thing it exists to speed up.
   context.subscriptions.push({ dispose: () => void fish.evictCache() });
 
+  // Chat is built last (it reads what the watchers own), but the briefing needs to
+  // write into it. A late-bound reference keeps the construction order honest rather
+  // than shuffling the wiring to suit one call.
+  let chat: ChatService | undefined;
+  const toTranscript = (message: string) => void chat?.note(message);
+
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  startBriefing(context, avatar, tracker, logger, memory, voice);
+  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, toTranscript);
   startPersonality(context, tracker, logger, announcer);
+
+  // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
+  // because it reads the state those three own.
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, logger);
+
+  // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
+  // the transcript. Toasts disappear after a few seconds; the thing he said about
+  // your build shouldn't be unrecoverable because you were looking elsewhere.
+  announcer.onAnnounce(toTranscript);
+
+  // ...and is spoken. Only remarks that already survived the interruption budget get
+  // here, so the budget is what limits how much talking happens — not the scope.
+  announcer.onAnnounce((message, occasion) => voice.say(message, occasion));
 }
 
 /**
@@ -158,7 +179,7 @@ function startPatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
     // A suggestion, never an action (rule 3), and subject to the shared budget.
-    (message) => void announcer.announce(message, 'judging')
+    (message) => void announcer.announce(message, 'judging', 'patternHit', 'important')
   );
 
   void memory.start(tracker, context);
@@ -171,8 +192,9 @@ function startBriefing(
   tracker: BusyTracker,
   log: ClarvisLog,
   memory: PatternMemory,
-  voice: VoiceService
-): void {
+  voice: VoiceService,
+  toTranscript: (message: string) => void
+): BriefingService {
   const briefing = new BriefingService(context, (message) => log.write(message));
 
   // M5 supplies the briefing's fourth line. M4 needed no changes for this — it was
@@ -184,6 +206,7 @@ function startBriefing(
     // for now the notification is the delivery and the face just marks the moment.
     void vscode.window.showInformationMessage(lines.join(' '));
     lines.forEach((line) => log.write(`briefing | ${line}`));
+    toTranscript(lines.join(' '));
 
     // Spoken if voice is on; the avatar's talking/neutral cycle is driven by actual
     // playback rather than a timer, so it's the voice service's job, not ours.
@@ -191,6 +214,45 @@ function startBriefing(
   });
 
   context.subscriptions.push({ dispose: () => briefing.dispose() });
+  return briefing;
+}
+
+/**
+ * Starts the chat panel (M8a) and the mute control that lives in it.
+ *
+ * Everything here answers from local state — the model path is M8b. The point of
+ * shipping this half first is that it works with no key at all, which is also the
+ * state most people will try the extension in.
+ */
+function startChat(
+  context: vscode.ExtensionContext,
+  panel: ButlerViewProvider,
+  avatar: AvatarController,
+  tracker: BusyTracker,
+  memory: PatternMemory,
+  briefing: BriefingService,
+  voice: VoiceService,
+  log: ClarvisLog
+): ChatService {
+  // Mute has to silence the OS voice too, and that one lives inside the webview.
+  voice.stopSystemVoice = () => panel.post({ type: 'stop-speech' });
+
+  const chat = new ChatService(
+    context,
+    panel,
+    avatar,
+    tracker,
+    () => briefing.recent,
+    () => memory.known,
+    voice,
+    (message) => log.write(message)
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.clear())
+  );
+
+  return chat;
 }
 
 /**
@@ -200,6 +262,31 @@ function startBriefing(
  * keychain) — it is never placed in settings, never written to the log, and never
  * echoed back.
  */
+/**
+ * Tells the user what's missing for voice input, and lets them decide.
+ *
+ * Copy, not run: installing software on someone's machine is their call. The command
+ * goes to the clipboard so they can read it before pasting it anywhere.
+ */
+async function offerRecorderInstall(log: (message: string) => void): Promise<void> {
+  const hint = installHint();
+  log(`mic: no recorder found; suggested "${hint.command}"`);
+
+  const choice = await vscode.window.showInformationMessage(
+    `Clarvis: I'd need ${hint.missing} to hear you, and it isn't installed. Entirely your call — everything else works without it.`,
+    { detail: hint.note, modal: false },
+    'Copy install command',
+    'Not now'
+  );
+
+  if (choice === 'Copy install command') {
+    await vscode.env.clipboard.writeText(hint.command);
+    void vscode.window.showInformationMessage(
+      `Clarvis: copied \`${hint.command}\` — run it yourself when you feel like it, then reload.`
+    );
+  }
+}
+
 function registerVoiceCommands(
   context: vscode.ExtensionContext,
   voice: VoiceService,
@@ -233,6 +320,41 @@ function registerVoiceCommands(
       // Reveals the folder holding rendered speech. Anything already in here plays
       // without touching the API, which is most of why repeated lines are instant.
       await vscode.commands.executeCommand('revealFileInOS', fish.cacheLocation);
+    }),
+
+    // M10 spike (§4.7): can the *extension host* open the microphone, given M1 proved
+    // the webview cannot? Attribution of the OS permission is the open question — the
+    // host spawns the recorder, so it is not obvious which process macOS asks about.
+    vscode.commands.registerCommand('clarvis.debug.micProbe', async () => {
+      const file = vscode.Uri.joinPath(context.globalStorageUri, 'mic-probe.wav');
+      await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+
+      void vscode.window.showInformationMessage('Clarvis: recording 3 seconds — say something.');
+
+      try {
+        const used = await recordClip(file.fsPath, 3, process.platform, log);
+        const audio = Buffer.from(await vscode.workspace.fs.readFile(file));
+        const peak = peakDbfs(audio);
+
+        // A denied mic can still produce a well-formed file full of silence, so the
+        // exit code alone proves nothing. The level is the actual result.
+        const verdict = hasAudio(audio)
+          ? `captured audio, peak ${peak.toFixed(1)} dBFS`
+          : `SILENT (peak ${peak.toFixed(1)} dBFS) — device denied, muted, or the wrong input`;
+        log(`mic probe: ${used} wrote ${audio.length} bytes, ${verdict}`);
+        void vscode.window.showInformationMessage(`Clarvis mic probe: ${verdict}. See the Clarvis output channel.`);
+      } catch (error) {
+        log(`mic probe: failed (${String(error)})`);
+
+        // Nothing installed to record with is a choice to offer, not a failure to
+        // report — see installHint().
+        if (isRecorderMissing(error)) {
+          await offerRecorderInstall(log);
+          return;
+        }
+
+        void vscode.window.showErrorMessage(`Clarvis mic probe failed: ${String(error)}`);
+      }
     }),
 
     vscode.commands.registerCommand('clarvis.testVoice', async () => {

@@ -24,3 +24,38 @@ test('the spoken set is exactly two occasions', () => {
 
   assert.deepEqual(spoken, ['briefing', 'completion']);
 });
+
+import { cacheKey, selectForEviction, CACHE_LIMIT_BYTES } from './voiceCache';
+
+test('the same utterance caches to one key', () => {
+  assert.equal(cacheKey('hello', 'v1', 's1'), cacheKey('hello', 'v1', 's1'));
+});
+
+test('changing voice or engine is a different cache entry', () => {
+  // Otherwise switching either appears to do nothing, because the old audio replays.
+  const base = cacheKey('hello', 'v1', 's1');
+
+  assert.notEqual(base, cacheKey('hello', 'v2', 's1'), 'voice must affect the key');
+  assert.notEqual(base, cacheKey('hello', 'v1', 's2.1-pro'), 'engine must affect the key');
+  assert.notEqual(base, cacheKey('goodbye', 'v1', 's1'), 'text must affect the key');
+});
+
+test('a cache under the limit evicts nothing', () => {
+  const entries = [{ key: 'a', bytes: 10, lastUsed: 1 }];
+
+  assert.deepEqual(selectForEviction(entries, 100), []);
+});
+
+test('eviction removes least-recently-used first, and only enough to fit', () => {
+  const entries = [
+    { key: 'old', bytes: 60, lastUsed: 1 },
+    { key: 'mid', bytes: 60, lastUsed: 2 },
+    { key: 'new', bytes: 60, lastUsed: 3 },
+  ];
+
+  assert.deepEqual(selectForEviction(entries, 130), ['old'], 'stops as soon as it fits');
+});
+
+test('the cache limit is a real number, not accidentally zero', () => {
+  assert.ok(CACHE_LIMIT_BYTES > 1024 * 1024);
+});

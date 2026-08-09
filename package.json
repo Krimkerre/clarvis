@@ -42,6 +42,18 @@
       {
         "command": "clarvis.debug.setState",
         "title": "Clarvis: Set Avatar State (Debug)"
+      },
+      {
+        "command": "clarvis.setFishKey",
+        "title": "Clarvis: Set Fish Audio API Key"
+      },
+      {
+        "command": "clarvis.clearFishKey",
+        "title": "Clarvis: Clear Fish Audio API Key"
+      },
+      {
+        "command": "clarvis.testVoice",
+        "title": "Clarvis: Test Voice"
       }
     ],
     "configuration": {
@@ -74,6 +86,11 @@
             "speech-1.6"
           ],
           "description": "Fish Audio TTS engine. Quality vs speed vs cost; the default is their current best model on a free developer tier."
+        },
+        "clarvis.voice.dailyRequestCap": {
+          "type": "number",
+          "default": 200,
+          "description": "Fish Audio requests per day before dropping to the system voice. A butler should not run up a bill while you're at lunch."
         }
       }
     }

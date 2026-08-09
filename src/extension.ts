@@ -13,6 +13,7 @@ import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
+import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -44,12 +45,17 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Voice (M7). Tier 1 (Fish Audio) lands behind the same interface; until a key and
   // a curated voice exist, the system voice is the whole implementation.
+  const fish = new FishAudioProvider(context, panel, (message) => logger.write(message));
   const voice = new VoiceService(
     avatar,
-    new SystemVoiceProvider(panel),
+    fish,
     new SystemVoiceProvider(panel),
     (message) => logger.write(message)
   );
+  registerVoiceCommands(context, voice, fish, panel);
+  // Housekeeping at shutdown rather than mid-briefing, where it would add latency to
+  // the thing it exists to speed up.
+  context.subscriptions.push({ dispose: () => void fish.evictCache() });
 
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
@@ -182,6 +188,50 @@ function startBriefing(
   });
 
   context.subscriptions.push({ dispose: () => briefing.dispose() });
+}
+
+/**
+ * Key handling and a way to hear the current voice without waiting for a build.
+ *
+ * The key is captured through a password input straight into `SecretStorage` (the OS
+ * keychain) — it is never placed in settings, never written to the log, and never
+ * echoed back.
+ */
+function registerVoiceCommands(
+  context: vscode.ExtensionContext,
+  voice: VoiceService,
+  fish: FishAudioProvider,
+  panel: ButlerViewProvider
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.setFishKey', async () => {
+      const key = await vscode.window.showInputBox({
+        prompt: 'Fish Audio API key',
+        password: true,
+        ignoreFocusOut: true,
+      });
+      if (!key) return;
+
+      await context.secrets.store(FISH_KEY_SECRET, key.trim());
+      void vscode.window.showInformationMessage('Clarvis: key stored in the system keychain.');
+    }),
+
+    vscode.commands.registerCommand('clarvis.clearFishKey', async () => {
+      await context.secrets.delete(FISH_KEY_SECRET);
+      void vscode.window.showInformationMessage('Clarvis: key removed.');
+    }),
+
+    vscode.commands.registerCommand('clarvis.testVoice', async () => {
+      const available = await fish.isAvailable();
+      const reason = !panel.audioUnlocked
+        ? 'Clarvis: click once inside the Clarvis panel — the editor blocks audio until you do. Using the system voice meanwhile.'
+        : 'Clarvis: no key or cap reached — using the system voice.';
+      void vscode.window.showInformationMessage(
+        available ? 'Clarvis: speaking via Fish Audio…' : reason
+      );
+      voice.say('Your build finished. I have alerted no one.', 'completion');
+    })
+  );
 }
 
 /**

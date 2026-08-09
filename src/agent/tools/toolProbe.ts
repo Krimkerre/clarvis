@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { readFile, listFiles, search } from './fileTools';
 import { readDiagnostics, gitStatus, gitDiff, runCommand, AgentTerminal } from './commandTools';
 import { PathRefused } from './workspacePaths';
+import { classifyCommand, explainGate } from '../Gate';
 
 /**
  * Driving the tool layer by hand, without a model.
@@ -96,8 +97,24 @@ async function invoke(
     const command = await ask('Command to run', 'npm test');
     if (!command) return 'cancelled';
 
-    // No gate here on purpose: gates are M8d and sit above this layer. Until they
-    // exist, this command is a debugging tool and runs what it is given.
+    // Gated (§4.6). This was ungated when the probe first shipped, and a plain `rm`
+    // ran from the command palette in a live session — a debug command is still a
+    // command, and "don't test destructive things" is not a safety mechanism.
+    const verdict = classifyCommand(command);
+    if (verdict) {
+      const approved = await vscode.window.showWarningMessage(
+        explainGate(command, verdict),
+        { modal: true },
+        'Run it'
+      );
+
+      if (approved !== 'Run it') {
+        log(`gate: refused "${command}" (${verdict.category}, matched "${verdict.matched}")`);
+        return `REFUSED\n\n${explainGate(command, verdict)}\n\nNot run.`;
+      }
+      log(`gate: approved "${command}" (${verdict.category})`);
+    }
+
     terminal.announce(command);
     const result = await runCommand(root, command, (chunk) => terminal.write(chunk), undefined);
     log(`tool probe: "${command}" exited ${result.exitCode} in ${result.durationMs}ms`);

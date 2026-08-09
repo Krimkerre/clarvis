@@ -9,6 +9,8 @@ import { WatchPresenter } from './watch/WatchPresenter';
 import { BriefingService } from './briefing/BriefingService';
 import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
+import { Announcer } from './personality/Announcer';
+import { Personality } from './personality/Personality';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -22,15 +24,26 @@ let log: ClarvisLog | undefined;
  * teardown. The actual behavior lives in the collaborators, not here.
  */
 export function activate(context: vscode.ExtensionContext): void {
-  log = new ClarvisLog();
-  context.subscriptions.push(log.disposable);
-  log.write('Clarvis activated.');
+  // Local binding: `log` is module-scoped (deactivate() needs it) and therefore
+  // mutable, which stops TypeScript narrowing it inside the closures below.
+  const logger = new ClarvisLog();
+  log = logger;
+  context.subscriptions.push(logger.disposable);
+  logger.write('Clarvis activated.');
 
-  const avatar = createAvatar(context, log);
+  const avatar = createAvatar(context, logger);
   registerDebugStateCommand(context, avatar);
-  const tracker = startTaskWatching(context, avatar, log);
-  const memory = startPatternMemory(context, avatar, tracker, log);
-  startBriefing(context, avatar, tracker, log, memory);
+
+  // One budget for everything unsolicited (§6). M3's notices, M5's pattern hits and
+  // M6's quips all announce through this, so the user experiences one allowance
+  // rather than three independent ones.
+  const announcer = new Announcer(avatar, (message) => logger.write(message));
+  context.subscriptions.push({ dispose: () => announcer.dispose() });
+
+  const tracker = startTaskWatching(context, avatar, logger, announcer);
+  const memory = startPatternMemory(context, tracker, logger, announcer);
+  startBriefing(context, avatar, tracker, logger, memory);
+  startPersonality(context, tracker, logger, announcer);
 }
 
 /**
@@ -88,12 +101,13 @@ function registerDebugStateCommand(
 function startTaskWatching(
   context: vscode.ExtensionContext,
   avatar: AvatarController,
-  log: ClarvisLog
+  log: ClarvisLog,
+  announcer: Announcer
 ): BusyTracker {
   const tracker = new BusyTracker();
   wireBusyTracker(tracker, context);
 
-  const presenter = new WatchPresenter(avatar, (message) => log.write(message));
+  const presenter = new WatchPresenter(avatar, (message) => log.write(message), announcer);
   presenter.attachTo(tracker);
   context.subscriptions.push({ dispose: () => presenter.dispose() });
 
@@ -109,20 +123,15 @@ function startTaskWatching(
  */
 function startPatternMemory(
   context: vscode.ExtensionContext,
-  avatar: AvatarController,
   tracker: BusyTracker,
-  log: ClarvisLog
+  log: ClarvisLog,
+  announcer: Announcer
 ): PatternMemory {
   const memory = new PatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
-    (message) => {
-      // A suggestion, never an action (rule 3): it says what worked last time and
-      // stops there. Nothing here writes a file or runs a command.
-      avatar.setState('judging');
-      void vscode.window.showInformationMessage(message);
-      setTimeout(() => avatar.setState('neutral'), 4000);
-    }
+    // A suggestion, never an action (rule 3), and subject to the shared budget.
+    (message) => void announcer.announce(message, 'judging')
   );
 
   void memory.start(tracker, context);
@@ -152,6 +161,19 @@ function startBriefing(
   });
 
   context.subscriptions.push({ dispose: () => briefing.dispose() });
+}
+
+/**
+ * Starts the dev-moment commentary (M6): slow builds, repeat failures, suites going
+ * green, first commit after a silence, enormous diffs.
+ */
+function startPersonality(
+  context: vscode.ExtensionContext,
+  tracker: BusyTracker,
+  log: ClarvisLog,
+  announcer: Announcer
+): void {
+  new Personality(announcer, (message) => log.write(message)).start(tracker, context);
 }
 
 /**

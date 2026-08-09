@@ -225,7 +225,11 @@ the full per-milestone build notes and exit criteria.
       and compiler diagnostics; on the third occurrence in a week it says what fixed it
       last time. Corrected a second spec flaw: credit for a fix waits for the failing
       command to actually go red→green, rather than blaming whatever ran next.
-- [ ] **M6 — Personality Pass.** Not started.
+- [x] **M6 — Personality Pass.** Quip bank with earned-sass gating, no-repeat
+      selection, and one shared interruption budget (≤1 unsolicited surface / 10 min)
+      that M3's notices and M5's pattern hits now route through too. Caught a bug where
+      reopening the window counted as a fresh occurrence of an old error. *Full-day
+      dogfood pass still outstanding.*
 - [ ] **M7 — Voice.** Not started. *(Core, not a stretch: the delivery is half the
       personality. Lands right after the personality pass. First task is picking the
       curated voice itself — a by-ear decision nobody has made yet.)*

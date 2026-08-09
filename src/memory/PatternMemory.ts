@@ -11,8 +11,19 @@ import { PendingFix, beginPending, noteOutcome } from './resolution';
  * Two independent sources, per M1's findings: finished commands that exited nonzero,
  * and compiler/linter diagnostics that never touch a terminal at all.
  */
+/**
+ * How long after activation diagnostics are treated as pre-existing.
+ *
+ * Language servers don't report anything at activation — they take a second or two to
+ * analyse the project, so errors that were already in your files arrive *after*
+ * startup and are indistinguishable from fresh ones by timing alone. Anything inside
+ * this window is remembered but not counted.
+ */
+const DIAGNOSTIC_GRACE_MS = 12_000;
+
 export class PatternMemory {
   private pending: PendingFix | undefined;
+  private startedAt = 0;
   /** Diagnostics seen this session, so a redraw doesn't count as a fresh occurrence. */
   private readonly seenDiagnostics = new Set<string>();
 
@@ -24,6 +35,7 @@ export class PatternMemory {
 
   async start(tracker: BusyTracker, context: vscode.ExtensionContext): Promise<void> {
     await this.store.load();
+    this.startedAt = Date.now();
 
     tracker.onOutcome((outcome) => void this.onOutcome(outcome));
 
@@ -84,6 +96,14 @@ export class PatternMemory {
         const identity = `${uri.fsPath}::${diagnostic.message}`;
         if (this.seenDiagnostics.has(identity)) continue;
         this.seenDiagnostics.add(identity);
+
+        // Errors surfacing right after startup were already in the file — the language
+        // server is just catching up. Remembered, so a later genuine recurrence still
+        // registers, but not counted as an occurrence now.
+        if (Date.now() - this.startedAt < DIAGNOSTIC_GRACE_MS) {
+          this.log(`pattern: ignoring pre-existing diagnostic (${excerpt(diagnostic.message)})`);
+          continue;
+        }
 
         await this.count(fingerprint(diagnostic.message), diagnostic.message);
       }

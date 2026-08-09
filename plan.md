@@ -587,8 +587,19 @@ the personality pass it exists to deliver, and **before** chat and the agent.
 - **Still off until enabled** (`clarvis.voice.enabled`). Core to the *product* is not the
   same as unsolicited audio in a shared office; a voice that surprises you once is a
   voice you disable forever. The first-run prompt makes the offer clearly, once.
-- Hard scope: briefings and task-completion notifications only. Quips stay silent —
-  a voice heckling you from the sidebar crosses from charming to haunted.
+- **Everything he says may be spoken** — briefings, completion notices, chat replies,
+  pattern hits and quips alike. **Reversed at M8a**, twice: the original rule allowed
+  only briefings and completions, then gained chat replies, and now allows the lot.
+  The original reasoning ("a voice heckling you from the sidebar crosses from charming
+  to haunted") was right about the risk and wrong about the remedy — it fixed volume in
+  the wrong place. What governs volume is the §6 interruption budget: one unsolicited
+  surface per minute, shared across M3, M5 and M6. Anything that has already
+  earned its way past that is worth hearing, and silencing only the audio meant the
+  voice carried the dull half of the character while the text carried the funny half.
+  The safeguards that make this defensible are unchanged: voice is **off by default**,
+  Mute stops him instantly mid-sentence and is one click from the prompt, and the
+  budget itself is untouched. If a day of dogfooding says otherwise, the rule reverts —
+  it is one function (`mayBeSpoken`) and one test.
 - **A mute control sits in the chat UI itself** (built in M8a), not only in settings.
   The moment you need silence — someone walks over, a call starts — is the moment you
   cannot go hunting through a settings pane, and `clarvis.voice.enabled` is a *setting*:
@@ -1252,6 +1263,16 @@ rest of Clarvis only knows `transcribe()`.
 | **0 — default** | Webview Web Speech API (`SpeechRecognition`, `lang = 'nl-BE'`) | good *if it exists* | free | depends on host |
 | **1 — opt-in** | **Whisper-family HTTP API** (`gpt-4o-transcribe` / `whisper-1`, or Fish Audio ASR with the key the user already set) | best for Flemish + code-switching | user's own key | required |
 
+**Tier 1 carries an install cost, unlike voice output.** `afplay` ships with macOS;
+`ffmpeg` ships with nothing. Capture therefore probes for a recorder and, when none is
+present, **names what is missing and offers the install command to copy — never runs
+it**. Installing software on someone's machine is their decision, and the rest of
+Clarvis works without it, so the message says so plainly rather than presenting the
+absence as a fault. A mic button that silently does nothing teaches the user the
+feature is broken; one that explains teaches them it's optional. Linux gets `arecord` as a second candidate since alsa-utils is common where
+ffmpeg isn't. This cost is the price of the sandbox escape, and it belongs in the
+first-run copy rather than being discovered by a user pressing a dead mic button.
+
 **Tier 0 is not guaranteed to exist.** Electron-based hosts frequently ship without a
 working `SpeechRecognition` implementation (it is a Chrome service, not a Blink
 feature), and forks vary. So Tier 0 is *probed*, never assumed: if
@@ -1263,16 +1284,35 @@ enable speech, not buried.
 
 **Pipeline, end to end** — the only new data path in the product:
 
-1. Webview: `getUserMedia({ audio: true })` → `MediaRecorder` → one blob per utterance
-   (`audio/webm;codecs=opus`, mono, 16 kHz — small, and every ASR endpoint accepts it).
-2. Webview → extension host: `postMessage` the blob as a transferable/base64 chunk.
-   **The webview never talks to the network and never sees a key** — same CSP rule as
-   §4.4.
+1. **Extension host**: spawn a native recorder (`src/voice/nativeRecorder.ts`) for one
+   utterance — 16 kHz mono WAV, which every ASR endpoint accepts and which keeps the
+   upload small. *Not the webview*: M1 finding #6 established `getUserMedia` is denied
+   there regardless of OS permission, so the mic is opened where playback already
+   happens. Three things this must get right, each measured rather than assumed:
+   - **Device selection is `:default`, never index `:0`.** On any machine with a
+     virtual audio device installed — BlackHole, Loopback, an aggregate device — index
+     0 is usually that, not the microphone. It records happily and yields pure silence.
+   - **Silence is the failure mode, not an error.** A denied or wrong device exits 0
+     and writes a well-formed file. `hasAudio()` measures peak dBFS against a -60 floor;
+     without it Clarvis uploads three seconds of nothing, gets an empty transcript, and
+     appears to simply not be listening. A dead device reads about -90 dBFS and returns
+     samples of ±1, so testing for digital zero does **not** catch it.
+   - **The editor needs an OS microphone grant, and nothing in the extension can ask
+     for it.** There is no API to raise the prompt; the capture attempt is supposed to,
+     and on a previously-denied app it silently does not. Measured: silence from both
+     the extension host *and* VS Code's integrated terminal while a plain shell on the
+     same machine recorded fine — the grant is missing at the *app* level. So the
+     silence path must name the cause and point at Privacy & Security → Microphone,
+     and on macOS mention `tccutil reset Microphone com.microsoft.VSCode` for the
+     cached-denial case where the app never appears in the list.
+2. The audio never leaves the host process until it is uploaded. **The webview is not
+   involved in capture at all, never talks to the network and never sees a key** —
+   same rule as §4.4.
 3. Extension host, Tier 1: `POST` multipart to the transcription endpoint with
    `file`, `model`, `language: "nl"` (from `nl-BE`), and the domain-bias prompt.
    Timeout 10s → fall back to Tier 0 if available, else fail loudly-but-once.
-   Tier 0 skips steps 1–3 entirely: recognition happens in-webview and only the
-   resulting *text* crosses back.
+   Tier 0 is **dead in practice** (M1 finding #6) and is not built; these steps are
+   the whole path.
 4. Extension host → webview: `postMessage({ type: 'transcript', text, lang })`.
 5. Webview inserts `text` into the chat input box. **Stop.** The user edits and sends.
 6. From here it is an ordinary §4.6 turn: the transcript is the question, the same
@@ -1375,6 +1415,33 @@ What it needs to establish, roughly in priority order:
 plan rather than a blocker. A plan that admits its unknowns beats one that invents
 answers to look complete.
 
+**One tooling question, asked once, in the last round: a linter.** Planning is the only
+honest moment for it — the project has not chosen anything yet, so asking is offering a
+decision rather than criticising an existing codebase (contrast §4.11, which governs
+projects that already exist and where the same question would be an unasked-for style
+opinion).
+
+It is asked plainly, with the trade stated rather than the category:
+
+> *Want a linter? It flags likely mistakes and keeps formatting consistent as we go —
+> useful on anything that outlives the weekend, mild overhead on a throwaway script.*
+
+Three rules on it:
+
+- **Asked last, and only once.** It is not a plan-shaping question like platform or
+  data; it comes after the things that are, and never returns.
+- **"No" is a real answer and is recorded as one** — written into the generated
+  `plan.md` as a decision, so nothing later re-litigates it and no future session
+  offers again.
+- **Yes means it goes in the plan, not in the repository right now.** Setting it up is
+  a task in milestone one like anything else, subject to the same sign-off. Planning
+  mode writes `plan.md` and nothing else (§0), and a linter config is project code.
+
+In **Tutor Mode** the question carries its explanation: what a linter is, that its
+warnings are advice rather than errors that stop the program, and that it will light
+up the screen at first and that this is normal. Defaulting a beginner into it silently
+would mean their first experience of their own code is 200 warnings they cannot read.
+
 #### The analysis — where Clarvis earns his keep
 
 Before writing anything, Clarvis reviews the idea and reports what he finds. This is
@@ -1430,6 +1497,248 @@ on, and rejections are recorded); a plan that drifts from the code as it's built
 without reading (findings are surfaced individually, not as one wall to skim); ceremony
 for projects too small to need it (Clarvis is expected to say so). Mitigations in §8.
 
+### 4.10 Tutor Mode — *learn by building* (stretch)
+
+For someone with no programming background who wants to **learn by doing** rather than
+be handed a finished thing. Same product, same agent, same gates — a different teaching
+posture. Off by default (`clarvis.mode`: `normal` | `tutor`), chosen by the user, never
+inferred from how someone types.
+
+**The bet:** the existing planning interview (§4.9) and agent loop (§4.6) are already
+the right shape for teaching. What a beginner lacks isn't a different tool, it's the
+*why* behind each question and each line. So this mode adds explanation and choice; it
+does not fork the product.
+
+**The name matters.** It is *tutor* mode, never "beginner mode" and never "noob mode",
+in the UI, the settings, the docs and the log. "Noob" is a word someone may cheerfully
+apply to themselves; coming from a tool, aimed at the one audience least able to shrug
+it off, it is an insult with a shrug attached. The mode is named for what Clarvis does,
+not for what the user lacks.
+
+**A setting, not a product.** This is worth stating flatly because it constrains every
+decision below: tutor mode is **off by default**, opt-in, and never inferred — not from
+how someone writes, not from an empty workspace, not from a wrong answer in the
+interview. Guessing that a user is a beginner is insulting when wrong and patronising
+when right. Clarvis offers it once at first run, in a sentence, and takes no for an
+answer forever.
+
+**Asked once, when a project starts.** The natural moment is §4.9's front door: before
+the planning interview begins, Clarvis asks how the user wants to work on *this*
+project — two options, plainly described by what happens rather than by who they are:
+
+> *Regular — I build, you review, we move quickly.*
+> *Tutor — I explain everything as we go, and you can write the code yourself.*
+
+Neither is labelled recommended, neither mentions experience, and there is no third
+option pretending to be a middle. The question is asked once per project and never
+re-asked; changing it later is a setting, not a prompt.
+
+**The choice is per project, not per person.** Stored workspace-scoped, with the global
+setting as the default for the next new project. The same user reasonably wants tutor
+mode for the thing they're learning on and regular mode for the thing they already know
+how to build — and a person who has graduated on one project should not be dragged back
+by an old global flag. A workspace that has never been asked inherits the global
+default and, on an existing project with code already in it, simply stays in regular
+mode without asking at all: mid-project is not the moment for this question.
+
+**Graduating changes a setting and nothing else.** The product a beginner outgrows into
+is the product they were already using — same panel, same agent, same commands, same
+`plan.md`, same project. Three consequences, each of which rules out an obvious
+shortcut:
+
+- **No separate build, no "Clarvis for Beginners" edition, no starter template.** One
+  extension, one codebase. A learner edition would need its own release, and would
+  strand its users on it.
+- **Nothing is regenerated or migrated on graduation.** The code written in tutor mode
+  *is* the project: real files, real git history, real branches, on the same gates and
+  checkpoints. A project built while learning must survive the person learning, or the
+  mode has taught them their first project was a toy.
+- **The mode is invisible in the artefacts.** No "generated in tutor mode" markers, no
+  simplified scaffolding to be untangled later, nothing in the repository a future
+  collaborator would read as training wheels. `GLOSSARY.md` is the one deliberate
+  exception, and it is *theirs* — a record they chose to keep, deletable without
+  consequence.
+
+The graduation offer (M12g) is therefore a small thing on purpose: one line, once, and
+a setting flips. It should feel like being handed the keys to the car already being
+driven, not like being moved to a different car.
+
+#### Planning, tutorialised
+
+The §4.9 interview runs, with four differences:
+
+- **Questions come with options, not a blank page.** "How should this store data?"
+  is unanswerable without context. "A file on your computer *(simplest, works offline,
+  no accounts)*, or a database *(needed if other people will use it)*?" is a decision
+  someone can make on day one. Each option carries its consequence, not its category.
+- **Every question says why it's being asked**, in one line, before it's asked. A
+  beginner cannot tell a load-bearing question from a formality, and answering blind
+  teaches nothing.
+- **Jargon is defined at first use, once**, and then used normally. Never defining it
+  leaves the user unable to read their own project; re-defining it every time is
+  condescending. There is a real tension here and it resolves toward using the real
+  word — they are learning the vocabulary, not being protected from it.
+- **Gap analysis stays.** §0's "poke holes, don't nod along" is *more* valuable to a
+  beginner, not less — they cannot yet see the hole themselves. It changes register,
+  not existence: the flaw is explained rather than merely named.
+
+#### Building, two ways
+
+Once the plan is signed off, the user picks how each milestone is built — and can switch
+at any step, because the right answer changes with fatigue and confidence:
+
+| Style | Who types | What Clarvis does |
+|---|---|---|
+| **Hands-on** (default) | The user | Explains what the step needs and why, shows the shape of the code, then waits. Reviews what was actually typed, and says what is wrong *and why* before moving on. |
+| **Guided auto** | Clarvis | Writes it, then walks through every change — what it does, why here, what would break without it. Still one step at a time, still approved before it lands. |
+
+**Both are step-by-step and both explain.** The difference is who holds the keyboard,
+not whether teaching happens. "Semi-automatic" must never quietly become "watch it
+scroll past" — a diff nobody read is not a lesson.
+
+**Hands-on review must judge intent, not text.** A user who solves the step differently
+— worse, better, or merely unusual — has still solved it, and a review that demands a
+character match teaches obedience instead of programming. What is checked: does it work,
+does it do the thing, and is there anything here that will hurt later. Style opinions are
+offered as opinions.
+
+#### What makes this better than a tutorial
+
+Everything above is a teaching *posture*. This section is the part a video course
+cannot do — all of it leans on Clarvis already watching the user's real work (§4.1,
+§4.2), which is the one advantage this format has and the reason to build it at all.
+
+- **Errors are the lesson, not the failure.** A tutor who prevents every error produces
+  someone who panics at their first red stack trace alone at midnight. So: sometimes
+  *"run it now — it will fail, and I want you to read what it says"*, then decode the
+  message together — which line, which word matters, which two-thirds are noise. The
+  errors are real ones in the user's own project, which is precisely what no tutorial
+  can arrange. **Never manufacture a failure by writing knowingly broken code**: the
+  lesson is reading reality, and a staged bug the user later discovers was staged costs
+  more trust than the lesson was worth.
+- **Lessons are triggered by events, not by a curriculum.** §4.2 already knows they've
+  hit the same error three times; that is the moment the concept lands, not chapter
+  four. The same watching that powers pattern memory decides what to teach and when.
+  A fixed syllabus would ignore the one thing Clarvis knows and YouTube doesn't.
+- **Ask before you tell.** Before revealing what a line does, ask the user to predict
+  it. Explanation alone slides off; prediction-then-correction sticks, costs one
+  question, and surfaces the misconception that would otherwise be explained straight
+  past. Wrong predictions are *useful* and must be received that way — this is the
+  single easiest place in the product to accidentally make someone feel stupid.
+- **Do not explain everything at the same volume.** Beginners drown because every line
+  arrives equally important. Mark the load-bearing part and explicitly dismiss the
+  rest: *"that block is ceremony, it's identical in every project, ignore it."*
+  Granting permission not to understand something is itself a teaching act, and it is
+  what makes the parts that matter visible.
+- **Invite experiments, because undo already exists.** Checkpoints and
+  `Clarvis: Undo Last Agent Run` (§4.6) turn *"change that number and see what breaks
+  — I'll put it back"* into a safe move. Fear of breaking things is what stops
+  beginners poking at code, and poking at code is how the model in their head forms.
+- **A running thing in the first session, above all else.** Beginner ideas are
+  enormous. §4.9's gap analysis, in this mode, aims explicitly at the smallest version
+  that *runs* — and says why it's doing that, so the scope cut doesn't read as
+  dismissal. Nothing predicts whether someone continues like having watched their own
+  thing work once.
+- **A glossary that accumulates.** Each term defined at first use is appended to a
+  `GLOSSARY.md` in the user's project — their own vocabulary, in the order they met
+  it, re-readable without scrolling the chat. Pairs with the define-once rule: the
+  word gets used normally afterwards, and the definition remains somewhere.
+- **"Just do it for me" is honoured instantly, without a lecture.** Frustration is
+  where people quit, and a tutor that insists on teaching through it is the reason
+  they quit. The step is done, briefly explained afterwards rather than before, and no
+  note is made of it. If it becomes the pattern, the graduation-in-reverse offer is to
+  switch *out* of tutor mode — not to try harder at teaching someone who isn't in the
+  mood.
+
+#### The things this mode gets wrong if unexamined
+
+- **Sarcasm at a beginner is just contempt.** §2's rules already aim the humour at
+  situations rather than people, and here that stops being a style note and becomes a
+  hard constraint: the joke is never about not knowing. A confused user who feels
+  mocked leaves and does not come back to programming, which is a considerably worse
+  outcome than a dull extension. Register softens; the character does not disappear —
+  a tutor with no personality is a manual.
+- **Simplification must not become a lie.** "It just remembers it for you" is fine.
+  "Files and databases are the same thing" is not, because it has to be un-learned
+  later at the user's cost. When the true answer is genuinely too big for now, say
+  that plainly — *"that's a real question and a big one, park it"* — rather than
+  inventing a small false one.
+- **The gates matter more here, not less** (§4.6). A beginner cannot evaluate
+  `rm -rf`, cannot tell a routine dependency install from a supply-chain risk, and
+  will not recognise the moment they are about to publish something public. The
+  explanation of *why this is dangerous* is exactly the teaching material. Approving
+  a gate must never be reducible to "Clarvis said yes".
+- **This mode is meant to be outgrown.** After a milestone or two of the user
+  answering their own questions, Clarvis offers to step back — once, without nagging,
+  and reversibly. A tutor that never lets go is a crutch, and the goal is a programmer,
+  not a dependent.
+- **Explanation costs tokens.** Every step carries a paragraph nobody asked for in
+  normal mode, so the §4.8 spend rollup will read very differently. Warn once at
+  enable time; do not silently spend three times as much on someone's free tier.
+- **Nothing here weakens the safety story.** Same branch isolation, same checkpoints,
+  same undo. A beginner is the user most likely to need `Clarvis: Undo Last Agent Run`
+  and least likely to know it exists — so it is named out loud the first time a step
+  writes a file.
+
+**Settings.** `clarvis.mode` (`normal` | `tutor`, default **`normal`**),
+`clarvis.tutor.buildStyle` (`handsOn` | `guidedAuto`), both changeable mid-project and
+mid-milestone. No third "expert" mode: normal *is* expert, and inventing a ladder
+implies a hierarchy nobody asked for — as well as implying that the default is somehow
+incomplete, which is the opposite of true.
+
+### 4.11 Linters & other diagnostics providers — *ESLint, and anything like it*
+
+**Most of this is already done, and that is the point.** Clarvis consumes
+`languages.onDidChangeDiagnostics` (§4.0), which is provider-agnostic: ESLint,
+TypeScript, Pylint, clippy, a language server nobody has heard of — if it publishes
+diagnostics, Clarvis already sees them. Pattern memory (§4.2) already counts a repeated
+ESLint error the same way it counts a repeated compiler error. **No integration code
+exists, and none should**: special-casing one linter would mean the next one needs
+special-casing too.
+
+What is missing is narrower: noticing when a project clearly *expects* a linter that
+isn't running, and saying so once.
+
+**The offer, and its limits.** When a workspace has ESLint configured — `eslint.config.*`,
+a legacy `.eslintrc*`, or `eslint` in `devDependencies` — but no ESLint diagnostics ever
+arrive and the extension isn't installed, Clarvis mentions it **once per workspace** and
+offers to install `dbaeumer.vscode-eslint`. Then it drops the subject permanently.
+
+Four rules, and the first is the one that matters:
+
+- **Never introduce a linter to a project that doesn't use one.** Clarvis offers to
+  connect tooling the project *already chose*. Suggesting ESLint to someone who never
+  asked for it is imposing a style opinion on their codebase, which is not a butler's
+  job. No config, no `devDependency`, no offer — silence.
+  **The one exception is a project being planned from scratch** (§4.9): there is no
+  codebase to have an opinion about yet, and the question is asked once, in the
+  interview, where it is a decision rather than a critique. A "no" recorded there is
+  binding here — this section never offers again for that project.
+- **Never bundle it, never install it silently.** Same rule as `ffmpeg` (§4.7): name
+  what's missing, offer the action, let the user decide. A dependency that appears
+  without consent is a dependency the user didn't audit.
+- **VSCodium is a first-class path, not a footnote.** `dbaeumer.vscode-eslint` is
+  published on **Open VSX** (verified: v3.0.34, MIT), so the offer works on both target
+  hosts. Install goes through `workbench.extensions.installExtension`, which resolves
+  against whatever gallery the host is configured for — Marketplace on VS Code, Open
+  VSX on VSCodium — so one code path serves both. If the gallery has no result, fall
+  back to opening the extension's page rather than failing silently.
+- **Declining is permanent, per workspace.** Not "until next launch". A second offer is
+  a nag, and this is a project someone has already decided about.
+
+**Consumption, not configuration.** Clarvis never writes an ESLint config, never edits
+rules, and never runs `--fix` across a workspace on its own initiative. What the agent
+(§4.6) *may* do, once a linter is present: after its own edits, check whether it
+introduced new lint errors and clean up **its own** mess before handing back. Fixing
+pre-existing findings across files it wasn't asked to touch is scope creep with a diff
+attached.
+
+**In Tutor Mode (§4.10)**, the offer carries an explanation instead of just a name —
+what a linter is, that these are style and correctness warnings rather than errors that
+stop the program, and that the squiggles about to appear everywhere are normal and not
+a sign of catastrophe. A beginner meeting 200 lint warnings with no context reasonably
+concludes they have broken something.
+
 ## 5. Dev-Moment Commentary
 
 Quips fire on **dev events only**. No timers, no idle chatter, no "still there?"
@@ -1461,7 +1770,10 @@ quips are a post-v1 experiment behind a flag.
   user who never wants to hear him never opens `settings.json`. Watching, briefings,
   pattern memory, and the local half of chat all work with zero keys; pasting a model key
   is one command, prompted in-panel the first time it's needed, never on install.
-- **Interruption budget:** ≤ 1 unsolicited surface per 10 min, hard-capped.
+- **Interruption budget:** ≤ 1 unsolicited surface per minute, hard-capped — with a
+  10s floor for things you need to know now (a build going red, a repeat error).
+  **Lowered from 10 min at M8a**: that figure was set on paper and, once completion
+  notices actually routed through it, was swallowing most of what he had to say.
 - **Feels alive without being needy** — idle animation carries presence; the mouth
   stays shut. Ambient, not demanding.
 - **Trust:** the privacy scope must be explainable in one sentence to a non-technical
@@ -1594,6 +1906,14 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
    logic should feature-detect the constructor *and* immediately probe
    `getUserMedia` once at panel-open to decide Tier 0 vs. Tier 1 — constructor
    presence alone is not a usable signal.
+
+   **Amended at M8a (spike, measured):** the *capture* half of Tier 1 was still
+   specced to run in the webview, which this same finding rules out — so Tier 1 had no
+   working audio source and the plan didn't notice. It does now: **capture moves to the
+   extension host**, spawning a native recorder exactly as playback does (§4.4). Proven
+   on macOS: `ffmpeg -f avfoundation -i :default` from the extension host produced
+   clear speech at -5.2 dBFS peak. Three traps found while proving it, all recorded in
+   §4.7 — the device index, the silent-failure mode, and the OS grant.
 7. **Task/terminal/diagnostics/save fidelity is identical between VS Code stable and
    VSCodium** where re-tested — no fork-specific divergence found for the core event
    surface, only for bundled-extension availability (git) and the media sandbox (both
@@ -1886,7 +2206,7 @@ executions with an empty command line are ignored outright.
   through**, wrapping the budget. M3's completion notices, M5's pattern hits and M6's
   quips all announce through it; a budget enforced separately in three places is three
   budgets, and the user experiences their sum. `src/personality/rateLimit.ts` — the §6 interruption budget (≤1 unsolicited
-  surface / 10 min), a single gate every unsolicited surface passes through: M3's
+  surface / min), a single gate every unsolicited surface passes through: M3's
   outcome notifications, M5's pattern hits, M6's own quips. The briefing (M4) and
   chat replies (M8) are explicitly exempt — solicited or once-per-session, not
   "unsolicited." Implementation: timestamp of last surface in memory, reject if
@@ -2075,8 +2395,17 @@ alone, so the milestone can stop early without leaving a half-built thing behind
 **Build.**
 - **M8a — Local answers.** `src/chat/ChatViewProvider.ts` extends the M2 panel with an
   input box + transcript below the avatar (same webview, not a second one — §3).
-  Thread persisted to `context.workspaceState` (cap ~50 turns, oldest dropped),
-  `Clarvis: Clear Conversation` command wipes it. `src/chat/localAnswer.ts` — a small
+  **Each window starts with an empty transcript**, and the previous session is filed
+  into an archive (`clarvis.chat.history`, newest first, 20 sessions) reachable from a
+  History button — picking one opens it as a Markdown tab rather than a second webview.
+  Rolling over happens at *startup*, not shutdown, because `deactivate` doesn't run
+  after a crash or a force quit. The live session is written continuously to
+  `clarvis.chat.current` (cap ~50 turns, oldest dropped) so a crashed window is still
+  filed. `Clarvis: Clear Conversation` deletes rather than archives — a button that
+  says there is no undo must not quietly keep a copy.
+  **Changed at M8a**: the thread was originally specced as persisted and restored on
+  open. Reopening mid-conversation reads as clutter; the archive keeps the history
+  without putting stale questions in front of you. `src/chat/localAnswer.ts` — a small
   intent match (regex/keyword, not a model call) against `BusyTracker`, the M4
   last-failure record, `PatternStore`, and `git.getAPI(1)`; returns `null` when nothing
   matches, which routes the question onward or to a "no key, and I don't know that
@@ -2143,6 +2472,26 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   request so a planning turn doesn't carry agent instructions. Quips are suppressed
   while a task runs (§4.6 *Personality under load*); §5 material returns when it
   finishes.
+- **M8g2 — Live quips.** Once a model is wired in, reactive remarks are *generated*
+  for the situation rather than drawn from `quipBank.ts` — the bank has five triggers
+  and two registers, which is a fixed number of jokes and therefore a countdown to
+  hearing them twice. The model gets the trigger, the facts (what failed, how long it
+  took, how many times before) and the §2.1 personality block, and returns one line.
+  Four constraints, each of which the naive version gets wrong:
+  - **The bank stays, as the fallback.** No key, no network, a slow response or a
+    refusal must degrade to a canned quip, never to silence and never to a stall — a
+    joke that arrives after you've moved on isn't a joke. Hard timeout, and the
+    generated line is dropped if it misses it.
+  - **Generation happens only *after* the interruption budget has allowed the surface**
+    (§6), not before. Generating first would spend tokens on remarks nobody will ever
+    see, on every single build.
+  - **Never during an agent run.** §4.6's *Personality under load* already says quips
+    are suppressed while a task runs; a model-generated one costs tokens from the same
+    budget the actual work is using.
+  - **No-repeat still applies.** The existing suppression of recently-used quips has to
+    cover generated lines too, or the model rediscovers its own favourite joke weekly.
+  Spoken like any other quip (§4.4), so latency is doubly visible — it delays the audio,
+  not just the text.
 
 **Exit checklist:**
 - [ ] No key set: ask each local-answer question type (failing state, branch, build
@@ -2150,8 +2499,14 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       M3–M5 state, zero network calls made.
 - [ ] No key set, ask something local answers can't cover — Clarvis says so once, in
       character, doesn't retry or hang.
-- [ ] `Clarvis: Clear Conversation` empties the transcript and `workspaceState`;
-      reopen the panel — thread stays empty, not repopulated from a stale cache.
+- [ ] `Clarvis: Clear Conversation` empties the transcript and the stored session,
+      and the cleared conversation does **not** appear under History afterwards.
+- [ ] Reload the window mid-conversation — the transcript is empty, and the previous
+      conversation is the top entry under History.
+- [ ] Collapse/move the panel mid-conversation — the transcript survives, since only a
+      reload starts a new session.
+- [ ] Kill the window uncleanly (force quit) — the conversation is still filed on next
+      launch, since roll-over happens at startup rather than in `deactivate`.
 - [ ] Exceed the ~50-turn cap — oldest turns drop, most recent 50 remain, no crash.
 - [ ] Set a key, ask a question local answers can't cover — request streams, avatar
       goes `thinking` → `talking` → `neutral` in sync with the actual stream lifecycle
@@ -2162,6 +2517,21 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       just hidden in the UI.
 - [ ] Ask with no active selection — attaches the visible range, not an error, not the
       whole file.
+- [ ] A quip and a pattern hit are **spoken**, not just shown (§4.4 as revised) — and
+      each still counts against the one-per-ten-minutes budget rather than slipping
+      through because it went to the voice path.
+- [ ] Completion notices go through the Announcer's budget — fire several slow jobs
+      inside a minute and confirm only one surfaces. **This was broken until M8a**:
+      `WatchPresenter` held an `Announcer` and called `showInformationMessage` directly.
+- [ ] Run a passing build and a failing one back to back, seconds apart — **both** are
+      reported. The failure must not be swallowed by the success ahead of it, which is
+      the most ordinary sequence a developer produces.
+- [ ] With a model wired (M8g2): a generated quip fires for a trigger the bank covers,
+      and reads as the same character as the canned one.
+- [ ] Kill the network mid-quip — the canned line arrives instead, within the timeout,
+      with no stall and no silence.
+- [ ] Start an agent run and trip a quip trigger — nothing is generated and nothing is
+      spoken, per §4.6 *Personality under load*.
 - [ ] **Mute, mid-sentence.** Start a briefing, hit mute while it's still talking —
       audio stops immediately, not at the end of the utterance. The queued rest of the
       utterances is dropped too, not merely paused, or unmuting replays a stale
@@ -2326,6 +2696,12 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   `plan.md` as the agent completes them.
 
 **Exit checklist:**
+- [ ] The interview asks about a linter exactly once, in the final round, with the
+      trade-off stated rather than the tool named — and never asks again.
+- [ ] Answering "no" writes that decision into the generated `plan.md`, so a later
+      session neither re-asks nor quietly adds one.
+- [ ] Answering "yes" produces a *task* in milestone one, not a config file written
+      during planning — §0 allows planning mode to touch `plan.md` and nothing else.
 - [ ] Seed Clarvis a genuinely one-line idea. He asks batched questions, reaches a
       draft in ~2–3 rounds, and doesn't interrogate.
 - [ ] Answer "I don't know yet" to something material — it lands as a recorded open
@@ -2452,14 +2828,126 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   VSX is not optional, it's what every fork installs from (§4.0 fork-compatibility
   rule 3).
 
+**Also in M11 — linter hand-off (§4.11).** `src/integrations/eslintOffer.ts`: detect a
+configured-but-unwired ESLint, offer the install once per workspace, remember a decline
+forever. No linter-specific consumption code — diagnostics already arrive generically.
+
 **Exit checklist:**
 - [ ] README complete, privacy pitch is the first thing a reader sees.
+- [ ] A project planned with "no linter" recorded is never offered one again, by
+      either §4.9 or §4.11.
+- [ ] A workspace with an ESLint config but no extension gets **one** offer; declining
+      it is remembered permanently, including across reloads.
+- [ ] A workspace with **no** ESLint config gets no offer at all, ever. Clarvis does not
+      suggest tooling a project never chose.
+- [ ] Accepting installs from the host's own gallery — verified on **VSCodium via Open
+      VSX**, not only VS Code. A gallery with no result opens the extension page rather
+      than failing quietly.
+- [ ] With ESLint running, a repeated lint error is counted by pattern memory (§4.2)
+      exactly like a repeated compiler error — confirming the generic path works and no
+      linter-specific code was needed.
+- [ ] The agent cleans up lint errors **it introduced** and leaves pre-existing ones
+      alone.
 - [ ] `.vsix` builds clean, size reasonable (no accidental `node_modules` inclusion).
 - [ ] Degradation sweep passed for every row in §4.0's capability table.
 - [ ] `Clarvis: Usage Today` shows correct counts for all three capped features.
 - [ ] M1 fork matrix re-run against release build, no regressions from the M1 baseline.
 - [ ] Published to both Marketplace and Open VSX; install verified from Open VSX on
       at least one fork (not just VS Code stable).
+
+---
+
+### M12 — Tutor Mode *(stretch — after everything it depends on)*
+
+Last on purpose: it is a teaching layer over §4.9's planning and §4.6's agent, and it
+cannot be built before the things it teaches. Nothing else depends on it, so it is the
+cleanest milestone to cut.
+
+**Build.**
+- **M12a — Mode plumbing.** `clarvis.mode` and `clarvis.tutor.buildStyle`, resolved
+  workspace-first and falling back to the global default; the mode addendum in
+  `systemPrompt.ts` (M8g) gains a teaching block. No new pipeline — the same turn,
+  differently instructed.
+- **M12a2 — The question.** One choice at the top of §4.9's planning flow, asked only
+  for a project that is actually new, recorded workspace-scoped, never re-asked.
+- **M12b — Guided interview.** §4.9's batches gain per-question *why* lines and
+  concrete options with consequences. Options are generated from the answer space of
+  the question, not a canned list, or they stop matching the project by round three.
+- **M12c — Hands-on stepping.** Explain → wait → review what the user actually wrote.
+  Review is intent-based (does it work, does it do the thing, will it hurt later), and
+  a different-but-working solution passes.
+- **M12d — Guided auto.** The M8e agent loop, one step per approval, each with a plain
+  explanation of what changed and why. Reuses the existing gate and checkpoint path
+  untouched.
+- **M12e — Teaching moments.** The event-driven half, and the part that justifies the
+  milestone: `src/tutor/moments.ts` subscribes to the same M3/M5 signals the quip
+  system uses and proposes a lesson when one is *earned* — a third repeat of an error,
+  a first real stack trace, a first successful run. Reuses `Announcer`'s budget so
+  teaching cannot become nagging. Includes the predict-before-reveal prompt and the
+  load-bearing/ceremony split in explanations.
+- **M12f — Safe experiments and the glossary.** "Change this and see" wired to the
+  existing checkpoint/undo path, plus `GLOSSARY.md` appended in the user's project on
+  first use of each term (never rewritten, never reordered — it is a record of their
+  journey, not a reference work).
+- **M12g — Graduation.** After sustained self-sufficiency, one offer to switch back to
+  normal. Declined once means never asked again this project. The inverse also exists:
+  repeated "just do it for me" offers switching *out* of tutor mode, once, without
+  comment.
+
+**Exit checklist:**
+- [ ] A user with no programming background reaches a running thing without being told
+      to "just" do anything. (`just` is the tell that a step assumes knowledge nobody
+      established.)
+- [ ] Every interview question carries a why-line, and every option carries a
+      consequence rather than a category name.
+- [ ] Hands-on: type a *working but different* solution — it passes, with any opinion
+      clearly flagged as opinion.
+- [ ] Hands-on: type a solution with a real bug — the review says what is wrong **and
+      why**, and does not simply overwrite it.
+- [ ] Guided auto still gates: a destructive command explains its danger in words a
+      beginner can act on, and cannot be approved by reflex.
+- [ ] Read a full session's output cold and confirm no joke lands at the user's
+      expense. This is a **judgement call that has to be made by a person**, and it is
+      the exit criterion most likely to fail quietly.
+- [ ] No simplification in a full session is false — spot-check the explanations
+      against what the code actually does.
+- [ ] Spend for one milestone in tutor mode is measured and reported at enable time,
+      not discovered on the bill.
+- [ ] Graduation offer fires once, is reversible, and never repeats after a decline.
+- [ ] Default install is **normal mode**; tutor mode is reachable only by the user
+      choosing it. Confirm nothing infers it — not an empty workspace, not a hesitant
+      answer, not a beginner-looking question.
+- [ ] Starting a new project asks the mode question once, describes both options by
+      what happens rather than by who the user is, marks neither as recommended, and
+      never asks again for that project.
+- [ ] Opening an *existing* project with code in it does not ask at all.
+- [ ] Two workspaces, two different modes, at the same time — neither leaks into the
+      other, and graduating one leaves the other alone.
+- [ ] Nothing user-visible anywhere says "noob" or "beginner" — UI, settings
+      descriptions, notifications, log lines, README.
+- [ ] Graduate mid-project and keep working: same panel, same `plan.md`, same branches,
+      nothing regenerated, nothing migrated, no step repeated.
+- [ ] Inspect a repository built entirely in tutor mode — nothing in the files, history
+      or config reveals which mode built it, `GLOSSARY.md` aside. A collaborator
+      cloning it cannot tell, and there is no scaffolding to untangle.
+- [ ] A real failure in the user's own project becomes a read-the-error lesson — and
+      **no lesson anywhere is built on deliberately broken code**. Grep the session for
+      any step that wrote something known-wrong on purpose; there must be none.
+- [ ] Teaching moments fire from actual events (third repeat of an error, first stack
+      trace, first successful run) and share the §6 budget — a burst of failures does
+      not produce a burst of lectures.
+- [ ] A wrong prediction is received as useful, not corrected coldly. Same human read
+      as the humour check, and the same reason: nothing automated catches tone.
+- [ ] Explanations distinguish load-bearing code from ceremony, and the ceremony call
+      is *correct* — spot-check that nothing dismissed as boilerplate actually matters.
+- [ ] "Change this and see what breaks" restores cleanly via the existing checkpoint
+      path, with no special-case code of its own.
+- [ ] `GLOSSARY.md` accumulates in first-use order, is never rewritten, and each entry
+      still reads correctly out of context.
+- [ ] "Just do it for me" is honoured immediately, with no lecture and no visible
+      disappointment — then explained *after*, briefly.
+- [ ] Scope: the first milestone of a beginner's project produces something that runs
+      in one session. If it cannot, §4.9's gap analysis cut too little.
 
 ---
 
@@ -2497,6 +2985,10 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 | Model key leaks or unexpected chat spend | Same handling as the voice key — `SecretStorage`, `password: true`, never logged, absent from `contributes.configuration`; `clarvis.chat.dailyRequestCap` with a one-time notice on trip |
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
+| Tutor mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
+| Tutor mode becomes a separate, lesser product its users are stranded on | One extension, one codebase, one project format; graduating flips a setting and changes nothing else. No learner edition, no starter template, no markers in the repository (§4.10) |
+| A beginner learns to code but never learns to read an error, and stalls the moment they are alone | Errors are taught deliberately from *real* failures in their own project (§4.10); never from staged ones, which cost more trust than they teach |
+| Tutor mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
 | Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |
 | Voice is now core, but the good tier needs a key — does zero-config still hold? | Yes: everything except voice works with no key. Without one, voice falls back to system TTS or stays silent and nothing else changes. The plan states plainly that the free tier is a downgrade rather than pretending the tiers are equivalent |
 | Voice ruins the character | Off by default, explicit kill criteria at M7; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |

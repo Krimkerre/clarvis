@@ -10,47 +10,162 @@ export interface BriefingFacts {
   patternHint?: string;
 }
 
+/**
+ * Picks one phrasing out of several.
+ *
+ * Injected rather than calling `Math.random()` inline so the wording is testable —
+ * and so a test can assert *every* variant reads correctly, instead of whichever one
+ * chance happened to produce.
+ */
+export type Choose = (count: number) => number;
+
+const randomChoice: Choose = (count) => Math.floor(Math.random() * count);
+
 /** `src/watch/BusyTracker.ts` → `BusyTracker.ts`. Paths are noise in one line of prose. */
 function basename(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;
 }
 
-function gitLine(git: NonNullable<BriefingFacts['git']>): string {
-  if (git.dirtyCount === 0) return `Branch ${git.branch}, working tree clean.`;
+/**
+ * The opener, which is what makes this sound like a person rather than a status bar.
+ *
+ * Chosen against the *mood of the facts*, not at random across all of them: greeting
+ * someone cheerfully over a red build is the specific failure that makes a character
+ * feel like a template. Each set is written for the situation it belongs to.
+ */
+function openerLine(facts: BriefingFacts, choose: Choose): string {
+  if (facts.failure) {
+    return pick(
+      [
+        'You’re back. It didn’t fix itself, if you were wondering.',
+        'Ah, you’ve returned. Nothing has improved in your absence.',
+        'Welcome back. I kept everything exactly as broken as you left it.',
+      ],
+      choose
+    );
+  }
+
+  if (facts.git && facts.git.dirtyCount > 8) {
+    return pick(
+      [
+        'You’re back. So is the pile of uncommitted work.',
+        'Morning. Or whatever this is. There’s rather a lot outstanding.',
+        'Welcome back to whatever this was going to be.',
+      ],
+      choose
+    );
+  }
+
+  return pick(
+    [
+      'You’re back. Everything is roughly where you left it.',
+      'Welcome back. Nothing exploded, which I consider a personal achievement.',
+      'There you are. All quiet, disappointingly.',
+    ],
+    choose
+  );
+}
+
+function gitLine(git: NonNullable<BriefingFacts['git']>, choose: Choose): string {
+  if (git.dirtyCount === 0) {
+    return pick(
+      [
+        `You’re on ${git.branch}, and the tree is clean.`,
+        `${git.branch}, nothing uncommitted. Suspiciously tidy.`,
+        `Branch ${git.branch} — clean, for now.`,
+      ],
+      choose
+    );
+  }
+
   const files = git.dirtyCount === 1 ? 'file' : 'files';
-  return `Branch ${git.branch}, ${git.dirtyCount} ${files} dirty.`;
+  return pick(
+    [
+      `You’re on ${git.branch} with ${git.dirtyCount} ${files} uncommitted.`,
+      `${git.branch}, ${git.dirtyCount} ${files} still unsaved to history.`,
+      `${git.branch} — ${git.dirtyCount} ${files} dirty, in case that matters to you.`,
+    ],
+    choose
+  );
 }
 
-function failureLine(failure: FailureRecord): string {
+function failureLine(failure: FailureRecord, choose: Choose): string {
   // No exit code means it was cancelled or a debug session — "was failing" would be a lie.
-  if (failure.exitCode === undefined) return `${failure.label} was still running when you left.`;
-  return `${failure.label} was red when you fled.`;
+  if (failure.exitCode === undefined) {
+    return pick(
+      [
+        `${failure.label} was still running when you left. I stopped watching eventually.`,
+        `${failure.label} never finished. We’ll never know how that ended.`,
+        `${failure.label} was mid-thought when the window closed.`,
+      ],
+      choose
+    );
+  }
+
+  return pick(
+    [
+      `${failure.label} was red when you fled.`,
+      `${failure.label} failed, and then you left. I noticed the order of those.`,
+      `${failure.label} is still failing. It has had plenty of time to reconsider.`,
+    ],
+    choose
+  );
 }
 
-function filesLine(files: string[]): string {
+function filesLine(files: string[], choose: Choose): string {
   const names = files.slice(0, 3).map(basename);
-  if (names.length === 1) return `Last touched ${names[0]}.`;
-  return `Last touched ${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}.`;
+  const list =
+    names.length === 1
+      ? names[0]
+      : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+
+  return pick(
+    [`You were last in ${list}.`, `Last seen editing ${list}.`, `${list}, most recently.`], choose);
 }
+
+function pick(options: string[], choose: Choose): string {
+  return options[Math.min(Math.max(choose(options.length), 0), options.length - 1)];
+}
+
+/**
+ * How many lines survive, per §4.3.
+ *
+ * The opener costs one of them. That's the trade: a briefing that sounds like a person
+ * and says three things beats one that sounds like a log and says four.
+ */
+const MAX_LINES = 4;
 
 /**
  * Composes the briefing, skipping anything it has no facts for.
  *
- * Capped at four lines by §4.3, but the real rule is that every line has to earn its
- * place: a missing part is omitted rather than padded with "no failures recorded",
- * which is noise pretending to be information.
+ * Every line has to earn its place: a missing part is omitted rather than padded with
+ * "no failures recorded", which is noise pretending to be information.
+ *
+ * When there are more facts than room, the least useful line is dropped rather than
+ * the last one — what you were editing is pleasant context, but a red build and a
+ * recurring error are the reasons this feature exists.
  *
  * Returns an empty array when there's nothing worth saying — a fresh window on a
- * non-repo folder with no history should produce silence, not a greeting.
+ * non-repo folder with no history should produce silence, not a greeting. An opener
+ * on its own is a chatbot saying hello, which is exactly what §4.3 rules out.
  */
-export function buildBriefingLines(facts: BriefingFacts): string[] {
-  const lines: string[] = [];
+export function buildBriefingLines(facts: BriefingFacts, choose: Choose = randomChoice): string[] {
+  // Reading order, each with how much it deserves to survive the cap.
+  const body = [
+    { text: facts.failure ? failureLine(facts.failure, choose) : undefined, priority: 1 },
+    { text: facts.patternHint, priority: 2 },
+    { text: facts.git ? gitLine(facts.git, choose) : undefined, priority: 3 },
+    { text: facts.recentFiles.length > 0 ? filesLine(facts.recentFiles, choose) : undefined, priority: 4 },
+  ].filter((line): line is { text: string; priority: number } => line.text !== undefined);
 
-  if (facts.git) lines.push(gitLine(facts.git));
-  if (facts.failure) lines.push(failureLine(facts.failure));
-  if (facts.recentFiles.length > 0) lines.push(filesLine(facts.recentFiles));
-  if (facts.patternHint) lines.push(facts.patternHint);
+  if (body.length === 0) return [];
 
-  return lines;
+  const kept = [...body]
+    .sort((a, b) => a.priority - b.priority)
+    .slice(0, MAX_LINES - 1)
+    .map((line) => line.text);
+
+  // Back into reading order — sorting by priority above was only about what survives.
+  return [openerLine(facts, choose), ...body.filter((line) => kept.includes(line.text)).map((l) => l.text)];
 }

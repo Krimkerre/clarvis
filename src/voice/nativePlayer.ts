@@ -1,4 +1,24 @@
-import { spawn } from 'child_process';
+import { spawn, ChildProcess } from 'child_process';
+
+/** The player currently making noise, if any. See playFile() for why one is enough. */
+let current: ChildProcess | undefined;
+
+/**
+ * Silences whatever is playing right now.
+ *
+ * Killing the process is the only way to stop mid-word: these players have no pause
+ * channel, and waiting for the current utterance to end is exactly the behaviour mute
+ * exists to avoid — the sentence you need gone is the one already talking.
+ *
+ * Returns whether anything was actually stopped, so a mute with nothing playing is a
+ * silent no-op rather than an error.
+ */
+export function stopPlayback(): boolean {
+  if (!current) return false;
+  current.kill();
+  current = undefined;
+  return true;
+}
 
 /** A command line for playing one audio file, chosen per platform. */
 export interface PlayerCommand {
@@ -63,6 +83,10 @@ export function playFile(
   const candidates = playerCandidates(platform);
   const startedAt = Date.now();
 
+  // Only one player runs at a time (VoiceService serialises utterances), so a single
+  // module-scoped handle is enough to make stopPlayback() possible. Tracking a list
+  // would imply a concurrency that deliberately doesn't exist.
+
   const attempt = (index: number): Promise<void> =>
     new Promise<void>((resolve, reject) => {
       const candidate = candidates[index];
@@ -72,18 +96,25 @@ export function playFile(
       }
 
       const child = spawn(candidate.command, candidate.args(file), { stdio: 'ignore' });
+      current = child;
       log(`play: spawned ${candidate.command} pid=${child.pid}`);
 
       child.on('error', () => {
+        if (current === child) current = undefined;
         // Binary missing: try the next candidate rather than giving up.
         attempt(index + 1).then(resolve, reject);
       });
 
       child.on('exit', (code, signal) => {
+        if (current === child) current = undefined;
         // signal is the tell: a clean finish exits 0, whereas being killed mid-word
         // arrives as SIGTERM/SIGKILL and is what a cut-off utterance looks like.
         log(`play: exit code=${code} signal=${signal} after ${Date.now() - startedAt}ms`);
-        if (code === 0) resolve();
+        // Killed on purpose (mute) exits via a signal with no code. That is a
+        // completed utterance as far as callers are concerned — resolving keeps it
+        // out of the fallback path, which would otherwise "helpfully" re-speak the
+        // line through the system voice the instant you silenced it.
+        if (code === 0 || signal) resolve();
         else reject(new Error(`${candidate.command} exited ${code} (${signal ?? 'no signal'})`));
       });
     });

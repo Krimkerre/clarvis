@@ -42,6 +42,17 @@ export class BriefingService {
     this.recentFiles = new RecentFiles(5, restored);
   }
 
+  /**
+   * The recent-file list, for callers that want it outside a briefing.
+   *
+   * M4 owns the persistence for this, so chat reads it through here rather than
+   * opening the same storage key from a second place and having to agree about its
+   * shape forever.
+   */
+  get recent(): string[] {
+    return this.recentFiles.list();
+  }
+
   /** Lets pattern memory (M5) contribute the fourth line without M4 knowing about it. */
   setPatternHint(hint: () => string | undefined): void {
     this.patternHint = hint;

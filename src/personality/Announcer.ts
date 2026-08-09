@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { ButlerState } from '../panels/ButlerViewProvider';
-import { mayInterrupt } from './rateLimit';
+import { mayInterrupt, Priority } from './rateLimit';
+import { SpeechOccasion } from '../voice/speechScope';
 
 /** How long a reaction stays on the avatar's face before it settles back. */
 const REACTION_HOLD_MS = 4000;
@@ -22,6 +23,21 @@ export class Announcer {
   private lastSurfaceAt: number | undefined;
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** Anyone who wants a copy of what was actually said (M8a: the chat transcript). */
+  private readonly listeners: ((message: string, occasion: SpeechOccasion) => void)[] = [];
+
+  /**
+   * Subscribes to delivered remarks.
+   *
+   * **Suppressed remarks are not reported.** A remark the budget withheld is one
+   * Clarvis did not make, and writing it into the transcript anyway would turn the
+   * interruption budget into a rate limit on *toasts* rather than on talking. The
+   * output channel still logs the suppression, which is where that belongs.
+   */
+  onAnnounce(listener: (message: string, occasion: SpeechOccasion) => void): void {
+    this.listeners.push(listener);
+  }
+
   constructor(
     private readonly avatar: AvatarController,
     private readonly log: (message: string) => void
@@ -34,9 +50,15 @@ export class Announcer {
    * remark produces no notification of its own suppression — telling someone you
    * decided not to interrupt them is still interrupting them.
    */
-  announce(message: string, state: ButlerState, now = Date.now()): boolean {
-    if (!mayInterrupt(this.lastSurfaceAt, now)) {
-      this.log(`suppressed (interruption budget): ${message}`);
+  announce(
+    message: string,
+    state: ButlerState,
+    occasion: SpeechOccasion,
+    priority: Priority = 'routine',
+    now = Date.now()
+  ): boolean {
+    if (!mayInterrupt(this.lastSurfaceAt, now, priority)) {
+      this.log(`suppressed (interruption budget, ${priority}): ${message}`);
       return false;
     }
 
@@ -46,6 +68,8 @@ export class Announcer {
 
     clearTimeout(this.holdTimer);
     this.holdTimer = setTimeout(() => this.avatar.setState('neutral'), REACTION_HOLD_MS);
+
+    for (const listener of this.listeners) listener(message, occasion);
 
     this.log(`announced: ${message}`);
     return true;

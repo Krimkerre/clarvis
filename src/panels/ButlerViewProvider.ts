@@ -92,9 +92,46 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         // API request on audio that cannot play.
         this.audioUnlocked = false;
       }
-      // chat input wiring lands in M8
+      if (msg?.type === 'ask' && typeof msg.text === 'string') {
+        this.asked.fire(msg.text);
+        return;
+      }
+      if (msg?.type === 'toggle-mute') {
+        this.muteToggled.fire();
+        return;
+      }
+      if (msg?.type === 'clear-chat') {
+        this.clearRequested.fire();
+        return;
+      }
+      if (msg?.type === 'show-history') {
+        this.historyRequested.fire();
+        return;
+      }
     });
+
+    // A freshly resolved view is blank: it has no idea what was said before it
+    // existed. Announcing that lets the host replay the stored thread, so moving
+    // the panel or reloading doesn't look like the conversation was wiped.
+    this.viewReady.fire();
   }
+
+  private readonly asked = new vscode.EventEmitter<string>();
+  private readonly muteToggled = new vscode.EventEmitter<void>();
+  private readonly clearRequested = new vscode.EventEmitter<void>();
+  private readonly historyRequested = new vscode.EventEmitter<void>();
+  private readonly viewReady = new vscode.EventEmitter<void>();
+
+  /** A question typed into the chat box. */
+  readonly onDidAsk = this.asked.event;
+  /** The mute button above the prompt was clicked. */
+  readonly onDidToggleMute = this.muteToggled.event;
+  /** The Clear button was clicked. Confirmation is the host's job, not the webview's. */
+  readonly onDidRequestClear = this.clearRequested.event;
+  /** The History button was clicked. */
+  readonly onDidRequestHistory = this.historyRequested.event;
+  /** The webview exists and can be populated. */
+  readonly onDidBecomeReady = this.viewReady.event;
 
   private readonly speechFinished = new vscode.EventEmitter<{ id: string; error?: string }>();
   private readonly systemVoicesReported = new vscode.EventEmitter<{ name: string; lang: string }[]>();
@@ -126,7 +163,12 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.speechFinished,
       this.systemVoicesReported,
       this.audioProbed,
-      this.audioUnlockedEmitter
+      this.audioUnlockedEmitter,
+      this.asked,
+      this.muteToggled,
+      this.clearRequested,
+      this.historyRequested,
+      this.viewReady
     );
   }
 
@@ -149,6 +191,71 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
 
     // strip the demo controls/quip UI — the real host drives state via postMessage
     html = html.replace(/<div class="controls"[\s\S]*?<\/div>\n\n<p class="quip"[\s\S]*?<\/p>/, '');
+
+
+    // The chat surface, under the avatar in the same webview (§3 — one panel, so the
+    // face and the conversation can never end up docked in different places).
+    // VS Code's own theme variables are used throughout: hardcoded colours look
+    // correct in exactly one theme and wrong in every other.
+    const chatUi = `<style nonce="${n}">
+      /* avatar.html is a standalone demo: it centres one 320px avatar in the middle of
+         the viewport. In a side panel the shape is different — face on top, history
+         filling whatever is left, prompt pinned to the bottom — so its layout is
+         overridden here rather than edited there (§3: the file stays untouched). */
+      body { justify-content: flex-start; gap: 0; padding: 0; overflow: hidden; }
+      .stage { width: 100%; height: auto; flex: 0 0 auto; padding: 10px 0 4px; }
+      /* Scales with the panel instead of overflowing it — a side bar can be dragged
+         much narrower than 320px, and a clipped butler looks broken rather than small. */
+      svg.butler { width: clamp(130px, 62vw, 260px); height: auto; }
+      .shadow { display: none; }
+
+      /* The middle section owns the leftover height. min-height:0 is load-bearing:
+         without it a flex child refuses to shrink below its content, so the transcript
+         grows the page instead of scrolling and pushes the input off the bottom. */
+      /* The generous bottom padding is deliberate: VS Code's notification toasts pop
+         up over the bottom-right corner of the window, which is exactly where a
+         bottom-pinned input sits when Clarvis is docked to the right — so the moment
+         he says anything, he covers his own prompt. Sitting the input higher keeps it
+         reachable while a toast is on screen. */
+      .clarvis-chat { display:flex; flex-direction:column; gap:6px; padding:4px 10px 76px;
+        flex: 1 1 auto; min-height: 0; width: 100%;
+        font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+        color: var(--vscode-foreground); }
+      .clarvis-chat-head { display:flex; align-items:center; justify-content:flex-end;
+        flex: 0 0 auto; gap:6px; }
+      .clarvis-mute { background:none; border:1px solid var(--vscode-widget-border, transparent);
+        border-radius:4px; color: var(--vscode-foreground); cursor:pointer; padding:2px 8px;
+        font-size:12px; opacity:.75; }
+      .clarvis-mute:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
+      .clarvis-mute[data-muted="true"] { opacity:1; color: var(--vscode-errorForeground); }
+      #clarvis-transcript { display:flex; flex-direction:column; gap:8px;
+        flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+      .clarvis-turn { line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+      .clarvis-turn .who { display:block; font-size:10px; letter-spacing:.08em;
+        text-transform:uppercase; opacity:.55; margin-bottom:2px; }
+      .clarvis-turn code { font-family: var(--vscode-editor-font-family);
+        background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
+      #clarvis-input { width:100%; box-sizing:border-box; resize:none; padding:6px 8px;
+        font-family: inherit; font-size: inherit; border-radius:4px;
+        color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+        border:1px solid var(--vscode-input-border, transparent); }
+      #clarvis-input:focus { outline:1px solid var(--vscode-focusBorder); }
+    </style>
+    <div class="clarvis-chat">
+      <div id="clarvis-transcript"></div>
+      <!-- Controls sit between the history and the prompt: pinned to the bottom with
+           the input, where the hand already is, rather than at the top where reaching
+           them means looking away from what you were typing. -->
+      <div class="clarvis-chat-head">
+        <button id="clarvis-history" class="clarvis-mute"
+                title="Earlier conversations from this workspace.">History</button>
+        <button id="clarvis-clear" class="clarvis-mute"
+                title="Delete the conversation. There is no undo.">Clear</button>
+        <button id="clarvis-mute" class="clarvis-mute" data-muted="false"
+                title="Silence him. Resets when the window reloads.">Mute</button>
+      </div>
+      <textarea id="clarvis-input" rows="2" placeholder="Ask. Enter sends."></textarea>
+    </div>`;
 
     // Listens for {type:'state', name} messages from the extension host and calls
     // straight into avatar.html's own global setState() — the entire integration
@@ -179,9 +286,88 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         audioElement: typeof window.Audio !== 'undefined',
       });
 
+      const transcript = document.getElementById('clarvis-transcript');
+      const input = document.getElementById('clarvis-input');
+      const muteButton = document.getElementById('clarvis-mute');
+
+      // Renders one turn. Only inline backtick spans become <code>; everything else is
+      // inserted as a text node, so a filename or an error message containing markup
+      // can never become markup. Replies are generated locally today, but this same
+      // box renders model output in M8b — sanitising it later would be too late.
+      const addTurn = (speaker, text) => {
+        const row = document.createElement('div');
+        row.className = 'clarvis-turn';
+
+        const who = document.createElement('span');
+        who.className = 'who';
+        who.textContent = speaker === 'user' ? 'You' : 'Clarvis';
+        row.appendChild(who);
+
+        String(text).split('\\u0060').forEach((part, i) => {
+          // Odd indices sat between a pair of backticks.
+          if (i % 2 === 1) {
+            const code = document.createElement('code');
+            code.textContent = part;
+            row.appendChild(code);
+          } else {
+            row.appendChild(document.createTextNode(part));
+          }
+        });
+
+        transcript.appendChild(row);
+        transcript.scrollTop = transcript.scrollHeight;
+      };
+
+      const send = () => {
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = '';
+        vscode.postMessage({ type: 'ask', text });
+      };
+
+      // Enter sends, Shift+Enter makes a new line — the convention every chat box
+      // uses, and getting it backwards is instantly infuriating.
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+      });
+
+      muteButton.addEventListener('click', () => vscode.postMessage({ type: 'toggle-mute' }));
+      // The host asks for confirmation before wiping — a webview button sitting next
+      // to one people click constantly is a misclick waiting to happen.
+      document.getElementById('clarvis-clear')
+        .addEventListener('click', () => vscode.postMessage({ type: 'clear-chat' }));
+      document.getElementById('clarvis-history')
+        .addEventListener('click', () => vscode.postMessage({ type: 'show-history' }));
+
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (!msg) return;
+
+        if (msg.type === 'chat-turn') {
+          addTurn(msg.speaker, msg.text);
+          return;
+        }
+
+        // Full replay, used when the view is (re-)created — the webview is blank
+        // after a panel move, but the conversation isn't.
+        if (msg.type === 'chat-thread') {
+          transcript.replaceChildren();
+          for (const t of msg.turns || []) addTurn(t.speaker, t.text);
+          return;
+        }
+
+        if (msg.type === 'mute') {
+          muteButton.dataset.muted = String(msg.muted);
+          muteButton.textContent = msg.muted ? 'Muted' : 'Mute';
+          return;
+        }
+
+        // Mute has to reach speechSynthesis too: it lives in here, not in the host,
+        // so killing the native player alone would leave the OS voice talking.
+        if (msg.type === 'stop-speech') {
+          try { speechSynthesis.cancel(); } catch (err) { /* nothing to cancel */ }
+          return;
+        }
 
         if (msg.type === 'state' && typeof setState === 'function') {
           setState(msg.name);
@@ -263,7 +449,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       '<meta charset="utf-8">',
       `<meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${n}'; media-src data:;">`
     );
-    html = html.replace('</body>', `${bridge}</body>`);
+    html = html.replace('</body>', `${chatUi}${bridge}</body>`);
     // the inline <script> that defines setState() also needs the nonce to run under our CSP
     html = html.replace('<script>\nconst svg', `<script nonce="${n}">\nconst svg`);
 

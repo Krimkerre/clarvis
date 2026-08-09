@@ -3,6 +3,8 @@ import { AvatarController } from '../AvatarController';
 import { VoiceProvider, Utterance } from './VoiceProvider';
 import { SpeechOccasion, mayBeSpoken } from './speechScope';
 import { resolveVoiceId } from './curatedVoices';
+import { stopPlayback } from './nativePlayer';
+import { speakable } from './speakable';
 
 /**
  * Speaks, when speaking is appropriate.
@@ -30,6 +32,55 @@ export class VoiceService {
    */
   private queue: Promise<void> = Promise.resolve();
 
+  /**
+   * Session mute (§4.4), separate from `clarvis.voice.enabled` on purpose.
+   *
+   * The setting is a decision about the feature; this is a decision about the next ten
+   * minutes. Muting to get through a meeting must not quietly disable voice forever,
+   * so this lives in memory and dies with the window — reload and Clarvis talks again.
+   */
+  private muted = false;
+
+  /** Fires whenever mute flips, so the panel and the avatar can show it. */
+  private readonly muteListeners: ((muted: boolean) => void)[] = [];
+
+  onMuteChange(listener: (muted: boolean) => void): void {
+    this.muteListeners.push(listener);
+  }
+
+  get isMuted(): boolean {
+    return this.muted;
+  }
+
+  /**
+   * Silences, or un-silences.
+   *
+   * Muting stops the utterance already playing *and* abandons everything queued behind
+   * it. Dropping the queue is the part that is easy to miss: a paused backlog would
+   * come flooding out on unmute, narrating builds that finished ten minutes ago.
+   */
+  setMuted(muted: boolean): void {
+    this.muted = muted;
+
+    if (muted) {
+      const stopped = stopPlayback();
+      // The system voice lives in the webview and has its own stop channel.
+      this.stopSystemVoice();
+      // Abandon the tail. Anything already chained keeps its own `muted` check, but
+      // resetting the chain means unmute starts from silence rather than a backlog.
+      this.queue = Promise.resolve();
+      this.avatar.setState('neutral');
+      this.log(`voice: muted${stopped ? ' (stopped playback in progress)' : ''}`);
+    } else {
+      this.log('voice: unmuted');
+    }
+
+    for (const listener of this.muteListeners) listener(muted);
+  }
+
+  /** How the webview's speechSynthesis is silenced; set by the composition root. */
+  stopSystemVoice: () => void = () => {};
+
   constructor(
     private readonly avatar: AvatarController,
     private readonly primary: VoiceProvider,
@@ -56,7 +107,7 @@ export class VoiceService {
    * broken voice can never delay a notification or block the extension.
    */
   say(text: string, occasion: SpeechOccasion): void {
-    if (!this.enabled) return;
+    if (!this.enabled || this.muted) return;
     if (!mayBeSpoken(occasion)) {
       this.log(`voice: not spoken (${occasion} is out of scope)`);
       return;
@@ -66,7 +117,9 @@ export class VoiceService {
     // Failures are swallowed so one bad utterance can't stall everything behind it.
     this.queue = this.queue
       .catch(() => undefined)
-      .then(() => this.speakWithFallback({ text, voiceId: this.selectedVoice }));
+      // Normalised here rather than at the call sites: written text and spoken text
+      // are different languages, and every surface would otherwise have to remember.
+      .then(() => this.speakWithFallback({ text: speakable(text), voiceId: this.selectedVoice }));
   }
 
   /**
@@ -75,7 +128,9 @@ export class VoiceService {
    */
   preview(text: string, selectedVoice: string): void {
     const voiceId = resolveVoiceId(selectedVoice);
-    this.queue = this.queue.catch(() => undefined).then(() => this.speakWithFallback({ text, voiceId }));
+    this.queue = this.queue
+      .catch(() => undefined)
+      .then(() => this.speakWithFallback({ text: speakable(text), voiceId }));
   }
 
   /**
@@ -86,6 +141,9 @@ export class VoiceService {
    * drift out of sync with the sound.
    */
   private async speakWithFallback(utterance: Utterance): Promise<void> {
+    // Re-checked here, not just at say(): an utterance can sit in the queue for
+    // seconds behind a long one, and mute pressed during that wait must apply to it.
+    if (this.muted) return;
     this.avatar.setState('talking');
 
     try {

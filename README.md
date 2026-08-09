@@ -69,10 +69,15 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
   in a week, surfaces what fixed it last time. Heuristic, and never applied on its own —
   it's an unsolicited surface, so it suggests. Reply "go on then" and the agent takes it.
 - **Session briefing** — on launch: branch + dirty state, what was failing when you
-  left, recent files touched, one open pattern-memory item. Four lines, then silence.
+  left, recent files touched, one open pattern-memory item. Four lines, written as
+  someone talking rather than a status bar — and the opener matches the mood of what it
+  found, because greeting you cheerfully over a red build is how a character becomes a
+  template. Nothing worth reporting means nothing is said.
 - **Dev-moment commentary** — a slow build, a third identical failure, a suite going
-  green, a 200-file diff. Rate-limited hard (≤1 unsolicited surface / 10 min); silence
-  is the default response.
+  green, a 200-file diff. Rate-limited hard (≤1 unsolicited surface per minute, shared
+  across *everything* he says unprompted); silence is the default response. Things you
+  need to know now — a build going red, an error you've hit before — get a shorter
+  floor, so good news can't crowd out bad.
 
 **On request (the primary interactive surface):**
 - **Project planning** — arrive with one sentence ("a CLI that renames photos by EXIF
@@ -83,9 +88,16 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
   `plan.md` with real milestones and exit checklists. Approve it, and the agent starts
   building against it.
 - **Chat** — the assistant you talk to in this window, replacing the default chat
-  panel. Answers from its own watch/memory state need no key or network; harder
-  questions go to whichever model you bring (see *Models* below). Context sent with a
-  question is explicit, bounded, and visible.
+  panel: avatar on top, conversation below, prompt at the bottom. **Answers from its own
+  watch/memory state need no key, no network and no tokens** — "what's broken?", "what
+  branch am I on?", "have we seen this before?" are answered from what it watched
+  happen. Harder questions go to whichever model you bring (see *Models* below).
+  Context sent with a question is explicit, bounded, and visible.
+  Everything he says unprompted lands in the transcript too, so a notification you
+  missed is still there. Each window starts with a clean conversation; earlier ones are
+  a click away under **History**. And a **Mute** button sits next to the prompt — it
+  stops him mid-sentence, and it's for the next ten minutes, not forever: reload and he
+  talks again.
 - **Agent** — hand it a real task ("fix the failing test", "rename this everywhere")
   and it edits, runs commands, reads the results, and iterates until it's done. Work
   happens on its own `clarvis/<task>` branch, committed step by step, so your
@@ -100,11 +112,30 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
   not buried in advanced settings, with a format hint so you know what to look for. You
   also choose the **TTS engine** separately from the voice — defaulting to Fish Audio's
   `s2.1-pro-free`, their current best model on a free developer tier, so the good voice
-  doesn't cost per utterance. Still off until you enable it: a voice that
-  surprises you once is a voice you disable forever.
+  doesn't cost per utterance. Voices you paste in can be **saved under a name** and
+  picked again later. **Everything he says can be spoken** — briefings, build outcomes,
+  chat replies, the sardonic asides — because splitting it would mean the voice carried
+  the dull half of the character and the text carried the funny half. How *often* he
+  speaks is governed by the interruption budget above, not by muzzling half of it.
+  Still off until you enable it: a voice that surprises you once is a voice you disable
+  forever.
 - **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat
   box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched
-  English jargon. Never auto-sends; the transcript is always editable text.
+  English jargon. Never auto-sends; the transcript is always editable text. Recording
+  happens outside the editor's sandbox, which needs `ffmpeg` — Clarvis tells you what's
+  missing and hands you the install command rather than running anything itself, and
+  everything else works without it.
+
+- **Works with your linter, doesn't pick one for you** — ESLint findings (or any other
+  tool that reports problems) already feed pattern memory like anything else. If a
+  project is set up for a linter that isn't running, Clarvis offers to connect it, once.
+  If the project never chose one, it says nothing — imposing a style opinion on someone
+  else's codebase isn't a butler's job. New projects get asked during planning, when
+  it's a decision rather than a critique.
+- **Tutor Mode** *(planned)* — the same Clarvis, explaining every step, for people
+  learning to program on a real project of their own. You choose it when you start a
+  project, you can type the code yourself or watch it be typed, and it's built to be
+  outgrown. Full guide: [**TUTOR-README.md**](./TUTOR-README.md).
 
 Full spec, including every setting, API, and edge case: [`plan.md`](./plan.md).
 
@@ -235,12 +266,18 @@ the full per-milestone build notes and exit criteria.
       goes through the OS's headless player rather than the webview, because Chromium
       blocks audio until the panel is clicked — which the launch briefing can never
       satisfy. Rendered speech is cached on disk, so repeats cost nothing.
-- [ ] **M8 — Chat & Agent.** Not started. *(The big one: local answers, then the
+- [~] **M8 — Chat & Agent.** *In progress.* **M8a is done**: the chat panel, answers
+      from local state with no key or network, the transcript that keeps what he says,
+      per-session history, and the mute button. Still to come: the model layer, the tool
+      layer, the gates, and the agent loop itself. *(The big one: local answers, then the
       Answer path, then a real agentic harness — tool layer and gates built and tested
       before the model can reach them.)*
 - [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
       `plan.md` → sign-off → hand milestone one to the agent.)*
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
+- [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
+      people learning to program on a real project of their own. Opt-in per project,
+      and designed to be outgrown — see **[TUTOR-README.md](TUTOR-README.md)**.
 - [ ] **M11 — Polish & Release.** Not started.
 
 ## Development process

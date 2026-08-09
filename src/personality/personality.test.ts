@@ -118,3 +118,23 @@ test('quips stay short', () => {
     assert.ok(quip.text.length <= 100, `too long: ${quip.text}`);
   }
 });
+
+import { IMPORTANT_WINDOW_MS } from './rateLimit';
+
+test('a failure is not swallowed by a success that spoke moments earlier', () => {
+  // The regression this exists to prevent: routing completions through the budget
+  // meant a passing build spent the allowance and the failure right after it went
+  // unreported — the budget working exactly backwards. Twenty seconds apart is two
+  // probe tasks run back to back, which is the ordinary case, not an edge one.
+  const justSpoke = 0;
+  const now = 20 * 1000;
+
+  assert.equal(mayInterrupt(justSpoke, now, 'routine'), false);
+  assert.equal(mayInterrupt(justSpoke, now, 'important'), true);
+});
+
+test('important surfaces are cheaper, not exempt', () => {
+  // Without a floor, a flapping build machine-guns notifications.
+  assert.equal(mayInterrupt(0, IMPORTANT_WINDOW_MS - 1, 'important'), false);
+  assert.equal(mayInterrupt(0, IMPORTANT_WINDOW_MS, 'important'), true);
+});

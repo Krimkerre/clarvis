@@ -120,7 +120,7 @@ export class Personality {
     if (!quip) return;
 
     this.log(`quip ${trigger} (${quip.tone}) sass=${this.picker.sassUnlocked}`);
-    this.announcer.announce(quip.text, state);
+    this.announcer.announce(quip.text, state, 'quip');
   }
 }
 

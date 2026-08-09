@@ -2,27 +2,25 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mayBeSpoken, SpeechOccasion } from './speechScope';
 
-test('briefings and completions may be spoken', () => {
+test('briefings, completions and chat replies may be spoken', () => {
   assert.equal(mayBeSpoken('briefing'), true);
   assert.equal(mayBeSpoken('completion'), true);
+  // Solicited: an answer to a question you just typed cannot surprise you, which is
+  // the only thing this scope exists to prevent.
+  assert.equal(mayBeSpoken('chatReply'), true);
 });
 
-test('quips never speak', () => {
-  // §4.4, and not a soft preference: a voice heckling from the sidebar is the fastest
-  // route to someone disabling voice permanently.
-  assert.equal(mayBeSpoken('quip'), false);
+test('quips and pattern hits are spoken too', () => {
+  // Reversed at M8a. Volume is controlled by the §6 interruption budget — how often
+  // he surfaces at all — not by muting the funny half of what he says.
+  assert.equal(mayBeSpoken('quip'), true);
+  assert.equal(mayBeSpoken('patternHit'), true);
 });
 
-test('pattern hits never speak', () => {
-  assert.equal(mayBeSpoken('patternHit'), false);
-});
+test('everything he says can be spoken', () => {
+  const all: SpeechOccasion[] = ['briefing', 'completion', 'chatReply', 'quip', 'patternHit'];
 
-test('the spoken set is exactly two occasions', () => {
-  // Guards against a future occasion being added and silently inheriting speech.
-  const all: SpeechOccasion[] = ['briefing', 'completion', 'quip', 'patternHit'];
-  const spoken = all.filter(mayBeSpoken);
-
-  assert.deepEqual(spoken, ['briefing', 'completion']);
+  assert.deepEqual(all.filter(mayBeSpoken), all);
 });
 
 import { cacheKey, selectForEviction, CACHE_LIMIT_BYTES } from './voiceCache';
@@ -163,4 +161,96 @@ test('re-saving a known voice renames it instead of duplicating it', () => {
     Gravel: 'abc123',
     Second: 'def456',
   });
+});
+
+import { speakable } from './speakable';
+
+test('an outcome notice reads as a sentence, not a log line', () => {
+  // "(probe-build-ok, 2s)" is good to look at and terrible to hear: the brackets
+  // become a pause with no cause and "2s" is read as "two ess".
+  assert.equal(
+    speakable('Finished. Red, I\'m afraid. (probe-build-fail, 2s)'),
+    "Finished. Red, I'm afraid. probe-build-fail took 2 seconds."
+  );
+});
+
+test('durations are spoken as words, with the right plural', () => {
+  assert.equal(speakable('It took 1s.'), 'It took 1 second.');
+  assert.equal(speakable('It took 45s.'), 'It took 45 seconds.');
+  assert.equal(speakable('It took 4.2s.'), 'It took 4.2 seconds.');
+  assert.equal(speakable('It took 2m 5s.'), 'It took 2 minutes and 5 seconds.');
+  assert.equal(speakable('It took 1m 1s.'), 'It took 1 minute and 1 second.');
+  assert.equal(speakable('It took 150ms.'), 'It took 150 milliseconds.');
+});
+
+test('inline code markers are never read aloud', () => {
+  // The transcript renders these as <code>; spoken, "backtick npm test backtick"
+  // is the single fastest way to sound like a machine.
+  assert.equal(speakable('`npm test` is still broken.'), 'npm test is still broken.');
+});
+
+test('mid-sentence brackets keep their words', () => {
+  assert.equal(
+    speakable('Branch main (3 files dirty) as of now.'),
+    'Branch main, 3 files dirty, as of now.'
+  );
+});
+
+import { peakDbfs, recorderCandidates } from './nativeRecorder';
+
+/** A 16-bit mono WAV carrying the given samples, header included. */
+function wav(samples: number[]): Buffer {
+  const body = Buffer.alloc(samples.length * 2);
+  samples.forEach((sample, i) => body.writeInt16LE(sample, i * 2));
+  return Buffer.concat([Buffer.alloc(44), body]);
+}
+
+test('a silent recording is distinguishable from a real one', () => {
+  // The failure this exists to catch: a denied microphone can return a well-formed
+  // file full of zeroes and exit 0, so the exit code alone would report success.
+  assert.equal(peakDbfs(wav([0, 0, 0, 0])), -Infinity);
+  assert.ok(peakDbfs(wav([0, 8000, -12000, 0])) > -20);
+});
+
+test('full-scale audio reads as 0 dBFS', () => {
+  assert.ok(Math.abs(peakDbfs(wav([32767]))) < 0.01);
+});
+
+test('every platform has at least one recorder candidate', () => {
+  for (const platform of ['darwin', 'win32', 'linux'] as NodeJS.Platform[]) {
+    assert.ok(recorderCandidates(platform).length > 0, platform);
+  }
+});
+
+import { hasAudio, SILENCE_FLOOR_DBFS } from './nativeRecorder';
+
+test('a dead input device reads as silence, despite not being digital zero', () => {
+  // Measured on a real machine: a virtual/muted device returns samples of ±1, about
+  // -90 dBFS. Testing for exact zero misses precisely the case this exists to catch —
+  // the first mic probe reported "-90.3 dBFS" as though it were a level, not a failure.
+  const deadDevice = wav([1, -1, 1, -1]);
+
+  assert.ok(peakDbfs(deadDevice) < SILENCE_FLOOR_DBFS);
+  assert.equal(hasAudio(deadDevice), false);
+  assert.equal(hasAudio(wav([0, 6000, -9000])), true);
+});
+
+import { installHint, isRecorderMissing } from './nativeRecorder';
+
+test('every platform gets something the user can actually act on', () => {
+  // A "not installed" message with no install line is just a dead end.
+  for (const platform of ['darwin', 'win32', 'linux'] as NodeJS.Platform[]) {
+    const hint = installHint(platform);
+
+    assert.ok(hint.missing.length > 0, platform);
+    assert.ok(hint.command.length > 0, platform);
+    assert.ok(hint.note.length > 0, platform);
+  }
+});
+
+test('a missing recorder is distinguishable from a failed recording', () => {
+  // These need different responses: one is an offer to install something, the other
+  // is a genuine error. Conflating them means a real fault reads as "go install X".
+  assert.equal(isRecorderMissing(new Error('no recorder available')), true);
+  assert.equal(isRecorderMissing(new Error('ffmpeg exited 1 (no signal)')), false);
 });

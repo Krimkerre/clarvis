@@ -110,3 +110,50 @@ test('a session is labelled by the first thing asked', () => {
 
   assert.equal(label, 'why is the build red?');
 });
+
+import { chatAction } from './chatCommands';
+
+test('slash commands open the thing they name', () => {
+  assert.equal(chatAction('/help'), 'help');
+  assert.equal(chatAction('/voice'), 'chooseVoice');
+  assert.equal(chatAction('/engine'), 'chooseEngine');
+  assert.equal(chatAction('/mute'), 'toggleMute');
+  assert.equal(chatAction('/history'), 'showHistory');
+  assert.equal(chatAction('/settings'), 'openSettings');
+});
+
+test('plain requests open things too', () => {
+  assert.equal(chatAction('change the voice'), 'chooseVoice');
+  assert.equal(chatAction('switch to a different engine'), 'chooseEngine');
+  assert.equal(chatAction('open the settings'), 'openSettings');
+  assert.equal(chatAction('shut up'), 'toggleMute');
+  assert.equal(chatAction('show me previous conversations'), 'showHistory');
+});
+
+test('questions are answered, not hijacked into a dialog', () => {
+  // The failure worth preventing: "what voice are you using?" popping a picker.
+  // Being too eager is worse than being too shy — a missed request just gets a
+  // normal answer, whereas a hijacked question looks like a bug.
+  assert.equal(chatAction('what voice are you using?'), null);
+  assert.equal(chatAction('which model is this?'), null);
+  assert.equal(chatAction('is the engine any good?'), null);
+  assert.equal(chatAction('why did the build fail?'), null);
+});
+
+test('a slash command must be the whole message', () => {
+  // Otherwise talking *about* a command triggers it.
+  assert.equal(chatAction('what does /voice do?'), null);
+});
+
+test('narrower intents win over broader ones', () => {
+  // "engine" contains no voice words, but "voice engine" does — and the engine
+  // picker is the one being asked for.
+  assert.equal(chatAction('change the voice engine'), 'chooseEngine');
+  assert.equal(chatAction('remove my api key'), 'clearKey');
+  assert.equal(chatAction('set my api key'), 'setKey');
+});
+
+test('bare help is understood without a verb', () => {
+  assert.equal(chatAction('help'), 'help');
+  assert.equal(chatAction('help me'), 'help');
+});

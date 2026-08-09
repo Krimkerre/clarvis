@@ -68,14 +68,46 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage((msg) => {
       if (msg?.type === 'state' && isButlerState(msg.name)) {
         this.stateReported.fire(msg.name);
+        return;
       }
-      // click/chat wiring lands in M7 — no-op for now
+      if (msg?.type === 'speech-ended' || msg?.type === 'speech-error') {
+        this.speechFinished.fire({ id: msg.id, error: msg.reason });
+        return;
+      }
+      if (msg?.type === 'system-voices') {
+        this.systemVoicesReported.fire(msg.voices ?? []);
+        return;
+      }
+      if (msg?.type === 'audio-probe') {
+        this.audioProbed.fire(msg);
+      }
+      // chat input wiring lands in M8
     });
   }
 
-  /** Hands the event emitter to context.subscriptions for automatic teardown. */
+  private readonly speechFinished = new vscode.EventEmitter<{ id: string; error?: string }>();
+  private readonly systemVoicesReported = new vscode.EventEmitter<{ name: string; lang: string }[]>();
+  private readonly audioProbed = new vscode.EventEmitter<Record<string, unknown>>();
+
+  /** Fires when an utterance finishes, or fails. Drives `talking` → `neutral`. */
+  readonly onDidFinishSpeech = this.speechFinished.event;
+  readonly onDidReportSystemVoices = this.systemVoicesReported.event;
+  /** What the audio APIs look like inside the webview — reported once on load. */
+  readonly onDidProbeAudio = this.audioProbed.event;
+
+  /** Sends a message into the webview. No-ops if the panel has never been opened. */
+  post(message: unknown): void {
+    void this.view?.webview.postMessage(message);
+  }
+
+  /** Hands the event emitters to context.subscriptions for automatic teardown. */
   get disposable(): vscode.Disposable {
-    return this.stateReported;
+    return vscode.Disposable.from(
+      this.stateReported,
+      this.speechFinished,
+      this.systemVoicesReported,
+      this.audioProbed
+    );
   }
 
   // The extension host's side of the bridge: push a state change INTO the webview.
@@ -103,10 +135,66 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
     // surface is that one function call.
     const bridge = `<script nonce="${n}">
       const vscode = acquireVsCodeApi();
+
+      // Reports what the audio APIs actually look like in here. M1 probed
+      // SpeechRecognition (input) and found it blocked, but never checked
+      // speechSynthesis (output) — different API, no permission, and Tier 0 depends
+      // entirely on it, so it's worth knowing rather than assuming.
+      vscode.postMessage({
+        type: 'audio-probe',
+        speechSynthesis: typeof window.speechSynthesis !== 'undefined',
+        audioElement: typeof window.Audio !== 'undefined',
+      });
+
       window.addEventListener('message', (event) => {
         const msg = event.data;
-        if (msg && msg.type === 'state' && typeof setState === 'function') {
+        if (!msg) return;
+
+        if (msg.type === 'state' && typeof setState === 'function') {
           setState(msg.name);
+          return;
+        }
+
+        // Speak via the OS voice. The mouth and the sound are the same component, so
+        // they can't drift apart: playback events drive the avatar, not a timer.
+        if (msg.type === 'speak-system') {
+          try {
+            const utterance = new SpeechSynthesisUtterance(msg.text);
+            if (msg.voiceId) {
+              const match = speechSynthesis.getVoices().find(v => v.name === msg.voiceId);
+              if (match) utterance.voice = match;
+            }
+            utterance.onend = () => vscode.postMessage({ type: 'speech-ended', id: msg.id });
+            utterance.onerror = (e) => vscode.postMessage({
+              type: 'speech-error', id: msg.id, reason: (e && e.error) || 'unknown'
+            });
+            speechSynthesis.cancel();
+            speechSynthesis.speak(utterance);
+          } catch (err) {
+            vscode.postMessage({ type: 'speech-error', id: msg.id, reason: String(err) });
+          }
+          return;
+        }
+
+        // Play pre-rendered audio handed over as a data URI. The webview never fetches
+        // anything itself, so the API key never crosses the CSP boundary.
+        if (msg.type === 'speak-audio') {
+          try {
+            const audio = new Audio(msg.dataUri);
+            audio.onended = () => vscode.postMessage({ type: 'speech-ended', id: msg.id });
+            audio.onerror = () => vscode.postMessage({
+              type: 'speech-error', id: msg.id, reason: 'playback failed'
+            });
+            void audio.play();
+          } catch (err) {
+            vscode.postMessage({ type: 'speech-error', id: msg.id, reason: String(err) });
+          }
+          return;
+        }
+
+        if (msg.type === 'list-system-voices') {
+          const voices = speechSynthesis.getVoices().map(v => ({ name: v.name, lang: v.lang }));
+          vscode.postMessage({ type: 'system-voices', voices });
         }
       });
     </script>`;

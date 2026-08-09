@@ -11,6 +11,8 @@ import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
+import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
+import { VoiceService } from './voice/VoiceService';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -31,7 +33,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');
 
-  const avatar = createAvatar(context, logger);
+  const { avatar, panel } = createAvatar(context, logger);
   registerDebugStateCommand(context, avatar);
 
   // One budget for everything unsolicited (§6). M3's notices, M5's pattern hits and
@@ -40,9 +42,18 @@ export function activate(context: vscode.ExtensionContext): void {
   const announcer = new Announcer(avatar, (message) => logger.write(message));
   context.subscriptions.push({ dispose: () => announcer.dispose() });
 
+  // Voice (M7). Tier 1 (Fish Audio) lands behind the same interface; until a key and
+  // a curated voice exist, the system voice is the whole implementation.
+  const voice = new VoiceService(
+    avatar,
+    new SystemVoiceProvider(panel),
+    new SystemVoiceProvider(panel),
+    (message) => logger.write(message)
+  );
+
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  startBriefing(context, avatar, tracker, logger, memory);
+  startBriefing(context, avatar, tracker, logger, memory, voice);
   startPersonality(context, tracker, logger, announcer);
 }
 
@@ -50,7 +61,10 @@ export function activate(context: vscode.ExtensionContext): void {
  * Builds the avatar's two surfaces (webview panel + status-bar glyph) and the
  * controller that keeps them in sync, and registers all of it with VS Code.
  */
-function createAvatar(context: vscode.ExtensionContext, log: ClarvisLog): AvatarController {
+function createAvatar(
+  context: vscode.ExtensionContext,
+  log: ClarvisLog
+): { avatar: AvatarController; panel: ButlerViewProvider } {
   const provider = new ButlerViewProvider(context.extensionUri);
   const statusBar = new StatusBarMirror('neutral');
   const avatar = new AvatarController(provider, statusBar, log);
@@ -69,7 +83,11 @@ function createAvatar(context: vscode.ExtensionContext, log: ClarvisLog): Avatar
     })
   );
 
-  return avatar;
+  // One-off report of what the audio APIs look like in the webview. M1 checked speech
+  // *input* and found it blocked; output was never tested, and Tier 0 rests on it.
+  provider.onDidProbeAudio((probe) => log.write(`audio probe: ${JSON.stringify(probe)}`));
+
+  return { avatar, panel: provider };
 }
 
 /**
@@ -143,7 +161,8 @@ function startBriefing(
   avatar: AvatarController,
   tracker: BusyTracker,
   log: ClarvisLog,
-  memory: PatternMemory
+  memory: PatternMemory,
+  voice: VoiceService
 ): void {
   const briefing = new BriefingService(context, (message) => log.write(message));
 
@@ -154,10 +173,12 @@ function startBriefing(
   briefing.start(tracker, (lines) => {
     // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;
     // for now the notification is the delivery and the face just marks the moment.
-    avatar.setState('talking');
     void vscode.window.showInformationMessage(lines.join(' '));
-    setTimeout(() => avatar.setState('neutral'), 3000);
     lines.forEach((line) => log.write(`briefing | ${line}`));
+
+    // Spoken if voice is on; the avatar's talking/neutral cycle is driven by actual
+    // playback rather than a timer, so it's the voice service's job, not ours.
+    voice.say(lines.join(' '), 'briefing');
   });
 
   context.subscriptions.push({ dispose: () => briefing.dispose() });

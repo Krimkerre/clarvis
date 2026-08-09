@@ -51,6 +51,29 @@
           "type": "number",
           "default": 30,
           "description": "Tasks/commands/debug sessions shorter than this are tracked but never notified about."
+        },
+        "clarvis.voice.enabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Speak briefings and task-completion notices aloud. Off until you ask for it \u2014 a voice that surprises you once is a voice you disable forever."
+        },
+        "clarvis.voice.selectedVoice": {
+          "type": "string",
+          "default": "curated:default",
+          "description": "Voice to speak with. 'system' for the OS voice, or 'fish:<reference_id>' for a Fish Audio voice."
+        },
+        "clarvis.voice.fishAudio.engine": {
+          "type": "string",
+          "default": "s2.1-pro-free",
+          "enum": [
+            "s2.1-pro-free",
+            "s2.1-pro",
+            "s2-pro",
+            "s1",
+            "s1-mini",
+            "speech-1.6"
+          ],
+          "description": "Fish Audio TTS engine. Quality vs speed vs cost; the default is their current best model on a free developer tier."
         }
       }
     }

@@ -1946,6 +1946,13 @@ Promoted from stretch: the writing is half the character, the delivery is the ot
 half. Sits right after M6's personality pass, and before chat/agent, because those
 inherit the voice rather than the other way round.
 
+**Finding — speech *output* works in the webview, unlike input.** M1 probed
+`SpeechRecognition` and found it blocked, and that result was easy to over-generalise
+into "audio doesn't work in webviews". It doesn't hold: an `audio-probe` on webview
+load reports `speechSynthesis: true, audioElement: true` on VS Code stable. Different
+API, no permission prompt. Tier 0 and Fish Audio playback are both viable in-webview;
+only *capture* is blocked.
+
 **Build.**
 - **M7a — Tier 0.** `src/voice/VoiceProvider.ts` interface (`speak`, `preview`,
   `listVoices`); `SystemVoiceProvider` posts `{type:'speak', text}` to the webview,
@@ -1973,13 +1980,14 @@ inherit the voice rather than the other way round.
   engine list at build time; an unknown or retired engine falls back to the default
   with a one-time notice rather than failing every utterance.
 **Exit checklist:**
-- [ ] `clarvis.voice.enabled: false` (default) — zero audio, zero `speechSynthesis`
-      calls, ever, including on briefing/completion events that would otherwise speak.
-- [ ] Enable voice, no Fish Audio key — briefing and completion lines play via
-      `speechSynthesis`, avatar `talking` starts on playback start and returns to
-      `neutral` on `ended`, not a fixed-duration timer.
-- [ ] Quips (M6) never speak, even with voice enabled — hard scope check, not just
-      "usually silent."
+- [x] `clarvis.voice.enabled: false` (default) — the enabled check is the first line of
+      `VoiceService.say()`, before any provider is touched.
+- [x] Enable voice, no key — the briefing speaks via `speechSynthesis`. Confirmed live:
+      `talking` → `neutral` **5.7s apart**, which is the utterance's real length rather
+      than a fixed timer (and not the 30s timeout, which would indicate a hang).
+- [x] Quips never speak, and neither do pattern hits — enforced by `mayBeSpoken()`,
+      a pure rule with a test asserting the spoken set is **exactly** briefing and
+      completion, so a future occasion can't silently inherit speech.
 - [ ] Set a Fish Audio key — same two utterance types now use Tier 1; audio plays from
       the base64 payload, webview never issues a network request itself (confirm via
       devtools network tab — should show zero requests from the webview process).

@@ -246,9 +246,22 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       .clarvis-mute[data-muted="true"] { opacity:1; color: var(--vscode-errorForeground); }
       #clarvis-transcript { display:flex; flex-direction:column; gap:8px;
         flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
-      .clarvis-turn { line-height:1.45; white-space:pre-wrap; word-break:break-word; }
+      .clarvis-turn { line-height:1.45; white-space:pre-wrap; word-break:break-word;
+        padding-left:8px; border-left:2px solid transparent; }
       .clarvis-turn .who { display:block; font-size:10px; letter-spacing:.08em;
         text-transform:uppercase; opacity:.55; margin-bottom:2px; }
+
+      /* Two voices, told apart without shouting. Only VS Code's own theme variables,
+         so this reads correctly in light, dark and high-contrast rather than in the
+         one theme it was designed against.
+         The user's own words sit back a little: they already know what they typed,
+         and the reply is the thing worth reading. */
+      .clarvis-turn.user { color: var(--vscode-descriptionForeground);
+        border-left-color: var(--vscode-input-border, var(--vscode-descriptionForeground)); }
+      .clarvis-turn.user .who { color: var(--vscode-descriptionForeground); }
+      .clarvis-turn.clarvis { color: var(--vscode-foreground);
+        border-left-color: var(--vscode-focusBorder); }
+      .clarvis-turn.clarvis .who { color: var(--vscode-focusBorder); opacity:.8; }
       .clarvis-turn code { font-family: var(--vscode-editor-font-family);
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
       /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
@@ -346,7 +359,9 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
 
       const addTurn = (speaker, text) => {
         const row = document.createElement('div');
-        row.className = 'clarvis-turn';
+        // The speaker is a class rather than inline styling, so the colours live in
+        // one place with the rest of the theme variables.
+        row.className = 'clarvis-turn ' + (speaker === 'user' ? 'user' : 'clarvis');
 
         const who = document.createElement('span');
         who.className = 'who';

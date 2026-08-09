@@ -3,6 +3,7 @@ import { ENGINES, isKnownEngine } from './enginePicker';
 import { FishAudioProvider } from './FishAudioProvider';
 import { VoiceService } from './VoiceService';
 import { CURATED_VOICES } from './curatedVoices';
+import { readSavedVoices, withSavedVoice, SavedVoice } from './savedVoices';
 
 /**
  * Spoken when auditioning a voice, per §4.5 — a fixed line, so voices are compared
@@ -52,6 +53,20 @@ export async function chooseVoice(
     },
   ];
 
+  // Voices the user pasted in and named. Listed above the shipped one: someone who has
+  // gone to the trouble of saving a voice is more likely to want it than the default.
+  const saved = currentSavedVoices();
+  if (saved.length > 0) {
+    items.push({ label: 'Saved', kind: vscode.QuickPickItemKind.Separator } as VoiceItem);
+    for (const voice of saved) {
+      items.push({
+        label: `$(unmute) ${voice.name}`,
+        description: voice.id.slice(0, 8),
+        value: `fish:${voice.id}`,
+      });
+    }
+  }
+
   items.push({ label: 'Shipped', kind: vscode.QuickPickItemKind.Separator } as VoiceItem);
   for (const curated of CURATED_VOICES) {
     items.push({
@@ -92,13 +107,20 @@ export async function chooseVoice(
  * "snap back" to the previous voice. So: if the value is already defined for this
  * workspace, update it there; otherwise fall back to the user's global settings.
  */
-async function writeSetting(key: string, value: string): Promise<void> {
+async function writeSetting(key: string, value: unknown): Promise<void> {
   const config = vscode.workspace.getConfiguration('clarvis');
-  const scope = config.inspect<string>(key)?.workspaceValue !== undefined
+  const scope = config.inspect(key)?.workspaceValue !== undefined
     ? vscode.ConfigurationTarget.Workspace
     : vscode.ConfigurationTarget.Global;
 
   await config.update(key, value, scope);
+}
+
+/** The user's named voices, as stored in settings. */
+function currentSavedVoices(): SavedVoice[] {
+  return readSavedVoices(
+    vscode.workspace.getConfiguration('clarvis').get('voice.savedVoices')
+  );
 }
 
 /**
@@ -182,7 +204,30 @@ async function promptForVoiceId(
     return undefined;
   }
 
+  await offerToSave(trimmed, log);
   return `fish:${trimmed}`;
+}
+
+/**
+ * Offers to remember the voice under a name.
+ *
+ * Only after validation, so nothing broken gets saved. Skipping is a plain empty
+ * answer — the voice is still selected either way, since naming it is a convenience
+ * for *next* time, not a condition of using it now.
+ */
+async function offerToSave(id: string, log: (message: string) => void): Promise<void> {
+  const existing = currentSavedVoices();
+  if (existing.some((voice) => voice.id === id && voice.name)) return; // already named
+
+  const name = await vscode.window.showInputBox({
+    prompt: 'Name this voice to save it for later. Leave blank to use it just this once.',
+    placeHolder: 'e.g. Gravel, Narrator, The polite one',
+    ignoreFocusOut: true,
+  });
+  if (!name?.trim()) return;
+
+  await writeSetting('voice.savedVoices', withSavedVoice(existing, name, id));
+  log(`voice: saved ${id.slice(0, 8)}… as "${name.trim()}"`);
 }
 
 /** Picks the TTS engine, presented by tradeoff rather than by version string. */

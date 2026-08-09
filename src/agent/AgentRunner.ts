@@ -42,6 +42,26 @@ export class AgentRunner {
     private readonly log: (message: string) => void
   ) {}
 
+  /**
+   * Logs an event, then hands it on.
+   *
+   * **Logging lives here, not in the callers.** The command path logged tool calls and
+   * the chat path did not, so a run started from the chat box left no forensic trail —
+   * discovered only when a run went wrong in the wrong repository and the log had
+   * nothing but the branch line. Two callers doing their own logging is two callers
+   * that will diverge again.
+   *
+   * Streamed prose is deliberately not logged: it is the model thinking out loud, it
+   * arrives a token at a time, and it would bury the steps that matter.
+   */
+  private record(event: AgentEvent): AgentEvent {
+    if (event.kind !== 'text') {
+      const step = event.step ? `${event.step}. ` : '';
+      this.log(`agent [${event.kind}] ${step}${event.text.split('\n')[0]}`);
+    }
+    return event;
+  }
+
   private get maxSteps(): number {
     return vscode.workspace.getConfiguration('clarvis').get<number>('agent.maxStepsPerTask', 25);
   }
@@ -54,16 +74,16 @@ export class AgentRunner {
    */
   async *run(task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
     if (!this.root) {
-      yield { kind: 'error', text: 'There is no folder open, so there is nothing to work on.' };
+      yield this.record({ kind: 'error', text: 'There is no folder open, so there is nothing to work on.' });
       return;
     }
 
     const provider = this.models.spec('agent');
     if (!(await this.models.isReady('agent'))) {
-      yield {
+      yield this.record({
         kind: 'error',
         text: `The coding model isn't configured — ${provider.label} has no key. The bowtie by the prompt sorts that out.`,
-      };
+      });
       return;
     }
 
@@ -75,18 +95,18 @@ export class AgentRunner {
     const branch = new AgentBranch(this.log, this.context.workspaceState);
     const isolation = await branch.begin(task);
 
-    yield {
+    yield this.record({
       kind: 'text',
       text: isolation.isolated
         ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
         : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`,
-    };
+    });
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
 
     while (this.steps < this.maxSteps) {
       if (signal.aborted) {
-        yield { kind: 'done', text: 'Stopped.', files: [...this.touched] };
+        yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
         return;
       }
 
@@ -106,21 +126,21 @@ export class AgentRunner {
         }
       } catch (error) {
         if (signal.aborted) {
-          yield { kind: 'done', text: 'Stopped.', files: [...this.touched] };
+          yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
           return;
         }
-        yield { kind: 'error', text: `The model gave up: ${String(error)}` };
+        yield this.record({ kind: 'error', text: `The model gave up: ${String(error)}` });
         return;
       }
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
         await this.finish(branch, task, narration);
-        yield {
+        yield this.record({
           kind: 'done',
           text: this.summarise(narration, branch),
           files: [...this.touched],
-        };
+        });
         return;
       }
 
@@ -131,12 +151,12 @@ export class AgentRunner {
         if (signal.aborted) break;
 
         this.steps++;
-        yield { kind: 'tool', text: describe(call), step: this.steps };
+        yield this.record({ kind: 'tool', text: describe(call), step: this.steps });
 
         const result = await this.dispatch(call, checkpoint, signal);
         results.push(result);
 
-        if (result.isError) yield { kind: 'gate', text: result.content };
+        if (result.isError) yield this.record({ kind: 'gate', text: result.content });
       }
 
       messages.push({ role: 'user', content: '', toolResults: results });
@@ -144,11 +164,11 @@ export class AgentRunner {
 
     // The cap is a stop-and-ask, not a failure: a long task is not a wrong one, but a
     // loop that never converges must not run up a bill unattended.
-    yield {
+    yield this.record({
       kind: 'done',
       text: `I've used ${this.steps} steps without finishing. Say "carry on" if it's going well, or stop me here.`,
       files: [...this.touched],
-    };
+    });
   }
 
   /**
@@ -164,7 +184,7 @@ export class AgentRunner {
     signal: AbortSignal
   ): Promise<ToolResult> {
     if (!isToolName(call.name)) {
-      this.log(`agent: refused unknown tool "${call.name}"`);
+      this.log(`agent [refused] unknown tool "${call.name}"`);
       return { id: call.id, content: `There is no tool called "${call.name}".`, isError: true };
     }
 
@@ -194,7 +214,7 @@ export class AgentRunner {
       return { id: call.id, content };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.log(`agent: ${name} failed — ${message}`);
+      this.log(`agent [failed] ${name} — ${message}`);
       return { id: call.id, content: message, isError: true };
     }
   }

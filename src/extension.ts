@@ -131,8 +131,9 @@ export function activate(context: vscode.ExtensionContext): void {
           token.onCancellationRequested(() => controller.abort());
 
           for await (const event of runner.run(task.trim(), controller.signal)) {
+            // No logging here: AgentRunner records every event itself, so both callers
+            // produce the same trail rather than each rolling their own.
             if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
-            if (event.kind === 'tool' || event.kind === 'gate') logger.write(`agent: ${event.text}`);
 
             if (event.kind === 'done' || event.kind === 'error') {
               const files = event.files?.length ? ` (${event.files.length} file(s))` : '';

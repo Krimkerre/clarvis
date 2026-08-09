@@ -68,6 +68,12 @@ Every project starts with a conversation. In Tutor Mode, that conversation chang
   You can answer that on day one. You cannot answer the first version at all.
 - **Every question explains why it's being asked**, in one line, before it asks. You
   should never be answering blind.
+- **Choosing what to build it in** is a real question, and you get a real answer. Once
+  Clarvis knows what you're making, it lays out two or three options with what each is
+  actually like — how much you need to learn before something runs, how fiddly the
+  setup is, what people normally build with it, and how easy it'll be to find help that
+  matches what you're doing. Ask which one it would pick and it tells you, with
+  reasons. It's still your call.
 - **New words get defined once**, then used normally afterwards — and they pile up in a
   `GLOSSARY.md` file in your project, in the order you met them. Your vocabulary, in
   your own project, re-readable any time.

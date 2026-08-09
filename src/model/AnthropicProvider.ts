@@ -101,7 +101,7 @@ export class AnthropicProvider implements ModelProvider {
    * truncated object that looks plausible, which is worse than failing.
    */
   async *streamWithTools(request: CompletionRequest): AsyncIterable<StreamEvent> {
-    const response = await this.post(request, anthropicTools());
+    const response = await this.post(request, anthropicTools(request.tools));
     const parser = new SseParser();
 
     // Assembled per content block, keyed by the index Anthropic assigns.

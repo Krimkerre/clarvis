@@ -164,6 +164,13 @@ export class ChatService {
       return;
     }
 
+    // With a tool-capable chat model, questions get to *look* at the project rather
+    // than guess — reading a file to answer a question needs no branch and no commit.
+    if (await this.models.supportsTools('chat')) {
+      await this.answerWithTools(question);
+      return;
+    }
+
     // A fresh controller per question: Stop must abort this turn, not every future one.
     this.streaming?.abort();
     const controller = new AbortController();
@@ -269,6 +276,43 @@ export class ChatService {
 
     // Only the closing line is spoken. Reading nine tool calls aloud would be a
     // recital, and the interesting part is what changed.
+    if (closing) this.voice.say(closing, 'chatReply');
+  }
+
+  /** The read-only tool loop, for questions that need to see the code. */
+  private async answerWithTools(question: string): Promise<void> {
+    this.streaming?.abort();
+    const controller = new AbortController();
+    this.streaming = controller;
+
+    const runner = new AgentRunner(
+      this.context,
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      this.models,
+      this.terminal,
+      this.log
+    );
+
+    this.avatar.setState('thinking');
+    this.panel.post({ type: 'chat-stream-start' });
+    let closing = '';
+
+    try {
+      for await (const event of runner.answer(question, controller.signal)) {
+        if (event.kind === 'done' || event.kind === 'error') closing = event.text;
+
+        this.panel.post({
+          type: 'chat-stream',
+          text: event.kind === 'tool' ? `\n${event.step}. ${event.text}\n` : event.text,
+        });
+      }
+    } finally {
+      this.streaming = undefined;
+      this.panel.post({ type: 'chat-stream-end' });
+      this.avatar.setState('neutral');
+      await this.persist();
+    }
+
     if (closing) this.voice.say(closing, 'chatReply');
   }
 

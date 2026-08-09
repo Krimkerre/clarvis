@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
-import { isToolName, mutates, validateArgs, ToolName } from './toolRegistry';
+import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
 import { classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
@@ -72,14 +72,39 @@ export class AgentRunner {
    * An async generator so the caller streams progress without this class knowing about
    * panels or transcripts — the same shape the model stream uses, one layer up.
    */
+  /**
+   * Answers a question that needs to look at the project.
+   *
+   * The same loop and the same boundary, with three differences that matter:
+   *  - **only non-mutating tools**, so a question can never become an edit
+   *  - **no branch and no checkpoint**, because nothing changes and creating a branch
+   *    to read a file would be absurd
+   *  - **the chat model**, not the coding one — this is the cheap path, and answering
+   *    "what does this file do?" at frontier prices is exactly what the two-model
+   *    split exists to avoid
+   */
+  async *answer(question: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+    yield* this.loop(question, signal, { readOnly: true });
+  }
+
   async *run(task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+    yield* this.loop(task, signal, { readOnly: false });
+  }
+
+  private async *loop(
+    task: string,
+    signal: AbortSignal,
+    options: { readOnly: boolean }
+  ): AsyncGenerator<AgentEvent> {
     if (!this.root) {
       yield this.record({ kind: 'error', text: 'There is no folder open, so there is nothing to work on.' });
       return;
     }
 
-    const provider = this.models.spec('agent');
-    if (!(await this.models.isReady('agent'))) {
+    const role = options.readOnly ? 'chat' : 'agent';
+    const provider = this.models.spec(role);
+
+    if (!(await this.models.isReady(role))) {
       yield this.record({
         kind: 'error',
         text: `The coding model isn't configured — ${provider.label} has no key. The bowtie by the prompt sorts that out.`,
@@ -88,23 +113,30 @@ export class AgentRunner {
     }
 
     // Isolation and undo are established *before* the model is asked for anything, so
-    // there is no window in which an edit could land unprotected.
+    // there is no window in which an edit could land unprotected. Neither is set up for
+    // a read-only answer: there is nothing to undo and nothing to isolate.
     const checkpoint = new Checkpoint(this.context, this.root, this.log);
-    await checkpoint.begin(task);
-
     const branch = new AgentBranch(this.log, this.context.workspaceState);
-    const isolation = await branch.begin(task);
 
-    yield this.record({
-      kind: 'text',
-      text: isolation.isolated
-        ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
-        : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`,
-    });
+    if (!options.readOnly) {
+      await checkpoint.begin(task);
+      const isolation = await branch.begin(task);
+
+      yield this.record({
+        kind: 'text',
+        text: isolation.isolated
+          ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
+          : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`,
+      });
+    }
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
 
-    while (this.steps < this.maxSteps) {
+    // A question that needs a dozen tool calls has become a task; capping lower keeps
+    // an answer from quietly costing what a run costs.
+    const cap = options.readOnly ? Math.min(this.maxSteps, 10) : this.maxSteps;
+
+    while (this.steps < cap) {
       if (signal.aborted) {
         yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
         return;
@@ -115,8 +147,13 @@ export class AgentRunner {
 
       try {
         for await (const event of this.models.streamWithTools(
-          { system: this.systemPrompt(), messages, signal },
-          'agent'
+          {
+            system: this.systemPrompt(options.readOnly),
+            messages,
+            signal,
+            tools: options.readOnly ? readOnlyTools() : undefined,
+          },
+          role
         )) {
           if (event.type === 'text') {
             narration += event.text;
@@ -135,10 +172,10 @@ export class AgentRunner {
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
-        await this.finish(branch, task, narration);
+        if (!options.readOnly) await this.finish(branch, task, narration);
         yield this.record({
           kind: 'done',
-          text: this.summarise(narration, branch),
+          text: options.readOnly ? narration.trim() || 'Nothing to say.' : this.summarise(narration, branch),
           files: [...this.touched],
         });
         return;
@@ -330,7 +367,17 @@ export class AgentRunner {
    * reality — a model that believes it can reach outside the workspace wastes steps
    * discovering otherwise. It is not where the constraints live.
    */
-  private systemPrompt(): string {
+  private systemPrompt(readOnly = false): string {
+    if (readOnly) {
+      return [
+        "You are Clarvis, a butler-like assistant living in the user's editor.",
+        'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
+        'Look before you answer: read the file rather than guessing at what it probably contains.',
+        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
+        'Be terse and dry. Never invent what you did not read.',
+      ].join(' ');
+    }
+
     return [
       "You are Clarvis, a butler-like coding agent working inside the user's editor.",
       'Work in small steps. Read before you edit. Verify with tests or diagnostics when you can.',

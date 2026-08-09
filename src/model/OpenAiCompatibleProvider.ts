@@ -136,7 +136,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
    * being stupid rather than the parser being wrong.
    */
   async *streamWithTools(request: CompletionRequest): AsyncIterable<StreamEvent> {
-    const response = await this.post(request, openAiTools());
+    const response = await this.post(request, openAiTools(request.tools));
     const parser = new SseParser();
     const pending = new Map<number, { id: string; name: string; args: string }>();
 

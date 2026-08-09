@@ -76,18 +76,18 @@ export class ModelService {
    * change; never probing would mean discovering it mid-run, which is the failure this
    * is meant to prevent.
    */
-  async supportsTools(): Promise<boolean> {
-    // Always the *agent* role: the chat model never runs tools, so requiring tool
-    // support from it would rule out exactly the cheap local models this split exists
-    // to make usable.
-    const spec = this.spec('agent');
-    const model = this.model('agent');
+  async supportsTools(role: ModelRole = 'agent'): Promise<boolean> {
+    // Asked per role: the agent needs tools to work at all, while the chat model uses
+    // them only to *look* at the project — a model without them still answers, it just
+    // answers from memory rather than from the file.
+    const spec = this.spec(role);
+    const model = this.model(role);
     const cacheKey = `${spec.id}/${model}`;
 
     const cached = this.toolSupport.get(cacheKey);
     if (cached !== undefined) return cached;
 
-    const supported = await this.provider('agent').supportsTools(model);
+    const supported = await this.provider(role).supportsTools(model);
     this.toolSupport.set(cacheKey, supported);
     this.log(`model: ${cacheKey} tool support = ${supported}`);
     return supported;

@@ -7,6 +7,8 @@
  * know whether to offer the agent at all, not because this interface runs tools.
  */
 
+import type { ToolSchema } from '../agent/toolRegistry';
+
 /**
  * A model as offered to the user.
  *
@@ -57,6 +59,13 @@ export type StreamEvent =
 
 export interface CompletionRequest {
   system: string;
+  /**
+   * Which tools to offer. Omitted means all of them — the agent path.
+   *
+   * Typed as the registry's own schema so a caller cannot invent one here: the
+   * allow-list is the registry, and this is a *selection* from it.
+   */
+  tools?: ToolSchema[];
   messages: ModelMessage[];
   model: string;
   /** Abort signal from the caller — `Clarvis: Stop`, or the panel closing. */

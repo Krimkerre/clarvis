@@ -202,9 +202,21 @@ export function validateArgs(name: ToolName, args: unknown): { ok: true } | { ok
   return { ok: true };
 }
 
+/**
+ * The tools a *question* may use.
+ *
+ * Answering "what does this file do?" needs to read the file — but not a branch, a
+ * checkpoint, or a commit. Filtering by `mutates` rather than keeping a second list
+ * means a new tool cannot accidentally become available to the answer path by being
+ * forgotten: it has to be marked non-mutating to get there.
+ */
+export function readOnlyTools(): ToolSchema[] {
+  return TOOLS.filter((tool) => !tool.mutates);
+}
+
 /** The registry in Anthropic's shape. */
-export function anthropicTools(): unknown[] {
-  return TOOLS.map((tool) => ({
+export function anthropicTools(only: ToolSchema[] = TOOLS): unknown[] {
+  return only.map((tool) => ({
     name: tool.name,
     description: tool.description,
     input_schema: tool.parameters,
@@ -212,8 +224,8 @@ export function anthropicTools(): unknown[] {
 }
 
 /** The registry in OpenAI's shape. */
-export function openAiTools(): unknown[] {
-  return TOOLS.map((tool) => ({
+export function openAiTools(only: ToolSchema[] = TOOLS): unknown[] {
+  return only.map((tool) => ({
     type: 'function',
     function: { name: tool.name, description: tool.description, parameters: tool.parameters },
   }));

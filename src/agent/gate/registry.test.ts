@@ -84,3 +84,25 @@ test('applyEdit warns about uniqueness in its own description', () => {
 
   assert.match(edit.description, /unique/i);
 });
+
+import { readOnlyTools } from '../toolRegistry';
+
+test('the answer path is offered only tools that cannot change anything', () => {
+  // A question must never become an edit. Filtering by `mutates` rather than keeping
+  // a second list means a new tool has to be *marked* non-mutating to get here — it
+  // cannot arrive by being forgotten.
+  const names = readOnlyTools().map((tool) => tool.name);
+
+  assert.ok(names.includes('readFile'));
+  assert.ok(names.includes('search'));
+  assert.ok(names.includes('gitDiff'));
+  assert.ok(!names.includes('applyEdit'), names.join(','));
+  assert.ok(!names.includes('writeFile'), names.join(','));
+  assert.ok(!names.includes('runCommand'), names.join(','));
+});
+
+test('every read-only tool really is non-mutating', () => {
+  for (const tool of readOnlyTools()) {
+    assert.equal(tool.mutates, false, tool.name);
+  }
+});

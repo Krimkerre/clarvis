@@ -6,6 +6,7 @@ import { ClarvisLog } from './ClarvisLog';
 import { BusyTracker } from './watch/BusyTracker';
 import { wireBusyTracker } from './watch/wireBusyTracker';
 import { WatchPresenter } from './watch/WatchPresenter';
+import { BriefingService } from './briefing/BriefingService';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -25,7 +26,8 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const avatar = createAvatar(context, log);
   registerDebugStateCommand(context, avatar);
-  startTaskWatching(context, avatar, log);
+  const tracker = startTaskWatching(context, avatar, log);
+  startBriefing(context, avatar, tracker, log);
 }
 
 /**
@@ -84,13 +86,42 @@ function startTaskWatching(
   context: vscode.ExtensionContext,
   avatar: AvatarController,
   log: ClarvisLog
-): void {
+): BusyTracker {
   const tracker = new BusyTracker();
   wireBusyTracker(tracker, context);
 
   const presenter = new WatchPresenter(avatar, (message) => log.write(message));
   presenter.attachTo(tracker);
   context.subscriptions.push({ dispose: () => presenter.dispose() });
+
+  return tracker;
+}
+
+/**
+ * Starts the session briefing (M4): remembers the job that was failing when the window
+ * closed, and reports where things stood shortly after the next launch.
+ *
+ * Shares M3's tracker rather than subscribing to VS Code events again — the failing
+ * job is the same fact both features care about, just on different timescales.
+ */
+function startBriefing(
+  context: vscode.ExtensionContext,
+  avatar: AvatarController,
+  tracker: BusyTracker,
+  log: ClarvisLog
+): void {
+  const briefing = new BriefingService(context, (message) => log.write(message));
+
+  briefing.start(tracker, (lines) => {
+    // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;
+    // for now the notification is the delivery and the face just marks the moment.
+    avatar.setState('talking');
+    void vscode.window.showInformationMessage(lines.join(' '));
+    setTimeout(() => avatar.setState('neutral'), 3000);
+    lines.forEach((line) => log.write(`briefing | ${line}`));
+  });
+
+  context.subscriptions.push({ dispose: () => briefing.dispose() });
 }
 
 /**

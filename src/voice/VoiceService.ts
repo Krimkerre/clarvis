@@ -89,10 +89,10 @@ export class VoiceService {
   ) {}
 
   private get enabled(): boolean {
-    // Default true: the delivery carries half the character (§4.4), so shipping mute
-    // meant shipping half the product. The fallback here must match package.json's
-    // declared default, or the two disagree the moment a settings file is absent.
-    return vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.enabled', true);
+    // Must match package.json's declared default. The two disagreeing when no settings
+    // file exists is the kind of split-brain default nobody finds until it is reported
+    // as "it talks on my machine but not on yours".
+    return vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.enabled', false);
   }
 
   private get selectedVoice(): string | undefined {

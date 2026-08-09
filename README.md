@@ -124,9 +124,10 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
   chat replies, the sardonic asides — because splitting it would mean the voice carried
   the dull half of the character and the text carried the funny half. How *often* he
   speaks is governed by the interruption budget above, not by muzzling half of it.
-  **On by default** — shipping him silent meant shipping half the character. Mute is
-  one click from the prompt and stops him mid-sentence; the setting turns him off for
-  good. He talks at most once a minute unprompted either way.
+  Off until you enable it — a voice that surprises you once is a voice you disable
+  forever — but Clarvis offers to set it up **once**, on first run, and drops the
+  subject permanently if you decline. Adding a key switches it on. Mute is one click
+  from the prompt and stops him mid-sentence; the setting turns him off for good.
 - **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat
   box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched
   English jargon. Never auto-sends; the transcript is always editable text. Recording

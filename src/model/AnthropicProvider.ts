@@ -5,7 +5,9 @@ import {
   ModelProvider,
   describeHttpFailure,
 } from './ModelProvider';
+import { StreamEvent, ToolCall } from './ModelProvider';
 import { ProviderSpec, resolveBaseUrl } from './providers';
+import { anthropicTools } from '../agent/toolRegistry';
 import { SseParser, decodeStream } from './sse';
 
 /** Wire version. Pinned, because an unpinned API version changes under you silently. */
@@ -90,6 +92,124 @@ export class AnthropicProvider implements ModelProvider {
     return true;
   }
 
+  /**
+   * The tool-calling stream.
+   *
+   * Anthropic delivers a tool call as a `content_block_start` naming it, followed by
+   * `input_json_delta` fragments that have to be **concatenated and parsed at the
+   * end** — the JSON is not valid until the block closes. Parsing early yields a
+   * truncated object that looks plausible, which is worse than failing.
+   */
+  async *streamWithTools(request: CompletionRequest): AsyncIterable<StreamEvent> {
+    const response = await this.post(request, anthropicTools());
+    const parser = new SseParser();
+
+    // Assembled per content block, keyed by the index Anthropic assigns.
+    const pending = new Map<number, { id: string; name: string; json: string }>();
+    let sawToolCall = false;
+
+    for await (const chunk of decodeStream(response.body!)) {
+      for (const payload of parser.push(chunk)) {
+        const event = this.parseEvent(payload);
+        if (!event) continue;
+
+        if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+          pending.set(event.index!, {
+            id: event.content_block.id!,
+            name: event.content_block.name!,
+            json: '',
+          });
+          continue;
+        }
+
+        if (event.type === 'content_block_delta' && event.index !== undefined) {
+          const block = pending.get(event.index);
+
+          if (block && event.delta?.partial_json !== undefined) {
+            block.json += event.delta.partial_json;
+            continue;
+          }
+          if (event.delta?.text) yield { type: 'text', text: event.delta.text };
+          continue;
+        }
+
+        if (event.type === 'content_block_stop' && event.index !== undefined) {
+          const block = pending.get(event.index);
+          if (!block) continue;
+
+          pending.delete(event.index);
+          sawToolCall = true;
+          yield { type: 'toolCall', call: toCall(block) };
+        }
+      }
+    }
+
+    yield { type: 'stop', reason: sawToolCall ? 'tools' : 'end' };
+  }
+
+  /** One typed frame, or undefined for anything unparseable or uninteresting. */
+  private parseEvent(payload: string):
+    | {
+        type?: string;
+        index?: number;
+        content_block?: { type?: string; id?: string; name?: string };
+        delta?: { text?: string; partial_json?: string };
+        error?: { message?: string };
+      }
+    | undefined {
+    try {
+      const event = JSON.parse(payload);
+
+      if (event.type === 'error') {
+        throw new ModelError(
+          'Anthropic stopped mid-sentence.',
+          `stream error: ${event.error?.message ?? 'unknown'}`,
+          true
+        );
+      }
+      return event;
+    } catch (error) {
+      if (error instanceof ModelError) throw error;
+      this.log('model: skipped an unparseable anthropic frame');
+      return undefined;
+    }
+  }
+
+  /** Shared request setup, so the two streams cannot drift apart. */
+  private async post(request: CompletionRequest, tools?: unknown[]): Promise<Response> {
+    const key = await this.getKey();
+    if (!key) {
+      throw new ModelError('No Anthropic key set. `/key` sorts that out.', 'no api key stored');
+    }
+
+    const response = await fetch(`${this.baseUrl}/v1/messages`, {
+      method: 'POST',
+      signal: request.signal,
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': key,
+        'anthropic-version': API_VERSION,
+      },
+      body: JSON.stringify({
+        model: request.model,
+        max_tokens: 4096,
+        stream: true,
+        system: request.system,
+        messages: request.messages.map(toAnthropicMessage),
+        ...(tools ? { tools } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      throw describeHttpFailure(response.status, await response.text(), this.spec.label);
+    }
+    if (!response.body) {
+      throw new ModelError('Anthropic sent nothing back.', 'empty response body');
+    }
+
+    return response;
+  }
+
   async *stream(request: CompletionRequest): AsyncIterable<string> {
     const key = await this.getKey();
     if (!key) {
@@ -152,4 +272,66 @@ export class AnthropicProvider implements ModelProvider {
       }
     }
   }
+}
+
+/**
+ * Turns an assembled tool-use block into a call.
+ *
+ * Malformed JSON becomes empty arguments rather than an exception: the registry's
+ * validation then rejects it with a message the model can act on, which costs one
+ * step. Throwing here would end the run over a fragment.
+ */
+function toCall(block: { id: string; name: string; json: string }): ToolCall {
+  let args: unknown = {};
+
+  try {
+    args = block.json ? JSON.parse(block.json) : {};
+  } catch {
+    args = {};
+  }
+
+  return { id: block.id, name: block.name, args };
+}
+
+/**
+ * Converts a neutral message into Anthropic's content-block shape.
+ *
+ * Tool results are a **user** turn containing `tool_result` blocks, which is the
+ * detail most easily got wrong — sending them as an assistant turn produces a
+ * confusing 400 that says nothing about the real mistake.
+ */
+function toAnthropicMessage(message: {
+  role: 'user' | 'assistant';
+  content: string;
+  toolCalls?: ToolCall[];
+  toolResults?: { id: string; content: string; isError?: boolean }[];
+}): unknown {
+  if (message.toolResults?.length) {
+    return {
+      role: 'user',
+      content: message.toolResults.map((result) => ({
+        type: 'tool_result',
+        tool_use_id: result.id,
+        content: result.content,
+        ...(result.isError ? { is_error: true } : {}),
+      })),
+    };
+  }
+
+  if (message.toolCalls?.length) {
+    return {
+      role: 'assistant',
+      content: [
+        ...(message.content ? [{ type: 'text', text: message.content }] : []),
+        ...message.toolCalls.map((call) => ({
+          type: 'tool_use',
+          id: call.id,
+          name: call.name,
+          input: call.args ?? {},
+        })),
+      ],
+    };
+  }
+
+  return { role: message.role, content: message.content };
 }

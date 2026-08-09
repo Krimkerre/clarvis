@@ -2601,14 +2601,34 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   tail, matching pattern entries — assembled into a visible list component rendered
   above the reply, each item with a ✕ to remove before send. Read-only: this stage
   cannot change the workspace.
-- **M8c — Tool layer, without the model.** `src/agent/tools/` implements the §4.6 tool
+- **M8c — Tool layer, without the model. ✅ Built and probed live.** All eight tools,
+  every path through `resolveInWorkspace()`, and a `Clarvis: Debug — Try a Tool`
+  command that drives them by hand — the tools were exercised in a real host before
+  anything could call them, which is the whole point of the ordering.
+  *Verified on a real disk, not just in temp directories: a symlink pointing outside
+  the workspace was refused with the symlink-specific message.*
+  *Two defects caught here rather than later: the terminal echo used `sendText()`,
+  which writes to a shell's **input** — a build log containing something command-shaped
+  would have been executed; and the changed-line count treated a trailing newline as a
+  line.*
+- **M8c — original spec.** `src/agent/tools/` implements the §4.6 tool
   table as plain functions with no model attached: `readFile`, `listFiles`, `search`,
   `applyEdit`, `runCommand`, `readDiagnostics`, `gitStatus`, `gitDiff`. Every one takes
   its paths through `resolveInWorkspace()`, which rejects anything escaping the
   workspace root — symlinks resolved first. **Written and unit-tested before any model
   can call them**, because this is the layer the safety guarantees actually live in;
   testing it through a model would be testing the wrong thing.
-- **M8d — Gates, checkpoints, branch isolation.** `src/agent/Gate.ts`
+- **M8d — Gates: the deny-list is built and verified live.** `src/agent/Gate.ts` is
+  pure and knows nothing about models — it classifies a command string and the caller
+  refuses. **Brought forward mid-M8c**, because the debug probe shipped able to run
+  arbitrary shell and a plain `rm` was executed from the command palette in a live
+  session; a prose warning is not a safety mechanism.
+  Verified: the modal appears, carries what/why/worst-case, and **Cancel leaves the
+  file on disk**. Chained commands are caught (`npm test && rm -rf build` passes a
+  prefix check as "npm test"), and ordinary commands stay ungated so the prompt never
+  becomes something to click through.
+  *Still to build in M8d: checkpoints and `clarvis/<task>` branch isolation.*
+- **M8d — original spec.** `src/agent/Gate.ts`
   (destructive-shell deny-list, outward-facing actions, dependency installs),
   `src/agent/Checkpoint.ts` (snapshot files before a run under `globalStorageUri`,
   `Clarvis: Undo Last Agent Run` to restore), and `src/agent/AgentBranch.ts` (create

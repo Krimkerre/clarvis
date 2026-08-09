@@ -1659,6 +1659,55 @@ mid-milestone. No third "expert" mode: normal *is* expert, and inventing a ladde
 implies a hierarchy nobody asked for — as well as implying that the default is somehow
 incomplete, which is the opposite of true.
 
+### 4.11 Linters & other diagnostics providers — *ESLint, and anything like it*
+
+**Most of this is already done, and that is the point.** Clarvis consumes
+`languages.onDidChangeDiagnostics` (§4.0), which is provider-agnostic: ESLint,
+TypeScript, Pylint, clippy, a language server nobody has heard of — if it publishes
+diagnostics, Clarvis already sees them. Pattern memory (§4.2) already counts a repeated
+ESLint error the same way it counts a repeated compiler error. **No integration code
+exists, and none should**: special-casing one linter would mean the next one needs
+special-casing too.
+
+What is missing is narrower: noticing when a project clearly *expects* a linter that
+isn't running, and saying so once.
+
+**The offer, and its limits.** When a workspace has ESLint configured — `eslint.config.*`,
+a legacy `.eslintrc*`, or `eslint` in `devDependencies` — but no ESLint diagnostics ever
+arrive and the extension isn't installed, Clarvis mentions it **once per workspace** and
+offers to install `dbaeumer.vscode-eslint`. Then it drops the subject permanently.
+
+Four rules, and the first is the one that matters:
+
+- **Never introduce a linter to a project that doesn't use one.** Clarvis offers to
+  connect tooling the project *already chose*. Suggesting ESLint to someone who never
+  asked for it is imposing a style opinion on their codebase, which is not a butler's
+  job. No config, no `devDependency`, no offer — silence.
+- **Never bundle it, never install it silently.** Same rule as `ffmpeg` (§4.7): name
+  what's missing, offer the action, let the user decide. A dependency that appears
+  without consent is a dependency the user didn't audit.
+- **VSCodium is a first-class path, not a footnote.** `dbaeumer.vscode-eslint` is
+  published on **Open VSX** (verified: v3.0.34, MIT), so the offer works on both target
+  hosts. Install goes through `workbench.extensions.installExtension`, which resolves
+  against whatever gallery the host is configured for — Marketplace on VS Code, Open
+  VSX on VSCodium — so one code path serves both. If the gallery has no result, fall
+  back to opening the extension's page rather than failing silently.
+- **Declining is permanent, per workspace.** Not "until next launch". A second offer is
+  a nag, and this is a project someone has already decided about.
+
+**Consumption, not configuration.** Clarvis never writes an ESLint config, never edits
+rules, and never runs `--fix` across a workspace on its own initiative. What the agent
+(§4.6) *may* do, once a linter is present: after its own edits, check whether it
+introduced new lint errors and clean up **its own** mess before handing back. Fixing
+pre-existing findings across files it wasn't asked to touch is scope creep with a diff
+attached.
+
+**In Tutor Mode (§4.10)**, the offer carries an explanation instead of just a name —
+what a linter is, that these are style and correctness warnings rather than errors that
+stop the program, and that the squiggles about to appear everywhere are normal and not
+a sign of catastrophe. A beginner meeting 200 lint warnings with no context reasonably
+concludes they have broken something.
+
 ## 5. Dev-Moment Commentary
 
 Quips fire on **dev events only**. No timers, no idle chatter, no "still there?"
@@ -2742,8 +2791,24 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   VSX is not optional, it's what every fork installs from (§4.0 fork-compatibility
   rule 3).
 
+**Also in M11 — linter hand-off (§4.11).** `src/integrations/eslintOffer.ts`: detect a
+configured-but-unwired ESLint, offer the install once per workspace, remember a decline
+forever. No linter-specific consumption code — diagnostics already arrive generically.
+
 **Exit checklist:**
 - [ ] README complete, privacy pitch is the first thing a reader sees.
+- [ ] A workspace with an ESLint config but no extension gets **one** offer; declining
+      it is remembered permanently, including across reloads.
+- [ ] A workspace with **no** ESLint config gets no offer at all, ever. Clarvis does not
+      suggest tooling a project never chose.
+- [ ] Accepting installs from the host's own gallery — verified on **VSCodium via Open
+      VSX**, not only VS Code. A gallery with no result opens the extension page rather
+      than failing quietly.
+- [ ] With ESLint running, a repeated lint error is counted by pattern memory (§4.2)
+      exactly like a repeated compiler error — confirming the generic path works and no
+      linter-specific code was needed.
+- [ ] The agent cleans up lint errors **it introduced** and leaves pre-existing ones
+      alone.
 - [ ] `.vsix` builds clean, size reasonable (no accidental `node_modules` inclusion).
 - [ ] Degradation sweep passed for every row in §4.0's capability table.
 - [ ] `Clarvis: Usage Today` shows correct counts for all three capped features.

@@ -1521,6 +1521,54 @@ character match teaches obedience instead of programming. What is checked: does 
 does it do the thing, and is there anything here that will hurt later. Style opinions are
 offered as opinions.
 
+#### What makes this better than a tutorial
+
+Everything above is a teaching *posture*. This section is the part a video course
+cannot do — all of it leans on Clarvis already watching the user's real work (§4.1,
+§4.2), which is the one advantage this format has and the reason to build it at all.
+
+- **Errors are the lesson, not the failure.** A tutor who prevents every error produces
+  someone who panics at their first red stack trace alone at midnight. So: sometimes
+  *"run it now — it will fail, and I want you to read what it says"*, then decode the
+  message together — which line, which word matters, which two-thirds are noise. The
+  errors are real ones in the user's own project, which is precisely what no tutorial
+  can arrange. **Never manufacture a failure by writing knowingly broken code**: the
+  lesson is reading reality, and a staged bug the user later discovers was staged costs
+  more trust than the lesson was worth.
+- **Lessons are triggered by events, not by a curriculum.** §4.2 already knows they've
+  hit the same error three times; that is the moment the concept lands, not chapter
+  four. The same watching that powers pattern memory decides what to teach and when.
+  A fixed syllabus would ignore the one thing Clarvis knows and YouTube doesn't.
+- **Ask before you tell.** Before revealing what a line does, ask the user to predict
+  it. Explanation alone slides off; prediction-then-correction sticks, costs one
+  question, and surfaces the misconception that would otherwise be explained straight
+  past. Wrong predictions are *useful* and must be received that way — this is the
+  single easiest place in the product to accidentally make someone feel stupid.
+- **Do not explain everything at the same volume.** Beginners drown because every line
+  arrives equally important. Mark the load-bearing part and explicitly dismiss the
+  rest: *"that block is ceremony, it's identical in every project, ignore it."*
+  Granting permission not to understand something is itself a teaching act, and it is
+  what makes the parts that matter visible.
+- **Invite experiments, because undo already exists.** Checkpoints and
+  `Clarvis: Undo Last Agent Run` (§4.6) turn *"change that number and see what breaks
+  — I'll put it back"* into a safe move. Fear of breaking things is what stops
+  beginners poking at code, and poking at code is how the model in their head forms.
+- **A running thing in the first session, above all else.** Beginner ideas are
+  enormous. §4.9's gap analysis, in this mode, aims explicitly at the smallest version
+  that *runs* — and says why it's doing that, so the scope cut doesn't read as
+  dismissal. Nothing predicts whether someone continues like having watched their own
+  thing work once.
+- **A glossary that accumulates.** Each term defined at first use is appended to a
+  `GLOSSARY.md` in the user's project — their own vocabulary, in the order they met
+  it, re-readable without scrolling the chat. Pairs with the define-once rule: the
+  word gets used normally afterwards, and the definition remains somewhere.
+- **"Just do it for me" is honoured instantly, without a lecture.** Frustration is
+  where people quit, and a tutor that insists on teaching through it is the reason
+  they quit. The step is done, briefly explained afterwards rather than before, and no
+  note is made of it. If it becomes the pattern, the graduation-in-reverse offer is to
+  switch *out* of noob mode — not to try harder at teaching someone who isn't in the
+  mood.
+
 #### The things this mode gets wrong if unexamined
 
 - **Sarcasm at a beginner is just contempt.** §2's rules already aim the humour at
@@ -2668,8 +2716,20 @@ cleanest milestone to cut.
 - **M12d — Guided auto.** The M8e agent loop, one step per approval, each with a plain
   explanation of what changed and why. Reuses the existing gate and checkpoint path
   untouched.
-- **M12e — Graduation.** After sustained self-sufficiency, one offer to switch back to
-  normal. Declined once means never asked again this project.
+- **M12e — Teaching moments.** The event-driven half, and the part that justifies the
+  milestone: `src/noob/moments.ts` subscribes to the same M3/M5 signals the quip
+  system uses and proposes a lesson when one is *earned* — a third repeat of an error,
+  a first real stack trace, a first successful run. Reuses `Announcer`'s budget so
+  teaching cannot become nagging. Includes the predict-before-reveal prompt and the
+  load-bearing/ceremony split in explanations.
+- **M12f — Safe experiments and the glossary.** "Change this and see" wired to the
+  existing checkpoint/undo path, plus `GLOSSARY.md` appended in the user's project on
+  first use of each term (never rewritten, never reordered — it is a record of their
+  journey, not a reference work).
+- **M12g — Graduation.** After sustained self-sufficiency, one offer to switch back to
+  normal. Declined once means never asked again this project. The inverse also exists:
+  repeated "just do it for me" offers switching *out* of noob mode, once, without
+  comment.
 
 **Exit checklist:**
 - [ ] A user with no programming background reaches a running thing without being told
@@ -2691,6 +2751,24 @@ cleanest milestone to cut.
 - [ ] Spend for one milestone in noob mode is measured and reported at enable time,
       not discovered on the bill.
 - [ ] Graduation offer fires once, is reversible, and never repeats after a decline.
+- [ ] A real failure in the user's own project becomes a read-the-error lesson — and
+      **no lesson anywhere is built on deliberately broken code**. Grep the session for
+      any step that wrote something known-wrong on purpose; there must be none.
+- [ ] Teaching moments fire from actual events (third repeat of an error, first stack
+      trace, first successful run) and share the §6 budget — a burst of failures does
+      not produce a burst of lectures.
+- [ ] A wrong prediction is received as useful, not corrected coldly. Same human read
+      as the humour check, and the same reason: nothing automated catches tone.
+- [ ] Explanations distinguish load-bearing code from ceremony, and the ceremony call
+      is *correct* — spot-check that nothing dismissed as boilerplate actually matters.
+- [ ] "Change this and see what breaks" restores cleanly via the existing checkpoint
+      path, with no special-case code of its own.
+- [ ] `GLOSSARY.md` accumulates in first-use order, is never rewritten, and each entry
+      still reads correctly out of context.
+- [ ] "Just do it for me" is honoured immediately, with no lecture and no visible
+      disappointment — then explained *after*, briefly.
+- [ ] Scope: the first milestone of a beginner's project produces something that runs
+      in one session. If it cannot, §4.9's gap analysis cut too little.
 
 ---
 
@@ -2729,6 +2807,7 @@ cleanest milestone to cut.
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
 | Noob mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
+| A beginner learns to code but never learns to read an error, and stalls the moment they are alone | Errors are taught deliberately from *real* failures in their own project (§4.10); never from staged ones, which cost more trust than they teach |
 | Noob mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
 | Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |
 | Voice is now core, but the good tier needs a key — does zero-config still hold? | Yes: everything except voice works with no key. Without one, voice falls back to system TTS or stays silent and nothing else changes. The plan states plainly that the free tier is a downgrade rather than pretending the tiers are equivalent |

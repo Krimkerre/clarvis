@@ -14,6 +14,7 @@ import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from '
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
 import { probeTools } from './agent/tools/toolProbe';
+import { buildStamp } from './buildStamp';
 import { AgentTerminal } from './agent/tools/commandTools';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
@@ -38,6 +39,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // Local binding: `log` is module-scoped (deactivate() needs it) and therefore
   // mutable, which stops TypeScript narrowing it inside the closures below.
   const logger = new ClarvisLog(context.logUri);
+  // Which build is *running*, as opposed to which is installed. See esbuild.js.
+  logger.write(`Clarvis build ${buildStamp()}`);
   log = logger;
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');

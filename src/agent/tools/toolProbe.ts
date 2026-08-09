@@ -3,6 +3,7 @@ import { readFile, listFiles, search } from './fileTools';
 import { readDiagnostics, gitStatus, gitDiff, runCommand, AgentTerminal } from './commandTools';
 import { PathRefused } from './workspacePaths';
 import { classifyCommand, explainGate } from '../Gate';
+import { buildStamp } from '../../buildStamp';
 
 /**
  * Driving the tool layer by hand, without a model.
@@ -137,6 +138,11 @@ function ask(prompt: string, value: string): Thenable<string | undefined> {
 
 /** Results open as a plain document — scrollable, searchable, and closable. */
 async function show(content: string): Promise<void> {
-  const document = await vscode.workspace.openTextDocument({ content, language: 'text' });
+  // The build stamp rides along with every probe result: this is where a stale host
+  // does the most damage, since the whole point is testing what the code now does.
+  const document = await vscode.workspace.openTextDocument({
+    content: `[running build ${buildStamp()}]\n\n${content}`,
+    language: 'text',
+  });
   await vscode.window.showTextDocument(document, { preview: true });
 }

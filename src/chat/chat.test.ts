@@ -193,3 +193,71 @@ test('"help me" is a request for assistance, not for documentation', () => {
 test('talking about the help command does not invoke it', () => {
   assert.equal(chatAction('what does /help do?'), null);
 });
+
+import { routeFor, isEscalation } from './routing';
+
+test('a job goes to the agent', () => {
+  for (const message of [
+    'fix the failing test in src/watch',
+    'add a comment to README.md',
+    'rename BusyTracker to JobTracker',
+    'refactor the voice service',
+    'make it stop double-notifying',
+    'get the tests passing',
+  ]) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('a question is answered even when it contains a work verb', () => {
+  // "How do I fix this?" wants an explanation; "fix this" wants a fix. Missing that
+  // distinction is the likeliest way this router starts editing files mid-conversation.
+  for (const message of [
+    'how do I fix the failing test?',
+    'what would you change about this file',
+    'why did the build fail?',
+    'should I rename this class',
+    'can you explain what BusyTracker does',
+    'is it worth refactoring the voice service',
+  ]) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+test('a question mark always wins', () => {
+  // The clearest signal a person can give, and they mean it.
+  assert.equal(routeFor('fix the failing test?').route, 'answer');
+});
+
+test('thinking out loud is not an instruction', () => {
+  for (const message of [
+    'I was thinking of renaming this module',
+    'we should probably add tests here',
+    'what if we split this file',
+  ]) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+test('ambiguity resolves toward answering', () => {
+  // The two mistakes are not equal: a question wrongly routed to the agent starts
+  // editing a codebase nobody asked it to touch.
+  for (const message of ['the tests', 'hmm', 'BusyTracker', 'that thing from yesterday']) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+test('every decision carries a reason worth showing', () => {
+  // The route is announced before work starts, so the user can stop a wrong one.
+  assert.ok(routeFor('fix the test').because.length > 10);
+  assert.ok(routeFor('why did it fail?').because.length > 10);
+});
+
+test('escalation needs something to escalate', () => {
+  // Rule 3: a pattern hit is an observation. Replying to it is what makes it a
+  // request — the same words with nothing preceding them are not.
+  assert.equal(isEscalation('go on then', true), true);
+  assert.equal(isEscalation('fix it', true), true);
+  assert.equal(isEscalation('go on then', false), false);
+  assert.equal(isEscalation('what did you mean', true), false);
+});

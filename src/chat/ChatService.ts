@@ -11,6 +11,9 @@ import { archiveSession, describeSession, formatSession, parseHistory, Session }
 import { localAnswer, WorkspaceFacts } from './localAnswer';
 import { chatAction, ChatAction } from './chatCommands';
 import { ModelService, explain } from '../model/ModelService';
+import { routeFor } from './routing';
+import { AgentRunner } from '../agent/AgentRunner';
+import { AgentTerminal } from '../agent/tools/commandTools';
 
 /**
  * The live session, written as it happens.
@@ -67,6 +70,7 @@ export class ChatService {
     private readonly patterns: () => Pattern[],
     private readonly voice: VoiceService,
     private readonly models: ModelService,
+    private readonly terminal: AgentTerminal,
     private readonly log: (message: string) => void
   ) {
     // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
@@ -127,8 +131,13 @@ export class ChatService {
     const reply = localAnswer(question, await this.facts());
 
     if (!reply) {
-      // Beyond what was watched happen — this is what the model layer is for.
-      await this.answerWithModel(question);
+      // Beyond what was watched happen. Either the model answers it, or the agent does
+      // it — §4.6 routing, with ambiguity resolving toward answering.
+      const decision = routeFor(question);
+      this.log(`chat: routed to ${decision.route} — ${decision.because}`);
+
+      if (decision.route === 'agent') await this.runAgent(question, decision.because);
+      else await this.answerWithModel(question);
       return;
     }
 
@@ -214,6 +223,53 @@ export class ChatService {
       : 'same as chat';
 
     this.panel.post({ type: 'model-info', text: `Chat: ${chat}\nCoding: ${coding}\n\nClick to change` });
+  }
+
+  /**
+   * Hands a task to the agent, streaming its steps into the transcript.
+   *
+   * The route is **announced before anything starts**, because a misrouted question
+   * would otherwise begin editing files with no warning — and the announcement is what
+   * makes Stop a real option rather than a theoretical one.
+   */
+  private async runAgent(task: string, because: string): Promise<void> {
+    await this.say(because, 'thinking');
+
+    this.streaming?.abort();
+    const controller = new AbortController();
+    this.streaming = controller;
+
+    const runner = new AgentRunner(
+      this.context,
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      this.models,
+      this.terminal,
+      this.log
+    );
+
+    this.panel.post({ type: 'chat-stream-start' });
+    let closing = '';
+
+    try {
+      for await (const event of runner.run(task, controller.signal)) {
+        // Tool calls are shown as they happen — a step counter is the difference
+        // between watching work and watching a spinner.
+        const line =
+          event.kind === 'tool' ? `\n${event.step}. ${event.text}` : event.text;
+
+        if (event.kind === 'done' || event.kind === 'error') closing = event.text;
+        this.panel.post({ type: 'chat-stream', text: event.kind === 'tool' ? line : line });
+      }
+    } finally {
+      this.streaming = undefined;
+      this.panel.post({ type: 'chat-stream-end' });
+      this.avatar.setState('neutral');
+      await this.persist();
+    }
+
+    // Only the closing line is spoken. Reading nine tool calls aloud would be a
+    // recital, and the interesting part is what changed.
+    if (closing) this.voice.say(closing, 'chatReply');
   }
 
   /** Cancels the answer in flight, if there is one. */

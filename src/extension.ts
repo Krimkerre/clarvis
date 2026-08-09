@@ -186,7 +186,7 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, logger);
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, logger);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -344,6 +344,7 @@ function startChat(
   briefing: BriefingService,
   voice: VoiceService,
   models: ModelService,
+  terminal: AgentTerminal,
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -358,6 +359,7 @@ function startChat(
     () => memory.known,
     voice,
     models,
+    terminal,
     (message) => log.write(message)
   );
 

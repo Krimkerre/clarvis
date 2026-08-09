@@ -13,7 +13,7 @@ import { ChatService } from './chat/ChatService';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
-import { chooseProvider, chooseModel, manageKeys, refreshModelCatalog } from './model/modelPickers';
+import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -309,6 +309,10 @@ function registerModelCommands(
   log: (message: string) => void
 ): void {
   context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'clarvis.configureModels',
+      () => void configureModels(context, models, log)
+    ),
     vscode.commands.registerCommand('clarvis.chooseProvider', () => void chooseProvider(models, log)),
     vscode.commands.registerCommand('clarvis.chooseModel', () => void chooseModel(context, models, log)),
     vscode.commands.registerCommand('clarvis.manageModelKeys', () => void manageKeys(models, log)),

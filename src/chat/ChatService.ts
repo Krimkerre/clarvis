@@ -132,7 +132,7 @@ export class ChatService {
    */
   private async answerWithModel(question: string): Promise<void> {
     if (!(await this.models.isReady())) {
-      const spec = this.models.spec;
+      const spec = this.models.spec('chat');
       this.log(`chat: no local answer, and ${spec.id} is not configured`);
       await this.say(
         spec.needsKey
@@ -277,8 +277,11 @@ export class ChatService {
     }
 
     if (action === 'chooseModel') {
-      await this.say('Models. Only the ones that can hold a conversation.', 'neutral');
-      await vscode.commands.executeCommand('clarvis.chooseModel');
+      await this.say(
+        'Models. Chat and coding can be different ones — cheap for talking, capable for code.',
+        'neutral'
+      );
+      await vscode.commands.executeCommand('clarvis.configureModels');
       return;
     }
 

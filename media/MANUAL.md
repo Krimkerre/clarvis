@@ -39,7 +39,7 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 | `/clear` | Delete this conversation |
 | `/history` | Read earlier conversations |
 | `/settings` | Open every Clarvis setting |
-| `/model` | Choose the AI model *(not built yet)* |
+| `/model` | Choose models, providers and keys |
 
 **Plain English works too.** "Change the voice", "mute", "show me earlier chats", and
 "open the settings" all do the obvious thing. Asking a *question* — "what voice are you
@@ -73,6 +73,38 @@ Everything he says lands in the chat transcript too, so a notification you misse
 still there to scroll back to.
 
 ---
+
+## Models
+
+`/model` opens everything: providers, models, and keys.
+
+**Two models, on purpose.** Chat and coding are configured separately, and the coding
+one follows chat until you say otherwise:
+
+| | Used for | Why you'd change it |
+|---|---|---|
+| **Chat model** | Every question you ask | Every reply costs this one. A small or local model is fine here. |
+| **Coding model** | Writing code, running the agent | Needs to hold a tool loop together. This is where the capable model earns its price. |
+
+A cheap model for talking and a capable one for code is the whole point — asking "which
+branch am I on?" shouldn't cost frontier prices. The provider can differ too, so a local
+Ollama model can answer questions while a hosted one writes the code.
+
+**Providers:** Anthropic, OpenAI, OpenRouter, Ollama and LM Studio. **Keys are kept per
+provider**, so switching between them is one click, not a re-entry. They live in your OS
+keychain — never in a settings file, never in the log.
+
+**Model lists come from the provider, live.** They're filtered to models that can
+actually do the job — on OpenRouter that means only ones that can call tools, which is
+about 330 of 400 — and cached for a day. **Refresh** sits inside the picker for when a
+provider adds something new. Nothing is hardcoded, so a model released tomorrow appears
+without updating this extension.
+
+**Local models need no key at all.** Point Clarvis at Ollama or LM Studio and nothing
+leaves your machine.
+
+**No "sign in with Claude."** Anthropic doesn't permit third-party products to use
+claude.ai logins or subscription limits without prior approval. Bring an API key.
 
 ## Voice
 

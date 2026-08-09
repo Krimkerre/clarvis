@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ModelService } from './ModelService';
 import { ModelChoice } from './ModelProvider';
 import { PROVIDERS, ProviderId, providerSpec } from './providers';
+import { ModelRole } from './roles';
 
 /** Cached model lists, per provider. */
 const CATALOG_KEY = 'clarvis.model.catalog';
@@ -25,8 +26,12 @@ type FetchedStore = Partial<Record<ProviderId, number>>;
  * Separate from choosing a model, because they are different decisions: the provider
  * is *who you have an account with*, the model is *which one you want today*.
  */
-export async function chooseProvider(models: ModelService, log: (m: string) => void): Promise<void> {
-  const current = models.spec.id;
+export async function chooseProvider(
+  models: ModelService,
+  log: (m: string) => void,
+  role: ModelRole = 'chat'
+): Promise<void> {
+  const current = models.spec(role).id;
   const keyed = await models.keyedProviders();
 
   const picked = await vscode.window.showQuickPick(
@@ -41,11 +46,11 @@ export async function chooseProvider(models: ModelService, log: (m: string) => v
   );
   if (!picked) return;
 
-  await writeSetting('chat.provider', picked.id);
+  await writeSetting(`${role}.provider`, picked.id);
   // A model belongs to the provider that offered it. Carrying one across means asking
   // OpenAI for a Claude model and getting a 404 nobody can explain.
-  await writeSetting('chat.model', '');
-  log(`model: provider set to ${picked.id}`);
+  await writeSetting(`${role}.model`, '');
+  log(`model: ${role} provider set to ${picked.id}`);
 
   const spec = providerSpec(picked.id)!;
   if (spec.needsKey && !keyed[picked.id]) {
@@ -64,10 +69,12 @@ export async function chooseProvider(models: ModelService, log: (m: string) => v
 export async function chooseModel(
   context: vscode.ExtensionContext,
   models: ModelService,
-  log: (m: string) => void
+  log: (m: string) => void,
+  role: ModelRole = 'chat'
 ): Promise<void> {
-  const spec = models.spec;
-  let catalog = await cachedModels(context, models, log, false);
+  const spec = models.spec(role);
+  const current = models.model(role);
+  let catalog = await cachedModels(context, models, log, false, role);
 
   for (;;) {
     const items: (vscode.QuickPickItem & { id: string })[] = [
@@ -83,7 +90,7 @@ export async function chooseModel(
       });
       items.push(
         ...catalog.map((entry) => ({
-          label: entry.id === models.model ? `$(check) ${entry.label}` : entry.label,
+          label: entry.id === current ? `$(check) ${entry.label}` : entry.label,
           description: entry.label === entry.id ? '' : entry.id,
           detail: entry.detail,
           id: entry.id,
@@ -94,7 +101,9 @@ export async function chooseModel(
     const picked = await vscode.window.showQuickPick(items, {
       placeHolder:
         catalog.length > 0
-          ? `${spec.label} — models that can hold a conversation`
+          ? role === 'agent'
+            ? `${spec.label} — the model that writes code`
+            : `${spec.label} — the model that answers questions`
           : `${spec.label} listed nothing. Type a name, or refresh.`,
       matchOnDetail: true,
       matchOnDescription: true,
@@ -102,17 +111,17 @@ export async function chooseModel(
     if (!picked) return;
 
     if (picked.id === '\0refresh') {
-      catalog = await cachedModels(context, models, log, true);
+      catalog = await cachedModels(context, models, log, true, role);
       continue;
     }
 
     if (picked.id === '\0type') {
-      await promptForModelName(models.model, log);
+      await promptForModelName(current, log, role);
       return;
     }
 
-    await writeSetting('chat.model', picked.id);
-    log(`model: set to ${picked.id}`);
+    await writeSetting(`${role}.model`, picked.id);
+    log(`model: ${role} model set to ${picked.id}`);
     return;
   }
 }
@@ -128,9 +137,10 @@ async function cachedModels(
   context: vscode.ExtensionContext,
   models: ModelService,
   log: (m: string) => void,
-  force: boolean
+  force: boolean,
+  role: ModelRole = 'chat'
 ): Promise<ModelChoice[]> {
-  const provider = models.spec.id;
+  const provider = models.spec(role).id;
   const store = context.globalState.get<CatalogStore>(CATALOG_KEY) ?? {};
   const fetched = context.globalState.get<FetchedStore>(CATALOG_FETCHED_KEY) ?? {};
 
@@ -140,8 +150,8 @@ async function cachedModels(
 
   try {
     const listed = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: `Clarvis: asking ${models.spec.label}…` },
-      () => models.listModels()
+      { location: vscode.ProgressLocation.Notification, title: `Clarvis: asking ${models.spec(role).label}…` },
+      () => models.listModels(role)
     );
 
     if (listed.length === 0) {
@@ -155,7 +165,7 @@ async function cachedModels(
 
     if (force) {
       void vscode.window.showInformationMessage(
-        `Clarvis: ${listed.length} usable ${models.spec.label} models.`
+        `Clarvis: ${listed.length} usable ${models.spec(role).label} models.`
       );
     }
     return listed;
@@ -174,9 +184,78 @@ export async function refreshModelCatalog(
   const listed = await cachedModels(context, models, log, true);
   if (listed.length === 0) {
     void vscode.window.showWarningMessage(
-      `Clarvis: couldn't get a model list from ${models.spec.label} just now.`
+      `Clarvis: couldn't get a model list from ${models.spec().label} just now.`
     );
   }
+}
+
+/**
+ * Asks which job is being configured, then configures it.
+ *
+ * One entry point rather than four separate commands: most people never split the two,
+ * and those who do think in terms of "the coding one costs more", not in terms of
+ * which setting key holds it.
+ */
+export async function configureModels(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void
+): Promise<void> {
+  const chatSpec = models.spec('chat');
+  const agentSpec = models.spec('agent');
+  const separate = models.agentIsSeparate();
+
+  const picked = await vscode.window.showQuickPick(
+    [
+      {
+        label: '$(comment-discussion) Chat model',
+        description: `${chatSpec.label} · ${models.model('chat')}`,
+        detail: 'Answers questions. Every reply you read costs this one.',
+        id: 'chat',
+      },
+      {
+        label: '$(tools) Coding model',
+        description: separate
+          ? `${agentSpec.label} · ${models.model('agent')}`
+          : 'same as chat',
+        detail: separate
+          ? 'Writes code and runs the agent.'
+          : 'Writes code and runs the agent. Set it separately to keep a cheap model for chat.',
+        id: 'agent',
+      },
+      { label: '$(key) API keys', detail: 'One per provider, all kept', id: 'keys' },
+    ],
+    { placeHolder: 'What would you like to change?', matchOnDetail: true }
+  );
+  if (!picked) return;
+
+  if (picked.id === 'keys') {
+    await manageKeys(models, log);
+    return;
+  }
+
+  const role = picked.id as ModelRole;
+  const next = await vscode.window.showQuickPick(
+    [
+      { label: '$(server) Provider', detail: 'Which account or local runtime', id: 'provider' },
+      { label: '$(list-selection) Model', detail: 'Which model at that provider', id: 'model' },
+      ...(role === 'agent' && separate
+        ? [{ label: '$(discard) Follow the chat model again', detail: 'Stop using a separate coding model', id: 'reset' }]
+        : []),
+    ],
+    { placeHolder: role === 'agent' ? 'Coding model' : 'Chat model' }
+  );
+  if (!next) return;
+
+  if (next.id === 'reset') {
+    await writeSetting('agent.provider', '');
+    await writeSetting('agent.model', '');
+    log('model: agent follows the chat model again');
+    return;
+  }
+
+  if (next.id === 'provider') await chooseProvider(models, log, role);
+  else await chooseModel(context, models, log, role);
 }
 
 /**
@@ -226,7 +305,11 @@ export async function manageKeys(models: ModelService, log: (m: string) => void)
 }
 
 /** Free-text model entry, for anything a provider doesn't list. */
-async function promptForModelName(current: string, log: (m: string) => void): Promise<void> {
+async function promptForModelName(
+  current: string,
+  log: (m: string) => void,
+  role: ModelRole = 'chat'
+): Promise<void> {
   const name = await vscode.window.showInputBox({
     prompt: 'Model name, exactly as the provider spells it',
     value: current,
@@ -234,8 +317,8 @@ async function promptForModelName(current: string, log: (m: string) => void): Pr
   });
   if (!name?.trim()) return;
 
-  await writeSetting('chat.model', name.trim());
-  log(`model: set to ${name.trim()} (typed)`);
+  await writeSetting(`${role}.model`, name.trim());
+  log(`model: ${role} model set to ${name.trim()} (typed)`);
 }
 
 /** Captures a key into the OS keychain. Never settings, never the log. */

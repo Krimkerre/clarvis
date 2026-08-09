@@ -3,6 +3,7 @@ import { AnthropicProvider } from './AnthropicProvider';
 import { OpenAiCompatibleProvider } from './OpenAiCompatibleProvider';
 import { CompletionRequest, ModelChoice, ModelError, ModelProvider } from './ModelProvider';
 import { PROVIDERS, ProviderId, ProviderSpec, providerSpec } from './providers';
+import { ModelRole, RoleSettings, resolveRole } from './roles';
 
 /** Secret-storage key per provider. Namespaced so one provider's key can't shadow another's. */
 export function keySecretId(provider: ProviderId): string {
@@ -25,26 +26,40 @@ export class ModelService {
     private readonly log: (message: string) => void
   ) {}
 
-  /** The configured provider, or the default when the setting names nothing known. */
-  get spec(): ProviderSpec {
-    const configured = vscode.workspace
-      .getConfiguration('clarvis')
-      .get<string>('chat.provider', 'anthropic');
+  /** Every role setting, read in one place so resolution stays pure and testable. */
+  private settings(): RoleSettings {
+    const config = vscode.workspace.getConfiguration('clarvis');
+    return {
+      chatProvider: config.get<string>('chat.provider', 'anthropic'),
+      chatModel: config.get<string>('chat.model', ''),
+      agentProvider: config.get<string>('agent.provider', ''),
+      agentModel: config.get<string>('agent.model', ''),
+    };
+  }
 
-    const spec = providerSpec(configured);
-    if (!spec) this.log(`model: unknown provider "${configured}", using anthropic`);
+  /** The provider for a role, or the default when the setting names nothing known. */
+  spec(role: ModelRole = 'chat'): ProviderSpec {
+    const { provider } = resolveRole(role, this.settings());
+
+    const spec = providerSpec(provider);
+    if (!spec) this.log(`model: unknown provider "${provider}", using anthropic`);
     return spec ?? PROVIDERS[0];
   }
 
-  /** The model to use — the user's choice, else the provider's default. */
-  get model(): string {
-    const configured = vscode.workspace.getConfiguration('clarvis').get<string>('chat.model', '');
-    return configured.trim() || this.spec.defaultModel;
+  /** The model for a role — the user's choice, else that provider's default. */
+  model(role: ModelRole = 'chat'): string {
+    const { model } = resolveRole(role, this.settings());
+    return model || this.spec(role).defaultModel;
+  }
+
+  /** Whether the agent runs on its own model rather than following chat. */
+  agentIsSeparate(): boolean {
+    return !resolveRole('agent', this.settings()).inherited;
   }
 
   /** Whether a question can be sent right now. */
-  async isReady(): Promise<boolean> {
-    return this.provider().isAvailable();
+  async isReady(role: ModelRole = 'chat'): Promise<boolean> {
+    return this.provider(role).isAvailable();
   }
 
   /**
@@ -56,18 +71,24 @@ export class ModelService {
    * is meant to prevent.
    */
   async supportsTools(): Promise<boolean> {
-    const cacheKey = `${this.spec.id}/${this.model}`;
+    // Always the *agent* role: the chat model never runs tools, so requiring tool
+    // support from it would rule out exactly the cheap local models this split exists
+    // to make usable.
+    const spec = this.spec('agent');
+    const model = this.model('agent');
+    const cacheKey = `${spec.id}/${model}`;
+
     const cached = this.toolSupport.get(cacheKey);
     if (cached !== undefined) return cached;
 
-    const supported = await this.provider().supportsTools(this.model);
+    const supported = await this.provider('agent').supportsTools(model);
     this.toolSupport.set(cacheKey, supported);
     this.log(`model: ${cacheKey} tool support = ${supported}`);
     return supported;
   }
 
-  async listModels(): Promise<ModelChoice[]> {
-    return this.provider().listModels();
+  async listModels(role: ModelRole = 'chat'): Promise<ModelChoice[]> {
+    return this.provider(role).listModels();
   }
 
   /** Which providers currently hold a key, for the key manager. */
@@ -79,8 +100,8 @@ export class ModelService {
   }
 
   /** Streams an answer. Errors arrive as `ModelError`, already phrased for a human. */
-  stream(request: Omit<CompletionRequest, 'model'>): AsyncIterable<string> {
-    return this.provider().stream({ ...request, model: this.model });
+  stream(request: Omit<CompletionRequest, 'model'>, role: ModelRole = 'chat'): AsyncIterable<string> {
+    return this.provider(role).stream({ ...request, model: this.model(role) });
   }
 
   /** Stores a provider's key in the OS keychain — never in settings, never logged. */
@@ -99,8 +120,8 @@ export class ModelService {
   }
 
   /** Builds the adapter for the configured provider. */
-  private provider(): ModelProvider {
-    const spec = this.spec;
+  private provider(role: ModelRole = 'chat'): ModelProvider {
+    const spec = this.spec(role);
     // Wrapped rather than passed through: SecretStorage returns a Thenable, and the
     // adapters want a real Promise so they can use await/catch normally.
     const getKey = async () => this.context.secrets.get(keySecretId(spec.id));

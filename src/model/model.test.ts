@@ -100,3 +100,50 @@ test('failure detail is kept out of the friendly sentence', () => {
   assert.ok(!error.friendly.includes('sk-secret-looking-body'));
   assert.ok(error.detail.includes('sk-secret-looking-body'));
 });
+
+import { resolveRole, RoleSettings } from './roles';
+
+function settings(overrides: Partial<RoleSettings> = {}): RoleSettings {
+  return { chatProvider: 'ollama', chatModel: 'llama3.2:3b', agentProvider: '', agentModel: '', ...overrides };
+}
+
+test('unset agent settings follow chat, so one model stays one model', () => {
+  // Someone who never touches this must not suddenly be running two configurations.
+  const resolved = resolveRole('agent', settings());
+
+  assert.equal(resolved.provider, 'ollama');
+  assert.equal(resolved.model, 'llama3.2:3b');
+  assert.equal(resolved.inherited, true);
+});
+
+test('an agent model alone means same account, better model', () => {
+  // The common split: one provider, a cheaper model for chat.
+  const resolved = resolveRole('agent', settings({ agentModel: 'llama3.1:70b' }));
+
+  assert.equal(resolved.provider, 'ollama');
+  assert.equal(resolved.model, 'llama3.1:70b');
+  assert.equal(resolved.inherited, false);
+});
+
+test('a different agent provider does not inherit the chat model name', () => {
+  // "llama3.2:3b" means nothing to Anthropic. Carrying it across produces a 404 that
+  // looks like a Clarvis bug rather than a configuration one.
+  const resolved = resolveRole('agent', settings({ agentProvider: 'anthropic' }));
+
+  assert.equal(resolved.provider, 'anthropic');
+  assert.equal(resolved.model, '');
+});
+
+test('the chat role never inherits from the agent', () => {
+  const resolved = resolveRole('chat', settings({ agentProvider: 'anthropic', agentModel: 'claude-opus-5' }));
+
+  assert.equal(resolved.provider, 'ollama');
+  assert.equal(resolved.model, 'llama3.2:3b');
+});
+
+test('whitespace-only settings count as unset', () => {
+  const resolved = resolveRole('agent', settings({ agentProvider: '   ', agentModel: '  ' }));
+
+  assert.equal(resolved.provider, 'ollama');
+  assert.equal(resolved.inherited, true);
+});

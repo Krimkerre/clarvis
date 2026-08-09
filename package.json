@@ -60,6 +60,10 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.debug.tools",
+        "title": "Clarvis: Debug \u2014 Try a Tool"
+      },
+      {
         "command": "clarvis.debug.micProbe",
         "title": "Clarvis: Debug — Microphone Probe"
       },

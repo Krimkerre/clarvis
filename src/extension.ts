@@ -13,6 +13,8 @@ import { ChatService } from './chat/ChatService';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
+import { probeTools } from './agent/tools/toolProbe';
+import { AgentTerminal } from './agent/tools/commandTools';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -85,6 +87,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // when a question falls outside what Clarvis watched happen.
   const models = new ModelService(context, (message) => logger.write(message));
   registerModelCommands(context, models, (message) => logger.write(message));
+
+  // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
+  // shared so a probe run reads as one transcript rather than one window per command.
+  const agentTerminal = new AgentTerminal();
+  context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.debug.tools', () =>
+      probeTools(
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        (message) => logger.write(message),
+        agentTerminal
+      )
+    )
+  );
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, logger);
 

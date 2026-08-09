@@ -162,3 +162,36 @@ test('re-saving a known voice renames it instead of duplicating it', () => {
     Second: 'def456',
   });
 });
+
+import { speakable } from './speakable';
+
+test('an outcome notice reads as a sentence, not a log line', () => {
+  // "(probe-build-ok, 2s)" is good to look at and terrible to hear: the brackets
+  // become a pause with no cause and "2s" is read as "two ess".
+  assert.equal(
+    speakable('Finished. Red, I\'m afraid. (probe-build-fail, 2s)'),
+    "Finished. Red, I'm afraid. probe-build-fail took 2 seconds."
+  );
+});
+
+test('durations are spoken as words, with the right plural', () => {
+  assert.equal(speakable('It took 1s.'), 'It took 1 second.');
+  assert.equal(speakable('It took 45s.'), 'It took 45 seconds.');
+  assert.equal(speakable('It took 4.2s.'), 'It took 4.2 seconds.');
+  assert.equal(speakable('It took 2m 5s.'), 'It took 2 minutes and 5 seconds.');
+  assert.equal(speakable('It took 1m 1s.'), 'It took 1 minute and 1 second.');
+  assert.equal(speakable('It took 150ms.'), 'It took 150 milliseconds.');
+});
+
+test('inline code markers are never read aloud', () => {
+  // The transcript renders these as <code>; spoken, "backtick npm test backtick"
+  // is the single fastest way to sound like a machine.
+  assert.equal(speakable('`npm test` is still broken.'), 'npm test is still broken.');
+});
+
+test('mid-sentence brackets keep their words', () => {
+  assert.equal(
+    speakable('Branch main (3 files dirty) as of now.'),
+    'Branch main, 3 files dirty, as of now.'
+  );
+});

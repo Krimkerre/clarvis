@@ -593,7 +593,7 @@ the personality pass it exists to deliver, and **before** chat and the agent.
   The original reasoning ("a voice heckling you from the sidebar crosses from charming
   to haunted") was right about the risk and wrong about the remedy — it fixed volume in
   the wrong place. What governs volume is the §6 interruption budget: one unsolicited
-  surface per ten minutes, shared across M3, M5 and M6. Anything that has already
+  surface per minute, shared across M3, M5 and M6. Anything that has already
   earned its way past that is worth hearing, and silencing only the audio meant the
   voice carried the dull half of the character while the text carried the funny half.
   The safeguards that make this defensible are unchanged: voice is **off by default**,
@@ -1472,7 +1472,10 @@ quips are a post-v1 experiment behind a flag.
   user who never wants to hear him never opens `settings.json`. Watching, briefings,
   pattern memory, and the local half of chat all work with zero keys; pasting a model key
   is one command, prompted in-panel the first time it's needed, never on install.
-- **Interruption budget:** ≤ 1 unsolicited surface per 10 min, hard-capped.
+- **Interruption budget:** ≤ 1 unsolicited surface per minute, hard-capped — with a
+  10s floor for things you need to know now (a build going red, a repeat error).
+  **Lowered from 10 min at M8a**: that figure was set on paper and, once completion
+  notices actually routed through it, was swallowing most of what he had to say.
 - **Feels alive without being needy** — idle animation carries presence; the mouth
   stays shut. Ambient, not demanding.
 - **Trust:** the privacy scope must be explainable in one sentence to a non-technical
@@ -1897,7 +1900,7 @@ executions with an empty command line are ignored outright.
   through**, wrapping the budget. M3's completion notices, M5's pattern hits and M6's
   quips all announce through it; a budget enforced separately in three places is three
   budgets, and the user experiences their sum. `src/personality/rateLimit.ts` — the §6 interruption budget (≤1 unsolicited
-  surface / 10 min), a single gate every unsolicited surface passes through: M3's
+  surface / min), a single gate every unsolicited surface passes through: M3's
   outcome notifications, M5's pattern hits, M6's own quips. The briefing (M4) and
   chat replies (M8) are explicitly exempt — solicited or once-per-session, not
   "unsolicited." Implementation: timestamp of last surface in memory, reject if
@@ -2212,8 +2215,11 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       each still counts against the one-per-ten-minutes budget rather than slipping
       through because it went to the voice path.
 - [ ] Completion notices go through the Announcer's budget — fire several slow jobs
-      inside ten minutes and confirm only one surfaces. **This was broken until M8a**:
+      inside a minute and confirm only one surfaces. **This was broken until M8a**:
       `WatchPresenter` held an `Announcer` and called `showInformationMessage` directly.
+- [ ] Run a passing build and a failing one back to back, seconds apart — **both** are
+      reported. The failure must not be swallowed by the success ahead of it, which is
+      the most ordinary sequence a developer produces.
 - [ ] With a model wired (M8g2): a generated quip fires for a trigger the bank covers,
       and reads as the same character as the canned one.
 - [ ] Kill the network mid-quip — the canned line arrives instead, within the timeout,

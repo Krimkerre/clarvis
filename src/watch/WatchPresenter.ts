@@ -82,7 +82,10 @@ export class WatchPresenter {
 
     // The Announcer sets the face and returns it to rest on the same 4s hold, so a
     // suppressed notice must not leave this class holding a reaction nothing showed.
-    if (!this.announcer.announce(outcomeMessage(outcome), reactionTo(outcome), 'completion')) return;
+    // A red build is the one outcome you need told about even if he spoke recently.
+    const priority = outcome.exitCode === 0 ? 'routine' : 'important';
+    if (!this.announcer.announce(outcomeMessage(outcome), reactionTo(outcome), 'completion', priority))
+      return;
 
     this.startReactionHold();
   }

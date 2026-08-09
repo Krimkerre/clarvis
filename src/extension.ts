@@ -178,7 +178,7 @@ function startPatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
     // A suggestion, never an action (rule 3), and subject to the shared budget.
-    (message) => void announcer.announce(message, 'judging', 'patternHit')
+    (message) => void announcer.announce(message, 'judging', 'patternHit', 'important')
   );
 
   void memory.start(tracker, context);

@@ -4,6 +4,7 @@ import { VoiceProvider, Utterance } from './VoiceProvider';
 import { SpeechOccasion, mayBeSpoken } from './speechScope';
 import { resolveVoiceId } from './curatedVoices';
 import { stopPlayback } from './nativePlayer';
+import { speakable } from './speakable';
 
 /**
  * Speaks, when speaking is appropriate.
@@ -116,7 +117,9 @@ export class VoiceService {
     // Failures are swallowed so one bad utterance can't stall everything behind it.
     this.queue = this.queue
       .catch(() => undefined)
-      .then(() => this.speakWithFallback({ text, voiceId: this.selectedVoice }));
+      // Normalised here rather than at the call sites: written text and spoken text
+      // are different languages, and every surface would otherwise have to remember.
+      .then(() => this.speakWithFallback({ text: speakable(text), voiceId: this.selectedVoice }));
   }
 
   /**
@@ -125,7 +128,9 @@ export class VoiceService {
    */
   preview(text: string, selectedVoice: string): void {
     const voiceId = resolveVoiceId(selectedVoice);
-    this.queue = this.queue.catch(() => undefined).then(() => this.speakWithFallback({ text, voiceId }));
+    this.queue = this.queue
+      .catch(() => undefined)
+      .then(() => this.speakWithFallback({ text: speakable(text), voiceId }));
   }
 
   /**

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { ButlerState } from '../panels/ButlerViewProvider';
-import { mayInterrupt } from './rateLimit';
+import { mayInterrupt, Priority } from './rateLimit';
 import { SpeechOccasion } from '../voice/speechScope';
 
 /** How long a reaction stays on the avatar's face before it settles back. */
@@ -54,10 +54,11 @@ export class Announcer {
     message: string,
     state: ButlerState,
     occasion: SpeechOccasion,
+    priority: Priority = 'routine',
     now = Date.now()
   ): boolean {
-    if (!mayInterrupt(this.lastSurfaceAt, now)) {
-      this.log(`suppressed (interruption budget): ${message}`);
+    if (!mayInterrupt(this.lastSurfaceAt, now, priority)) {
+      this.log(`suppressed (interruption budget, ${priority}): ${message}`);
       return false;
     }
 

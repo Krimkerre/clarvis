@@ -19,6 +19,16 @@ export class VoiceService {
   /** One warning per session, so a persistent outage isn't a persistent nag. */
   private warnedThisSession = false;
 
+  /**
+   * Utterances are spoken one at a time, in order.
+   *
+   * Without this they collide: the system voice calls `speechSynthesis.cancel()`
+   * before speaking, so a second utterance **chops the first off mid-sentence**, and
+   * two native players would simply talk over each other. A briefing followed closely
+   * by a completion notice is enough to trigger it.
+   */
+  private queue: Promise<void> = Promise.resolve();
+
   constructor(
     private readonly avatar: AvatarController,
     private readonly primary: VoiceProvider,
@@ -52,7 +62,11 @@ export class VoiceService {
       return;
     }
 
-    void this.speakWithFallback({ text, voiceId: this.selectedVoice });
+    // Chained rather than fired: each utterance waits for the previous one to finish.
+    // Failures are swallowed so one bad utterance can't stall everything behind it.
+    this.queue = this.queue
+      .catch(() => undefined)
+      .then(() => this.speakWithFallback({ text, voiceId: this.selectedVoice }));
   }
 
   /**

@@ -50,6 +50,32 @@ DEFS = '''<defs>
     </defs>'''
 
 CSS = '''
+  /* ---- planning mockup ---- */
+  .chip-plan { margin-left: auto; font-size: 10.5px; color: #ffb648;
+    background: rgba(255,182,72,.1); border: 1px solid rgba(255,182,72,.35);
+    border-radius: 10px; padding: 1px 8px; letter-spacing: .04em; }
+  .thread { flex: 1 1 auto; min-height: 0; overflow: hidden;
+    padding: 10px 14px 0; display: flex; flex-direction: column; gap: 9px; }
+  .msg { max-width: 92%; padding: 8px 11px; border-radius: 9px; font-size: 12px; line-height: 1.5; }
+  .msg.them { align-self: flex-start; background: #12151b; border: 1px solid #232838;
+    color: #b6c0cd; border-bottom-left-radius: 3px; }
+  .msg.me { align-self: flex-end; background: #2a3444; color: #dbe4ee; border-bottom-right-radius: 3px; }
+  .msg ol { margin: 6px 0 0; padding-left: 17px; }
+  .msg li { margin-bottom: 5px; }
+  .msg .em { color: #cdd6e3; font-style: italic; }
+  .finding { margin: 3px 14px 0; background: #1b2430; border: 1px solid #2f4a63;
+    border-left: 3px solid #4aa3df; border-radius: 7px; padding: 10px 12px; }
+  .finding .hd { font-size: 10px; color: #4aa3df; letter-spacing: .07em; font-weight: 600; margin-bottom: 5px; }
+  .finding .body { font-size: 11.5px; color: #c3ced9; line-height: 1.5; }
+  .finding .fix { font-size: 11.5px; color: #9ec9a4; margin-top: 6px; line-height: 1.45; }
+  .finding .btns { display: flex; gap: 6px; margin-top: 9px; }
+  .finding button { font: inherit; font-size: 11px; border-radius: 5px; padding: 3px 10px;
+    border: 1px solid #35404d; background: #12151b; color: #cdd6e3; }
+  .finding button.primary { background: #4aa3df; border-color: #4aa3df; color: #05131f; font-weight: 600; }
+  .md-h { color: #569cd6; font-weight: 600; }
+  .md-t { color: #ccc; }
+  .md-d { color: #5a6472; font-style: italic; }
+
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { width: 1360px; height: 800px; background: #1e1e1e; color: #ccc;
@@ -308,3 +334,99 @@ os.makedirs(OUT, exist_ok=True)
 open(os.path.join(OUT, "mockup-demo.html"), "w").write(page(anim=True))
 open(os.path.join(OUT, "_mockup_static.html"), "w").write(page(anim=False))
 print("wrote mockup-demo.html + _mockup_static.html")
+
+
+def page_planning(anim):
+    d = ((lambda t: ' style="animation-name:seq%s"' % str(t).replace('.', '_'))
+         if anim else (lambda t: ''))
+    seq = " seq" if anim else ""
+    face = f'''<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg">{DEFS}
+        <g class="{'bob' if anim else ''}">{avatar("talking")}</g></svg>'''
+
+    return f'''<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>Clarvis — planning mockup</title>
+<style>{CSS}{ANIM_CSS if anim else ""}</style></head>
+<body>
+<div class="titlebar">
+  <div class="dots"><div class="dot" style="background:#ff5f57"></div><div class="dot" style="background:#febc2e"></div><div class="dot" style="background:#28c840"></div></div>
+  plan.md — photo-renamer
+</div>
+<div class="main">
+  <div class="activitybar">
+    <svg class="icon active" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.6"><path d="M4 4h9l2 2h5v13a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/></svg>
+    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.6"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+    <div class="spacer"></div>
+    <svg class="icon active" viewBox="0 0 24 24"><path fill="#34e6f2" d="M2 6l8 4.2v3.6L2 18V6zm20 0v12l-8-4.2v-3.6L22 6zM12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/></svg>
+  </div>
+  <div class="explorer">
+    <div class="section-title">PHOTO-RENAMER</div>
+    <div class="file active" style="padding-left:32px">plan.md<span class="badge">draft</span></div>
+    <div class="file" style="padding-left:32px;color:#888">README.md</div>
+  </div>
+  <div class="editor">
+    <div class="tabs"><div class="tab active">📄 plan.md <span style="margin-left:4px;color:#888">✕</span></div></div>
+    <div class="code">
+      <div class="line"><span class="ln">1</span><span class="src"><span class="md-h"># photo-renamer — Project Plan</span></span></div>
+      <div class="line"><span class="ln">2</span><span class="src"></span></div>
+      <div class="line"><span class="ln">3</span><span class="src"><span class="md-t">A CLI that renames photos from their EXIF capture date.</span></span></div>
+      <div class="line"><span class="ln">4</span><span class="src"></span></div>
+      <div class="line"><span class="ln">5</span><span class="src"><span class="md-h">## 1. Concept</span></span></div>
+      <div class="line"><span class="ln">6</span><span class="src"><span class="md-d">drafting — awaiting your answers…</span></span></div>
+      <div class="line"><span class="ln">7</span><span class="src"></span></div>
+      <div class="line"><span class="ln">8</span><span class="src"><span class="md-h">## 2. Non-Goals</span></span></div>
+      <div class="line"><span class="ln">9</span><span class="src"><span class="md-t">- ❌ Editing image data. Names only.</span></span></div>
+      <div class="line"><span class="ln">10</span><span class="src"></span></div>
+      <div class="line"><span class="ln">11</span><span class="src"><span class="md-h">## 3. Open Questions</span></span></div>
+      <div class="line"><span class="ln">12</span><span class="src"><span class="md-t">- Timezone of the EXIF clock vs. the</span></span></div>
+      <div class="line"><span class="ln">13</span><span class="src"><span class="md-t">  filesystem — unresolved, per you.</span></span></div>
+      <div class="line"><span class="ln">14</span><span class="src"></span></div>
+      <div class="line"><span class="ln">15</span><span class="src"><span class="md-h">## 4. Milestones</span></span></div>
+      <div class="line"><span class="ln">16</span><span class="src"><span class="md-d">pending sign-off…</span></span></div>
+    </div>
+  </div>
+
+  <div class="clarvis">
+    <div class="clarvis-header">CLARVIS<span class="chip-plan{seq}"{d(0.5)}>◷ PLAN MODE — NOT WRITING CODE</span></div>
+    <div class="stage" style="padding:8px 16px 2px">{face}</div>
+    <div class="thread">
+      <div class="msg them{seq}"{d(1.0)}>No <code>plan.md</code> here. One sentence will
+        do — I'll do the interrogating.</div>
+      <div class="msg me{seq}"{d(1.8)}>a CLI that renames photos by their EXIF date</div>
+      <div class="msg them{seq}"{d(2.6)}>Three questions. "No idea" is a real answer —
+        I'll record it as one rather than invent something you didn't say.
+        <ol>
+          <li>Burst mode collides timestamps constantly. Suffix, or overwrite and hope?</li>
+          <li>Rename in place, or copy? In place is faster and unforgiving.</li>
+          <li>Anything you'd be annoyed to ship without?</li>
+        </ol>
+      </div>
+      <div class="msg me{seq}"{d(3.6)}>suffix. in place. no idea on 3</div>
+      <div class="finding{seq}"{d(4.4)}>
+        <div class="hd">⚠ LOGIC — YOUR CALL</div>
+        <div class="body">In-place renaming with no dry run makes the first malformed
+          EXIF tag permanent. Photos don't rebuild from source, unlike everything else
+          you've ever broken.</div>
+        <div class="fix">Suggest <b>--dry-run</b> as the default, <b>--apply</b> to
+          commit. One flag; saves a holiday.</div>
+        <div class="btns"><button class="primary">Accept</button><button>Reject</button><button>Modify</button></div>
+      </div>
+    </div>
+    <div class="foot">
+      <div class="meter"><span>3 findings · 1 open question</span><span class="stop">Approve Plan</span></div>
+      <div class="input">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#8291a3" stroke-width="1.8"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+        <div class="ph">Answer, or "I don't know"…</div>
+        <svg viewBox="0 0 24 24" fill="none" stroke="#34e6f2" stroke-width="1.8"><path d="M4 12l16-8-6 16-2.5-6.5L4 12z"/></svg>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="statusbar">
+  <span>◷ plan mode</span><span>photo-renamer</span>
+  <div class="right"><span class="sb-state">◉ talking</span><span>Markdown</span></div>
+</div>
+</body></html>'''
+
+open(os.path.join(OUT, "mockup-planning.html"), "w").write(page_planning(anim=True))
+open(os.path.join(OUT, "_planning_static.html"), "w").write(page_planning(anim=False))
+print("wrote mockup-planning.html + _planning_static.html")

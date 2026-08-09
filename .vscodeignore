@@ -16,3 +16,5 @@ clarvis-probe-log.jsonl
 *.map
 .git/**
 media/gen_mockup.py
+media/mockup-planning.html
+media/mockup-planning.png

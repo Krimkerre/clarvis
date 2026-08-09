@@ -1410,8 +1410,10 @@ targeting ~2–3 rounds.
 What it needs to establish, roughly in priority order:
 
 1. **What it does, concretely** — the one-sentence version, then the first real use case.
-2. **Who runs it, and where** — platform, language, runtime constraints. Often the single
-   most plan-shaping answer.
+2. **Who runs it, and where** — platform, runtime constraints, how it gets to whoever
+   uses it. Often the single most plan-shaping answer. **Language is deliberately not
+   asked here** — it gets its own step, below, once there is enough shape to make the
+   options meaningful.
 3. **Scope boundaries** — explicitly including what it should *not* do. Non-goals are
    worth as much as goals and nobody volunteers them unasked.
 4. **Data** — what it reads, writes, stores, or sends. Drives every safety finding below.
@@ -1447,6 +1449,63 @@ In **Tutor Mode** the question carries its explanation: what a linter is, that i
 warnings are advice rather than errors that stop the program, and that it will light
 up the screen at first and that this is normal. Defaulting a beginner into it silently
 would mean their first experience of their own code is 200 warnings they cannot read.
+
+#### Choosing a language — asked once there's enough to answer it against
+
+**Timing is the whole point.** Asked at the start, "what language?" is either a
+preference nobody can justify yet or a question a beginner cannot answer at all. Asked
+after *what it does*, *who runs it* and *where it runs* are established, it becomes a
+short list with real trade-offs. So it sits between rounds: enough scope to draw up
+candidates, early enough that the rest of the interview can be language-aware.
+
+**Options come from the project, not from a menu.** A CLI that renames photos, a web
+app with accounts, and a game get three different shortlists — and a shortlist that
+ignores what was just described is worse than no shortlist, because it looks like
+advice. Two to four candidates, each with a real advantage and a real cost:
+
+> *For a CLI that renames photos by EXIF date:*
+> **Python** — fastest to write, EXIF libraries already exist, and it's on most
+> machines already. Slower, and handing it to someone who doesn't have Python is fiddly.
+> **Go** — compiles to one file anyone can run with no install. More code to write, and
+> the image libraries are thinner.
+> **Node/TypeScript** — good middle ground if you already know JavaScript. Requires
+> Node installed, and pulls in more dependencies than the other two.
+
+**"You pick" is a first-class answer.** Clarvis chooses and states the reasoning in one
+line, which the user can overrule. Forcing a decision out of someone who genuinely has
+no preference wastes a round and produces an arbitrary answer either way.
+
+**An existing project is detected, not asked.** Files on disk already answer this.
+
+**A bad fit is said plainly** — §0's gap analysis does not soften here. If a choice
+makes the stated goal substantially harder (a phone app in a language that doesn't ship
+to phones), Clarvis says so, once, with the specific consequence, then builds what the
+user decides. Their project, their call; the job is to make sure it's an informed one.
+
+**Then the scope work continues with the language in hand.** Packaging, dependencies,
+how a user installs it, what "done" looks like — all of these have different answers per
+language, and asking them beforehand produces answers that get thrown away. The choice
+is recorded in the generated `plan.md` as a decision *with its reasoning*, so a later
+session neither re-asks nor quietly drifts to something else.
+
+**In Tutor Mode the shortlist gets a lot longer in words.** Same candidates, much fuller
+explanations, aimed at someone with nothing to compare against:
+
+- **What writing it actually feels like** — how much you must learn before anything
+  runs at all, and whether its error messages tend to explain themselves or not.
+- **What the setup costs** — before the first line runs, does something have to be
+  installed and configured, and how fiddly is that on the user's own machine.
+- **What it's normally used for**, in concrete examples rather than categories, so the
+  choice connects to things they have actually seen.
+- **How easy it is to find help** — how much of what they'll find online will match what
+  they're doing, since a beginner cannot yet tell a relevant answer from a stale one.
+
+**Tutor Mode may recommend one, and say why.** This is a deliberate exception to the
+rule that Clarvis marks nothing as recommended (§4.10's mode question) — that rule
+protects against judging the *person*, and this is an expertise question where refusing
+to answer is unhelpful rather than neutral. A beginner asking "which should I pick?"
+deserves an answer, not a menu. It stays a recommendation: the reasoning is given, and
+choosing otherwise is met with "fine, here's what to watch out for" and nothing else.
 
 #### Conventions — the generated plan carries a standard, not just a task list
 
@@ -2737,6 +2796,12 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   shape (concept, goals, non-goals, features, milestones with build + exit checklist,
   risks, open questions, plus an inherited §0 working-process section). Never overwrites
   an existing `plan.md`; offers to extend or revise instead.
+- **M9c2 — Language choice.** Shortlist generated from the scope gathered so far —
+  candidates, one genuine advantage and one genuine cost each — offered between
+  interview rounds. `handled by the model, bounded by the plan`: the *timing* and the
+  requirement that every option carry a downside are enforced in code (M9's prompt
+  assembly), not left to the model's discretion, because an all-upside list is the
+  failure mode that looks most like success.
 - **M9d2 — Conventions.** `src/planning/conventions.ts` renders §0's rules for the
   project's language, plus the recorded comment-style decision, into the generated
   `plan.md`. Language adaptation is a lookup with a generic fallback, not a model call —
@@ -2747,6 +2812,24 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   `plan.md` as the agent completes them.
 
 **Exit checklist:**
+- [ ] The language question is asked **after** what-it-does and where-it-runs are
+      established, never in the first round.
+- [ ] Shortlists differ across three different project types (a CLI, a web app with
+      accounts, a game) and each option carries a real cost, not only an advantage. An
+      option list that would suit any project at all is a failed shortlist.
+- [ ] "You pick" produces a choice with a one-line reason, not a re-prompt.
+- [ ] Opening an existing project detects the language from the files rather than
+      asking.
+- [ ] A poorly-fitting choice is challenged **once**, with the specific consequence,
+      then honoured.
+- [ ] Questions asked *after* the language choice are language-specific (packaging,
+      distribution, dependencies) — confirm two different languages produce different
+      follow-ups.
+- [ ] The choice and its reasoning land in the generated `plan.md`; a later session
+      neither re-asks nor drifts to a different language.
+- [ ] Tutor Mode: each option explains setup cost, what it feels like to write, what
+      it's used for, and how findable help is — and Clarvis will name a recommendation
+      with reasons when asked, rather than deflecting.
 - [ ] The generated `plan.md` contains a **Conventions** section derived from §0's
       clean code rules, stated in the project's own language and idiom — check a
       non-TypeScript project (Python at minimum) and confirm nothing was pasted across

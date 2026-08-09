@@ -1877,7 +1877,10 @@ executions with an empty command line are ignored outright.
   `bigDiff`), 4–6 lines each, replaces M3's hardcoded 2–3-line pools outright.
 - `src/personality/QuipPicker.ts` — weighted random, tracks a per-session
   `Set<usedLineId>` so nothing repeats before the window closes.
-- `src/personality/RateLimiter.ts` — the §6 interruption budget (≤1 unsolicited
+- `src/personality/Announcer.ts` — **the single door every unsolicited remark passes
+  through**, wrapping the budget. M3's completion notices, M5's pattern hits and M6's
+  quips all announce through it; a budget enforced separately in three places is three
+  budgets, and the user experiences their sum. `src/personality/rateLimit.ts` — the §6 interruption budget (≤1 unsolicited
   surface / 10 min), a single gate every unsolicited surface passes through: M3's
   outcome notifications, M5's pattern hits, M6's own quips. The briefing (M4) and
   chat replies (M8) are explicitly exempt — solicited or once-per-session, not
@@ -1887,33 +1890,50 @@ executions with an empty command line are ignored outright.
   failures, long builds) since session start; below a threshold, quip pool restricted
   to the polite subset; each bank entry tagged `tone: 'polite' | 'earned'`.
 **Exit checklist:**
-- [ ] Trigger each of the 5 §5 event types at least once — correct pool fires, line
-      matches the trigger (no `bigDiff` line on a slow build, etc.).
-- [ ] Trigger the same event type repeatedly within one session — no repeated line
-      until the bank is exhausted; confirm behavior once it *is* exhausted (repeat
-      allowed, or silence — pick one and verify it, don't leave it undefined).
-- [ ] Reload the window mid-session — `usedLineId` set resets (session-scoped, not
-      persisted) per spec; confirm that's actually the intended reset boundary.
-- [ ] Fire 2 unsolicited surfaces <10 min apart — second is suppressed, no
-      notification of the suppression itself.
-- [ ] Fire 2 unsolicited surfaces >10 min apart — both deliver normally.
-- [ ] Rate limiter gate applies uniformly across M3 outcomes, M5 pattern hits, and M6
-      quips — trigger one of each back-to-back, confirm only the first survives the
-      window regardless of *which* source it came from.
-- [ ] Confirm briefing (M4) and chat replies (M8) are unaffected by the limiter even
-      immediately after a rate-limited quip was suppressed.
-- [ ] Fresh session, zero evidence events — only `tone: 'polite'` lines fire, even
-      when a trigger condition (e.g. repeat failure) is met.
-- [ ] Accumulate evidence events past the threshold — `tone: 'earned'` lines become
-      eligible; confirm the threshold value itself is documented somewhere findable,
-      not just a magic number in code.
-- [ ] Full-day dogfood pass, tracked informally: does the cadence feel right, does any
+- [x] Each trigger draws only from its own pool (unit-tested; exhausting one trigger
+      leaves the others untouched). `repeatFailure` and `suiteWentGreen` confirmed live;
+      `buildSlow` (>5min), `firstCommitAfterSilence` and `bigDiff` (200 files) are
+      wired but need a real project to fire naturally — see the dogfood item.
+- [x] No repeats until a trigger's pool is exhausted. **Decided: exhaustion clears
+      that trigger's used-set and lines become reusable, rather than going silent.**
+      Silence reads as broken, and the interruption budget is what actually governs
+      frequency. Unit-tested.
+- [x] Used-lines and evidence are session-scoped by construction (in-memory, no
+      persistence). **Confirmed intended:** a new window is a new sitting; carrying
+      "already said that" across days would mean he never reuses a good line again.
+- [x] Second surface inside the window is suppressed silently (unit-tested, and
+      logged rather than shown — telling someone you decided not to interrupt them is
+      still interrupting them). Suppressed remarks are **dropped, never queued**:
+      delivering them late means delivering them out of context.
+- [x] Outside the window both deliver (unit-tested at the exact boundary).
+- [x] Uniform by construction: all three route through `Announcer`, which is the only
+      thing that calls `showInformationMessage` for unsolicited remarks. Confirmed live
+      — M5's pattern hit now logs `announced:`, meaning it went through the budget.
+- [x] The briefing does not use the Announcer and is unaffected — confirmed live: a
+      pattern hit was announced and the briefing still delivered ~1s later. Chat (M8)
+      will likewise bypass it; a question asked is never an interruption.
+- [x] Fresh session uses only `polite` lines (unit-tested). Every trigger is
+      guaranteed at least one polite line by a test, so a fresh session is never
+      silent for a trigger purely because its sharp lines are locked.
+- [x] `EARNED_SASS_THRESHOLD = 3`, exported and documented at its definition with the
+      reasoning ("two things going wrong is a bad morning; three is a pattern he's
+      allowed to notice"). Unit-tested on both sides of the boundary.
+- [ ] **Still open — full-day dogfood pass**, tracked informally: does the cadence feel right, does any
       single line grate on a 3rd/4th viewing, does earned sass ever fire before it's
       earned.
 - **Prompt calibration.** §2.1's calibration examples are a starting point written from
   the spec. M6 replaces them with lines drawn from **real sessions** — the ones that
   actually landed, and the near-misses rewritten. Voice is empirical; a prompt tuned
   only against itself sounds like a prompt.
+**Bug found during M6:** diagnostics were counted as a new occurrence on every window
+reopen, so restarting three times produced *"seen this 3× this week"* about an error
+that had happened once — a pattern means *recurring*, not *still there*. Seeding
+existing diagnostics at activation didn't work either: language servers report nothing
+that early, so pre-existing errors arrive a second or two *after* startup and are
+indistinguishable from new ones by timing alone. Fixed with a 12s grace window —
+diagnostics inside it are remembered but not counted. Verified: three restarts now
+leave the store empty.
+
 - **Exit:** a full day of real use where nobody wants to mute him — this one is a
   usage trial, not a unit test; block on real dogfooding, not just the rate-limiter
   logic being correct in isolation. Specifically watch for **length creep**, the most

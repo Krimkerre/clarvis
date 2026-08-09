@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
+import { Announcer } from '../personality/Announcer';
 import { BusyTracker, Outcome } from './BusyTracker';
 import { outcomeMessage } from './outcomeMessages';
 import { reactionTo } from './reactions';
@@ -31,7 +32,9 @@ export class WatchPresenter {
 
   constructor(
     private readonly avatar: AvatarController,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /** Shared interruption budget (§6) — completion notices are unsolicited too. */
+    private readonly announcer: Announcer
   ) {}
 
   /** Subscribes to a tracker's events. Call once per tracker. */

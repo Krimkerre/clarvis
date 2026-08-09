@@ -154,3 +154,132 @@ test('a refusal names the path but never leaks what it pointed at', async () => 
   assert.match(error.message, /innocent\.txt/);
   assert.ok(!error.message.includes(outside), error.message);
 });
+
+// ---------------------------------------------------------------------------
+// Read, list and search — against a real temp workspace, no extension host.
+// ---------------------------------------------------------------------------
+
+import { readFile, listFiles, search, MAX_READ_BYTES } from './fileTools';
+
+async function populated(): Promise<string> {
+  const root = await workspace();
+  await fs.mkdir(path.join(root, 'src'));
+  await fs.mkdir(path.join(root, 'node_modules', 'junk'), { recursive: true });
+  await fs.mkdir(path.join(root, '.git'), { recursive: true });
+
+  await fs.writeFile(path.join(root, 'README.md'), '# Title\nhello world\n');
+  await fs.writeFile(path.join(root, 'src', 'a.ts'), 'export const a = 1;\n// TODO: fix\n');
+  await fs.writeFile(path.join(root, 'src', 'b.ts'), 'export const b = 2;\n');
+  await fs.writeFile(path.join(root, 'node_modules', 'junk', 'huge.js'), 'TODO everywhere\n');
+  await fs.writeFile(path.join(root, '.git', 'COMMIT_EDITMSG'), 'TODO in git\n');
+  return root;
+}
+
+test('reading a file returns its text', async () => {
+  const root = await populated();
+  const result = await readFile(root, 'src/a.ts');
+
+  assert.match(result.text, /export const a = 1/);
+  assert.equal(result.truncated, false);
+});
+
+test('a file outside the workspace cannot be read', async () => {
+  const root = await populated();
+
+  await assert.rejects(() => readFile(root, '../../etc/passwd'));
+});
+
+test('a large file is truncated and says so', async () => {
+  // Refusing outright would be a worse answer than the first 512KB — but a model
+  // reasoning about a fragment it believes is whole produces confident wrong answers,
+  // so the cut is always reported.
+  const root = await populated();
+  await fs.writeFile(path.join(root, 'big.log'), 'x'.repeat(MAX_READ_BYTES + 5000));
+
+  const result = await readFile(root, 'big.log');
+
+  assert.equal(result.truncated, true);
+  assert.equal(result.text.length, MAX_READ_BYTES);
+  assert.equal(result.bytes, MAX_READ_BYTES + 5000);
+});
+
+test('reading a directory is refused with a useful message', async () => {
+  const root = await populated();
+
+  await assert.rejects(() => readFile(root, 'src'), /listFiles/);
+});
+
+test('listing skips node_modules and .git', async () => {
+  // Not a preference: they are never the answer, and walking them turns a one-second
+  // listing into a thirty-second one.
+  const root = await populated();
+  const files = await listFiles(root, { recursive: true });
+
+  assert.ok(files.includes('README.md'));
+  assert.ok(files.includes(path.join('src', 'a.ts')));
+  assert.ok(!files.some((file) => file.includes('node_modules')), files.join(','));
+  assert.ok(!files.some((file) => file.includes('.git')), files.join(','));
+});
+
+test('listing returns workspace-relative paths', async () => {
+  // Absolute paths in a model's context are noise, and they leak the user's home
+  // directory name into every request.
+  const root = await populated();
+  const files = await listFiles(root, { recursive: true });
+
+  assert.ok(!files.some((file) => path.isAbsolute(file)), files.join(','));
+});
+
+test('listing is bounded, so a huge tree cannot flood the context', async () => {
+  const root = await populated();
+  const files = await listFiles(root, { recursive: true, limit: 2 });
+
+  assert.equal(files.length, 2);
+});
+
+test('search finds matches with file and line', async () => {
+  const root = await populated();
+  const hits = await search(root, /TODO/);
+
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].file, path.join('src', 'a.ts'));
+  assert.equal(hits[0].line, 2);
+  assert.match(hits[0].text, /TODO: fix/);
+});
+
+test('search never reaches into skipped directories', async () => {
+  // node_modules and .git both contain "TODO" in this fixture.
+  const root = await populated();
+  const hits = await search(root, /TODO/);
+
+  assert.ok(!hits.some((hit) => hit.file.includes('node_modules')));
+  assert.ok(!hits.some((hit) => hit.file.includes('.git')));
+});
+
+test('search is capped, and a global regex does not skip matches', async () => {
+  // A global regex carries lastIndex between calls, which drops every other match and
+  // reads as the search being flaky rather than wrong.
+  const root = await workspace();
+  await fs.writeFile(path.join(root, 'many.txt'), Array(50).fill('match here').join('\n'));
+
+  const capped = await search(root, /match/g, { limit: 10 });
+  const all = await search(root, /match/g);
+
+  assert.equal(capped.length, 10);
+  assert.equal(all.length, 50);
+});
+
+test('binary files are skipped by content, not by extension', async () => {
+  const root = await workspace();
+  await fs.writeFile(path.join(root, 'data.bin'), Buffer.from([0x6d, 0x61, 0x74, 0x63, 0x68, 0x00, 0x01]));
+
+  assert.deepEqual(await search(root, /match/), []);
+});
+
+test('one unreadable file does not fail a whole search', async () => {
+  const root = await populated();
+  await fs.symlink(path.join(root, 'nowhere'), path.join(root, 'broken-link'));
+
+  const hits = await search(root, /TODO/);
+  assert.equal(hits.length, 1);
+});

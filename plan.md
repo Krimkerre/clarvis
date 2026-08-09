@@ -494,16 +494,28 @@ it says it. `Clarvis: Choose Voice Engine` (and the same list under the panel's 
 disclosure) offers them with the tradeoff spelled out, because "s1 vs s1-mini" means
 nothing on its own:
 
-| Engine | Trade |
+| Engine (`model` header) | Trade |
 |---|---|
-| `s1` | Best quality, slowest, priciest. The default — briefings are short and the character is the point |
-| `s1-mini` | Noticeably faster and cheaper, slightly flatter delivery. Sensible if voice is on all day |
-| `speech-1.6` | The older engine. Kept because it's cheapest and some voices were tuned against it |
+| **`s2.1-pro-free`** | **The default.** Fish Audio's current top model on their free developer tier — best available quality at no per-call cost, which for short briefings is simply the right answer. Expect rate limits |
+| `s2.1-pro` | The same model on the paid tier. Pick this when the free tier's limits start biting |
+| `s2-pro` | Previous generation of the S2 family. Kept for anyone whose chosen voice was tuned against it |
+| `s1` | Older engine, still solid |
+| `s1-mini` | Faster and cheaper than `s1`, slightly flatter delivery |
+| `speech-1.6` | Oldest. Cheapest, and some legacy voices were tuned against it |
 
-**Engine list is verified, not hardcoded blindly.** Providers add and retire engines;
-M7 confirms the available set against Fish Audio at build time, and an unknown or
-retired engine falls back to the default with a one-time notice rather than failing
-every utterance. Same probe-don't-assume rule as §4.0.
+**Why the free tier is the default and not a footnote.** Voice is now core (§4.4), but the
+good tier needing a key was the awkward part of that — `s2.1-pro-free` largely dissolves
+it: a user with a Fish Audio key gets the *current best* model without per-utterance
+cost. Briefings and completion lines are short and heavily cached (§4.4), so the free
+tier's limits are a poor fit for almost nobody. Anyone who does hit them changes one
+setting.
+
+**Engine list is verified, not hardcoded blindly.** Providers add and retire engines —
+this list already changed once during planning — so M7 confirms the available set against
+Fish Audio at build time. An unknown or retired engine falls back to the default with a
+one-time notice rather than failing every utterance. Same probe-don't-assume rule as
+§4.0. Fish Audio's own documented behaviour matches: an unrecognized `model` value falls
+back to `s2.1-pro`.
 - Extension does the fetch (keeps the key out of the webview entirely), then
   `postMessage`s the audio to the webview as a base64 data URI for an `<audio>` element.
   The webview never sees the key and never talks to the network — CSP stays locked to
@@ -600,8 +612,8 @@ sane defaults:
 "clarvis.voice.enabled":           false,        // master switch
 "clarvis.voice.provider":          "fishAudio",  // "fishAudio" | "system" (auto-falls back)
 "clarvis.voice.selectedVoice":     "curated:default",  // PLACEHOLDER — real ID chosen at M7
-"clarvis.voice.fishAudio.engine": "s1",         // "s1" | "s1-mini" | "speech-1.6"
-                                                 // quality/speed/cost tradeoff; see §4.4
+"clarvis.voice.fishAudio.engine": "s2.1-pro-free",  // "s2.1-pro-free" | "s2.1-pro" | "s2-pro"
+                                                    // | "s1" | "s1-mini" | "speech-1.6"  (see §4.4)
 "clarvis.voice.dailyRequestCap":   200
 ```
 

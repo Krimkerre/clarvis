@@ -157,7 +157,6 @@ terse, and you can interrupt at any point.
 | Provider | Auth | Agent path |
 |---|---|---|
 | Anthropic API | your API key | ✅ |
-| Claude subscription | sign in with your Claude account | ⏳ feasibility being verified first |
 | OpenAI | your API key | ✅ |
 | OpenRouter | your API key | ✅ |
 | Ollama *(local)* | none | depends on the model |
@@ -167,13 +166,15 @@ terse, and you can interrupt at any point.
 **Fully local is a first-class setup**, not an afterthought: point it at Ollama or LM
 Studio and nothing leaves your machine at all.
 
-Two things stated plainly rather than glossed over. Whether a third-party extension may
-authenticate against a **Claude subscription** — technically and under Anthropic's terms
-— is being verified before any login flow gets built; if the answer is no, that row
-disappears and the API-key path is unaffected. And **local models vary a lot at tool
-calling**, which is what the agent depends on, so Clarvis probes each model's tool
-support and will tell you it needs a more capable one rather than starting a run it
-can't finish.
+**No "sign in with Claude", and that's deliberate.** Anthropic doesn't permit
+third-party products to offer claude.ai login or subscription rate limits without prior
+approval — so Clarvis doesn't, and won't pretend otherwise by reading Claude Code's
+stored credentials or wrapping its CLI behind the scenes. Bring an API key instead. We
+checked this *before* building a login flow, not after.
+
+**Local models vary a lot at tool calling**, which is what the agent depends on, so
+Clarvis probes each model's tool support and will tell you it needs a more capable one
+rather than starting a run it can't finish.
 
 ## Keeping an agent honest
 

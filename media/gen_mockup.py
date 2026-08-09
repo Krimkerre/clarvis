@@ -93,15 +93,16 @@ CSS = '''
   .sb-state { min-width: 74px; }
 
   .clarvis { width: 340px; background: #1a1d24; border-left: 1px solid #000; display: flex;
-    flex-direction: column; flex-shrink: 0; }
+    flex-direction: column; flex-shrink: 0; min-height: 0; overflow: hidden; }
+  .pbody { flex: 1 1 auto; min-height: 0; overflow: hidden; }
   .clarvis-header { height: 35px; display: flex; align-items: center; padding: 0 14px; font-size: 11px;
     letter-spacing: .08em; color: #9aa5b3; background: #202430; border-bottom: 1px solid #000; }
   .clarvis-header .branch { margin-left: auto; font-family: "SF Mono", Menlo, monospace; font-size: 10.5px;
     color: #34e6f2; background: rgba(52,230,242,.1); border: 1px solid rgba(52,230,242,.3);
     border-radius: 10px; padding: 1px 8px; letter-spacing: 0; }
-  .stage { display: flex; justify-content: center; padding: 14px 16px 6px; }
-  .stage svg { width: 104px; height: 104px; }
-  .task { padding: 0 16px 12px; text-align: center; }
+  .stage { display: flex; justify-content: center; padding: 10px 16px 4px; }
+  .stage svg { width: 92px; height: 92px; }
+  .task { padding: 0 16px 10px; text-align: center; }
   .task .label { font-size: 10.5px; color: #6b7787; letter-spacing: .06em; }
   .task .goal { font-size: 13px; color: #dbe4ee; margin-top: 3px; }
   .divider { height: 1px; background: #2a2f3a; margin: 0 14px; }
@@ -109,7 +110,7 @@ CSS = '''
     font-size: 12px; font-style: italic; color: #8fa0b4; line-height: 1.5; }
   .said .spk { flex-shrink: 0; color: #34e6f2; font-style: normal; opacity: .75; font-size: 11px; padding-top: 1px; }
 
-  .steps { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 7px; }
+  .steps { padding: 10px 16px 0; display: flex; flex-direction: column; gap: 6px; }
   .step { display: flex; gap: 8px; font-size: 12px; color: #8b97a6; line-height: 1.45; }
   .step .ic { width: 13px; flex-shrink: 0; text-align: center; }
   .step.done .ic { color: #4ec97a; }
@@ -137,9 +138,9 @@ CSS = '''
     background: #1a1d24; color: #cdd6e3; }
   .gate button.primary { background: #ffb648; border-color: #ffb648; color: #2a1f08; font-weight: 600; }
 
-  .undo { margin: 14px 16px 0; font-size: 11.5px; color: #5f6a7a; line-height: 1.5; }
+  .undo { margin: 10px 16px 0; font-size: 11.5px; color: #5f6a7a; line-height: 1.5; }
   .undo code { font-family: "SF Mono", Menlo, monospace; font-size: 11px; color: #8b97a6; }
-  .foot { margin-top: auto; padding: 10px 16px 12px; }
+  .foot { flex-shrink: 0; padding: 10px 16px 12px; }
   .meter { display: flex; align-items: center; font-size: 11px; color: #6b7787; margin-bottom: 9px; }
   .meter .stop { margin-left: auto; color: #cdd6e3; border: 1px solid #333a48; border-radius: 5px; padding: 2px 9px; }
   .input { display: flex; align-items: center; gap: 8px; background: #12151b; border: 1px solid #232838;
@@ -267,6 +268,7 @@ def page(anim):
       <div class="goal">"fix the failing checkout test"</div>
     </div>
     <div class="divider"></div>
+    <div class="pbody">
     <div class="steps">{steps_html(anim)}</div>
     <div class="changed{seq}"{d(3.0)}>
       <div class="hd">FILES CHANGED</div>
@@ -284,8 +286,8 @@ def page(anim):
         anything an install script did outside the project stays done.</div>
       <div class="btns"><button class="primary">Approve</button><button>Skip</button></div>
     </div>
-    <div class="undo{seq}"{d(5.0)}>All of this is on its own branch. <code>Clarvis: Undo
-      Last Agent Run</code> unmakes it entirely, should you come to your senses.</div>
+    <div class="undo{seq}"{d(5.0)}>On its own branch. Undone in one command.</div>
+    </div>
     <div class="foot">
       <div class="meter"><span>step 4/40 · 12.4k tokens</span><span class="stop">■ Stop</span></div>
       <div class="input">

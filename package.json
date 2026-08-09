@@ -60,6 +60,10 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.openLog",
+        "title": "Clarvis: Open Log File"
+      },
+      {
         "command": "clarvis.debug.tools",
         "title": "Clarvis: Debug \u2014 Try a Tool"
       },

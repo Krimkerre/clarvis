@@ -37,7 +37,7 @@ let log: ClarvisLog | undefined;
 export function activate(context: vscode.ExtensionContext): void {
   // Local binding: `log` is module-scoped (deactivate() needs it) and therefore
   // mutable, which stops TypeScript narrowing it inside the closures below.
-  const logger = new ClarvisLog();
+  const logger = new ClarvisLog(context.logUri);
   log = logger;
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');
@@ -93,6 +93,14 @@ export function activate(context: vscode.ExtensionContext): void {
   const agentTerminal = new AgentTerminal();
   context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
   context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.openLog', async () => {
+      if (!logger.filePath) {
+        void vscode.window.showWarningMessage('Clarvis: no log file — writing to it failed at startup.');
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
+      await vscode.window.showTextDocument(document);
+    }),
     vscode.commands.registerCommand('clarvis.debug.tools', () =>
       probeTools(
         vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,

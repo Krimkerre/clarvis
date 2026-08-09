@@ -86,6 +86,14 @@
           "default": "curated:default",
           "description": "Voice to speak with: 'curated:default' for the shipped voice, 'fish:<reference_id>' for a specific Fish Audio voice, or 'system' for the OS voice."
         },
+        "clarvis.voice.savedVoices": {
+          "type": "object",
+          "default": {},
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Fish Audio voices you have named, as { \"name\": \"<reference_id>\" }. Added by the voice picker when you paste an ID; delete one by removing its line here."
+        },
         "clarvis.voice.fishAudio.engine": {
           "type": "string",
           "default": "s2.1-pro-free",
@@ -108,6 +116,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "node esbuild.js",
     "build": "node esbuild.js",
     "watch": "node esbuild.js --watch",
     "package": "vsce package",

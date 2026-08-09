@@ -432,21 +432,24 @@ the personality pass it exists to deliver, and **before** chat and the agent.
 
 #### The default voice — and a decision that has to be made deliberately
 
-The target register is Rick Sanchez: gravelly, impatient, casually brilliant, bored of
-having to explain (§2 rules 7–9).
+The target register: gravelly, impatient, casually brilliant, audibly bored of having to
+explain (§2 rules 7–9). Think animated-misanthrope-genius — an archetype with plenty of
+examples, none of which we name.
 
-**The character traits are ours to use; a voice imitating the performance is not.**
-Sardonic-genius is an archetype nobody owns, and §2 can lean on it freely. But shipping
-a TTS voice built to sound like a specific copyrighted character in a publicly
-distributed extension is a different thing, and it carries real exposure:
+**The archetype is ours to use; a voice imitating a particular performance is not.**
+Sardonic-genius is a register nobody owns, and §2 leans on it freely. But shipping a TTS
+voice built to sound like a specific copyrighted character, in a publicly distributed
+extension, is a different act — and it carries real exposure:
 
-- **Right of publicity / voice likeness** — the performers behind the character.
-- **Character and trademark rights** — held by the studio, not by us.
+- **Right of publicity / voice likeness** — the performer behind such a character.
+- **Character and trademark rights** — held by a studio, not by us.
 - **Fish Audio's own terms**, which require rights to any cloned voice.
 
-**Decision: ship a voice described by its *qualities*, never by the character.** The
-curated default is a gravelly, world-weary, impatient-genius register — chosen by ear to
-fit §2 — and it is never named, marketed, or hinted as being that character. Users who
+**Decision: ship a voice described by its *qualities*, never by resemblance to anyone.**
+The curated default is a gravelly, world-weary, impatient-genius register — chosen by ear
+to fit §2 — and no character is named, referenced, or implied in the picker, the docs, or
+anywhere else in the project. That last part is deliberate: naming the target even in an
+internal planning file undercuts the position, since the file is public. Users who
 want a closer match can clone one themselves under their own Fish Audio account, which
 §4.5's clone flow already supports with explicit consent copy: their voice, their
 account, their responsibility, not something we distribute.

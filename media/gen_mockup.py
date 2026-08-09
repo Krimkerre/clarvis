@@ -105,6 +105,9 @@ CSS = '''
   .task .label { font-size: 10.5px; color: #6b7787; letter-spacing: .06em; }
   .task .goal { font-size: 13px; color: #dbe4ee; margin-top: 3px; }
   .divider { height: 1px; background: #2a2f3a; margin: 0 14px; }
+  .said { margin: 10px 16px 2px; display: flex; gap: 7px; align-items: flex-start;
+    font-size: 12px; font-style: italic; color: #8fa0b4; line-height: 1.5; }
+  .said .spk { flex-shrink: 0; color: #34e6f2; font-style: normal; opacity: .75; font-size: 11px; padding-top: 1px; }
 
   .steps { padding: 12px 16px 0; display: flex; flex-direction: column; gap: 7px; }
   .step { display: flex; gap: 8px; font-size: 12px; color: #8b97a6; line-height: 1.45; }
@@ -165,7 +168,7 @@ def seq_keyframes(delays):
     return "\n".join(out)
 
 # every delay used in the scene
-DELAYS = [0.5, 1.0, 1.8, 2.6, 2.8, 3.0, 3.4, 4.4, 5.0]
+DELAYS = [0.5, 1.0, 1.8, 2.6, 2.8, 3.0, 3.4, 4.4, 4.6, 5.0]
 
 ANIM_CSS = """
   @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
@@ -269,7 +272,9 @@ def page(anim):
       <div class="hd">FILES CHANGED</div>
       <div class="row">checkout.js<span class="plus">+1</span><span class="minus">−1</span></div>
     </div>
-    <div class="gate{seq}"{d(4.4)}>
+    <div class="said{seq}"{d(4.4)}><span class="spk">◉</span><span>"Its dependency tree
+      would like a word with you. I'd decline, personally — but it's your machine."</span></div>
+    <div class="gate{seq}"{d(4.6)}>
       <div class="hd">⚠ NEEDS YOUR APPROVAL — REVERSIBLE</div>
       <div class="cmd">npm install lodash</div>
       <div class="body">Installing a package runs its install scripts with your
@@ -279,8 +284,8 @@ def page(anim):
         anything an install script did outside the project stays done.</div>
       <div class="btns"><button class="primary">Approve</button><button>Skip</button></div>
     </div>
-    <div class="undo{seq}"{d(5.0)}>Everything happens on its own branch —
-      <code>Clarvis: Undo Last Agent Run</code> puts it all back.</div>
+    <div class="undo{seq}"{d(5.0)}>All of this is on its own branch. <code>Clarvis: Undo
+      Last Agent Run</code> unmakes it entirely, should you come to your senses.</div>
     <div class="foot">
       <div class="meter"><span>step 4/40 · 12.4k tokens</span><span class="stop">■ Stop</span></div>
       <div class="input">

@@ -283,3 +283,78 @@ test('one unreadable file does not fail a whole search', async () => {
   const hits = await search(root, /TODO/);
   assert.equal(hits.length, 1);
 });
+
+// ---------------------------------------------------------------------------
+// Edit planning — the decisions, made against strings so they can be tested
+// without VS Code. The dangerous part of an editing tool is choosing where to
+// write, not the write itself.
+// ---------------------------------------------------------------------------
+
+import { planReplace, planWrite, EditRefused } from './editPlan';
+
+test('an ambiguous replacement is refused rather than guessed', () => {
+  // The rule that matters most here. A model asking to replace "return null;" in a
+  // file with three of them has not said which, and picking the first is a coin flip
+  // dressed up as an edit.
+  const source = 'function a() {\n  return null;\n}\nfunction b() {\n  return null;\n}\n';
+
+  assert.throws(
+    () => planReplace(source, '  return null;', '  return undefined;'),
+    (error: EditRefused) => error.reason === 'ambiguous' && error.occurrences === 2
+  );
+});
+
+test('a unique replacement is applied exactly once', () => {
+  const source = 'const a = 1;\nconst b = 2;\n';
+  const plan = planReplace(source, 'const b = 2;', 'const b = 3;');
+
+  assert.equal(plan.next, 'const a = 1;\nconst b = 3;\n');
+  assert.equal(plan.changedLines, 1);
+});
+
+test('text that is not there is refused, with a hint about whitespace', () => {
+  // The silent failure this prevents: nothing changes and the model believes it did.
+  // Invisible whitespace differences are the usual cause.
+  assert.throws(
+    () => planReplace('const a = 1;\n', 'const  a = 1;', 'const a = 2;'),
+    (error: EditRefused) => error.reason === 'not-found' && /spacing/.test(error.message)
+  );
+});
+
+test('an empty search string is refused outright', () => {
+  // It matches everywhere, so it means nothing — and would insert at position zero.
+  assert.throws(() => planReplace('anything', '', 'x'), (error: EditRefused) => error.reason === 'not-found');
+});
+
+test('a no-op edit is refused rather than reported as work', () => {
+  assert.throws(
+    () => planReplace('const a = 1;', 'const a = 1;', 'const a = 1;'),
+    (error: EditRefused) => error.reason === 'unchanged'
+  );
+  assert.throws(
+    () => planWrite('same', 'same'),
+    (error: EditRefused) => error.reason === 'unchanged'
+  );
+});
+
+test('writing a new file counts every line as changed', () => {
+  const plan = planWrite(undefined, 'one\ntwo\nthree');
+
+  assert.equal(plan.next, 'one\ntwo\nthree');
+  assert.equal(plan.changedLines, 3);
+});
+
+test('changed-line counts include added and removed lines', () => {
+  const plan = planWrite('a\nb\n', 'a\nb\nc\nd\n');
+
+  assert.equal(plan.changedLines, 2);
+});
+
+test('replacement is literal, so regex characters are not special', () => {
+  // The needle is text a model wrote about the user's code. Treating "$&" or "(a|b)"
+  // as a pattern would corrupt the file in a way nobody would predict.
+  const source = 'if (a || b) { cost = $5; }\n';
+  const plan = planReplace(source, '$5', '$6');
+
+  assert.equal(plan.next, 'if (a || b) { cost = $6; }\n');
+});

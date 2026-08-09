@@ -25,6 +25,11 @@ export class AgentBranch {
     return this.created;
   }
 
+  /** The branch the user was on before the run, for telling them where they are now. */
+  get previous(): string | undefined {
+    return this.previousBranch;
+  }
+
   /**
    * Creates and switches to `clarvis/<task>`, or explains why it couldn't.
    *

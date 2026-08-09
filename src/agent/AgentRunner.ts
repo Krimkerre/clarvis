@@ -116,7 +116,11 @@ export class AgentRunner {
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
         await this.finish(branch, task, narration);
-        yield { kind: 'done', text: narration.trim() || 'Done.', files: [...this.touched] };
+        yield {
+          kind: 'done',
+          text: this.summarise(narration, branch),
+          files: [...this.touched],
+        };
         return;
       }
 
@@ -267,6 +271,20 @@ export class AgentRunner {
       `exit ${result.exitCode ?? 'killed'}${result.timedOut ? ' (timed out)' : ''}`,
       result.output.trim() || '(no output)',
     ].join('\n');
+  }
+
+  /**
+   * The closing line, which must say **where the user now is**.
+   *
+   * Creating a branch checks it out, so a finished run leaves the editor on
+   * `clarvis/<task>` rather than where it started. Not saying so is how someone
+   * commits their next hour of work onto an agent's branch without noticing.
+   */
+  private summarise(narration: string, branch: AgentBranch): string {
+    const said = narration.trim() || 'Done.';
+    if (!branch.current) return said;
+
+    return `${said}\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */

@@ -114,6 +114,11 @@ rather than when a syllabus says so.
 - **Not everything gets explained equally.** Some code is load-bearing, some is
   ceremony that's identical in every project. Clarvis says which is which, so you know
   what's safe to ignore. Permission to *not* understand something is part of learning.
+- **Your code comes with the explanations written in.** Every file is commented
+  throughout — what this does, why it's here, what would break without it. Regular
+  Clarvis asks whether you want that; in Tutor Mode you always get it, because the code
+  *is* the lesson and next week you'll be reading it back with nobody to ask. Those
+  comments are yours permanently — nothing strips them out when you move on.
 - **You're invited to break things.** *"Change that number and see what happens — I'll
   put it back."* Clarvis takes a snapshot before it touches anything, so experimenting
   costs nothing. Poking at code is how it starts making sense.

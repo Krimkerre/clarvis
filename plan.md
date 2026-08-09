@@ -112,6 +112,12 @@ naming) still applies in full: comments are *additive* here, never a substitute 
 clear code, and a comment that only restates the line above it (`i++ // increment i`)
 is still noise worth deleting.
 
+**These rules travel to the projects Clarvis builds.** They are not house style kept to
+this repository: §4.9 writes an adapted version of this section into every generated
+`plan.md`, so the agent holds a user's project to the same standard it holds this one.
+The comments question is the one part the *user* decides, because it is the one part
+that is a genuine preference rather than a settled practice — see §4.9's *Conventions*.
+
 ---
 
 ## 1. Concept
@@ -1442,6 +1448,47 @@ warnings are advice rather than errors that stop the program, and that it will l
 up the screen at first and that this is normal. Defaulting a beginner into it silently
 would mean their first experience of their own code is 200 warnings they cannot read.
 
+#### Conventions — the generated plan carries a standard, not just a task list
+
+Every generated `plan.md` gets a **Conventions** section, adapted from §0's clean code
+rules. This is what makes the agent's output consistent across a project someone
+returns to in three months, and it is written into the plan rather than held in a
+prompt so the user can read it, argue with it, and change it.
+
+**Adapted, not pasted.** The rules are stated in the project's own language and
+ecosystem — PEP 8 naming and `snake_case` for Python, the standard idioms for Go or
+Rust, and so on. Copying TypeScript-flavoured advice into a Python project would be
+worse than saying nothing, because it reads as authoritative and is wrong.
+
+**One question in the interview, because one of these rules is a real preference.**
+Asked alongside the linter question, in the same final round:
+
+> *How chatty should the code be? Comments on most things, explaining what and why —
+> good for coming back later or sharing with people still learning. Or lean comments,
+> where the code is meant to explain itself and comments mark only the surprises —
+> what most professional codebases do.*
+
+Recorded as a decision in the generated plan (`clarvis.code.commentStyle`:
+`explanatory` | `lean`), so the agent applies it on every file and nothing re-asks.
+Neither is presented as correct: this project chose `explanatory` and said why (§0),
+and the source ruleset chose `lean` and said why — both positions are defensible and
+the user owns the call for their own code.
+
+**Whatever the answer, comments must stay true.** A comment describing what the code
+used to do is worse than no comment at all: it is confidently wrong documentation that
+survives review because nobody re-reads the prose next to code they just changed. So
+the agent updates the comments on any line it edits, in both modes, and this is a
+correctness rule rather than a style one.
+
+**Tutor Mode overrides the choice: comments are always maximal.** No question is asked,
+because the code *is* the teaching material — a beginner reading their own project back
+next week has nothing else to explain it to them, and "the code should be
+self-documenting" assumes a reader who can already read code. The comments explain
+what, why, and what would break without it. Two consequences worth stating: this is
+still real code and not a worksheet, and nothing strips those comments on graduation —
+the project stays exactly as it was written, annotations and all. If a graduate wants
+lean code, they choose it on their *next* project.
+
 #### The analysis — where Clarvis earns his keep
 
 Before writing anything, Clarvis reviews the idea and reports what he finds. This is
@@ -2690,12 +2737,29 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   shape (concept, goals, non-goals, features, milestones with build + exit checklist,
   risks, open questions, plus an inherited §0 working-process section). Never overwrites
   an existing `plan.md`; offers to extend or revise instead.
+- **M9d2 — Conventions.** `src/planning/conventions.ts` renders §0's rules for the
+  project's language, plus the recorded comment-style decision, into the generated
+  `plan.md`. Language adaptation is a lookup with a generic fallback, not a model call —
+  a hallucinated style rule presented as a project standard is worse than a generic one.
 - **M9e — Sign-off and handoff.** The Approve gate, then conversion of milestone one into
   an agent task (§4.6). The handoff prompt is assembled from the plan, **shown to the
   user and editable before it runs** — not a hidden prompt. Checklist items are ticked in
   `plan.md` as the agent completes them.
 
 **Exit checklist:**
+- [ ] The generated `plan.md` contains a **Conventions** section derived from §0's
+      clean code rules, stated in the project's own language and idiom — check a
+      non-TypeScript project (Python at minimum) and confirm nothing was pasted across
+      that doesn't apply.
+- [ ] The comment-style question is asked once, presents both options as legitimate
+      (neither marked recommended), and is recorded in the plan as a decision.
+- [ ] Build a file under each setting — `explanatory` produces comments throughout,
+      `lean` produces comments only where something is genuinely surprising. Both obey
+      the rest of the ruleset, especially naming.
+- [ ] Edit an existing commented line with the agent — the comment is updated with it.
+      A comment describing the previous behaviour is a defect, in either mode.
+- [ ] In Tutor Mode the question is **not asked** and comments are maximal regardless of
+      any stored setting; graduating strips nothing.
 - [ ] The interview asks about a linter exactly once, in the final round, with the
       trade-off stated rather than the tool named — and never asks again.
 - [ ] Answering "no" writes that decision into the generated `plan.md`, so a later

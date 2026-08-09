@@ -249,7 +249,9 @@ function startChat(
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.clear())
+    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.clear()),
+    vscode.commands.registerCommand('clarvis.showHistory', () => void chat.showHistory()),
+    vscode.commands.registerCommand('clarvis.openManual', () => void chat.openHelp())
   );
 
   return chat;

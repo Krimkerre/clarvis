@@ -64,6 +64,14 @@
         "title": "Clarvis: Debug — Microphone Probe"
       },
       {
+        "command": "clarvis.openManual",
+        "title": "Clarvis: Open Manual"
+      },
+      {
+        "command": "clarvis.showHistory",
+        "title": "Clarvis: Earlier Conversations"
+      },
+      {
         "command": "clarvis.clearConversation",
         "title": "Clarvis: Clear Conversation"
       },

@@ -9,6 +9,7 @@ import { VoiceService } from '../voice/VoiceService';
 import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
 import { localAnswer, WorkspaceFacts } from './localAnswer';
+import { chatAction, ChatAction } from './chatCommands';
 
 /**
  * The live session, written as it happens.
@@ -97,6 +98,14 @@ export class ChatService {
   async ask(question: string): Promise<void> {
     await this.record({ speaker: 'user', text: question, at: Date.now() });
 
+    // Requests to *open* something are handled before answering: "change the voice"
+    // wants the picker, not a paragraph about where the setting lives.
+    const action = chatAction(question);
+    if (action) {
+      await this.runAction(action);
+      return;
+    }
+
     const reply = localAnswer(question, await this.facts());
 
     if (!reply) {
@@ -148,6 +157,88 @@ export class ChatService {
     await this.clear();
   }
 
+  /**
+   * Opens whatever was asked for, and says so in the transcript.
+   *
+   * The line in the transcript matters: a dialog appearing with no explanation looks
+   * like a glitch, and if the user dismisses it there is otherwise no trace of what
+   * they asked for.
+   */
+  private async runAction(action: ChatAction): Promise<void> {
+    // Actions that are not simply "run a command" — each needs a word first.
+    if (action === 'help') {
+      await this.say('The manual, then. Try not to look surprised.', 'neutral');
+      await this.openManual();
+      return;
+    }
+
+    if (action === 'chooseModel') {
+      // Honest rather than silent: there is no model layer yet, and opening the
+      // settings pane as a consolation prize would just waste the user's time.
+      await this.say(
+        "I don't have a model wired up yet — that lands with the agent. Until then I answer from what I've watched happen here, which needs no key at all.",
+        'neutral'
+      );
+      return;
+    }
+
+    if (action === 'toggleMute') {
+      const muted = !this.voice.isMuted;
+      this.voice.setMuted(muted);
+      await this.record({
+        speaker: 'clarvis',
+        text: muted ? 'Silenced. I remain, in spirit.' : 'Speaking again.',
+        at: Date.now(),
+      });
+      return;
+    }
+
+    const commands: Record<string, { id: string; line: string }> = {
+      chooseVoice: { id: 'clarvis.chooseVoice', line: 'Voices. Highlight one to hear it.' },
+      chooseEngine: { id: 'clarvis.chooseEngine', line: 'Engines — quality against speed and cost.' },
+      setKey: { id: 'clarvis.setFishKey', line: 'Your key goes in the keychain, not in a settings file.' },
+      clearKey: { id: 'clarvis.clearFishKey', line: 'Forgetting the key.' },
+      testVoice: { id: 'clarvis.testVoice', line: 'Listen.' },
+      openCache: { id: 'clarvis.openVoiceCache', line: 'The saved audio. Delete anything in there freely.' },
+      clearConversation: { id: 'clarvis.clearConversation', line: 'Clearing this conversation.' },
+      showHistory: { id: 'clarvis.showHistory', line: 'Earlier conversations.' },
+      openSettings: { id: 'workbench.action.openSettings', line: 'Every setting I have.' },
+    };
+
+    const command = commands[action];
+    if (!command) return;
+
+    await this.say(command.line, 'neutral');
+    await vscode.commands.executeCommand(
+      command.id,
+      command.id === 'workbench.action.openSettings' ? 'clarvis' : undefined
+    );
+  }
+
+  /**
+   * Shows the manual as a rendered Markdown preview.
+   *
+   * A preview tab rather than a custom webview: it scrolls, searches, prints and
+   * closes like every other document in the editor, follows the user's theme, and
+   * costs no UI to maintain. Falls back to the raw file if the preview command is
+   * unavailable on this host.
+   */
+  private async openManual(): Promise<void> {
+    const manual = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'MANUAL.md');
+
+    try {
+      await vscode.commands.executeCommand('markdown.showPreview', manual);
+    } catch (error) {
+      this.log(`chat: markdown preview unavailable (${String(error)}), opening the source`);
+      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(manual));
+    }
+  }
+
+  /** Opens the manual, for the command-palette route as well as `/help`. */
+  async openHelp(): Promise<void> {
+    await this.openManual();
+  }
+
   /** Clears the transcript and the stored copy behind it. */
   async clear(): Promise<void> {
     this.thread = [];
@@ -191,7 +282,7 @@ export class ChatService {
   }
 
   /** Lets the user pick a past session and read it in a normal editor tab. */
-  private async showHistory(): Promise<void> {
+  async showHistory(): Promise<void> {
     const history = parseHistory(this.context.workspaceState.get(HISTORY_KEY));
 
     if (history.length === 0) {

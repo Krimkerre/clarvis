@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
-import { branchNameFor, adviseOnGit, GitProblem } from './branchNames';
+import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch } from './branchNames';
+
+/** The branch runs start from, remembered so a second run does not stack on the first. */
+const BASE_BRANCH_KEY = 'clarvis.agent.baseBranch';
 
 /**
  * Keeping an agent run off the user's branch.
@@ -18,7 +21,11 @@ export class AgentBranch {
   private previousBranch: string | undefined;
   private created: string | undefined;
 
-  constructor(private readonly log: (message: string) => void) {}
+  constructor(
+    private readonly log: (message: string) => void,
+    /** Where the base branch is remembered between runs. */
+    private readonly memento?: { get(key: string): string | undefined; update(key: string, value: string): Thenable<void> }
+  ) {}
 
   /** The branch this run is on, if it managed to make one. */
   get current(): string | undefined {
@@ -51,8 +58,28 @@ export class AgentBranch {
       (branch: { name?: string }) => branch.name ?? ''
     );
 
+    const head = repository.state.HEAD?.name;
+
+    // **Branch from the user's branch, not from the last run's.** A finished run leaves
+    // the editor on `clarvis/<task>`, so a second task would otherwise branch off the
+    // first — stacking unrelated work and making a bad first run poison the second.
+    // Observed in a live session: run two branched off run one.
+    const base = head && !isAgentBranch(head) ? head : this.rememberedBase(existing);
+    if (base && head && base !== head) {
+      try {
+        await repository.checkout(base);
+        this.log(`branch: returned to ${base} before starting a new run`);
+      } catch (error) {
+        // A dirty tree can block the checkout. Better to branch from here than to
+        // refuse the run outright.
+        this.log(`branch: could not return to ${base} (${String(error)}), branching from ${head}`);
+      }
+    }
+
+    if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
+
     const name = branchNameFor(task, existing);
-    this.previousBranch = repository.state.HEAD?.name;
+    this.previousBranch = base ?? head;
 
     try {
       await repository.createBranch(name, true);
@@ -109,6 +136,20 @@ export class AgentBranch {
     } catch (error) {
       this.log(`branch: could not return to ${this.previousBranch} (${String(error)})`);
     }
+  }
+
+  /**
+   * The branch to start from when HEAD is already one of ours.
+   *
+   * Falls back to whatever looks like a main branch rather than guessing wrong: being
+   * on an agent branch with nothing remembered is a rare state, and branching from a
+   * plausible base beats branching from the previous task's work.
+   */
+  private rememberedBase(existing: string[]): string | undefined {
+    const remembered = this.memento?.get(BASE_BRANCH_KEY);
+    if (remembered && existing.includes(remembered)) return remembered;
+
+    return ['main', 'master', 'develop'].find((name) => existing.includes(name));
   }
 
   private repository(): GitRepository | undefined {

@@ -9,7 +9,7 @@ import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
-import { resolveInWorkspace } from './tools/workspacePaths';
+import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -72,7 +72,7 @@ export class AgentRunner {
     const checkpoint = new Checkpoint(this.context, this.root, this.log);
     await checkpoint.begin(task);
 
-    const branch = new AgentBranch(this.log);
+    const branch = new AgentBranch(this.log, this.context.workspaceState);
     const isolation = await branch.begin(task);
 
     yield {
@@ -183,7 +183,13 @@ export class AgentRunner {
       }
 
       const content = await this.invoke(name, args, signal);
-      if (mutates(name) && typeof args.path === 'string') this.touched.add(args.path);
+
+      // Recorded from the resolved path rather than the requested one: on a
+      // case-insensitive filesystem `readme.md` edits README.md, and committing the
+      // requested spelling fails because git is case-sensitive.
+      if (mutates(name) && typeof args.path === 'string') {
+        this.touched.add(await canonicalRelative(this.root!, await resolveInWorkspace(this.root, args.path)));
+      }
 
       return { id: call.id, content };
     } catch (error) {

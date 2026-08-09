@@ -145,3 +145,23 @@ async function realpathOfNearestExisting(target: string): Promise<string> {
     }
   }
 }
+
+/**
+ * The workspace-relative path **as the filesystem spells it**.
+ *
+ * macOS and Windows match paths case-insensitively, so a model asking for `readme.md`
+ * successfully edits `README.md` — and then every downstream consumer carries the
+ * wrong spelling. Git is case-*sensitive*, so `git add readme.md` fails with a message
+ * about a path that plainly exists, which is exactly how an agent run ends with its
+ * work uncommitted and no obvious reason.
+ *
+ * Falls back to the requested spelling for a file that does not exist yet, which is
+ * correct: nothing on disk contradicts it.
+ */
+export async function canonicalRelative(root: string, absolute: string): Promise<string> {
+  try {
+    return path.relative(await fs.realpath(root), await fs.realpath(absolute));
+  } catch {
+    return path.relative(root, absolute);
+  }
+}

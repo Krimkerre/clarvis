@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { resolveInWorkspace } from './workspacePaths';
+import { canonicalRelative, resolveInWorkspace } from './workspacePaths';
 import { EditPlan, planReplace, planWrite } from './editPlan';
 
 /**
@@ -49,7 +49,13 @@ export async function applyEdit(
   const plan = planReplace(current, find, replace);
   await commit(uri, current, plan);
 
-  return { file: path.relative(root!, target), changedLines: plan.changedLines, created: false };
+  // Canonical, not as-requested: see canonicalRelative. A case-different spelling
+  // edits the right file and then fails to commit it.
+  return {
+    file: await canonicalRelative(root!, target),
+    changedLines: plan.changedLines,
+    created: false,
+  };
 }
 
 /** Writes a whole file, creating it and any missing directories. */
@@ -72,7 +78,7 @@ export async function writeFile(
   await commit(uri, current, plan);
 
   return {
-    file: path.relative(root!, target),
+    file: await canonicalRelative(root!, target),
     changedLines: plan.changedLines,
     created: current === undefined,
   };

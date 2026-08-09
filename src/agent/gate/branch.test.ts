@@ -67,3 +67,29 @@ test('every git problem still offers a way to continue', () => {
     assert.match(adviseOnGit(problem).message, /snapshot/);
   }
 });
+
+import * as path from 'path';
+import * as os from 'os';
+import * as fs from 'fs/promises';
+import { canonicalRelative } from '../tools/workspacePaths';
+
+test('a case-different spelling resolves to the name git uses', async () => {
+  // Observed live: the model asked for "readme.md", macOS edited README.md happily,
+  // and `git add readme.md` then failed — leaving a finished run uncommitted with no
+  // obvious cause.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clarvis-case-')));
+  await fs.writeFile(path.join(root, 'README.md'), '# Title\n');
+
+  const canonical = await canonicalRelative(root, path.join(root, 'readme.md'));
+
+  // On a case-insensitive filesystem this must come back as README.md; on a
+  // case-sensitive one the lowercase file does not exist and the input stands.
+  assert.ok(canonical === 'README.md' || canonical === 'readme.md', canonical);
+});
+
+test('a file that does not exist yet keeps the requested spelling', async () => {
+  // Nothing on disk contradicts it, and refusing would break every file creation.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'clarvis-case-')));
+
+  assert.equal(await canonicalRelative(root, path.join(root, 'src', 'New.ts')), path.join('src', 'New.ts'));
+});

@@ -221,6 +221,12 @@ function registerVoiceCommands(
       void vscode.window.showInformationMessage('Clarvis: key removed.');
     }),
 
+    vscode.commands.registerCommand('clarvis.openVoiceCache', async () => {
+      // Reveals the folder holding rendered speech. Anything already in here plays
+      // without touching the API, which is most of why repeated lines are instant.
+      await vscode.commands.executeCommand('revealFileInOS', fish.cacheLocation);
+    }),
+
     vscode.commands.registerCommand('clarvis.testVoice', async () => {
       const available = await fish.isAvailable();
       const reason = !panel.audioUnlocked

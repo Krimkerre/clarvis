@@ -54,6 +54,10 @@
       {
         "command": "clarvis.testVoice",
         "title": "Clarvis: Test Voice"
+      },
+      {
+        "command": "clarvis.openVoiceCache",
+        "title": "Clarvis: Open Voice Cache Folder"
       }
     ],
     "configuration": {

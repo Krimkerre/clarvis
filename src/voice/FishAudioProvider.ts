@@ -6,8 +6,18 @@ import { playFile } from './nativePlayer';
 /** Where the key lives: the OS keychain, never settings.json, never logged. */
 export const FISH_KEY_SECRET = 'clarvis.fishAudio.key';
 
-/** Past this, waiting is worse than a plainer voice arriving now (§4.4). */
-const REQUEST_TIMEOUT_MS = 3000;
+/**
+ * How long to wait for rendered speech before giving up and using the plain voice.
+ *
+ * §4.4 originally specified 3s, on the reasoning that "waiting is worse than a plainer
+ * voice arriving now". Measured against the real API that was wrong twice over: a
+ * two-line briefing routinely takes longer than 3s to render, and **nothing is blocked
+ * while we wait** — the notification has already been shown, and speech is
+ * fire-and-forget. Late audio costs nothing; the wrong voice costs the feature.
+ *
+ * Only first-time lines pay this at all, since anything repeated comes from cache.
+ */
+const REQUEST_TIMEOUT_MS = 15_000;
 
 const TTS_ENDPOINT = 'https://api.fish.audio/v1/tts';
 
@@ -56,6 +66,7 @@ export class FishAudioProvider implements VoiceProvider {
     // The cache file is also the file we play, so there's no temp copy to manage.
     if (!(await this.isCached(key))) {
       await this.writeCache(key, await this.render(utterance, engine));
+      await this.noteInIndex(key, utterance, engine);
     }
 
     await playFile(this.cachePath(key).fsPath);
@@ -70,6 +81,7 @@ export class FishAudioProvider implements VoiceProvider {
     // outcome, so the timeout aborts rather than letting the briefing arrive late.
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
+    const startedAt = Date.now();
 
     try {
       const response = await fetch(TTS_ENDPOINT, {
@@ -94,6 +106,7 @@ export class FishAudioProvider implements VoiceProvider {
       }
 
       const bytes = new Uint8Array(await response.arrayBuffer());
+      this.log(`voice: rendered ${bytes.length} bytes in ${Date.now() - startedAt}ms (${engine})`);
       await this.countRequest();
       return bytes;
     } finally {
@@ -109,6 +122,47 @@ export class FishAudioProvider implements VoiceProvider {
 
   private cachePath(key: string): vscode.Uri {
     return vscode.Uri.joinPath(this.cacheDir, `${key}.mp3`);
+  }
+
+  /** Where the cache lives, for the reveal command. */
+  get cacheLocation(): vscode.Uri {
+    return this.cacheDir;
+  }
+
+  /**
+   * A human-readable index alongside the audio.
+   *
+   * The files are named by hash, which makes the cache impossible to inspect — and
+   * "why did switching voice change nothing?" is exactly the sort of question you
+   * answer by looking. Kept best-effort: if the index is missing or stale the audio
+   * still plays, since the mp3 filenames are the actual source of truth.
+   */
+  private async noteInIndex(key: string, utterance: Utterance, engine: string): Promise<void> {
+    const indexUri = vscode.Uri.joinPath(this.cacheDir, 'index.json');
+    let index: Record<string, unknown> = {};
+
+    try {
+      const bytes = await vscode.workspace.fs.readFile(indexUri);
+      index = JSON.parse(new TextDecoder().decode(bytes));
+    } catch {
+      // No index yet, or unreadable — start a fresh one.
+    }
+
+    index[`${key}.mp3`] = {
+      text: utterance.text,
+      voice: utterance.voiceId ?? 'default',
+      engine,
+      renderedAt: new Date().toISOString(),
+    };
+
+    try {
+      await vscode.workspace.fs.writeFile(
+        indexUri,
+        new TextEncoder().encode(JSON.stringify(index, null, 2))
+      );
+    } catch {
+      // Inspectability is a nicety; never worth failing an utterance over.
+    }
   }
 
   private async isCached(key: string): Promise<boolean> {
@@ -142,6 +196,7 @@ export class FishAudioProvider implements VoiceProvider {
       const entries: CacheEntry[] = [];
 
       for (const [name] of files) {
+        if (!name.endsWith('.mp3')) continue; // never evict the index itself
         const uri = vscode.Uri.joinPath(this.cacheDir, name);
         const stat = await vscode.workspace.fs.stat(uri);
         entries.push({ key: name, bytes: stat.size, lastUsed: stat.mtime });

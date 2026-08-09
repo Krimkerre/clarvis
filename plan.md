@@ -2018,9 +2018,17 @@ only *capture* is blocked.
       airplane-mode/offline → Tier 0; malformed/revoked key (401) → Tier 0; simulate
       429 → Tier 0; artificial >3s delay → Tier 0. Each falls back silently-ish (one
       non-modal warning max per session), never a retry storm, never a hung avatar.
-- [ ] Cache hit: trigger the same templated completion line twice — second play is
-      instant, zero new network requests, confirms `hash(text, voiceId, engine)` keys
-      correctly (change voiceId, confirm it's treated as a cache miss).
+- [x] Cache verified live: repeated lines replay from disk with no API call, and
+      changing **engine** (same text, same voice) produced a fresh render — so all three
+      parts of the key matter. Measured render: **1354ms for 90KB on `s1`**. Cached
+      audio lives in `globalStorageUri/voice/`, alongside an `index.json` mapping each
+      hash to its text, voice and engine so the cache is inspectable rather than opaque;
+      `Clarvis: Open Voice Cache Folder` reveals it.
+- [x] **Request timeout corrected from 3s to 15s.** §4.4's 3s was speculative and wrong
+      twice over: real renders of a two-line briefing routinely exceed it, and nothing
+      is blocked while waiting — the notification is already on screen and speech is
+      fire-and-forget. Late audio costs nothing; falling back to the wrong voice costs
+      the feature. Only first-time lines pay it, since repeats come from cache.
 - [ ] Cache eviction: exceed the ~50MB cap (or lower it for the test) — LRU eviction
       fires on `deactivate()`, cache stays bounded across sessions.
 - [ ] Trip `clarvis.voice.dailyRequestCap` — drops to Tier 0 for the rest of the day,

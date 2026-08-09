@@ -98,6 +98,13 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
   a click away under **History**. And a **Mute** button sits next to the prompt — it
   stops him mid-sentence, and it's for the next ten minutes, not forever: reload and he
   talks again.
+  **`/help` opens the manual** — quickstart, every setting, voice setup, troubleshooting.
+  Slash commands cover the rest (`/voice`, `/engine`, `/key`, `/mute`, `/history`,
+  `/clear`, `/settings`), and plain English works too: *"change the voice"*, *"shut up"*,
+  *"show me earlier chats"*. Asking a **question** — *"what voice are you using?"* — gets
+  you an answer instead of a dialog. Once a model is connected it will also read the
+  oblique ones (*"I can't stand this voice"*) — and because that's a guess rather than a
+  match, it asks before opening anything.
 - **Agent** — hand it a real task ("fix the failing test", "rename this everywhere")
   and it edits, runs commands, reads the results, and iterates until it's done. Work
   happens on its own `clarvis/<task>` branch, committed step by step, so your
@@ -268,7 +275,8 @@ the full per-milestone build notes and exit criteria.
       satisfy. Rendered speech is cached on disk, so repeats cost nothing.
 - [~] **M8 — Chat & Agent.** *In progress.* **M8a is done**: the chat panel, answers
       from local state with no key or network, the transcript that keeps what he says,
-      per-session history, and the mute button. Still to come: the model layer, the tool
+      per-session history, the mute button, and a built-in manual on `/help` with slash
+      commands and plain-English equivalents. Still to come: the model layer, the tool
       layer, the gates, and the agent loop itself. *(The big one: local answers, then the
       Answer path, then a real agentic harness — tool layer and gates built and tested
       before the model can reach them.)*

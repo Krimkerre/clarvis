@@ -1470,11 +1470,11 @@ on, and rejections are recorded); a plan that drifts from the code as it's built
 without reading (findings are surfaced individually, not as one wall to skim); ceremony
 for projects too small to need it (Clarvis is expected to say so). Mitigations in §8.
 
-### 4.10 Noob Mode — *learn by building, with the butler as tutor* (stretch)
+### 4.10 Tutor Mode — *learn by building* (stretch)
 
 For someone with no programming background who wants to **learn by doing** rather than
 be handed a finished thing. Same product, same agent, same gates — a different teaching
-posture. Off by default (`clarvis.mode`: `normal` | `noob`), chosen by the user, never
+posture. Off by default (`clarvis.mode`: `normal` | `tutor`), chosen by the user, never
 inferred from how someone types.
 
 **The bet:** the existing planning interview (§4.9) and agent loop (§4.6) are already
@@ -1482,12 +1482,37 @@ the right shape for teaching. What a beginner lacks isn't a different tool, it's
 *why* behind each question and each line. So this mode adds explanation and choice; it
 does not fork the product.
 
+**The name matters.** It is *tutor* mode, never "beginner mode" and never "noob mode",
+in the UI, the settings, the docs and the log. "Noob" is a word someone may cheerfully
+apply to themselves; coming from a tool, aimed at the one audience least able to shrug
+it off, it is an insult with a shrug attached. The mode is named for what Clarvis does,
+not for what the user lacks.
+
 **A setting, not a product.** This is worth stating flatly because it constrains every
-decision below: noob mode is **off by default**, opt-in, and never inferred — not from
+decision below: tutor mode is **off by default**, opt-in, and never inferred — not from
 how someone writes, not from an empty workspace, not from a wrong answer in the
 interview. Guessing that a user is a beginner is insulting when wrong and patronising
 when right. Clarvis offers it once at first run, in a sentence, and takes no for an
 answer forever.
+
+**Asked once, when a project starts.** The natural moment is §4.9's front door: before
+the planning interview begins, Clarvis asks how the user wants to work on *this*
+project — two options, plainly described by what happens rather than by who they are:
+
+> *Regular — I build, you review, we move quickly.*
+> *Tutor — I explain everything as we go, and you can write the code yourself.*
+
+Neither is labelled recommended, neither mentions experience, and there is no third
+option pretending to be a middle. The question is asked once per project and never
+re-asked; changing it later is a setting, not a prompt.
+
+**The choice is per project, not per person.** Stored workspace-scoped, with the global
+setting as the default for the next new project. The same user reasonably wants tutor
+mode for the thing they're learning on and regular mode for the thing they already know
+how to build — and a person who has graduated on one project should not be dragged back
+by an old global flag. A workspace that has never been asked inherits the global
+default and, on an existing project with code already in it, simply stays in regular
+mode without asking at all: mid-project is not the moment for this question.
 
 **Graduating changes a setting and nothing else.** The product a beginner outgrows into
 is the product they were already using — same panel, same agent, same commands, same
@@ -1497,11 +1522,11 @@ shortcut:
 - **No separate build, no "Clarvis for Beginners" edition, no starter template.** One
   extension, one codebase. A learner edition would need its own release, and would
   strand its users on it.
-- **Nothing is regenerated or migrated on graduation.** The code written in noob mode
+- **Nothing is regenerated or migrated on graduation.** The code written in tutor mode
   *is* the project: real files, real git history, real branches, on the same gates and
   checkpoints. A project built while learning must survive the person learning, or the
   mode has taught them their first project was a toy.
-- **The mode is invisible in the artefacts.** No "generated in noob mode" markers, no
+- **The mode is invisible in the artefacts.** No "generated in tutor mode" markers, no
   simplified scaffolding to be untangled later, nothing in the repository a future
   collaborator would read as training wheels. `GLOSSARY.md` is the one deliberate
   exception, and it is *theirs* — a record they chose to keep, deletable without
@@ -1595,7 +1620,7 @@ cannot do — all of it leans on Clarvis already watching the user's real work (
   where people quit, and a tutor that insists on teaching through it is the reason
   they quit. The step is done, briefly explained afterwards rather than before, and no
   note is made of it. If it becomes the pattern, the graduation-in-reverse offer is to
-  switch *out* of noob mode — not to try harder at teaching someone who isn't in the
+  switch *out* of tutor mode — not to try harder at teaching someone who isn't in the
   mood.
 
 #### The things this mode gets wrong if unexamined
@@ -1628,8 +1653,8 @@ cannot do — all of it leans on Clarvis already watching the user's real work (
   and least likely to know it exists — so it is named out loud the first time a step
   writes a file.
 
-**Settings.** `clarvis.mode` (`normal` | `noob`, default **`normal`**),
-`clarvis.noob.buildStyle` (`handsOn` | `guidedAuto`), both changeable mid-project and
+**Settings.** `clarvis.mode` (`normal` | `tutor`, default **`normal`**),
+`clarvis.tutor.buildStyle` (`handsOn` | `guidedAuto`), both changeable mid-project and
 mid-milestone. No third "expert" mode: normal *is* expert, and inventing a ladder
 implies a hierarchy nobody asked for — as well as implying that the default is somehow
 incomplete, which is the opposite of true.
@@ -2728,16 +2753,19 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 
 ---
 
-### M12 — Noob Mode *(stretch — after everything it depends on)*
+### M12 — Tutor Mode *(stretch — after everything it depends on)*
 
 Last on purpose: it is a teaching layer over §4.9's planning and §4.6's agent, and it
 cannot be built before the things it teaches. Nothing else depends on it, so it is the
 cleanest milestone to cut.
 
 **Build.**
-- **M12a — Mode plumbing.** `clarvis.mode` and `clarvis.noob.buildStyle`; the mode
-  addendum in `systemPrompt.ts` (M8g) gains a teaching block. No new pipeline — the
-  same turn, differently instructed.
+- **M12a — Mode plumbing.** `clarvis.mode` and `clarvis.tutor.buildStyle`, resolved
+  workspace-first and falling back to the global default; the mode addendum in
+  `systemPrompt.ts` (M8g) gains a teaching block. No new pipeline — the same turn,
+  differently instructed.
+- **M12a2 — The question.** One choice at the top of §4.9's planning flow, asked only
+  for a project that is actually new, recorded workspace-scoped, never re-asked.
 - **M12b — Guided interview.** §4.9's batches gain per-question *why* lines and
   concrete options with consequences. Options are generated from the answer space of
   the question, not a canned list, or they stop matching the project by round three.
@@ -2748,7 +2776,7 @@ cleanest milestone to cut.
   explanation of what changed and why. Reuses the existing gate and checkpoint path
   untouched.
 - **M12e — Teaching moments.** The event-driven half, and the part that justifies the
-  milestone: `src/noob/moments.ts` subscribes to the same M3/M5 signals the quip
+  milestone: `src/tutor/moments.ts` subscribes to the same M3/M5 signals the quip
   system uses and proposes a lesson when one is *earned* — a third repeat of an error,
   a first real stack trace, a first successful run. Reuses `Announcer`'s budget so
   teaching cannot become nagging. Includes the predict-before-reveal prompt and the
@@ -2759,7 +2787,7 @@ cleanest milestone to cut.
   journey, not a reference work).
 - **M12g — Graduation.** After sustained self-sufficiency, one offer to switch back to
   normal. Declined once means never asked again this project. The inverse also exists:
-  repeated "just do it for me" offers switching *out* of noob mode, once, without
+  repeated "just do it for me" offers switching *out* of tutor mode, once, without
   comment.
 
 **Exit checklist:**
@@ -2779,15 +2807,23 @@ cleanest milestone to cut.
       the exit criterion most likely to fail quietly.
 - [ ] No simplification in a full session is false — spot-check the explanations
       against what the code actually does.
-- [ ] Spend for one milestone in noob mode is measured and reported at enable time,
+- [ ] Spend for one milestone in tutor mode is measured and reported at enable time,
       not discovered on the bill.
 - [ ] Graduation offer fires once, is reversible, and never repeats after a decline.
-- [ ] Default install is **normal mode**; noob mode is reachable only by the user
+- [ ] Default install is **normal mode**; tutor mode is reachable only by the user
       choosing it. Confirm nothing infers it — not an empty workspace, not a hesitant
       answer, not a beginner-looking question.
+- [ ] Starting a new project asks the mode question once, describes both options by
+      what happens rather than by who the user is, marks neither as recommended, and
+      never asks again for that project.
+- [ ] Opening an *existing* project with code in it does not ask at all.
+- [ ] Two workspaces, two different modes, at the same time — neither leaks into the
+      other, and graduating one leaves the other alone.
+- [ ] Nothing user-visible anywhere says "noob" or "beginner" — UI, settings
+      descriptions, notifications, log lines, README.
 - [ ] Graduate mid-project and keep working: same panel, same `plan.md`, same branches,
       nothing regenerated, nothing migrated, no step repeated.
-- [ ] Inspect a repository built entirely in noob mode — nothing in the files, history
+- [ ] Inspect a repository built entirely in tutor mode — nothing in the files, history
       or config reveals which mode built it, `GLOSSARY.md` aside. A collaborator
       cloning it cannot tell, and there is no scaffolding to untangle.
 - [ ] A real failure in the user's own project becomes a read-the-error lesson — and
@@ -2845,10 +2881,10 @@ cleanest milestone to cut.
 | Model key leaks or unexpected chat spend | Same handling as the voice key — `SecretStorage`, `password: true`, never logged, absent from `contributes.configuration`; `clarvis.chat.dailyRequestCap` with a one-time notice on trip |
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
-| Noob mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
-| Noob mode becomes a separate, lesser product its users are stranded on | One extension, one codebase, one project format; graduating flips a setting and changes nothing else. No learner edition, no starter template, no markers in the repository (§4.10) |
+| Tutor mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
+| Tutor mode becomes a separate, lesser product its users are stranded on | One extension, one codebase, one project format; graduating flips a setting and changes nothing else. No learner edition, no starter template, no markers in the repository (§4.10) |
 | A beginner learns to code but never learns to read an error, and stalls the moment they are alone | Errors are taught deliberately from *real* failures in their own project (§4.10); never from staged ones, which cost more trust than they teach |
-| Noob mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
+| Tutor mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
 | Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |
 | Voice is now core, but the good tier needs a key — does zero-config still hold? | Yes: everything except voice works with no key. Without one, voice falls back to system TTS or stays silent and nothing else changes. The plan states plainly that the free tier is a downgrade rather than pretending the tiers are equivalent |
 | Voice ruins the character | Off by default, explicit kill criteria at M7; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |

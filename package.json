@@ -94,8 +94,8 @@
         },
         "clarvis.voice.enabled": {
           "type": "boolean",
-          "default": false,
-          "description": "Speak briefings and task-completion notices aloud. Off until you ask for it \u2014 a voice that surprises you once is a voice you disable forever."
+          "default": true,
+          "description": "Speak briefings, task outcomes and chat replies aloud. On by default \u2014 the delivery carries half the character. Mute silences him instantly from the chat panel; turn this off to keep him permanently quiet."
         },
         "clarvis.voice.selectedVoice": {
           "type": "string",

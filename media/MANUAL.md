@@ -76,10 +76,12 @@ still there to scroll back to.
 
 ## Voice
 
-Off until you turn it on — a voice that surprises you once is a voice you disable
-forever.
+**On by default.** Half the character is in the delivery, so shipping him silent meant
+shipping half of him.
 
-**Turn it on:** `/settings` → tick **Clarvis › Voice: Enabled**.
+**Don't want it?** Two options, and they're different: **Mute** (the button by the
+prompt, or `/mute`) silences him instantly, mid-sentence, until you reload the window.
+To keep him quiet for good, `/settings` → untick **Clarvis › Voice: Enabled**.
 
 **Two tiers.** Your operating system's built-in voice is free, offline, and always
 available; it reads the words but doesn't perform them. [Fish Audio](https://fish.audio)
@@ -126,7 +128,7 @@ an ordinary Markdown tab you can copy from and close.
 
 | Setting | Default | What it's for |
 |---|---|---|
-| `clarvis.voice.enabled` | off | Whether he speaks at all |
+| `clarvis.voice.enabled` | **on** | Whether he speaks at all. Mute is the temporary version |
 | `clarvis.voice.selectedVoice` | the shipped voice | `system`, or a Fish Audio voice |
 | `clarvis.voice.fishAudio.engine` | `s2.1-pro-free` | Quality vs. speed vs. cost |
 | `clarvis.voice.savedVoices` | empty | Voices you pasted in and named — edit or delete here |

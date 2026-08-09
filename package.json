@@ -58,6 +58,14 @@
       {
         "command": "clarvis.openVoiceCache",
         "title": "Clarvis: Open Voice Cache Folder"
+      },
+      {
+        "command": "clarvis.chooseVoice",
+        "title": "Clarvis: Choose Voice"
+      },
+      {
+        "command": "clarvis.chooseEngine",
+        "title": "Clarvis: Choose Voice Engine"
       }
     ],
     "configuration": {
@@ -76,7 +84,7 @@
         "clarvis.voice.selectedVoice": {
           "type": "string",
           "default": "curated:default",
-          "description": "Voice to speak with. 'system' for the OS voice, or 'fish:<reference_id>' for a Fish Audio voice."
+          "description": "Voice to speak with: 'curated:default' for the shipped voice, 'fish:<reference_id>' for a specific Fish Audio voice, or 'system' for the OS voice."
         },
         "clarvis.voice.fishAudio.engine": {
           "type": "string",

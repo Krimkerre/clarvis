@@ -90,3 +90,56 @@ test('the file path reaches every player', () => {
     }
   }
 });
+
+import { ENGINES, isKnownEngine } from './enginePicker';
+
+test('engine ids are the documented Fish Audio model header values', () => {
+  const ids = ENGINES.map((e) => e.id);
+
+  assert.ok(ids.includes('s2.1-pro-free'));
+  assert.ok(ids.includes('s2.1-pro'));
+  assert.ok(ids.includes('s2-pro'));
+});
+
+test('the default engine is one of the offered engines', () => {
+  // A default that isn't in the list would warn on every startup.
+  assert.equal(isKnownEngine('s2.1-pro-free'), true);
+});
+
+test('a retired engine is recognised as unknown', () => {
+  assert.equal(isKnownEngine('s0-ancient'), false);
+});
+
+test('every engine explains its tradeoff, not just its name', () => {
+  // "s1 vs s1-mini" is meaningless on its own.
+  for (const engine of ENGINES) {
+    assert.ok(engine.detail.length > 30, `${engine.id} needs a real description`);
+  }
+});
+
+import { resolveVoiceId, DEFAULT_CURATED_ID, CURATED_VOICES } from './curatedVoices';
+
+test('the curated placeholder resolves to a real voice id', () => {
+  // Left unresolved, 'curated:default' would be sent to the API as a literal string.
+  assert.equal(resolveVoiceId('curated:default'), DEFAULT_CURATED_ID);
+  assert.match(DEFAULT_CURATED_ID, /^[0-9a-f]{16,}$/);
+});
+
+test('an explicit fish voice wins over the curated default', () => {
+  assert.equal(resolveVoiceId('fish:abc123'), 'abc123');
+});
+
+test('the system voice resolves to no fish id at all', () => {
+  assert.equal(resolveVoiceId('system'), undefined);
+  assert.equal(resolveVoiceId('nonsense'), undefined);
+});
+
+test('curated voices are described by sound, never by character', () => {
+  // §4.4: qualities are shippable, a named likeness is not.
+  const forbidden = /rick|sanchez|morty|character|sounds like/i;
+
+  for (const voice of CURATED_VOICES) {
+    assert.ok(!forbidden.test(voice.label), `label names something: ${voice.label}`);
+    assert.ok(!forbidden.test(voice.detail), `detail names something: ${voice.detail}`);
+  }
+});

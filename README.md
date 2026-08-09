@@ -230,9 +230,11 @@ the full per-milestone build notes and exit criteria.
       that M3's notices and M5's pattern hits now route through too. Caught a bug where
       reopening the window counted as a fresh occurrence of an old error. *Full-day
       dogfood pass still outstanding.*
-- [ ] **M7 — Voice.** Not started. *(Core, not a stretch: the delivery is half the
-      personality. Lands right after the personality pass. First task is picking the
-      curated voice itself — a by-ear decision nobody has made yet.)*
+- [x] **M7 — Voice.** Briefings and completions spoken by a curated Fish Audio voice,
+      with the OS voice as fallback and a picker for both voice and engine. Playback
+      goes through the OS's headless player rather than the webview, because Chromium
+      blocks audio until the panel is clicked — which the launch briefing can never
+      satisfy. Rendered speech is cached on disk, so repeats cost nothing.
 - [ ] **M8 — Chat & Agent.** Not started. *(The big one: local answers, then the
       Answer path, then a real agentic harness — tool layer and gates built and tested
       before the model can reach them.)*

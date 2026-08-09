@@ -98,39 +98,93 @@ test('omits lines it has no facts for', () => {
   assert.deepEqual(lines, [], 'a fresh window with no history says nothing at all');
 });
 
+/** Every phrasing, so a test covers all the wording rather than a lucky one. */
+const VARIANTS = [0, 1, 2];
+
+/** The whole briefing as one string — line positions shift with the opener. */
+function briefing(facts: Parameters<typeof buildBriefingLines>[0], variant: number): string {
+  return buildBriefingLines(facts, () => variant).join(' ');
+}
+
 test('reports branch and dirty count, with correct pluralisation', () => {
-  assert.match(
-    buildBriefingLines({ git: { branch: 'main', dirtyCount: 1 }, recentFiles: [] })[0],
-    /1 file dirty/
-  );
-  assert.match(
-    buildBriefingLines({ git: { branch: 'main', dirtyCount: 3 }, recentFiles: [] })[0],
-    /3 files dirty/
-  );
-  assert.match(
-    buildBriefingLines({ git: { branch: 'main', dirtyCount: 0 }, recentFiles: [] })[0],
-    /clean/
-  );
+  for (const v of VARIANTS) {
+    assert.match(briefing({ git: { branch: 'main', dirtyCount: 1 }, recentFiles: [] }, v), /1 file\b/);
+    assert.match(briefing({ git: { branch: 'main', dirtyCount: 3 }, recentFiles: [] }, v), /3 files\b/);
+    assert.match(briefing({ git: { branch: 'main', dirtyCount: 0 }, recentFiles: [] }, v), /clean|tidy/);
+  }
 });
 
 test('shows file names, not full paths', () => {
-  const lines = buildBriefingLines({ recentFiles: ['/a/b/checkout.ts', '/a/b/cart.ts'] });
+  for (const v of VARIANTS) {
+    const text = briefing({ recentFiles: ['/a/b/checkout.ts', '/a/b/cart.ts'] }, v);
 
-  assert.match(lines[0], /checkout\.ts/);
-  assert.ok(!lines[0].includes('/a/b/'), 'paths are noise in a one-line summary');
+    assert.match(text, /checkout\.ts/);
+    assert.ok(!text.includes('/a/b/'), 'paths are noise in a one-line summary');
+  }
+});
+
+test('every briefing opens in character, in all phrasings', () => {
+  // The opener is what stops this reading like a status bar, so it must exist for
+  // every combination of facts — not only the ones that happen to be tested below.
+  for (const v of VARIANTS) {
+    assert.match(briefing({ recentFiles: ['a.ts'] }, v), /^(You|Welcome|There you are|Morning|Ah)/);
+    assert.match(
+      briefing({ failure: { label: 'npm test', exitCode: 1, at: 0 }, recentFiles: [] }, v),
+      /^(You|Welcome|Ah)/
+    );
+  }
+});
+
+test('the opener matches the mood of the facts', () => {
+  // Greeting someone cheerfully over a red build is the exact thing that makes a
+  // character feel like a template.
+  for (const v of VARIANTS) {
+    const red = buildBriefingLines(
+      { failure: { label: 'npm test', exitCode: 1, at: 0 }, recentFiles: [] },
+      () => v
+    )[0];
+
+    assert.doesNotMatch(red, /nothing exploded|all quiet|roughly where you left it/i);
+  }
+});
+
+test('an opener alone is never a briefing', () => {
+  // §4.3: silence when there is nothing to report. An opener on its own is a chatbot
+  // saying hello, which is precisely what that rule exists to prevent.
+  assert.deepEqual(buildBriefingLines({ recentFiles: [] }), []);
+});
+
+test('when facts outnumber the space, the least useful line is dropped', () => {
+  // Four facts plus an opener exceeds the cap. What you were editing is pleasant
+  // context; a red build and a recurring error are why this feature exists.
+  const lines = buildBriefingLines(
+    {
+      failure: { label: 'npm test', exitCode: 1, at: 0 },
+      patternHint: 'That ECONNREFUSED again.',
+      git: { branch: 'main', dirtyCount: 2 },
+      recentFiles: ['/a/b/checkout.ts'],
+    },
+    () => 0
+  );
+
+  assert.equal(lines.length, 4);
+  assert.match(lines.join(' '), /npm test/);
+  assert.match(lines.join(' '), /ECONNREFUSED/);
+  assert.ok(!lines.join(' ').includes('checkout.ts'), 'recent files is the first to go');
 });
 
 test('distinguishes a failed job from an unfinished one', () => {
-  const failed = buildBriefingLines({
-    failure: { label: 'npm test', exitCode: 1, at: 0 },
-    recentFiles: [],
-  })[0];
-  const cancelled = buildBriefingLines({
-    failure: { label: 'npm test', exitCode: undefined, at: 0 },
-    recentFiles: [],
-  })[0];
+  for (const v of VARIANTS) {
+    const failed = briefing({ failure: { label: 'npm test', exitCode: 1, at: 0 }, recentFiles: [] }, v);
+    const cancelled = briefing(
+      { failure: { label: 'npm test', exitCode: undefined, at: 0 }, recentFiles: [] },
+      v
+    );
 
-  assert.notEqual(failed, cancelled, 'calling a cancelled job "red" would be a lie');
+    assert.notEqual(failed, cancelled, 'calling a cancelled job "red" would be a lie');
+    // No phrasing of the cancelled case may imply it failed — it never finished.
+    assert.doesNotMatch(cancelled, /red|failed|failing/i);
+  }
 });
 
 test('caps at four lines', () => {

@@ -9,6 +9,7 @@ import { WatchPresenter } from './watch/WatchPresenter';
 import { BriefingService } from './briefing/BriefingService';
 import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
+import { ChatService } from './chat/ChatService';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -60,10 +61,25 @@ export function activate(context: vscode.ExtensionContext): void {
   // the thing it exists to speed up.
   context.subscriptions.push({ dispose: () => void fish.evictCache() });
 
+  // Chat is built last (it reads what the watchers own), but the briefing needs to
+  // write into it. A late-bound reference keeps the construction order honest rather
+  // than shuffling the wiring to suit one call.
+  let chat: ChatService | undefined;
+  const toTranscript = (message: string) => void chat?.note(message);
+
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  startBriefing(context, avatar, tracker, logger, memory, voice);
+  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, toTranscript);
   startPersonality(context, tracker, logger, announcer);
+
+  // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
+  // because it reads the state those three own.
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, logger);
+
+  // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
+  // the transcript. Toasts disappear after a few seconds; the thing he said about
+  // your build shouldn't be unrecoverable because you were looking elsewhere.
+  announcer.onAnnounce(toTranscript);
 }
 
 /**
@@ -171,8 +187,9 @@ function startBriefing(
   tracker: BusyTracker,
   log: ClarvisLog,
   memory: PatternMemory,
-  voice: VoiceService
-): void {
+  voice: VoiceService,
+  toTranscript: (message: string) => void
+): BriefingService {
   const briefing = new BriefingService(context, (message) => log.write(message));
 
   // M5 supplies the briefing's fourth line. M4 needed no changes for this — it was
@@ -184,6 +201,7 @@ function startBriefing(
     // for now the notification is the delivery and the face just marks the moment.
     void vscode.window.showInformationMessage(lines.join(' '));
     lines.forEach((line) => log.write(`briefing | ${line}`));
+    toTranscript(lines.join(' '));
 
     // Spoken if voice is on; the avatar's talking/neutral cycle is driven by actual
     // playback rather than a timer, so it's the voice service's job, not ours.
@@ -191,6 +209,45 @@ function startBriefing(
   });
 
   context.subscriptions.push({ dispose: () => briefing.dispose() });
+  return briefing;
+}
+
+/**
+ * Starts the chat panel (M8a) and the mute control that lives in it.
+ *
+ * Everything here answers from local state — the model path is M8b. The point of
+ * shipping this half first is that it works with no key at all, which is also the
+ * state most people will try the extension in.
+ */
+function startChat(
+  context: vscode.ExtensionContext,
+  panel: ButlerViewProvider,
+  avatar: AvatarController,
+  tracker: BusyTracker,
+  memory: PatternMemory,
+  briefing: BriefingService,
+  voice: VoiceService,
+  log: ClarvisLog
+): ChatService {
+  // Mute has to silence the OS voice too, and that one lives inside the webview.
+  voice.stopSystemVoice = () => panel.post({ type: 'stop-speech' });
+
+  const chat = new ChatService(
+    context,
+    panel,
+    avatar,
+    tracker,
+    () => briefing.recent,
+    () => memory.known,
+    voice,
+    (message) => log.write(message)
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.clear())
+  );
+
+  return chat;
 }
 
 /**

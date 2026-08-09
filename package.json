@@ -60,6 +60,10 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.clearConversation",
+        "title": "Clarvis: Clear Conversation"
+      },
+      {
         "command": "clarvis.chooseVoice",
         "title": "Clarvis: Choose Voice"
       },

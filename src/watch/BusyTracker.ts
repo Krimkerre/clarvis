@@ -41,6 +41,17 @@ export class BusyTracker {
   private readonly outcomeListeners: OutcomeListener[] = [];
 
   /**
+   * What's running right now, for anyone who needs to *ask* rather than be told.
+   *
+   * The listeners above report transitions, which is the right shape for reacting;
+   * chat needs the opposite — the state at the moment a question is asked. Copied
+   * out rather than exposing the map, so a caller can't mutate the tracker's state.
+   */
+  get running(): { label: string; startedAt: number }[] {
+    return [...this.active.values()].map(({ label, startedAt }) => ({ label, startedAt }));
+  }
+
+  /**
    * Subscribes to idle->busy and busy->idle transitions. Note this fires on
    * transitions only: starting a second overlapping job doesn't fire it again.
    */

@@ -587,8 +587,11 @@ the personality pass it exists to deliver, and **before** chat and the agent.
 - **Still off until enabled** (`clarvis.voice.enabled`). Core to the *product* is not the
   same as unsolicited audio in a shared office; a voice that surprises you once is a
   voice you disable forever. The first-run prompt makes the offer clearly, once.
-- Hard scope: briefings and task-completion notifications only. Quips stay silent —
-  a voice heckling you from the sidebar crosses from charming to haunted.
+- Hard scope: briefings, task-completion notifications, and **chat replies** (M8a).
+  Quips stay silent — a voice heckling you from the sidebar crosses from charming to
+  haunted. The line is *solicited vs. unsolicited*, not important vs. unimportant: an
+  answer to a question you just typed cannot startle you, which is the only thing this
+  scope exists to prevent. **Widened at M8a**; it was briefings and completions only.
 - **A mute control sits in the chat UI itself** (built in M8a), not only in settings.
   The moment you need silence — someone walks over, a call starts — is the moment you
   cannot go hunting through a settings pane, and `clarvis.voice.enabled` is a *setting*:
@@ -2075,8 +2078,17 @@ alone, so the milestone can stop early without leaving a half-built thing behind
 **Build.**
 - **M8a — Local answers.** `src/chat/ChatViewProvider.ts` extends the M2 panel with an
   input box + transcript below the avatar (same webview, not a second one — §3).
-  Thread persisted to `context.workspaceState` (cap ~50 turns, oldest dropped),
-  `Clarvis: Clear Conversation` command wipes it. `src/chat/localAnswer.ts` — a small
+  **Each window starts with an empty transcript**, and the previous session is filed
+  into an archive (`clarvis.chat.history`, newest first, 20 sessions) reachable from a
+  History button — picking one opens it as a Markdown tab rather than a second webview.
+  Rolling over happens at *startup*, not shutdown, because `deactivate` doesn't run
+  after a crash or a force quit. The live session is written continuously to
+  `clarvis.chat.current` (cap ~50 turns, oldest dropped) so a crashed window is still
+  filed. `Clarvis: Clear Conversation` deletes rather than archives — a button that
+  says there is no undo must not quietly keep a copy.
+  **Changed at M8a**: the thread was originally specced as persisted and restored on
+  open. Reopening mid-conversation reads as clutter; the archive keeps the history
+  without putting stale questions in front of you. `src/chat/localAnswer.ts` — a small
   intent match (regex/keyword, not a model call) against `BusyTracker`, the M4
   last-failure record, `PatternStore`, and `git.getAPI(1)`; returns `null` when nothing
   matches, which routes the question onward or to a "no key, and I don't know that
@@ -2150,8 +2162,14 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       M3–M5 state, zero network calls made.
 - [ ] No key set, ask something local answers can't cover — Clarvis says so once, in
       character, doesn't retry or hang.
-- [ ] `Clarvis: Clear Conversation` empties the transcript and `workspaceState`;
-      reopen the panel — thread stays empty, not repopulated from a stale cache.
+- [ ] `Clarvis: Clear Conversation` empties the transcript and the stored session,
+      and the cleared conversation does **not** appear under History afterwards.
+- [ ] Reload the window mid-conversation — the transcript is empty, and the previous
+      conversation is the top entry under History.
+- [ ] Collapse/move the panel mid-conversation — the transcript survives, since only a
+      reload starts a new session.
+- [ ] Kill the window uncleanly (force quit) — the conversation is still filed on next
+      launch, since roll-over happens at startup rather than in `deactivate`.
 - [ ] Exceed the ~50-turn cap — oldest turns drop, most recent 50 remain, no crash.
 - [ ] Set a key, ask a question local answers can't cover — request streams, avatar
       goes `thinking` → `talking` → `neutral` in sync with the actual stream lifecycle

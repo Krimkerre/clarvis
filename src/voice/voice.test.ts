@@ -2,9 +2,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mayBeSpoken, SpeechOccasion } from './speechScope';
 
-test('briefings and completions may be spoken', () => {
+test('briefings, completions and chat replies may be spoken', () => {
   assert.equal(mayBeSpoken('briefing'), true);
   assert.equal(mayBeSpoken('completion'), true);
+  // Solicited: an answer to a question you just typed cannot surprise you, which is
+  // the only thing this scope exists to prevent.
+  assert.equal(mayBeSpoken('chatReply'), true);
 });
 
 test('quips never speak', () => {
@@ -17,12 +20,14 @@ test('pattern hits never speak', () => {
   assert.equal(mayBeSpoken('patternHit'), false);
 });
 
-test('the spoken set is exactly two occasions', () => {
+test('the spoken set is exactly the solicited occasions', () => {
   // Guards against a future occasion being added and silently inheriting speech.
-  const all: SpeechOccasion[] = ['briefing', 'completion', 'quip', 'patternHit'];
+  // This test failing is the intended alarm, not an inconvenience — widening the
+  // scope should be a decision someone makes on purpose.
+  const all: SpeechOccasion[] = ['briefing', 'completion', 'chatReply', 'quip', 'patternHit'];
   const spoken = all.filter(mayBeSpoken);
 
-  assert.deepEqual(spoken, ['briefing', 'completion']);
+  assert.deepEqual(spoken, ['briefing', 'completion', 'chatReply']);
 });
 
 import { cacheKey, selectForEviction, CACHE_LIMIT_BYTES } from './voiceCache';

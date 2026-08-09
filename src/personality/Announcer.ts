@@ -22,6 +22,21 @@ export class Announcer {
   private lastSurfaceAt: number | undefined;
   private holdTimer: ReturnType<typeof setTimeout> | undefined;
 
+  /** Anyone who wants a copy of what was actually said (M8a: the chat transcript). */
+  private readonly listeners: ((message: string) => void)[] = [];
+
+  /**
+   * Subscribes to delivered remarks.
+   *
+   * **Suppressed remarks are not reported.** A remark the budget withheld is one
+   * Clarvis did not make, and writing it into the transcript anyway would turn the
+   * interruption budget into a rate limit on *toasts* rather than on talking. The
+   * output channel still logs the suppression, which is where that belongs.
+   */
+  onAnnounce(listener: (message: string) => void): void {
+    this.listeners.push(listener);
+  }
+
   constructor(
     private readonly avatar: AvatarController,
     private readonly log: (message: string) => void
@@ -46,6 +61,8 @@ export class Announcer {
 
     clearTimeout(this.holdTimer);
     this.holdTimer = setTimeout(() => this.avatar.setState('neutral'), REACTION_HOLD_MS);
+
+    for (const listener of this.listeners) listener(message);
 
     this.log(`announced: ${message}`);
     return true;

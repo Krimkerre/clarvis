@@ -17,6 +17,7 @@ import { probeTools } from './agent/tools/toolProbe';
 import { buildStamp } from './buildStamp';
 import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
+import { AgentRunner } from './agent/AgentRunner';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -105,6 +106,43 @@ export function activate(context: vscode.ExtensionContext): void {
       const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
       await vscode.window.showTextDocument(document);
     }),
+    // The agent (M8e). A command for now; M8f routes chat requests into it.
+    vscode.commands.registerCommand('clarvis.runTask', async () => {
+      const task = await vscode.window.showInputBox({
+        prompt: 'What should I do?',
+        placeHolder: 'e.g. fix the failing test in src/watch',
+        ignoreFocusOut: true,
+      });
+      if (!task?.trim()) return;
+
+      const controller = new AbortController();
+      const runner = new AgentRunner(
+        context,
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        models,
+        agentTerminal,
+        (message) => logger.write(message)
+      );
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
+        async (progress, token) => {
+          // Cancel must reach the run itself, not merely close the notification.
+          token.onCancellationRequested(() => controller.abort());
+
+          for await (const event of runner.run(task.trim(), controller.signal)) {
+            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
+            if (event.kind === 'tool' || event.kind === 'gate') logger.write(`agent: ${event.text}`);
+
+            if (event.kind === 'done' || event.kind === 'error') {
+              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
+              void vscode.window.showInformationMessage(`Clarvis: ${event.text}${files}`);
+            }
+          }
+        }
+      );
+    }),
+
     // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
     // the escape hatch exists before the thing it rescues you from.
     vscode.commands.registerCommand('clarvis.undoLastRun', async () => {

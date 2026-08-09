@@ -60,6 +60,10 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.runTask",
+        "title": "Clarvis: Run a Task"
+      },
+      {
         "command": "clarvis.undoLastRun",
         "title": "Clarvis: Undo Last Agent Run"
       },
@@ -123,6 +127,11 @@
           "type": "number",
           "default": 30,
           "description": "Tasks/commands/debug sessions shorter than this are tracked but never notified about."
+        },
+        "clarvis.agent.maxStepsPerTask": {
+          "type": "number",
+          "default": 25,
+          "description": "Tool calls before the agent stops and asks whether to carry on. A loop that never converges should not run up a bill unattended."
         },
         "clarvis.chat.provider": {
           "type": "string",

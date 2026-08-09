@@ -1,7 +1,13 @@
 import * as vscode from 'vscode';
 import { AnthropicProvider } from './AnthropicProvider';
 import { OpenAiCompatibleProvider } from './OpenAiCompatibleProvider';
-import { CompletionRequest, ModelChoice, ModelError, ModelProvider } from './ModelProvider';
+import {
+  CompletionRequest,
+  ModelChoice,
+  ModelError,
+  ModelProvider,
+  StreamEvent,
+} from './ModelProvider';
 import { PROVIDERS, ProviderId, ProviderSpec, providerSpec } from './providers';
 import { ModelRole, RoleSettings, resolveRole } from './roles';
 
@@ -97,6 +103,29 @@ export class ModelService {
       PROVIDERS.map(async (spec) => [spec.id, await this.hasKey(spec.id)] as const)
     );
     return Object.fromEntries(entries) as Record<ProviderId, boolean>;
+  }
+
+  /**
+   * Streams with tools offered, for the agent path.
+   *
+   * Throws when the configured provider has no tool support at all rather than
+   * silently falling back to a text stream — an agent whose tools were quietly dropped
+   * looks like a model that refuses to do anything, and the cause is invisible.
+   */
+  streamWithTools(
+    request: Omit<CompletionRequest, 'model'>,
+    role: ModelRole = 'agent'
+  ): AsyncIterable<StreamEvent> {
+    const provider = this.provider(role);
+
+    if (!provider.streamWithTools) {
+      throw new ModelError(
+        `${this.spec(role).label} can't call tools, so I can't do the work — only talk about it.`,
+        `${provider.id} has no streamWithTools`
+      );
+    }
+
+    return provider.streamWithTools({ ...request, model: this.model(role) });
   }
 
   /** Streams an answer. Errors arrive as `ModelError`, already phrased for a human. */

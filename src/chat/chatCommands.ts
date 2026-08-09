@@ -8,6 +8,19 @@
  *
  * Pure and `vscode`-free: what matters here is which words map to which action, and
  * that shouldn't need an extension host to test.
+ *
+ * Deliberately deterministic. When a model is connected (M8f2), it handles the
+ * phrasings this cannot — *"I can't stand this voice"* — but an inferred action
+ * **asks before acting**, whereas everything matched here acts directly. That
+ * difference is the whole point of keeping this layer: a guess and a match should not
+ * carry the same authority.
+ */
+/**
+ * Every action chat can trigger.
+ *
+ * Also the allow-list a model classifier is validated against (M8f2): an action name
+ * outside this union is discarded rather than dispatched, so a model — or text
+ * injected into one via a pasted error message — cannot invent a command.
  */
 export type ChatAction =
   | 'help'

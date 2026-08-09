@@ -1482,6 +1482,35 @@ the right shape for teaching. What a beginner lacks isn't a different tool, it's
 *why* behind each question and each line. So this mode adds explanation and choice; it
 does not fork the product.
 
+**A setting, not a product.** This is worth stating flatly because it constrains every
+decision below: noob mode is **off by default**, opt-in, and never inferred — not from
+how someone writes, not from an empty workspace, not from a wrong answer in the
+interview. Guessing that a user is a beginner is insulting when wrong and patronising
+when right. Clarvis offers it once at first run, in a sentence, and takes no for an
+answer forever.
+
+**Graduating changes a setting and nothing else.** The product a beginner outgrows into
+is the product they were already using — same panel, same agent, same commands, same
+`plan.md`, same project. Three consequences, each of which rules out an obvious
+shortcut:
+
+- **No separate build, no "Clarvis for Beginners" edition, no starter template.** One
+  extension, one codebase. A learner edition would need its own release, and would
+  strand its users on it.
+- **Nothing is regenerated or migrated on graduation.** The code written in noob mode
+  *is* the project: real files, real git history, real branches, on the same gates and
+  checkpoints. A project built while learning must survive the person learning, or the
+  mode has taught them their first project was a toy.
+- **The mode is invisible in the artefacts.** No "generated in noob mode" markers, no
+  simplified scaffolding to be untangled later, nothing in the repository a future
+  collaborator would read as training wheels. `GLOSSARY.md` is the one deliberate
+  exception, and it is *theirs* — a record they chose to keep, deletable without
+  consequence.
+
+The graduation offer (M12g) is therefore a small thing on purpose: one line, once, and
+a setting flips. It should feel like being handed the keys to the car already being
+driven, not like being moved to a different car.
+
 #### Planning, tutorialised
 
 The §4.9 interview runs, with four differences:
@@ -1599,9 +1628,11 @@ cannot do — all of it leans on Clarvis already watching the user's real work (
   and least likely to know it exists — so it is named out loud the first time a step
   writes a file.
 
-**Settings.** `clarvis.mode` (`normal` | `noob`), `clarvis.noob.buildStyle`
-(`handsOn` | `guidedAuto`), both changeable mid-project. No third "expert" mode: normal
-*is* expert, and inventing a ladder implies a hierarchy nobody asked for.
+**Settings.** `clarvis.mode` (`normal` | `noob`, default **`normal`**),
+`clarvis.noob.buildStyle` (`handsOn` | `guidedAuto`), both changeable mid-project and
+mid-milestone. No third "expert" mode: normal *is* expert, and inventing a ladder
+implies a hierarchy nobody asked for — as well as implying that the default is somehow
+incomplete, which is the opposite of true.
 
 ## 5. Dev-Moment Commentary
 
@@ -2751,6 +2782,14 @@ cleanest milestone to cut.
 - [ ] Spend for one milestone in noob mode is measured and reported at enable time,
       not discovered on the bill.
 - [ ] Graduation offer fires once, is reversible, and never repeats after a decline.
+- [ ] Default install is **normal mode**; noob mode is reachable only by the user
+      choosing it. Confirm nothing infers it — not an empty workspace, not a hesitant
+      answer, not a beginner-looking question.
+- [ ] Graduate mid-project and keep working: same panel, same `plan.md`, same branches,
+      nothing regenerated, nothing migrated, no step repeated.
+- [ ] Inspect a repository built entirely in noob mode — nothing in the files, history
+      or config reveals which mode built it, `GLOSSARY.md` aside. A collaborator
+      cloning it cannot tell, and there is no scaffolding to untangle.
 - [ ] A real failure in the user's own project becomes a read-the-error lesson — and
       **no lesson anywhere is built on deliberately broken code**. Grep the session for
       any step that wrote something known-wrong on purpose; there must be none.
@@ -2807,6 +2846,7 @@ cleanest milestone to cut.
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
 | Noob mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
+| Noob mode becomes a separate, lesser product its users are stranded on | One extension, one codebase, one project format; graduating flips a setting and changes nothing else. No learner edition, no starter template, no markers in the repository (§4.10) |
 | A beginner learns to code but never learns to read an error, and stalls the moment they are alone | Errors are taught deliberately from *real* failures in their own project (§4.10); never from staged ones, which cost more trust than they teach |
 | Noob mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
 | Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |

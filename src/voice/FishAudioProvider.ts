@@ -115,6 +115,48 @@ export class FishAudioProvider implements VoiceProvider {
     }
   }
 
+  /**
+   * The user's own voice models.
+   *
+   * Returns nothing without a key, or if the request fails — an empty list simply
+   * means that section doesn't appear in the picker, which is a normal state rather
+   * than an error worth interrupting anyone about.
+   */
+  async listOwnVoices(): Promise<{ id: string; title: string }[]> {
+    const apiKey = await this.context.secrets.get(FISH_KEY_SECRET);
+    if (!apiKey) return [];
+
+    try {
+      const response = await fetch('https://api.fish.audio/model?self=true', {
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+      if (!response.ok) return [];
+
+      const body = (await response.json()) as { items?: { _id?: string; id?: string; title?: string }[] };
+      return (body.items ?? [])
+        .map((item) => ({ id: item._id ?? item.id ?? '', title: item.title ?? 'untitled' }))
+        .filter((item) => item.id);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Checks a pasted voice id by rendering with it.
+   *
+   * Costs one short request, which is the point: a bad id fails here rather than
+   * silently mid-briefing days later. The rendered result is cached like anything
+   * else, so the check doubles as the first preview.
+   */
+  async validateVoice(voiceId: string): Promise<boolean> {
+    try {
+      await this.speak({ text: 'Testing.', voiceId });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   // ------------------------------------------------------------------ cache
 
   private get cacheDir(): vscode.Uri {

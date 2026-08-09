@@ -622,16 +622,11 @@ account, their responsibility, not something we distribute.
 This costs approximately nothing — the register is what carries the personality, not the
 resemblance — and it keeps the project shippable to a Marketplace.
 
-> **OPEN — the curated voice is not chosen yet.** `clarvis.voice.selectedVoice` currently
-> defaults to the placeholder `"curated:default"`, which points at nothing. Picking the
-> real one is a **by-ear decision that cannot be made from a spec**: it needs a Fish
-> Audio key, an audition of candidates, and a judgement against §2 rules 7–9. Blocking
-> work for M7, tracked in its exit checklist. Until it's made, voice falls back to system
-> TTS, so nothing else is blocked by it.
->
-> What "done" looks like: 3–5 `reference_id`s with labels describing their *qualities*,
-> a chosen default among them, and confirmation that a briefing and a completion line
-> both sound like the same person.
+> **RESOLVED at M7.** The curated voice was chosen by ear and ships as the default,
+> described by its qualities and named after nobody. `curated:default` now *resolves*
+> to a real id (`src/voice/curatedVoices.ts`) — before that it would have been sent to
+> the API as a literal string. A test asserts no curated entry ever names a character,
+> so the §4.4 position can't erode by accident later.
 
 **Two tiers, one interface.** A `VoiceProvider` — `speak(text): Promise<void>`,
 `preview(voiceId)`, `listVoices()` — with two implementations behind it. The rest of

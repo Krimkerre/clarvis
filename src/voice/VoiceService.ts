@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { VoiceProvider, Utterance } from './VoiceProvider';
 import { SpeechOccasion, mayBeSpoken } from './speechScope';
+import { resolveVoiceId } from './curatedVoices';
 
 /**
  * Speaks, when speaking is appropriate.
@@ -45,8 +46,7 @@ export class VoiceService {
       .getConfiguration('clarvis')
       .get<string>('voice.selectedVoice', 'curated:default');
 
-    // "system" and the curated placeholder both mean "no specific model id".
-    return value.startsWith('fish:') ? value.slice('fish:'.length) : undefined;
+    return resolveVoiceId(value);
   }
 
   /**
@@ -67,6 +67,15 @@ export class VoiceService {
     this.queue = this.queue
       .catch(() => undefined)
       .then(() => this.speakWithFallback({ text, voiceId: this.selectedVoice }));
+  }
+
+  /**
+   * Speaks a specific voice on demand, ignoring the enabled flag and the occasion
+   * rules — auditioning a voice is a direct request, not an unsolicited remark.
+   */
+  preview(text: string, selectedVoice: string): void {
+    const voiceId = resolveVoiceId(selectedVoice);
+    this.queue = this.queue.catch(() => undefined).then(() => this.speakWithFallback({ text, voiceId }));
   }
 
   /**

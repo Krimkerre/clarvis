@@ -14,6 +14,7 @@ import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
+import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -52,7 +53,9 @@ export function activate(context: vscode.ExtensionContext): void {
     new SystemVoiceProvider(panel),
     (message) => logger.write(message)
   );
-  registerVoiceCommands(context, voice, fish, panel);
+  registerVoiceCommands(context, voice, fish, panel, (message) => logger.write(message));
+  // A retired engine shouldn't be discovered by every utterance failing.
+  warnIfEngineUnknown((message) => logger.write(message));
   // Housekeeping at shutdown rather than mid-briefing, where it would add latency to
   // the thing it exists to speed up.
   context.subscriptions.push({ dispose: () => void fish.evictCache() });
@@ -201,7 +204,8 @@ function registerVoiceCommands(
   context: vscode.ExtensionContext,
   voice: VoiceService,
   fish: FishAudioProvider,
-  panel: ButlerViewProvider
+  panel: ButlerViewProvider,
+  log: (message: string) => void
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.setFishKey', async () => {
@@ -220,6 +224,10 @@ function registerVoiceCommands(
       await context.secrets.delete(FISH_KEY_SECRET);
       void vscode.window.showInformationMessage('Clarvis: key removed.');
     }),
+
+    vscode.commands.registerCommand('clarvis.chooseVoice', () => chooseVoice(fish, voice, log)),
+
+    vscode.commands.registerCommand('clarvis.chooseEngine', () => chooseEngine()),
 
     vscode.commands.registerCommand('clarvis.openVoiceCache', async () => {
       // Reveals the folder holding rendered speech. Anything already in here plays

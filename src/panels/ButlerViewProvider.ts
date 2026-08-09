@@ -259,6 +259,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         background:none; border:1px solid var(--vscode-input-border, transparent);
         border-radius:4px; color: var(--vscode-foreground); opacity:.7; }
       .clarvis-bowtie:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
+      /* Distinct from the bowtie: this one appears mid-answer and must read as an
+         interruption, not another menu. */
+      .clarvis-stop { color: var(--vscode-errorForeground); opacity:1; }
+      .clarvis-stop[hidden] { display:none; }
       #clarvis-input { flex:1 1 auto; box-sizing:border-box; resize:none; padding:6px 8px;
         font-family: inherit; font-size: inherit; border-radius:4px;
         color: var(--vscode-input-foreground); background: var(--vscode-input-background);
@@ -271,8 +275,6 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
            the input, where the hand already is, rather than at the top where reaching
            them means looking away from what you were typing. -->
       <div class="clarvis-chat-head">
-        <button id="clarvis-stop" class="clarvis-mute" hidden
-                title="Stop the answer in progress.">Stop</button>
         <button id="clarvis-history" class="clarvis-mute"
                 title="Earlier conversations from this workspace.">History</button>
         <button id="clarvis-clear" class="clarvis-mute"
@@ -289,6 +291,15 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
           </svg>
         </button>
         <textarea id="clarvis-input" rows="2" placeholder="Ask. Enter sends."></textarea>
+        <!-- Sits with the prompt, not with the controls above: stopping is something
+             you do *while typing was the last thing you did*, so it belongs where the
+             hand already is. Hidden until there is something to stop. -->
+        <button id="clarvis-stop" class="clarvis-bowtie clarvis-stop" hidden
+                title="Stop the answer in progress">
+          <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+            <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
+          </svg>
+        </button>
       </div>
     </div>`;
 

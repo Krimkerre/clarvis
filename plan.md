@@ -2024,6 +2024,16 @@ only *capture* is blocked.
       audio lives in `globalStorageUri/voice/`, alongside an `index.json` mapping each
       hash to its text, voice and engine so the cache is inspectable rather than opaque;
       `Clarvis: Open Voice Cache Folder` reveals it.
+- [ ] **Watch: intermittent mid-word cutoff.** Reported during M7 testing. Ruled out by
+      measurement: the rendered file is complete (speech to 5.54s, trailing silence at
+      −61 dB), and both cached and fresh-render playback exit cleanly
+      (`code=0 signal=null`, full duration). The probable cause was **unserialised
+      utterances** — the system voice calls `speechSynthesis.cancel()` before speaking,
+      so a second utterance chopped the first off mid-word, and two native players
+      would have talked over each other. Fixed with a queue, and not yet reproduced
+      since. Left open rather than ticked: one clean run doesn't prove an intermittent
+      bug gone. Playback now logs pid, exit code and **signal**, which distinguishes
+      "killed mid-word" from "audio was short" the moment it recurs.
 - [x] **Request timeout corrected from 3s to 15s.** §4.4's 3s was speculative and wrong
       twice over: real renders of a two-line briefing routinely exceed it, and nothing
       is blocked while waiting — the notification is already on screen and speech is

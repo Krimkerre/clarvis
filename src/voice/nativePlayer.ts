@@ -55,8 +55,13 @@ export function playerCandidates(platform: NodeJS.Platform): PlayerCommand[] {
  * Tries candidates in order because Linux audio is a lottery — a missing binary
  * (`ENOENT`) moves to the next one rather than failing the utterance.
  */
-export function playFile(file: string, platform: NodeJS.Platform = process.platform): Promise<void> {
+export function playFile(
+  file: string,
+  platform: NodeJS.Platform = process.platform,
+  log: (message: string) => void = () => {}
+): Promise<void> {
   const candidates = playerCandidates(platform);
+  const startedAt = Date.now();
 
   const attempt = (index: number): Promise<void> =>
     new Promise<void>((resolve, reject) => {
@@ -67,15 +72,19 @@ export function playFile(file: string, platform: NodeJS.Platform = process.platf
       }
 
       const child = spawn(candidate.command, candidate.args(file), { stdio: 'ignore' });
+      log(`play: spawned ${candidate.command} pid=${child.pid}`);
 
       child.on('error', () => {
         // Binary missing: try the next candidate rather than giving up.
         attempt(index + 1).then(resolve, reject);
       });
 
-      child.on('exit', (code) => {
+      child.on('exit', (code, signal) => {
+        // signal is the tell: a clean finish exits 0, whereas being killed mid-word
+        // arrives as SIGTERM/SIGKILL and is what a cut-off utterance looks like.
+        log(`play: exit code=${code} signal=${signal} after ${Date.now() - startedAt}ms`);
         if (code === 0) resolve();
-        else reject(new Error(`${candidate.command} exited ${code}`));
+        else reject(new Error(`${candidate.command} exited ${code} (${signal ?? 'no signal'})`));
       });
     });
 

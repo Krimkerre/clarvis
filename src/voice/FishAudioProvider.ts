@@ -69,7 +69,8 @@ export class FishAudioProvider implements VoiceProvider {
       await this.noteInIndex(key, utterance, engine);
     }
 
-    await playFile(this.cachePath(key).fsPath);
+    this.log(`voice: playing ${key}`);
+    await playFile(this.cachePath(key).fsPath, process.platform, this.log);
   }
 
   /** Fetches audio from Fish Audio. Throws on any failure. */

@@ -143,3 +143,24 @@ test('curated voices are described by sound, never by character', () => {
     assert.ok(!forbidden.test(voice.detail), `detail names something: ${voice.detail}`);
   }
 });
+
+import { readSavedVoices, withSavedVoice } from './savedVoices';
+
+test('malformed saved-voice entries are dropped, not fatal', () => {
+  // The setting is hand-editable, so one bad line must not empty the picker.
+  const saved = readSavedVoices({ Gravel: 'abc123', Broken: 42, '': 'xyz', Blank: '  ' });
+
+  assert.deepEqual(saved, [{ name: 'Gravel', id: 'abc123' }]);
+  assert.deepEqual(readSavedVoices(undefined), []);
+  assert.deepEqual(readSavedVoices(['abc']), []);
+});
+
+test('re-saving a known voice renames it instead of duplicating it', () => {
+  const existing = [{ name: 'Gravel', id: 'abc123' }];
+
+  assert.deepEqual(withSavedVoice(existing, 'Narrator', 'abc123'), { Narrator: 'abc123' });
+  assert.deepEqual(withSavedVoice(existing, ' Second ', 'def456'), {
+    Gravel: 'abc123',
+    Second: 'def456',
+  });
+});

@@ -84,6 +84,17 @@ export class ChatService {
     this.panel.onDidRequestClear(() => void this.confirmAndClear());
     this.panel.onDidRequestHistory(() => void this.showHistory());
     this.panel.onDidRequestStop(() => this.stop());
+    this.panel.onDidRequestModels(() => void vscode.commands.executeCommand('clarvis.configureModels'));
+
+    // Keep the bowtie's tooltip honest when the settings change underneath it —
+    // including from the picker it opens, so it never describes the previous choice.
+    this.context.subscriptions.push(
+      vscode.workspace.onDidChangeConfiguration((event) => {
+        if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
+          this.postModelInfo();
+        }
+      })
+    );
 
     // Roll the previous session into the archive before anything is written to it.
     // Done at *startup* rather than shutdown, because shutdown is not guaranteed to
@@ -95,6 +106,7 @@ export class ChatService {
     this.panel.onDidBecomeReady(() => {
       this.panel.post({ type: 'chat-thread', turns: this.thread });
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
+      this.postModelInfo();
     });
 
     this.voice.onMuteChange((muted) => this.panel.post({ type: 'mute', muted }));
@@ -187,6 +199,21 @@ export class ChatService {
     // Spoken only once complete — speaking fragment by fragment would produce a
     // stutter, and the queue exists to serialise utterances, not syllables.
     if (text) this.voice.say(text, 'chatReply');
+  }
+
+  /**
+   * Tells the panel what is configured, for the bowtie's tooltip.
+   *
+   * Which model is answering is the thing people forget and then misjudge cost by, so
+   * it lives one hover from the prompt rather than three menus deep.
+   */
+  private postModelInfo(): void {
+    const chat = `${this.models.spec('chat').label} · ${this.models.model('chat')}`;
+    const coding = this.models.agentIsSeparate()
+      ? `${this.models.spec('agent').label} · ${this.models.model('agent')}`
+      : 'same as chat';
+
+    this.panel.post({ type: 'model-info', text: `Chat: ${chat}\nCoding: ${coding}\n\nClick to change` });
   }
 
   /** Cancels the answer in flight, if there is one. */

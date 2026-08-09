@@ -112,6 +112,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         this.stopRequested.fire();
         return;
       }
+      if (msg?.type === 'models') {
+        this.modelsRequested.fire();
+        return;
+      }
     });
 
     // A freshly resolved view is blank: it has no idea what was said before it
@@ -125,6 +129,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly clearRequested = new vscode.EventEmitter<void>();
   private readonly historyRequested = new vscode.EventEmitter<void>();
   private readonly stopRequested = new vscode.EventEmitter<void>();
+  private readonly modelsRequested = new vscode.EventEmitter<void>();
   private readonly viewReady = new vscode.EventEmitter<void>();
 
   /** A question typed into the chat box. */
@@ -135,6 +140,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidRequestClear = this.clearRequested.event;
   /** The History button was clicked. */
   readonly onDidRequestHistory = this.historyRequested.event;
+  /** The bowtie next to the prompt was clicked. */
+  readonly onDidRequestModels = this.modelsRequested.event;
   /** Stop was clicked while an answer was streaming. */
   readonly onDidRequestStop = this.stopRequested.event;
   /** The webview exists and can be populated. */
@@ -176,6 +183,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.clearRequested,
       this.historyRequested,
       this.stopRequested,
+      this.modelsRequested,
       this.viewReady
     );
   }
@@ -243,7 +251,15 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         text-transform:uppercase; opacity:.55; margin-bottom:2px; }
       .clarvis-turn code { font-family: var(--vscode-editor-font-family);
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
-      #clarvis-input { width:100%; box-sizing:border-box; resize:none; padding:6px 8px;
+      /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
+         bottom so the icon stays level with the first line as the box grows. */
+      .clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }
+      .clarvis-bowtie { display:flex; align-items:center; justify-content:center;
+        flex:0 0 auto; height:32px; width:28px; padding:0; cursor:pointer;
+        background:none; border:1px solid var(--vscode-input-border, transparent);
+        border-radius:4px; color: var(--vscode-foreground); opacity:.7; }
+      .clarvis-bowtie:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
+      #clarvis-input { flex:1 1 auto; box-sizing:border-box; resize:none; padding:6px 8px;
         font-family: inherit; font-size: inherit; border-radius:4px;
         color: var(--vscode-input-foreground); background: var(--vscode-input-background);
         border:1px solid var(--vscode-input-border, transparent); }
@@ -264,7 +280,16 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         <button id="clarvis-mute" class="clarvis-mute" data-muted="false"
                 title="Silence him. Resets when the window reloads.">Mute</button>
       </div>
-      <textarea id="clarvis-input" rows="2" placeholder="Ask. Enter sends."></textarea>
+      <div class="clarvis-prompt">
+        <!-- Inline SVG rather than a file: the CSP is default-src 'none' with no
+             img-src, and one path is cheaper than opening that up. -->
+        <button id="clarvis-models" class="clarvis-bowtie" title="Models">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+            <path fill="currentColor" d="M2 6l8 4.2v3.6L2 18V6zm20 0v12l-8-4.2v-3.6L22 6zM12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
+          </svg>
+        </button>
+        <textarea id="clarvis-input" rows="2" placeholder="Ask. Enter sends."></textarea>
+      </div>
     </div>`;
 
     // Listens for {type:'state', name} messages from the extension host and calls
@@ -317,6 +342,19 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         who.textContent = speaker === 'user' ? 'You' : 'Clarvis';
         row.appendChild(who);
 
+        renderInto(row, text);
+
+        transcript.appendChild(row);
+        transcript.scrollTop = transcript.scrollHeight;
+        // Returned so a streamed reply can keep re-rendering the same row.
+        return row;
+      };
+
+      // Replaces a turn's body, keeping its speaker label. Text nodes only, plus
+      // <code> for backtick spans — never innerHTML, because model output lands here.
+      const renderInto = (row, text) => {
+        while (row.childNodes.length > 1) row.removeChild(row.lastChild);
+
         String(text).split('\\u0060').forEach((part, i) => {
           // Odd indices sat between a pair of backticks.
           if (i % 2 === 1) {
@@ -327,9 +365,6 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
             row.appendChild(document.createTextNode(part));
           }
         });
-
-        transcript.appendChild(row);
-        transcript.scrollTop = transcript.scrollHeight;
       };
 
       const send = () => {
@@ -353,6 +388,9 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       document.getElementById('clarvis-history')
         .addEventListener('click', () => vscode.postMessage({ type: 'show-history' }));
 
+      const modelsButton = document.getElementById('clarvis-models');
+      modelsButton.addEventListener('click', () => vscode.postMessage({ type: 'models' }));
+
       const stopButton = document.getElementById('clarvis-stop');
       stopButton.addEventListener('click', () => vscode.postMessage({ type: 'stop' }));
 
@@ -375,7 +413,18 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
           return;
         }
 
-        if (msg.type === 'chat-stream' && streaming) {
+        if (msg.type === 'chat-stream') {
+          // Defensive: if the start frame was missed, adopt this fragment into a new
+          // row rather than dropping it. Requiring a live row here once swallowed an
+          // entire reply: the text arrived, was spoken aloud, and never appeared in
+          // the transcript. (No backticks in this comment - the whole script is a
+          // template literal, and one would end it.)
+          if (!streaming) {
+            streaming = addTurn('clarvis', '');
+            streamed = '';
+            stopButton.hidden = false;
+          }
+
           streamed += msg.text;
           renderInto(streaming, streamed);
           transcript.scrollTop = transcript.scrollHeight;
@@ -393,6 +442,11 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         if (msg.type === 'chat-thread') {
           transcript.replaceChildren();
           for (const t of msg.turns || []) addTurn(t.speaker, t.text);
+          return;
+        }
+
+        if (msg.type === 'model-info') {
+          modelsButton.title = msg.text;
           return;
         }
 

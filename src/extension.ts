@@ -45,7 +45,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Voice (M7). Tier 1 (Fish Audio) lands behind the same interface; until a key and
   // a curated voice exist, the system voice is the whole implementation.
-  const fish = new FishAudioProvider(context, panel, (message) => logger.write(message));
+  const fish = new FishAudioProvider(context, (message) => logger.write(message));
   const voice = new VoiceService(
     avatar,
     fish,

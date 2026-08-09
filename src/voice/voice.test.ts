@@ -59,3 +59,34 @@ test('eviction removes least-recently-used first, and only enough to fit', () =>
 test('the cache limit is a real number, not accidentally zero', () => {
   assert.ok(CACHE_LIMIT_BYTES > 1024 * 1024);
 });
+
+import { playerCandidates } from './nativePlayer';
+
+test('each platform has a headless player', () => {
+  // "Headless" is the requirement: no window, no dock icon, no stolen focus.
+  assert.equal(playerCandidates('darwin')[0].command, 'afplay');
+  assert.equal(playerCandidates('win32')[0].command, 'powershell');
+  assert.ok(playerCandidates('linux').length > 1, 'linux audio needs fallbacks');
+});
+
+test('the windows player runs hidden', () => {
+  const args = playerCandidates('win32')[0].args('C:/tmp/a.mp3').join(' ');
+
+  assert.match(args, /-WindowStyle Hidden/);
+});
+
+test('ffplay is invoked without a display window', () => {
+  const linux = playerCandidates('linux');
+  const ffplay = linux.find((c) => c.command === 'ffplay')!;
+
+  assert.ok(ffplay.args('a.mp3').includes('-nodisp'));
+  assert.ok(ffplay.args('a.mp3').includes('-autoexit'), 'must exit so playback end is detectable');
+});
+
+test('the file path reaches every player', () => {
+  for (const platform of ['darwin', 'win32', 'linux'] as NodeJS.Platform[]) {
+    for (const candidate of playerCandidates(platform)) {
+      assert.ok(candidate.args('/tmp/x.mp3').join(' ').includes('/tmp/x.mp3'));
+    }
+  }
+});

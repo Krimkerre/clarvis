@@ -499,7 +499,7 @@ No spawned process, no IPC, no lifecycle code of our own: `activate()` subscribe
 | Storage | `context.workspaceState`, `context.globalStorageUri` | Per-project memory (§4.2), cached voice audio (§4.4) |
 | Secrets | `context.secrets` (`SecretStorage`) | OS keychain-backed; where the chat (§4.6) and Fish Audio (§4.4) keys live — never `settings.json` |
 | Chat UI | Same webview panel (§3) | Input + transcript under the avatar; no `chatParticipant` API — it's not in every fork |
-| Audio out | Webview `speechSynthesis` / `<audio>` | No native deps, no `child_process` (§4.4) |
+| Audio out | Webview `speechSynthesis` (Tier 0) + OS player via `child_process` (Tier 1) | **Revised at M7** — see §4.4. Webview `<audio>` is blocked by Chromium's autoplay policy until the panel has had a click, which the launch briefing can never satisfy |
 | Audio in | Webview `getUserMedia` + `MediaRecorder` | Push-to-talk capture; transcription happens in the extension host (§4.7). Host mic permission is **not** guaranteed — probe it (M1) |
 | Notifications | `window.showInformationMessage`, status bar | Rate-limited (§7) |
 
@@ -1946,6 +1946,27 @@ Promoted from stretch: the writing is half the character, the delivery is the ot
 half. Sits right after M6's personality pass, and before chat/agent, because those
 inherit the voice rather than the other way round.
 
+**Finding — rendered audio cannot play in the webview, and this changed a §4.0
+decision.** Chromium blocks `audio.play()` with `NotAllowedError` until the webview
+document has received a user gesture. There is no opt-out available to an extension:
+`AudioContext` is gated identically, and VS Code exposes no setting. That makes webview
+playback unusable for the feature's main purpose — **the launch briefing fires ~1.5s
+after startup, long before anyone could click**, so the good voice would essentially
+never be heard, and voice would additionally require the panel to be open at all
+(contradicting §3, where the status bar exists precisely for people who keep it closed).
+
+So Tier 1 plays through the OS's own **headless** player instead — `afplay` on macOS,
+a hidden PowerShell MediaPlayer on Windows, `paplay`/`ffplay -nodisp`/`mpg123` on Linux.
+No window, no dock icon, no focus stolen. This revisits §4.0's "no native deps, no
+`child_process`" line, which was written on the assumption that webview audio worked;
+that assumption is now disproved. Two things improve as a side effect: the cached mp3 is
+also the file that gets played, so there is no temp file to manage, and **the player
+process exiting is the "finished playing" signal**, so the avatar tracks real playback
+with no timer and no round-trip through the webview.
+
+Tier 0 is unaffected — `speechSynthesis` is not governed by autoplay policy and works
+from the first second.
+
 **Finding — speech *output* works in the webview, unlike input.** M1 probed
 `SpeechRecognition` and found it blocked, and that result was easy to over-generalise
 into "audio doesn't work in webviews". It doesn't hold: an `audio-probe` on webview
@@ -1988,9 +2009,11 @@ only *capture* is blocked.
 - [x] Quips never speak, and neither do pattern hits — enforced by `mayBeSpoken()`,
       a pure rule with a test asserting the spoken set is **exactly** briefing and
       completion, so a future occasion can't silently inherit speech.
-- [ ] Set a Fish Audio key — same two utterance types now use Tier 1; audio plays from
-      the base64 payload, webview never issues a network request itself (confirm via
-      devtools network tab — should show zero requests from the webview process).
+- [x] With a key, briefing and completion use Tier 1. Confirmed live: the **launch
+      briefing** rendered and spoke through Fish Audio with no click and no panel
+      interaction (`talking` → `neutral` 9.6s apart, no fallback logged). The webview
+      makes no network request — the fetch happens in the extension host and the key
+      never crosses the CSP boundary.
 - [ ] **Test fallback before happy path**, per the build note: no key → Tier 0;
       airplane-mode/offline → Tier 0; malformed/revoked key (401) → Tier 0; simulate
       429 → Tier 0; artificial >3s delay → Tier 0. Each falls back silently-ish (one

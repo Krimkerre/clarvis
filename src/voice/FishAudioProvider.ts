@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { Utterance, VoiceProvider } from './VoiceProvider';
 import { cacheKey, selectForEviction, CacheEntry } from './voiceCache';
+import { playFile } from './nativePlayer';
 
 /** Where the key lives: the OS keychain, never settings.json, never logged. */
 export const FISH_KEY_SECRET = 'clarvis.fishAudio.key';
@@ -11,15 +11,20 @@ const REQUEST_TIMEOUT_MS = 3000;
 
 const TTS_ENDPOINT = 'https://api.fish.audio/v1/tts';
 
-/** Nothing should hang forever waiting on audio that never finishes playing. */
-const PLAYBACK_TIMEOUT_MS = 60_000;
-
 /**
  * The voice that actually carries the character (Tier 1, §4.4).
  *
- * The request is made **here, in the extension host** — the rendered mp3 is handed to
- * the webview as a data URI. The key never crosses the CSP boundary, and the webview
- * never makes a network request of its own.
+ * The request is made **here, in the extension host**, and the rendered mp3 is played
+ * by the OS's own headless player rather than by the webview.
+ *
+ * That last part was forced by a real constraint: Chromium blocks audio until the
+ * webview document has had a user gesture, and the launch briefing — voice's whole
+ * reason for existing — fires about a second after startup, long before anyone could
+ * click anything. Webview playback would have meant the briefing was essentially never
+ * spoken in the good voice, and that voice required the panel to be open at all.
+ *
+ * Playing natively also removes a round-trip: the player process exiting *is* the
+ * "finished" signal, so the avatar tracks real playback with no timer involved.
  *
  * Every failure path drops to the system voice rather than going silent, because a
  * plain voice now beats a good voice never.
@@ -27,30 +32,16 @@ const PLAYBACK_TIMEOUT_MS = 60_000;
 export class FishAudioProvider implements VoiceProvider {
   readonly id = 'fishAudio' as const;
 
-  private nextId = 0;
-  private readonly pending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
-
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly panel: ButlerViewProvider,
     private readonly log: (message: string) => void
-  ) {
-    panel.onDidFinishSpeech(({ id, error }) => {
-      const waiter = this.pending.get(id);
-      if (!waiter) return;
-      this.pending.delete(id);
-      if (error) waiter.reject(new Error(error));
-      else waiter.resolve();
-    });
-  }
+  ) {}
 
   /**
-   * Available only with a key, within the daily cap, **and once the webview has had a
-   * user gesture** — Chromium won't play audio before that, so attempting it would
-   * burn an API request on something that cannot be heard.
+   * Available with a key, within the daily cap. No gesture needed any more, and no
+   * panel either — playback doesn't go through the webview.
    */
   async isAvailable(): Promise<boolean> {
-    if (!this.panel.audioUnlocked) return false;
     const key = await this.context.secrets.get(FISH_KEY_SECRET);
     return Boolean(key) && this.withinDailyCap();
   }
@@ -61,14 +52,17 @@ export class FishAudioProvider implements VoiceProvider {
       .get<string>('voice.fishAudio.engine', 's2.1-pro-free');
 
     const key = cacheKey(utterance.text, utterance.voiceId, engine);
-    const cached = await this.readCache(key);
-    const audio = cached ?? (await this.render(utterance, engine, key));
 
-    await this.play(audio);
+    // The cache file is also the file we play, so there's no temp copy to manage.
+    if (!(await this.isCached(key))) {
+      await this.writeCache(key, await this.render(utterance, engine));
+    }
+
+    await playFile(this.cachePath(key).fsPath);
   }
 
-  /** Fetches audio from Fish Audio and caches it. Throws on any failure. */
-  private async render(utterance: Utterance, engine: string, key: string): Promise<Uint8Array> {
+  /** Fetches audio from Fish Audio. Throws on any failure. */
+  private async render(utterance: Utterance, engine: string): Promise<Uint8Array> {
     const apiKey = await this.context.secrets.get(FISH_KEY_SECRET);
     if (!apiKey) throw new Error('no Fish Audio key');
 
@@ -101,27 +95,10 @@ export class FishAudioProvider implements VoiceProvider {
 
       const bytes = new Uint8Array(await response.arrayBuffer());
       await this.countRequest();
-      await this.writeCache(key, bytes);
       return bytes;
     } finally {
       clearTimeout(timer);
     }
-  }
-
-  /** Hands audio to the webview and waits for it to finish playing. */
-  private play(bytes: Uint8Array): Promise<void> {
-    const id = `f${this.nextId++}`;
-    const dataUri = `data:audio/mpeg;base64,${Buffer.from(bytes).toString('base64')}`;
-
-    return new Promise<void>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.panel.post({ type: 'speak-audio', id, dataUri });
-
-      setTimeout(() => {
-        if (!this.pending.delete(id)) return;
-        reject(new Error('playback timed out'));
-      }, PLAYBACK_TIMEOUT_MS);
-    });
   }
 
   // ------------------------------------------------------------------ cache
@@ -130,20 +107,24 @@ export class FishAudioProvider implements VoiceProvider {
     return vscode.Uri.joinPath(this.context.globalStorageUri, 'voice');
   }
 
-  private async readCache(key: string): Promise<Uint8Array | undefined> {
+  private cachePath(key: string): vscode.Uri {
+    return vscode.Uri.joinPath(this.cacheDir, `${key}.mp3`);
+  }
+
+  private async isCached(key: string): Promise<boolean> {
     try {
-      const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(this.cacheDir, `${key}.mp3`));
+      await vscode.workspace.fs.stat(this.cachePath(key));
       this.log('voice: cache hit');
-      return bytes;
+      return true;
     } catch {
-      return undefined;
+      return false;
     }
   }
 
   private async writeCache(key: string, bytes: Uint8Array): Promise<void> {
     try {
       await vscode.workspace.fs.createDirectory(this.cacheDir);
-      await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(this.cacheDir, `${key}.mp3`), bytes);
+      await vscode.workspace.fs.writeFile(this.cachePath(key), bytes);
     } catch {
       // A cache that can't be written is a slower cache, not a broken feature.
     }

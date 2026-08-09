@@ -1263,6 +1263,13 @@ rest of Clarvis only knows `transcribe()`.
 | **0 — default** | Webview Web Speech API (`SpeechRecognition`, `lang = 'nl-BE'`) | good *if it exists* | free | depends on host |
 | **1 — opt-in** | **Whisper-family HTTP API** (`gpt-4o-transcribe` / `whisper-1`, or Fish Audio ASR with the key the user already set) | best for Flemish + code-switching | user's own key | required |
 
+**Tier 1 carries an install cost, unlike voice output.** `afplay` ships with macOS;
+`ffmpeg` ships with nothing. Capture therefore probes for a recorder and, when none is
+present, says so once with the install line for the platform rather than failing per
+press. Linux gets `arecord` as a second candidate since alsa-utils is common where
+ffmpeg isn't. This cost is the price of the sandbox escape, and it belongs in the
+first-run copy rather than being discovered by a user pressing a dead mic button.
+
 **Tier 0 is not guaranteed to exist.** Electron-based hosts frequently ship without a
 working `SpeechRecognition` implementation (it is a Chrome service, not a Blink
 feature), and forks vary. So Tier 0 is *probed*, never assumed: if
@@ -1274,16 +1281,35 @@ enable speech, not buried.
 
 **Pipeline, end to end** — the only new data path in the product:
 
-1. Webview: `getUserMedia({ audio: true })` → `MediaRecorder` → one blob per utterance
-   (`audio/webm;codecs=opus`, mono, 16 kHz — small, and every ASR endpoint accepts it).
-2. Webview → extension host: `postMessage` the blob as a transferable/base64 chunk.
-   **The webview never talks to the network and never sees a key** — same CSP rule as
-   §4.4.
+1. **Extension host**: spawn a native recorder (`src/voice/nativeRecorder.ts`) for one
+   utterance — 16 kHz mono WAV, which every ASR endpoint accepts and which keeps the
+   upload small. *Not the webview*: M1 finding #6 established `getUserMedia` is denied
+   there regardless of OS permission, so the mic is opened where playback already
+   happens. Three things this must get right, each measured rather than assumed:
+   - **Device selection is `:default`, never index `:0`.** On any machine with a
+     virtual audio device installed — BlackHole, Loopback, an aggregate device — index
+     0 is usually that, not the microphone. It records happily and yields pure silence.
+   - **Silence is the failure mode, not an error.** A denied or wrong device exits 0
+     and writes a well-formed file. `hasAudio()` measures peak dBFS against a -60 floor;
+     without it Clarvis uploads three seconds of nothing, gets an empty transcript, and
+     appears to simply not be listening. A dead device reads about -90 dBFS and returns
+     samples of ±1, so testing for digital zero does **not** catch it.
+   - **The editor needs an OS microphone grant, and nothing in the extension can ask
+     for it.** There is no API to raise the prompt; the capture attempt is supposed to,
+     and on a previously-denied app it silently does not. Measured: silence from both
+     the extension host *and* VS Code's integrated terminal while a plain shell on the
+     same machine recorded fine — the grant is missing at the *app* level. So the
+     silence path must name the cause and point at Privacy & Security → Microphone,
+     and on macOS mention `tccutil reset Microphone com.microsoft.VSCode` for the
+     cached-denial case where the app never appears in the list.
+2. The audio never leaves the host process until it is uploaded. **The webview is not
+   involved in capture at all, never talks to the network and never sees a key** —
+   same rule as §4.4.
 3. Extension host, Tier 1: `POST` multipart to the transcription endpoint with
    `file`, `model`, `language: "nl"` (from `nl-BE`), and the domain-bias prompt.
    Timeout 10s → fall back to Tier 0 if available, else fail loudly-but-once.
-   Tier 0 skips steps 1–3 entirely: recognition happens in-webview and only the
-   resulting *text* crosses back.
+   Tier 0 is **dead in practice** (M1 finding #6) and is not built; these steps are
+   the whole path.
 4. Extension host → webview: `postMessage({ type: 'transcript', text, lang })`.
 5. Webview inserts `text` into the chat input box. **Stop.** The user edits and sends.
 6. From here it is an ordinary §4.6 turn: the transcript is the question, the same
@@ -1608,6 +1634,14 @@ repeat scenarios 1–12 on each. One row per host, one column per scenario, cell
    logic should feature-detect the constructor *and* immediately probe
    `getUserMedia` once at panel-open to decide Tier 0 vs. Tier 1 — constructor
    presence alone is not a usable signal.
+
+   **Amended at M8a (spike, measured):** the *capture* half of Tier 1 was still
+   specced to run in the webview, which this same finding rules out — so Tier 1 had no
+   working audio source and the plan didn't notice. It does now: **capture moves to the
+   extension host**, spawning a native recorder exactly as playback does (§4.4). Proven
+   on macOS: `ffmpeg -f avfoundation -i :default` from the extension host produced
+   clear speech at -5.2 dBFS peak. Three traps found while proving it, all recorded in
+   §4.7 — the device index, the silent-failure mode, and the OS grant.
 7. **Task/terminal/diagnostics/save fidelity is identical between VS Code stable and
    VSCodium** where re-tested — no fork-specific divergence found for the core event
    surface, only for bundled-extension availability (git) and the media sandbox (both

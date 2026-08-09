@@ -10,6 +10,7 @@ import { BriefingService } from './briefing/BriefingService';
 import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
 import { ChatService } from './chat/ChatService';
+import { recordClip, peakDbfs, hasAudio } from './voice/nativeRecorder';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -294,6 +295,33 @@ function registerVoiceCommands(
       // Reveals the folder holding rendered speech. Anything already in here plays
       // without touching the API, which is most of why repeated lines are instant.
       await vscode.commands.executeCommand('revealFileInOS', fish.cacheLocation);
+    }),
+
+    // M10 spike (§4.7): can the *extension host* open the microphone, given M1 proved
+    // the webview cannot? Attribution of the OS permission is the open question — the
+    // host spawns the recorder, so it is not obvious which process macOS asks about.
+    vscode.commands.registerCommand('clarvis.debug.micProbe', async () => {
+      const file = vscode.Uri.joinPath(context.globalStorageUri, 'mic-probe.wav');
+      await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+
+      void vscode.window.showInformationMessage('Clarvis: recording 3 seconds — say something.');
+
+      try {
+        const used = await recordClip(file.fsPath, 3, process.platform, log);
+        const audio = Buffer.from(await vscode.workspace.fs.readFile(file));
+        const peak = peakDbfs(audio);
+
+        // A denied mic can still produce a well-formed file full of silence, so the
+        // exit code alone proves nothing. The level is the actual result.
+        const verdict = hasAudio(audio)
+          ? `captured audio, peak ${peak.toFixed(1)} dBFS`
+          : `SILENT (peak ${peak.toFixed(1)} dBFS) — device denied, muted, or the wrong input`;
+        log(`mic probe: ${used} wrote ${audio.length} bytes, ${verdict}`);
+        void vscode.window.showInformationMessage(`Clarvis mic probe: ${verdict}. See the Clarvis output channel.`);
+      } catch (error) {
+        log(`mic probe: failed (${String(error)})`);
+        void vscode.window.showErrorMessage(`Clarvis mic probe failed: ${String(error)}`);
+      }
     }),
 
     vscode.commands.registerCommand('clarvis.testVoice', async () => {

@@ -195,3 +195,42 @@ test('mid-sentence brackets keep their words', () => {
     'Branch main, 3 files dirty, as of now.'
   );
 });
+
+import { peakDbfs, recorderCandidates } from './nativeRecorder';
+
+/** A 16-bit mono WAV carrying the given samples, header included. */
+function wav(samples: number[]): Buffer {
+  const body = Buffer.alloc(samples.length * 2);
+  samples.forEach((sample, i) => body.writeInt16LE(sample, i * 2));
+  return Buffer.concat([Buffer.alloc(44), body]);
+}
+
+test('a silent recording is distinguishable from a real one', () => {
+  // The failure this exists to catch: a denied microphone can return a well-formed
+  // file full of zeroes and exit 0, so the exit code alone would report success.
+  assert.equal(peakDbfs(wav([0, 0, 0, 0])), -Infinity);
+  assert.ok(peakDbfs(wav([0, 8000, -12000, 0])) > -20);
+});
+
+test('full-scale audio reads as 0 dBFS', () => {
+  assert.ok(Math.abs(peakDbfs(wav([32767]))) < 0.01);
+});
+
+test('every platform has at least one recorder candidate', () => {
+  for (const platform of ['darwin', 'win32', 'linux'] as NodeJS.Platform[]) {
+    assert.ok(recorderCandidates(platform).length > 0, platform);
+  }
+});
+
+import { hasAudio, SILENCE_FLOOR_DBFS } from './nativeRecorder';
+
+test('a dead input device reads as silence, despite not being digital zero', () => {
+  // Measured on a real machine: a virtual/muted device returns samples of ±1, about
+  // -90 dBFS. Testing for exact zero misses precisely the case this exists to catch —
+  // the first mic probe reported "-90.3 dBFS" as though it were a level, not a failure.
+  const deadDevice = wav([1, -1, 1, -1]);
+
+  assert.ok(peakDbfs(deadDevice) < SILENCE_FLOOR_DBFS);
+  assert.equal(hasAudio(deadDevice), false);
+  assert.equal(hasAudio(wav([0, 6000, -9000])), true);
+});

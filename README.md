@@ -217,7 +217,10 @@ the full per-milestone build notes and exit criteria.
       Clarvis permanently "busy". Both fixed. Concurrency logic is covered by unit
       tests (`npm test`). One item deferred: behavior with shell integration
       disabled.
-- [ ] **M4 — Briefing.** Not started.
+- [x] **M4 — Briefing.** On launch: branch and dirty count, the job that was failing
+      when you left, and the files you last touched. Caught a design flaw in its own
+      spec — recent files were specced session-only, which would have made that line
+      permanently empty, since the briefing is read before you've saved anything.
 - [ ] **M5 — Pattern Memory.** Not started.
 - [ ] **M6 — Personality Pass.** Not started.
 - [ ] **M7 — Voice.** Not started. *(Core, not a stretch: the delivery is half the

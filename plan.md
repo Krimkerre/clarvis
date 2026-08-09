@@ -1776,27 +1776,38 @@ executions with an empty command line are ignored outright.
   `BusyTracker` gains an `onOutcome` hook, `BriefingBuilder` (or `extension.ts`) writes
   `{ command, exitCode, timestamp }` to `context.workspaceState` on every failing
   outcome, read back here.
-- Line 3: last N `onDidSaveTextDocument` URIs, kept in a capped in-memory ring buffer
-  (size 5) populated from M0 activation onward, no persistence needed — session-only.
+- Line 3: last N `onDidSaveTextDocument` URIs, capped ring buffer (size 5),
+  **persisted to `workspaceState`**. The original note here said "session-only, no
+  persistence needed" — that was wrong, and caught during M4. The briefing is delivered
+  ~1.5s after launch, *before* the user has saved anything, so a session-only buffer is
+  guaranteed empty at the exact moment it's read: line 3 would never have appeared.
+  "What was I working on" is a question about the previous sitting.
 - Line 4: one pattern-memory item — **M5 doesn't exist yet either.** M4 ships with this
   line simply omitted (3-line briefing) until M5 lands and fills it in. Don't stub a
   fake pattern store to satisfy the 4-line spec early.
 **Exit checklist:**
-- [ ] Fresh window open, no prior failure recorded — briefing shows branch + recent
-      files only (2 lines), no crash, no "last failing: undefined."
-- [ ] Fail a test/build, close the window, reopen — line 2 correctly names it.
-- [ ] Fix that failure, reopen again — line 2 either drops or reflects the new state
-      (not the stale failure); confirm which behavior is intended and matches reality.
-- [ ] Dirty working tree vs. clean — line 1 wording differs correctly, count accurate.
-- [ ] Save 5+ files in a session, reopen — line 3 shows the most recent, capped at the
-      buffer size, correct order (most recent first or last — confirm and check it).
-- [ ] Timing: briefing appears after the window visibly finishes loading, not layered
-      over VS Code's own startup progress bar.
-- [ ] Kill the window without a clean `deactivate()` (force-quit VS Code) — next
-      launch degrades gracefully (no last-failure line) rather than showing stale or
-      corrupt data from a half-written `workspaceState` entry.
-- [ ] Two windows open on the same workspace folder simultaneously — briefings don't
-      clobber each other's `workspaceState` writes into a corrupt state.
+- [x] Fresh window open, no prior failure recorded — briefing shows branch only, no
+      crash, no "last failing: undefined". Confirmed: `Branch master, 6 files dirty.`
+- [x] Fail a test/build, close the window, reopen — line 2 correctly names it.
+      Confirmed: `probe-build-fail was red when you fled.` after a full restart.
+- [x] **Decided:** a success on the *same job* clears the record; a success on a
+      *different* job leaves it alone (lint passing says nothing about the test suite).
+      Failures also age out after 14 days — a fortnight-old failure is archaeology, not
+      context. Unit-tested (`foldOutcome`, `activeFailure`).
+- [x] Dirty working tree vs. clean — wording differs, count accurate, pluralisation
+      correct (unit-tested; `6 files dirty` confirmed live).
+- [x] Save files, reopen — line 3 shows the most recent, newest first, capped.
+      Confirmed: `Last touched bad.ts and app.js.` Re-saving a file moves it up rather
+      than duplicating (unit-tested) — otherwise saving one file repeatedly while
+      debugging erases the memory of everything else.
+- [x] Timing: 1.5s after activation, after the window has painted.
+- [x] Force-quit resilience: state is written **on every outcome and every save**, not
+      batched into `deactivate()` — which M0 established isn't guaranteed to complete.
+      Verified via `pkill -9`; the next launch reported correctly. Malformed persisted
+      state is parsed defensively and treated as absent (unit-tested).
+- [ ] Two windows on the same folder simultaneously — writes are per-key via the
+      `Memento` API so corruption isn't possible, but last-writer-wins could lose a
+      save. **Not explicitly tested**; low impact (worst case is one stale filename).
 - **Exit:** ten seconds after launch, the user knows where they left off, from a
   3-line briefing (4th line arrives naturally once M5 ships, no M4 rework needed).
 

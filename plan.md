@@ -454,6 +454,17 @@ account, their responsibility, not something we distribute.
 This costs approximately nothing — the register is what carries the personality, not the
 resemblance — and it keeps the project shippable to a Marketplace.
 
+> **OPEN — the curated voice is not chosen yet.** `clarvis.voice.selectedVoice` currently
+> defaults to the placeholder `"curated:default"`, which points at nothing. Picking the
+> real one is a **by-ear decision that cannot be made from a spec**: it needs a Fish
+> Audio key, an audition of candidates, and a judgement against §2 rules 7–9. Blocking
+> work for M7, tracked in its exit checklist. Until it's made, voice falls back to system
+> TTS, so nothing else is blocked by it.
+>
+> What "done" looks like: 3–5 `reference_id`s with labels describing their *qualities*,
+> a chosen default among them, and confirmation that a briefing and a completion line
+> both sound like the same person.
+
 **Two tiers, one interface.** A `VoiceProvider` — `speak(text): Promise<void>`,
 `preview(voiceId)`, `listVoices()` — with two implementations behind it. The rest of
 Clarvis only knows `speak()`.
@@ -527,7 +538,7 @@ for people who live in the Command Palette, one for people who don't. No config 
 | Entry | Source | Notes |
 |---|---|---|
 | *System voice* | `speechSynthesis.getVoices()` | Tier 0; the OS voices, listed by name and locale |
-| *Curated butler voices* | Fish Audio public models, 3–5 hand-picked | Shipped as a small JSON of `reference_id`s + labels. Vetted so the default sounds right without the user hunting |
+| *Curated voices* | Fish Audio public models, 3–5 hand-picked | **Not yet chosen — see §4.4 open item.** Will ship as a small JSON of `reference_id`s + labels, vetted so the default sounds right without the user hunting |
 | *Your Fish Audio voices* | `GET https://api.fish.audio/v1/model?self=true` | Every model on the user's account, fetched live once a key exists |
 | **Paste a Fish Audio voice ID** | any `reference_id` | **First-class, not buried.** Its own always-visible row, because it's the answer to "I want a different voice than the ones you picked" |
 | *Clone from a sample* | see below | For a voice the user has audio of and rights to |
@@ -588,7 +599,7 @@ sane defaults:
 ```jsonc
 "clarvis.voice.enabled":           false,        // master switch
 "clarvis.voice.provider":          "fishAudio",  // "fishAudio" | "system" (auto-falls back)
-"clarvis.voice.selectedVoice":     "curated:default",  // the curated character voice
+"clarvis.voice.selectedVoice":     "curated:default",  // PLACEHOLDER — real ID chosen at M7
 "clarvis.voice.fishAudio.engine": "s1",         // "s1" | "s1-mini" | "speech-1.6"
                                                  // quality/speed/cost tradeoff; see §4.4
 "clarvis.voice.dailyRequestCap":   200

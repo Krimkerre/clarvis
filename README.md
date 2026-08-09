@@ -80,8 +80,10 @@ still on the roadmap (§ Progress).
   the delivery, so briefings and completions are spoken by a voice chosen to match:
   gravelly, impatient, casually brilliant, bored of having to explain. Fish Audio by
   default (your key), OS voices as a fallback. Don't like the one we picked? **Paste any
-  Fish Audio voice ID** into the picker and it uses that instead — it's a first-class
-  option, not buried in advanced settings. Still off until you enable it: a voice that
+  Fish Audio voice ID** into the picker and it uses that instead — a first-class option,
+  not buried in advanced settings, with a format hint so you know what to look for. You
+  also choose the **TTS engine** (quality vs. speed vs. cost), separately from the
+  voice. Still off until you enable it: a voice that
   surprises you once is a voice you disable forever.
 - **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat
   box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched

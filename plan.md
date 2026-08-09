@@ -473,10 +473,26 @@ honest that the free tier is a downgrade rather than pretending they're equivale
   (`password: true`) → `context.secrets.store('clarvis.fishAudio.key', …)`. OS
   keychain-backed. **Never** in `settings.json`, never in workspace state, never logged,
   never in the output channel. `Clarvis: Clear Fish Audio API Key` deletes it.
-- Endpoint: `POST https://api.fish.audio/v1/tts`, `Authorization: Bearer <key>`, model
-  chosen per-request via the `model` header (default `s1`; configurable for users who
-  want the cheaper/faster tier). Body carries `text`, `reference_id` (the selected voice,
-  §4.5), `format: 'mp3'`, and a latency preference.
+- Endpoint: `POST https://api.fish.audio/v1/tts`, `Authorization: Bearer <key>`, engine
+  chosen per-request via the `model` header. Body carries `text`, `reference_id` (the
+  selected voice, §4.5), `format: 'mp3'`, and a latency preference.
+
+**Choosing the engine.** Voice *model* and TTS *engine* are separate choices and are
+picked separately: the model is who it sounds like, the engine is how well and how fast
+it says it. `Clarvis: Choose Voice Engine` (and the same list under the panel's Voice
+disclosure) offers them with the tradeoff spelled out, because "s1 vs s1-mini" means
+nothing on its own:
+
+| Engine | Trade |
+|---|---|
+| `s1` | Best quality, slowest, priciest. The default — briefings are short and the character is the point |
+| `s1-mini` | Noticeably faster and cheaper, slightly flatter delivery. Sensible if voice is on all day |
+| `speech-1.6` | The older engine. Kept because it's cheapest and some voices were tuned against it |
+
+**Engine list is verified, not hardcoded blindly.** Providers add and retire engines;
+M7 confirms the available set against Fish Audio at build time, and an unknown or
+retired engine falls back to the default with a one-time notice rather than failing
+every utterance. Same probe-don't-assume rule as §4.0.
 - Extension does the fetch (keeps the key out of the webview entirely), then
   `postMessage`s the audio to the webview as a base64 data URI for an `<audio>` element.
   The webview never sees the key and never talks to the network — CSP stays locked to
@@ -533,10 +549,26 @@ name. Previews are cached like any other utterance.
    they paste its ID and Clarvis uses it — **their choice, their account, their call.**
 
    The line is about who is doing the distributing: we don't bundle, name, recommend,
-   preconfigure, or hint at a character imitation. The field is a **neutral affordance**
-   — labelled "Paste a Fish Audio voice ID", with no example, no wink, and no suggestion
-   about what to put in it. A user pointing their own tool at a voice they chose is a
-   different act from us shipping one.
+   preconfigure, or hint at a character imitation. A user pointing their own tool at a
+   voice they chose is a different act from us shipping one.
+
+   **The field does show a format example**, because "paste an ID" is useless if you
+   don't know what one looks like. The distinction that matters is *format* vs.
+   *suggestion*: showing the shape of an ID is usability; naming a voice to go find is
+   a recommendation. So the placeholder is an obviously-fake stand-in — literally
+   `xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx` — shown as greyed placeholder text that can never
+   be submitted as a value, never a prefilled one.
+
+   Alongside it, one line on **where to find a real ID**: open a voice on Fish Audio and
+   copy the identifier from its page URL. That answers the actual question without
+   pointing at any particular voice.
+
+   **Format is unverified.** Fish Audio's public API docs don't specify a length or
+   character set for `reference_id` (checked during planning — the examples given are
+   placeholders like `model-id-alice`). So the placeholder above communicates
+   "an opaque identifier" rather than asserting a shape we haven't confirmed. **M7
+   verifies the real format against a live model and updates the placeholder and the
+   validation message to match** — rather than shipping a confidently wrong example.
 2. **Clone from a sample.** `Clarvis: Add Voice from Audio` → file picker → 10–30s of
    clean audio → `POST /v1/model` (multipart: `voices` file + `title`) → the returned
    model ID is stored and selected. Consent copy is explicit and unskippable: **only
@@ -557,7 +589,8 @@ sane defaults:
 "clarvis.voice.enabled":           false,        // master switch
 "clarvis.voice.provider":          "fishAudio",  // "fishAudio" | "system" (auto-falls back)
 "clarvis.voice.selectedVoice":     "curated:default",  // the curated character voice
-"clarvis.voice.fishAudio.model":   "s1",         // s1 | s1-mini | speech-1.6
+"clarvis.voice.fishAudio.engine": "s1",         // "s1" | "s1-mini" | "speech-1.6"
+                                                 // quality/speed/cost tradeoff; see §4.4
 "clarvis.voice.dailyRequestCap":   200
 ```
 
@@ -1682,16 +1715,22 @@ inherit the voice rather than the other way round.
   `FishAudioVoiceProvider.speak()` does the `POST /v1/tts` fetch **in the extension
   host**, base64-encodes the mp3, `postMessage`s it to the webview for an `<audio>`
   element — key and network never reach the webview. Cache: `hash(text, voiceId,
-  model)` → `globalStorageUri/voice/<hash>.mp3`, LRU-evicted at ~50MB on `deactivate`.
+  engine)` → `globalStorageUri/voice/<hash>.mp3`, LRU-evicted at ~50MB on `deactivate`.
   `clarvis.voice.dailyRequestCap` (default 200) in `globalState`. **Write and test the
   fallback path (no key / offline / 401 / 429 / >3s timeout → Tier 0) before the happy
   path** — it's the one that runs most often in practice.
 - **M7c — Voice picker.** `Clarvis: Choose Voice` `QuickPick`, plus the same list
   embedded under a panel disclosure. Sources per the §4.5 table (system voices, a
   small shipped JSON of curated Fish Audio `reference_id`s, `GET /v1/model?self=true`
-  for the user's own, paste-an-ID with validation preview, clone-from-sample with
-  explicit consent copy). Selection → `clarvis.voice.selectedVoice` setting; custom
-  entries → `globalState`.
+  for the user's own, **paste-an-ID as a first-class always-visible row** with the
+  fake-format placeholder and where-to-find-it hint, clone-from-sample with explicit
+  consent copy). Selection → `clarvis.voice.selectedVoice`; custom entries →
+  `globalState`.
+- **M7d — Engine picker.** `Clarvis: Choose Voice Engine`, plus the same list in the
+  panel, presenting each engine by its quality/speed/cost tradeoff rather than a bare
+  model name (§4.4). Persist to `clarvis.voice.fishAudio.engine`. Verify the live
+  engine list at build time; an unknown or retired engine falls back to the default
+  with a one-time notice rather than failing every utterance.
 **Exit checklist:**
 - [ ] `clarvis.voice.enabled: false` (default) — zero audio, zero `speechSynthesis`
       calls, ever, including on briefing/completion events that would otherwise speak.
@@ -1708,7 +1747,7 @@ inherit the voice rather than the other way round.
       429 → Tier 0; artificial >3s delay → Tier 0. Each falls back silently-ish (one
       non-modal warning max per session), never a retry storm, never a hung avatar.
 - [ ] Cache hit: trigger the same templated completion line twice — second play is
-      instant, zero new network requests, confirms `hash(text, voiceId, model)` keys
+      instant, zero new network requests, confirms `hash(text, voiceId, engine)` keys
       correctly (change voiceId, confirm it's treated as a cache miss).
 - [ ] Cache eviction: exceed the ~50MB cap (or lower it for the test) — LRU eviction
       fires on `deactivate()`, cache stays bounded across sessions.

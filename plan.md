@@ -874,7 +874,7 @@ interface.
 | Provider | Auth | Agent path? | Notes |
 |---|---|---|---|
 | **Anthropic API** | user's API key | yes | Default. `claude-opus-5` |
-| **Claude subscription** | OAuth against the user's Claude account | yes | **Feasibility unverified — see below.** No key to paste if it works |
+| ~~Claude subscription~~ | — | — | **Ruled out at M8b0.** Anthropic does not permit third-party products to offer claude.ai login or subscription rate limits without prior approval. See the finding below |
 | **OpenAI** | user's API key | yes | Tool calling is solid |
 | **OpenRouter** | user's API key | yes | OpenAI-compatible; one adapter covers it |
 | **Ollama** | none (localhost) | *model-dependent* | OpenAI-compatible endpoint. Fully local, no key, nothing leaves the machine |
@@ -884,14 +884,46 @@ interface.
 OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible, so **one adapter
 plus a configurable base URL covers all four** — not four integrations.
 
-**Two honest caveats, both needing a spike before M8b is planned in detail:**
+**Two caveats. The first is now answered; the second still stands:**
 
-1. **The Claude subscription path is unverified.** Claude Code signs in against a
-   Claude subscription, but whether a third-party extension may do the same — technically
-   *and* within Anthropic's terms — is not something to assume because it would be
-   convenient. **M8 opens with a spike that answers this** (§7). If the answer is no, the
-   Anthropic path is API-key-only and the table above loses a row; nothing else changes.
-   Shipping a login flow that quietly violates terms is not an option.
+1. **The Claude subscription path is ruled out — settled at M8b0 (see §7), not assumed.**
+   Anthropic's Agent SDK documentation states it directly: *"Unless previously approved,
+   Anthropic does not allow third party developers to offer claude.ai login or rate
+   limits for their products, including agents built on the Claude Agent SDK. Use the
+   API key authentication methods."* The Consumer Terms (8 Oct 2025) agree from the
+   other direction — automated access is prohibited *"except when you are accessing our
+   Services via an Anthropic API Key or where we otherwise explicitly permit it."*
+
+   So: **the Anthropic path is API-key-only**, exactly as the fallback anticipated. The
+   table above loses a row and nothing else changes — which is the entire reason this
+   was spiked before a login flow was designed rather than after.
+
+   Three things this rules out, all of which would otherwise look like clever
+   workarounds:
+   - Implementing an OAuth flow against claude.ai. No third-party client registration
+     exists, and building one would mean reverse-engineering a first-party client —
+     separately prohibited.
+   - Reading Claude Code's stored credentials (`~/.claude/.credentials.json`, or the
+     macOS Keychain entry) and reusing them. That is *offering* subscription rate limits
+     through our product using someone else's token, and the terms forbid making an
+     account available to anyone else.
+   - Wrapping the user's installed `claude` CLI (or the Agent SDK under their
+     subscription login) so Clarvis's chat is served by their subscription. The SDK note
+     names this case explicitly: the restriction covers "agents built on the Claude Agent
+     SDK", not just bespoke login screens.
+
+   **What remains legitimate**, and is worth saying because it costs nothing: a user may
+   keep using Claude Code themselves, in a terminal, under their own subscription.
+   Clarvis simply does not route its own inference through it. And "previously
+   approved" is a real door — it is a business conversation with Anthropic, not an
+   engineering task, and it stays out of the plan until someone has had it.
+
+   **Branding, found in the same document and easy to get wrong:** for products built on
+   the SDK, *"Claude Code"* and *"Claude Code Agent"* are **not** permitted names, nor is
+   Claude Code-styled ASCII art or visual mimicry. §4.6's goal of *feeling* like Claude
+   Code is about interaction quality — streaming tool calls, visible diffs, terse
+   answers — and must never become presenting as Claude Code. Clarvis keeps its own
+   name, face and voice, which it was always going to do.
 2. **Local models vary wildly at tool calling**, which is exactly what the agent path
    depends on. A model that chats well can still be useless at a twelve-step tool loop.
    So `supportsTools()` is **probed per provider and per model, not assumed**: a local
@@ -1205,7 +1237,7 @@ calls. A per-request cap is the wrong unit.
 
 ```jsonc
 "clarvis.chat.enabled":            true,          // primary agent; on by default
-"clarvis.chat.provider":           "anthropic",   // "anthropic" | "claudeSubscription" | "openai"
+"clarvis.chat.provider":           "anthropic",   // "anthropic" | "openai" | "openrouter" | "ollama" | "lmstudio"
                                                   // | "openrouter" | "ollama" | "lmstudio" | "host"
 "clarvis.chat.baseUrl":            "",            // override for OpenAI-compatible endpoints
 "clarvis.chat.model":              "claude-opus-5",
@@ -2532,11 +2564,15 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   Also carries the **mute toggle** (§4.4): one button in the chat header, stops any
   utterance mid-playback via the native player's pid, session-scoped so it clears on
   reload rather than quietly turning voice off for good.
-- **M8b0 — Provider spike.** Before building against it: can a third-party extension
-  authenticate against a **Claude subscription**, technically and within Anthropic's
-  terms? Answer it first (§4.6). If no, the Anthropic path is API-key-only and the rest
-  of M8b is unaffected — but that answer must exist before a login flow is designed, not
-  after it's shipped.
+- **M8b0 — Provider spike. ✅ Done. Answer: no.** Anthropic's Agent SDK documentation
+  states that third-party developers may not offer claude.ai login or subscription rate
+  limits for their products without prior approval, and the Consumer Terms (8 Oct 2025)
+  permit automated access only via an API key or where explicitly permitted. **The
+  Anthropic path is API-key-only**; the provider table loses one row and no other part
+  of M8b changes. Full finding, including the three workarounds it rules out and the
+  branding constraint found alongside it, in §4.6.
+  *Cost of having spiked it first: one afternoon of reading. Cost of not having:
+  a designed and possibly shipped login flow that had to be withdrawn.*
 - **M8b — Answer path, multi-provider.** `src/model/ModelProvider.ts` interface
   (`complete`, `stream`, `supportsTools`, `listModels`) with `AnthropicProvider`,
   `OpenAiCompatibleProvider` (covers OpenAI, OpenRouter, Ollama, and LM Studio via a
@@ -2725,7 +2761,12 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       rather than starting a run that flails.
 - [ ] Switching provider mid-session doesn't corrupt the thread or leak the previous
       provider's key into the next request.
-- [ ] Claude subscription path: whatever M8b0 concluded is what ships. If it concluded
+- [x] Claude subscription path: M8b0 concluded **not permitted**, so nothing ships —
+      no login flow, no credential reuse, no CLI wrapping. Anthropic API is key-only.
+- [ ] Confirm no user-facing text presents Clarvis as "Claude Code" or mimics its
+      visual identity (SDK branding guidelines) — the goal is feeling as good, not
+      appearing to be it.
+- [ ] Superseded by the above: Claude subscription path: whatever M8b0 concluded is what ships. If it concluded
       "not permitted", confirm there is no such option in the UI at all.
 
 **Agent-path checks (M8c–M8g).** The tool and gate layers are unit-tested standalone —
@@ -3170,7 +3211,7 @@ cleanest milestone to cut.
 | Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |
 | The agent path widens the privacy story | Answered by restating it honestly (§4.6 *Privacy*) rather than keeping a promise that no longer holds: the Answer path keeps its bounded visible context; the Agent path reads what the task needs and shows every file it opened; everything stays inside the activating workspace |
 | Clarvis acts when the user only asked a question | Routing is explicit and announced before work starts; ambiguity resolves toward answering, never toward editing |
-| Claude subscription auth turns out to be impermissible or technically unavailable | Answered by a spike (M8b0) *before* any login flow is designed. Fallback is the API-key path, which costs one table row and no architecture |
+| ~~Claude subscription auth turns out to be impermissible~~ | **Materialised, and cost nothing.** M8b0 found it is not permitted without prior Anthropic approval, before any login flow existed. The API-key fallback was already the default; one table row was deleted |
 | A local model is too weak for the agent loop and flails | `supportsTools()` probed per provider *and* per model; a model that fails still serves Local and Answer paths, and Clarvis says so plainly instead of starting a run it can't finish |
 | Provider sprawl becomes four integrations to maintain | OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible — one adapter plus a base URL. Only Anthropic and the host LM API need their own |
 | Interview fatigue — the user abandons planning halfway | Questions batched, ~2–3 rounds, early exit as soon as a draft is honest; the partial interview persists so it can be resumed rather than restarted |

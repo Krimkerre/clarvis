@@ -179,38 +179,54 @@ CSS = '''
   .input svg { width: 15px; height: 15px; }
 '''
 
-CYCLE = 10.0          # seconds for one full loop
-FADE = 0.45           # element fade-in duration
-OUT_START, OUT_END = 8.6, 9.1   # everything clears here so the loop restarts clean
+# --- timeline -------------------------------------------------------------
+# The delays written into the HTML are *story beats*, not seconds. SPEED stretches
+# them into real time, so pacing is tuned in one place rather than by editing every
+# element. HOLD is how long the finished scene sits before clearing — the loop needs
+# to be readable, not just correct.
+SPEED = 2.1           # story-beat -> seconds multiplier
+FADE = 0.5            # element fade-in duration
+HOLD = 7.0            # seconds the complete scene stays up before it clears
+CLEAR = 0.8           # fade-out
+GAP = 0.7             # blank beat before the next pass
+
+DELAYS = [0.5, 1.0, 1.7, 1.8, 2.4, 2.6, 2.8, 3.0, 3.3, 3.4, 4.0, 4.4, 4.6, 5.0]
+
+# derived, so the hold can't silently drift when a beat is added
+REVEAL_END = max(DELAYS) * SPEED + FADE
+OUT_START = REVEAL_END + HOLD
+OUT_END = OUT_START + CLEAR
+CYCLE = OUT_END + GAP
+
 
 def pct(t):
     return round(t / CYCLE * 100, 3)
 
+
 def seq_keyframes(delays):
-    """One @keyframes per distinct delay, so the whole scene loops on a single clock."""
+    """One @keyframes per distinct beat, so the whole scene loops on a single clock."""
     out = []
     for d in sorted(set(delays)):
         name = "seq%s" % str(d).replace(".", "_")
+        at = d * SPEED
         out.append(f"""  @keyframes {name} {{
-    0%, {pct(d)}% {{ opacity: 0; transform: translateY(6px); }}
-    {pct(d + FADE)}%, {pct(OUT_START)}% {{ opacity: 1; transform: translateY(0); }}
+    0%, {pct(at)}% {{ opacity: 0; transform: translateY(6px); }}
+    {pct(at + FADE)}%, {pct(OUT_START)}% {{ opacity: 1; transform: translateY(0); }}
     {pct(OUT_END)}%, 100% {{ opacity: 0; transform: translateY(0); }}
   }}""")
     return "\n".join(out)
 
-# every delay used in the scene
-DELAYS = [0.5, 1.0, 1.7, 1.8, 2.4, 2.6, 2.8, 3.0, 3.3, 3.4, 4.0, 4.4, 4.6, 5.0]
 
 ANIM_CSS = """
   @keyframes bob { 0%,100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-5px) rotate(1deg); } }
 """ + seq_keyframes(DELAYS) + f"""
   @keyframes faceThink {{
-    0%, {pct(4.3)}% {{ opacity: 1; }}
-    {pct(4.6)}%, 100% {{ opacity: 0; }}
+    0%, {pct(4.3 * SPEED)}% {{ opacity: 1; }}
+    {pct(4.6 * SPEED)}%, 100% {{ opacity: 0; }}
   }}
   @keyframes faceTalk {{
-    0%, {pct(4.3)}% {{ opacity: 0; }}
-    {pct(4.6)}%, {pct(OUT_START)}% {{ opacity: 1; }}
+    0%, {pct(4.3 * SPEED)}% {{ opacity: 0; }}
+    {pct(4.6 * SPEED)}%, {pct(OUT_START)}% {{ opacity: 1; }}
     {pct(OUT_END)}%, 100% {{ opacity: 0; }}
   }}
   .seq {{ opacity: 0; animation-duration: {CYCLE}s; animation-iteration-count: infinite;

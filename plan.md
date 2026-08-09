@@ -589,6 +589,16 @@ the personality pass it exists to deliver, and **before** chat and the agent.
   voice you disable forever. The first-run prompt makes the offer clearly, once.
 - Hard scope: briefings and task-completion notifications only. Quips stay silent —
   a voice heckling you from the sidebar crosses from charming to haunted.
+- **A mute control sits in the chat UI itself** (built in M8a), not only in settings.
+  The moment you need silence — someone walks over, a call starts — is the moment you
+  cannot go hunting through a settings pane, and `clarvis.voice.enabled` is a *setting*:
+  it governs whether future speech happens, and reaching it takes four clicks. Mute is
+  a **single visible toggle that also stops the utterance already playing**, since the
+  sentence talking over your call is the one you need gone. It is deliberately
+  session-scoped and separate from the setting: muting to get through a meeting should
+  not silently disable the feature forever, so it resets on window reload while the
+  setting persists. Muted state is visible on the avatar, not just the button — a
+  butler who has been told to shut up should look like he knows it.
 - Playback lives in the webview, so the mouth and the audio are the same component:
   `talking` state starts on playback, returns to `neutral` on `ended`. No native audio
   deps, no `child_process`.
@@ -2071,6 +2081,9 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   last-failure record, `PatternStore`, and `git.getAPI(1)`; returns `null` when nothing
   matches, which routes the question onward or to a "no key, and I don't know that
   locally either" reply. No network, no key. **Ships on its own.**
+  Also carries the **mute toggle** (§4.4): one button in the chat header, stops any
+  utterance mid-playback via the native player's pid, session-scoped so it clears on
+  reload rather than quietly turning voice off for good.
 - **M8b0 — Provider spike.** Before building against it: can a third-party extension
   authenticate against a **Claude subscription**, technically and within Anthropic's
   terms? Answer it first (§4.6). If no, the Anthropic path is API-key-only and the rest
@@ -2149,6 +2162,15 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       just hidden in the UI.
 - [ ] Ask with no active selection — attaches the visible range, not an error, not the
       whole file.
+- [ ] **Mute, mid-sentence.** Start a briefing, hit mute while it's still talking —
+      audio stops immediately, not at the end of the utterance. The queued rest of the
+      utterances is dropped too, not merely paused, or unmuting replays a stale
+      backlog. Confirm the avatar shows the muted state.
+- [ ] **Mute doesn't leak into the setting.** Mute, reload the window: voice is audible
+      again and `clarvis.voice.enabled` is untouched. Muting for a meeting must not
+      silently disable the feature permanently (§4.4).
+- [ ] Mute with nothing playing, then trigger a completion — nothing is spoken, and
+      nothing errors on the no-op stop.
 - [ ] Where a host LM API exists (probe per §4.0), confirm it's preferred over the
       Anthropic key path, and that behavior is visually indistinguishable to the user
       (same streaming, same context panel).

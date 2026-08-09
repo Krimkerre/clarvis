@@ -204,7 +204,8 @@ the full per-milestone build notes and exit criteria.
 - [ ] **M5 — Pattern Memory.** Not started.
 - [ ] **M6 — Personality Pass.** Not started.
 - [ ] **M7 — Voice.** Not started. *(Core, not a stretch: the delivery is half the
-      personality. Lands right after the personality pass.)*
+      personality. Lands right after the personality pass. First task is picking the
+      curated voice itself — a by-ear decision nobody has made yet.)*
 - [ ] **M8 — Chat & Agent.** Not started. *(The big one: local answers, then the
       Answer path, then a real agentic harness — tool layer and gates built and tested
       before the model can reach them.)*

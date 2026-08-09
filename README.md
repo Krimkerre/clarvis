@@ -221,7 +221,10 @@ the full per-milestone build notes and exit criteria.
       when you left, and the files you last touched. Caught a design flaw in its own
       spec — recent files were specced session-only, which would have made that line
       permanently empty, since the briefing is read before you've saved anything.
-- [ ] **M5 — Pattern Memory.** Not started.
+- [x] **M5 — Pattern Memory.** Fingerprints recurring errors from both failed commands
+      and compiler diagnostics; on the third occurrence in a week it says what fixed it
+      last time. Corrected a second spec flaw: credit for a fix waits for the failing
+      command to actually go red→green, rather than blaming whatever ran next.
 - [ ] **M6 — Personality Pass.** Not started.
 - [ ] **M7 — Voice.** Not started. *(Core, not a stretch: the delivery is half the
       personality. Lands right after the personality pass. First task is picking the

@@ -1470,6 +1470,91 @@ on, and rejections are recorded); a plan that drifts from the code as it's built
 without reading (findings are surfaced individually, not as one wall to skim); ceremony
 for projects too small to need it (Clarvis is expected to say so). Mitigations in §8.
 
+### 4.10 Noob Mode — *learn by building, with the butler as tutor* (stretch)
+
+For someone with no programming background who wants to **learn by doing** rather than
+be handed a finished thing. Same product, same agent, same gates — a different teaching
+posture. Off by default (`clarvis.mode`: `normal` | `noob`), chosen by the user, never
+inferred from how someone types.
+
+**The bet:** the existing planning interview (§4.9) and agent loop (§4.6) are already
+the right shape for teaching. What a beginner lacks isn't a different tool, it's the
+*why* behind each question and each line. So this mode adds explanation and choice; it
+does not fork the product.
+
+#### Planning, tutorialised
+
+The §4.9 interview runs, with four differences:
+
+- **Questions come with options, not a blank page.** "How should this store data?"
+  is unanswerable without context. "A file on your computer *(simplest, works offline,
+  no accounts)*, or a database *(needed if other people will use it)*?" is a decision
+  someone can make on day one. Each option carries its consequence, not its category.
+- **Every question says why it's being asked**, in one line, before it's asked. A
+  beginner cannot tell a load-bearing question from a formality, and answering blind
+  teaches nothing.
+- **Jargon is defined at first use, once**, and then used normally. Never defining it
+  leaves the user unable to read their own project; re-defining it every time is
+  condescending. There is a real tension here and it resolves toward using the real
+  word — they are learning the vocabulary, not being protected from it.
+- **Gap analysis stays.** §0's "poke holes, don't nod along" is *more* valuable to a
+  beginner, not less — they cannot yet see the hole themselves. It changes register,
+  not existence: the flaw is explained rather than merely named.
+
+#### Building, two ways
+
+Once the plan is signed off, the user picks how each milestone is built — and can switch
+at any step, because the right answer changes with fatigue and confidence:
+
+| Style | Who types | What Clarvis does |
+|---|---|---|
+| **Hands-on** (default) | The user | Explains what the step needs and why, shows the shape of the code, then waits. Reviews what was actually typed, and says what is wrong *and why* before moving on. |
+| **Guided auto** | Clarvis | Writes it, then walks through every change — what it does, why here, what would break without it. Still one step at a time, still approved before it lands. |
+
+**Both are step-by-step and both explain.** The difference is who holds the keyboard,
+not whether teaching happens. "Semi-automatic" must never quietly become "watch it
+scroll past" — a diff nobody read is not a lesson.
+
+**Hands-on review must judge intent, not text.** A user who solves the step differently
+— worse, better, or merely unusual — has still solved it, and a review that demands a
+character match teaches obedience instead of programming. What is checked: does it work,
+does it do the thing, and is there anything here that will hurt later. Style opinions are
+offered as opinions.
+
+#### The things this mode gets wrong if unexamined
+
+- **Sarcasm at a beginner is just contempt.** §2's rules already aim the humour at
+  situations rather than people, and here that stops being a style note and becomes a
+  hard constraint: the joke is never about not knowing. A confused user who feels
+  mocked leaves and does not come back to programming, which is a considerably worse
+  outcome than a dull extension. Register softens; the character does not disappear —
+  a tutor with no personality is a manual.
+- **Simplification must not become a lie.** "It just remembers it for you" is fine.
+  "Files and databases are the same thing" is not, because it has to be un-learned
+  later at the user's cost. When the true answer is genuinely too big for now, say
+  that plainly — *"that's a real question and a big one, park it"* — rather than
+  inventing a small false one.
+- **The gates matter more here, not less** (§4.6). A beginner cannot evaluate
+  `rm -rf`, cannot tell a routine dependency install from a supply-chain risk, and
+  will not recognise the moment they are about to publish something public. The
+  explanation of *why this is dangerous* is exactly the teaching material. Approving
+  a gate must never be reducible to "Clarvis said yes".
+- **This mode is meant to be outgrown.** After a milestone or two of the user
+  answering their own questions, Clarvis offers to step back — once, without nagging,
+  and reversibly. A tutor that never lets go is a crutch, and the goal is a programmer,
+  not a dependent.
+- **Explanation costs tokens.** Every step carries a paragraph nobody asked for in
+  normal mode, so the §4.8 spend rollup will read very differently. Warn once at
+  enable time; do not silently spend three times as much on someone's free tier.
+- **Nothing here weakens the safety story.** Same branch isolation, same checkpoints,
+  same undo. A beginner is the user most likely to need `Clarvis: Undo Last Agent Run`
+  and least likely to know it exists — so it is named out loud the first time a step
+  writes a file.
+
+**Settings.** `clarvis.mode` (`normal` | `noob`), `clarvis.noob.buildStyle`
+(`handsOn` | `guidedAuto`), both changeable mid-project. No third "expert" mode: normal
+*is* expert, and inventing a ladder implies a hierarchy nobody asked for.
+
 ## 5. Dev-Moment Commentary
 
 Quips fire on **dev events only**. No timers, no idle chatter, no "still there?"
@@ -2564,6 +2649,51 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 
 ---
 
+### M12 — Noob Mode *(stretch — after everything it depends on)*
+
+Last on purpose: it is a teaching layer over §4.9's planning and §4.6's agent, and it
+cannot be built before the things it teaches. Nothing else depends on it, so it is the
+cleanest milestone to cut.
+
+**Build.**
+- **M12a — Mode plumbing.** `clarvis.mode` and `clarvis.noob.buildStyle`; the mode
+  addendum in `systemPrompt.ts` (M8g) gains a teaching block. No new pipeline — the
+  same turn, differently instructed.
+- **M12b — Guided interview.** §4.9's batches gain per-question *why* lines and
+  concrete options with consequences. Options are generated from the answer space of
+  the question, not a canned list, or they stop matching the project by round three.
+- **M12c — Hands-on stepping.** Explain → wait → review what the user actually wrote.
+  Review is intent-based (does it work, does it do the thing, will it hurt later), and
+  a different-but-working solution passes.
+- **M12d — Guided auto.** The M8e agent loop, one step per approval, each with a plain
+  explanation of what changed and why. Reuses the existing gate and checkpoint path
+  untouched.
+- **M12e — Graduation.** After sustained self-sufficiency, one offer to switch back to
+  normal. Declined once means never asked again this project.
+
+**Exit checklist:**
+- [ ] A user with no programming background reaches a running thing without being told
+      to "just" do anything. (`just` is the tell that a step assumes knowledge nobody
+      established.)
+- [ ] Every interview question carries a why-line, and every option carries a
+      consequence rather than a category name.
+- [ ] Hands-on: type a *working but different* solution — it passes, with any opinion
+      clearly flagged as opinion.
+- [ ] Hands-on: type a solution with a real bug — the review says what is wrong **and
+      why**, and does not simply overwrite it.
+- [ ] Guided auto still gates: a destructive command explains its danger in words a
+      beginner can act on, and cannot be approved by reflex.
+- [ ] Read a full session's output cold and confirm no joke lands at the user's
+      expense. This is a **judgement call that has to be made by a person**, and it is
+      the exit criterion most likely to fail quietly.
+- [ ] No simplification in a full session is false — spot-check the explanations
+      against what the code actually does.
+- [ ] Spend for one milestone in noob mode is measured and reported at enable time,
+      not discovered on the bill.
+- [ ] Graduation offer fires once, is reversible, and never repeats after a decline.
+
+---
+
 ## 8. Risks
 
 | Risk | Mitigation |
@@ -2598,6 +2728,8 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 | Model key leaks or unexpected chat spend | Same handling as the voice key — `SecretStorage`, `password: true`, never logged, absent from `contributes.configuration`; `clarvis.chat.dailyRequestCap` with a one-time notice on trip |
 | Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
 | Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
+| Noob mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
+| Noob mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
 | Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |
 | Voice is now core, but the good tier needs a key — does zero-config still hold? | Yes: everything except voice works with no key. Without one, voice falls back to system TTS or stays silent and nothing else changes. The plan states plainly that the free tier is a downgrade rather than pretending the tiers are equivalent |
 | Voice ruins the character | Off by default, explicit kill criteria at M7; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |

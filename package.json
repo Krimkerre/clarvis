@@ -64,6 +64,22 @@
         "title": "Clarvis: Debug — Microphone Probe"
       },
       {
+        "command": "clarvis.chooseProvider",
+        "title": "Clarvis: Choose Model Provider"
+      },
+      {
+        "command": "clarvis.chooseModel",
+        "title": "Clarvis: Choose Model"
+      },
+      {
+        "command": "clarvis.manageModelKeys",
+        "title": "Clarvis: Manage Model API Keys"
+      },
+      {
+        "command": "clarvis.refreshModels",
+        "title": "Clarvis: Refresh Model List"
+      },
+      {
         "command": "clarvis.openManual",
         "title": "Clarvis: Open Manual"
       },
@@ -91,6 +107,39 @@
           "type": "number",
           "default": 30,
           "description": "Tasks/commands/debug sessions shorter than this are tracked but never notified about."
+        },
+        "clarvis.chat.provider": {
+          "type": "string",
+          "default": "anthropic",
+          "enum": ["anthropic", "openai", "openrouter", "ollama", "lmstudio"],
+          "enumDescriptions": [
+            "Anthropic API with your own key. Best tool calling.",
+            "OpenAI with your own key.",
+            "OpenRouter \u2014 one key, many models. Use \"Clarvis: Choose Model\" for the filtered list.",
+            "Ollama on this machine. No key, nothing leaves it.",
+            "LM Studio on this machine. No key, nothing leaves it."
+          ],
+          "description": "Which model provider to use. No Claude-subscription option: Anthropic does not permit third-party products to use claude.ai logins without prior approval."
+        },
+        "clarvis.chat.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model name. Empty uses the provider's default. Run \"Clarvis: Choose Model\" for a picker \u2014 on OpenRouter it lists only models that can call tools."
+        },
+        "clarvis.chat.baseUrl.ollama": {
+          "type": "string",
+          "default": "",
+          "description": "Override the Ollama endpoint. Empty means http://localhost:11434."
+        },
+        "clarvis.chat.baseUrl.lmstudio": {
+          "type": "string",
+          "default": "",
+          "description": "Override the LM Studio endpoint. Empty means http://localhost:1234."
+        },
+        "clarvis.chat.baseUrl.openai": {
+          "type": "string",
+          "default": "",
+          "description": "Override the OpenAI endpoint, for a proxy or gateway. Empty means the official API."
         },
         "clarvis.voice.enabled": {
           "type": "boolean",

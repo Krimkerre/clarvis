@@ -12,6 +12,8 @@ import { PatternMemory } from './memory/PatternMemory';
 import { ChatService } from './chat/ChatService';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
+import { ModelService } from './model/ModelService';
+import { chooseProvider, chooseModel, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -79,7 +81,12 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, logger);
+  // The model layer (M8b). Local answers still need none of this — it is reached only
+  // when a question falls outside what Clarvis watched happen.
+  const models = new ModelService(context, (message) => logger.write(message));
+  registerModelCommands(context, models, (message) => logger.write(message));
+
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, logger);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -236,6 +243,7 @@ function startChat(
   memory: PatternMemory,
   briefing: BriefingService,
   voice: VoiceService,
+  models: ModelService,
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -249,6 +257,7 @@ function startChat(
     () => briefing.recent,
     () => memory.known,
     voice,
+    models,
     (message) => log.write(message)
   );
 
@@ -291,6 +300,23 @@ async function offerRecorderInstall(log: (message: string) => void): Promise<voi
       `Clarvis: copied \`${hint.command}\` — run it yourself when you feel like it, then reload.`
     );
   }
+}
+
+/** Provider, model and key management (M8b). */
+function registerModelCommands(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (message: string) => void
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.chooseProvider', () => void chooseProvider(models, log)),
+    vscode.commands.registerCommand('clarvis.chooseModel', () => void chooseModel(context, models, log)),
+    vscode.commands.registerCommand('clarvis.manageModelKeys', () => void manageKeys(models, log)),
+    vscode.commands.registerCommand(
+      'clarvis.refreshModels',
+      () => void refreshModelCatalog(context, models, log)
+    )
+  );
 }
 
 function registerVoiceCommands(

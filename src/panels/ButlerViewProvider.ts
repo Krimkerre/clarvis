@@ -108,6 +108,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         this.historyRequested.fire();
         return;
       }
+      if (msg?.type === 'stop') {
+        this.stopRequested.fire();
+        return;
+      }
     });
 
     // A freshly resolved view is blank: it has no idea what was said before it
@@ -120,6 +124,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly muteToggled = new vscode.EventEmitter<void>();
   private readonly clearRequested = new vscode.EventEmitter<void>();
   private readonly historyRequested = new vscode.EventEmitter<void>();
+  private readonly stopRequested = new vscode.EventEmitter<void>();
   private readonly viewReady = new vscode.EventEmitter<void>();
 
   /** A question typed into the chat box. */
@@ -130,6 +135,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidRequestClear = this.clearRequested.event;
   /** The History button was clicked. */
   readonly onDidRequestHistory = this.historyRequested.event;
+  /** Stop was clicked while an answer was streaming. */
+  readonly onDidRequestStop = this.stopRequested.event;
   /** The webview exists and can be populated. */
   readonly onDidBecomeReady = this.viewReady.event;
 
@@ -168,6 +175,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.muteToggled,
       this.clearRequested,
       this.historyRequested,
+      this.stopRequested,
       this.viewReady
     );
   }
@@ -247,6 +255,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
            the input, where the hand already is, rather than at the top where reaching
            them means looking away from what you were typing. -->
       <div class="clarvis-chat-head">
+        <button id="clarvis-stop" class="clarvis-mute" hidden
+                title="Stop the answer in progress.">Stop</button>
         <button id="clarvis-history" class="clarvis-mute"
                 title="Earlier conversations from this workspace.">History</button>
         <button id="clarvis-clear" class="clarvis-mute"
@@ -294,6 +304,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       // inserted as a text node, so a filename or an error message containing markup
       // can never become markup. Replies are generated locally today, but this same
       // box renders model output in M8b — sanitising it later would be too late.
+      // The turn currently streaming, and its text so far.
+      let streaming = null;
+      let streamed = '';
+
       const addTurn = (speaker, text) => {
         const row = document.createElement('div');
         row.className = 'clarvis-turn';
@@ -339,12 +353,38 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       document.getElementById('clarvis-history')
         .addEventListener('click', () => vscode.postMessage({ type: 'show-history' }));
 
+      const stopButton = document.getElementById('clarvis-stop');
+      stopButton.addEventListener('click', () => vscode.postMessage({ type: 'stop' }));
+
       window.addEventListener('message', (event) => {
         const msg = event.data;
         if (!msg) return;
 
         if (msg.type === 'chat-turn') {
           addTurn(msg.speaker, msg.text);
+          return;
+        }
+
+        // A streamed reply is one turn that grows, not many turns. Appending to the
+        // same node keeps inline code spans working across fragment boundaries, which
+        // rendering each fragment separately would break.
+        if (msg.type === 'chat-stream-start') {
+          streaming = addTurn('clarvis', '');
+          streamed = '';
+          stopButton.hidden = false;
+          return;
+        }
+
+        if (msg.type === 'chat-stream' && streaming) {
+          streamed += msg.text;
+          renderInto(streaming, streamed);
+          transcript.scrollTop = transcript.scrollHeight;
+          return;
+        }
+
+        if (msg.type === 'chat-stream-end') {
+          streaming = null;
+          stopButton.hidden = true;
           return;
         }
 

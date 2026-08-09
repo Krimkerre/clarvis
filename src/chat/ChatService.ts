@@ -10,6 +10,7 @@ import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
 import { localAnswer, WorkspaceFacts } from './localAnswer';
 import { chatAction, ChatAction } from './chatCommands';
+import { ModelService, explain } from '../model/ModelService';
 
 /**
  * The live session, written as it happens.
@@ -49,6 +50,9 @@ export class ChatService {
 
   /** When this session began — the archive is ordered by it. */
   private readonly startedAt = Date.now();
+
+  /** The answer currently streaming, so `Clarvis: Stop` has something to abort. */
+  private streaming?: AbortController;
   private lastOutcome?: { label: string; exitCode: number | undefined; durationMs: number };
 
   constructor(
@@ -62,6 +66,7 @@ export class ChatService {
     private readonly recentFiles: () => string[],
     private readonly patterns: () => Pattern[],
     private readonly voice: VoiceService,
+    private readonly models: ModelService,
     private readonly log: (message: string) => void
   ) {
     // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
@@ -78,6 +83,7 @@ export class ChatService {
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
     this.panel.onDidRequestClear(() => void this.confirmAndClear());
     this.panel.onDidRequestHistory(() => void this.showHistory());
+    this.panel.onDidRequestStop(() => this.stop());
 
     // Roll the previous session into the archive before anything is written to it.
     // Done at *startup* rather than shutdown, because shutdown is not guaranteed to
@@ -109,17 +115,115 @@ export class ChatService {
     const reply = localAnswer(question, await this.facts());
 
     if (!reply) {
-      // Said once, plainly. §4.6: no retry, no hang, no pretending — the model path
-      // that would answer this arrives in M8b.
-      this.log(`chat: no local answer for "${question.slice(0, 60)}"`);
+      // Beyond what was watched happen — this is what the model layer is for.
+      await this.answerWithModel(question);
+      return;
+    }
+
+    await this.say(reply.text, reply.state);
+  }
+
+  /**
+   * Answers with the configured model, streaming as it arrives.
+   *
+   * Streamed rather than awaited whole: a ten-second silence reads as a hang, and the
+   * avatar's `thinking` → `talking` transition is meant to track the real stream
+   * instead of a timer (§4.6).
+   */
+  private async answerWithModel(question: string): Promise<void> {
+    if (!(await this.models.isReady())) {
+      const spec = this.models.spec;
+      this.log(`chat: no local answer, and ${spec.id} is not configured`);
       await this.say(
-        "I can only answer from what I've watched happen here — builds, branches, errors I've seen before. That one needs a model, and I don't have one wired up yet.",
+        spec.needsKey
+          ? `That one's beyond what I've watched happen here — I'd need a model for it, and ${spec.label} has no key yet. \`/key\` sorts it, or \`/model\` picks a different provider.`
+          : `That's beyond what I've watched here, and ${spec.label} isn't answering on ${'`'}${spec.baseUrl}${'`'}. Is it running?`,
         'neutral'
       );
       return;
     }
 
-    await this.say(reply.text, reply.state);
+    // A fresh controller per question: Stop must abort this turn, not every future one.
+    this.streaming?.abort();
+    const controller = new AbortController();
+    this.streaming = controller;
+
+    this.avatar.setState('thinking');
+    const turn: Turn = { speaker: 'clarvis', text: '', at: Date.now() };
+    this.thread = appendTurn(this.thread, turn);
+    this.panel.post({ type: 'chat-stream-start' });
+
+    let text = '';
+
+    try {
+      for await (const fragment of this.models.stream({
+        system: this.systemPrompt(),
+        messages: this.modelMessages(),
+        signal: controller.signal,
+      })) {
+        if (text === '') this.avatar.setState('talking');
+        text += fragment;
+        turn.text = text;
+        this.panel.post({ type: 'chat-stream', text: fragment });
+      }
+    } catch (error) {
+      // Stopping is not failing: the user asked for silence and gets it.
+      if (controller.signal.aborted) {
+        this.log('chat: stream aborted by the user');
+      } else {
+        const { text: friendly, detail } = explain(error);
+        this.log(`chat: model failed — ${detail}`);
+        text = text ? `${text}\n\n${friendly}` : friendly;
+        turn.text = text;
+        this.panel.post({ type: 'chat-stream', text: `\n\n${friendly}` });
+      }
+    } finally {
+      this.streaming = undefined;
+      this.panel.post({ type: 'chat-stream-end' });
+      this.avatar.setState('neutral');
+      await this.persist();
+    }
+
+    // Spoken only once complete — speaking fragment by fragment would produce a
+    // stutter, and the queue exists to serialise utterances, not syllables.
+    if (text) this.voice.say(text, 'chatReply');
+  }
+
+  /** Cancels the answer in flight, if there is one. */
+  stop(): void {
+    this.streaming?.abort();
+  }
+
+  /**
+   * The conversation as the model sees it.
+   *
+   * Empty turns are dropped — a stream that failed on its first fragment would
+   * otherwise be sent back as a blank assistant message, which some providers reject
+   * outright and others treat as the model having nothing to say.
+   */
+  private modelMessages(): { role: 'user' | 'assistant'; content: string }[] {
+    return this.thread
+      .filter((entry) => entry.text.trim().length > 0)
+      .map((entry) => ({
+        role: entry.speaker === 'user' ? ('user' as const) : ('assistant' as const),
+        content: entry.text,
+      }));
+  }
+
+  /**
+   * The personality block (§2.1), trimmed to what an answering turn needs.
+   *
+   * The full agent and planning addenda arrive with M8g; sending them now would be
+   * instructing the model about tools it does not have.
+   */
+  private systemPrompt(): string {
+    return [
+      'You are Clarvis, a butler-like coding assistant living in the user\'s editor.',
+      'You are dry, concise and faintly exasperated, but never cruel and never at the user\'s expense.',
+      'You are looking at their project: you watch builds, tests and errors as they happen.',
+      'Answer in a few sentences unless asked for more. Prefer specifics over hedging.',
+      'Never invent what you have observed — if you did not see it, say so.',
+    ].join(' ');
   }
 
   /**
@@ -173,12 +277,8 @@ export class ChatService {
     }
 
     if (action === 'chooseModel') {
-      // Honest rather than silent: there is no model layer yet, and opening the
-      // settings pane as a consolation prize would just waste the user's time.
-      await this.say(
-        "I don't have a model wired up yet — that lands with the agent. Until then I answer from what I've watched happen here, which needs no key at all.",
-        'neutral'
-      );
+      await this.say('Models. Only the ones that can hold a conversation.', 'neutral');
+      await vscode.commands.executeCommand('clarvis.chooseModel');
       return;
     }
 
@@ -196,7 +296,7 @@ export class ChatService {
     const commands: Record<string, { id: string; line: string }> = {
       chooseVoice: { id: 'clarvis.chooseVoice', line: 'Voices. Highlight one to hear it.' },
       chooseEngine: { id: 'clarvis.chooseEngine', line: 'Engines — quality against speed and cost.' },
-      setKey: { id: 'clarvis.setFishKey', line: 'Your key goes in the keychain, not in a settings file.' },
+      setKey: { id: 'clarvis.manageModelKeys', line: 'Keys, one per provider, all kept. Yours go in the keychain, never a settings file.' },
       clearKey: { id: 'clarvis.clearFishKey', line: 'Forgetting the key.' },
       testVoice: { id: 'clarvis.testVoice', line: 'Listen.' },
       openCache: { id: 'clarvis.openVoiceCache', line: 'The saved audio. Delete anything in there freely.' },
@@ -265,7 +365,11 @@ export class ChatService {
   private async record(turn: Turn): Promise<void> {
     this.thread = appendTurn(this.thread, turn);
     this.panel.post({ type: 'chat-turn', speaker: turn.speaker, text: turn.text });
+    await this.persist();
+  }
 
+  /** Writes the live session to storage. Shared by recorded turns and streamed ones. */
+  private async persist(): Promise<void> {
     const session: Session = { startedAt: this.startedAt, turns: this.thread };
     await this.context.workspaceState.update(CURRENT_KEY, session);
   }

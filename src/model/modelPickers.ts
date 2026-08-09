@@ -1,0 +1,277 @@
+import * as vscode from 'vscode';
+import { ModelService } from './ModelService';
+import { ModelChoice } from './ModelProvider';
+import { PROVIDERS, ProviderId, providerSpec } from './providers';
+
+/** Cached model lists, per provider. */
+const CATALOG_KEY = 'clarvis.model.catalog';
+const CATALOG_FETCHED_KEY = 'clarvis.model.catalogFetchedAt';
+
+/**
+ * How long a cached list is reused before it refetches on its own.
+ *
+ * Model line-ups change weekly, not hourly. Fetching on every picker open would be
+ * rude to the provider and slow for the user; a day is comfortably inside "current"
+ * and well outside "hammering them". Refresh is always available regardless.
+ */
+const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
+
+type CatalogStore = Partial<Record<ProviderId, ModelChoice[]>>;
+type FetchedStore = Partial<Record<ProviderId, number>>;
+
+/**
+ * Chooses the provider.
+ *
+ * Separate from choosing a model, because they are different decisions: the provider
+ * is *who you have an account with*, the model is *which one you want today*.
+ */
+export async function chooseProvider(models: ModelService, log: (m: string) => void): Promise<void> {
+  const current = models.spec.id;
+  const keyed = await models.keyedProviders();
+
+  const picked = await vscode.window.showQuickPick(
+    PROVIDERS.map((spec) => ({
+      label: `${spec.id === current ? '$(check) ' : ''}${spec.label}`,
+      detail: spec.detail,
+      // The single thing that prevents "why won't it answer?" — said here, not later.
+      description: spec.needsKey ? (keyed[spec.id] ? 'key set' : 'no key yet') : 'no key needed',
+      id: spec.id,
+    })),
+    { placeHolder: 'Which provider should I use?', matchOnDetail: true }
+  );
+  if (!picked) return;
+
+  await writeSetting('chat.provider', picked.id);
+  // A model belongs to the provider that offered it. Carrying one across means asking
+  // OpenAI for a Claude model and getting a 404 nobody can explain.
+  await writeSetting('chat.model', '');
+  log(`model: provider set to ${picked.id}`);
+
+  const spec = providerSpec(picked.id)!;
+  if (spec.needsKey && !keyed[picked.id]) {
+    await promptForKey(models, picked.id, log);
+  }
+}
+
+/**
+ * Chooses the model, offering only ones that will actually work.
+ *
+ * Identical flow for every provider — the differences live in how each list is
+ * *fetched and filtered* (see the catalogue modules), not in how it is presented.
+ * Refresh sits inside the list rather than in a separate command, because the moment
+ * someone wants it is the moment the model they are looking for isn't there.
+ */
+export async function chooseModel(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void
+): Promise<void> {
+  const spec = models.spec;
+  let catalog = await cachedModels(context, models, log, false);
+
+  for (;;) {
+    const items: (vscode.QuickPickItem & { id: string })[] = [
+      { label: '$(refresh) Refresh the list', detail: `Re-fetch from ${spec.label}`, id: '\0refresh' },
+      { label: '$(edit) Type a model name…', detail: 'Anything, including models not listed', id: '\0type' },
+    ];
+
+    if (catalog.length > 0) {
+      items.push({
+        label: `${catalog.length} usable model${catalog.length === 1 ? '' : 's'}`,
+        kind: vscode.QuickPickItemKind.Separator,
+        id: '\0sep',
+      });
+      items.push(
+        ...catalog.map((entry) => ({
+          label: entry.id === models.model ? `$(check) ${entry.label}` : entry.label,
+          description: entry.label === entry.id ? '' : entry.id,
+          detail: entry.detail,
+          id: entry.id,
+        }))
+      );
+    }
+
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder:
+        catalog.length > 0
+          ? `${spec.label} — models that can hold a conversation`
+          : `${spec.label} listed nothing. Type a name, or refresh.`,
+      matchOnDetail: true,
+      matchOnDescription: true,
+    });
+    if (!picked) return;
+
+    if (picked.id === '\0refresh') {
+      catalog = await cachedModels(context, models, log, true);
+      continue;
+    }
+
+    if (picked.id === '\0type') {
+      await promptForModelName(models.model, log);
+      return;
+    }
+
+    await writeSetting('chat.model', picked.id);
+    log(`model: set to ${picked.id}`);
+    return;
+  }
+}
+
+/**
+ * The model list, from cache or freshly fetched.
+ *
+ * Falls back to whatever is cached when a fetch fails: a stale list beats an empty
+ * one, and a provider being briefly unreachable should not stop someone changing
+ * models. Cached per provider, so switching back and forth doesn't refetch.
+ */
+async function cachedModels(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void,
+  force: boolean
+): Promise<ModelChoice[]> {
+  const provider = models.spec.id;
+  const store = context.globalState.get<CatalogStore>(CATALOG_KEY) ?? {};
+  const fetched = context.globalState.get<FetchedStore>(CATALOG_FETCHED_KEY) ?? {};
+
+  const cached = store[provider] ?? [];
+  const fresh = Date.now() - (fetched[provider] ?? 0) < CATALOG_TTL_MS;
+  if (!force && fresh && cached.length > 0) return cached;
+
+  try {
+    const listed = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Clarvis: asking ${models.spec.label}…` },
+      () => models.listModels()
+    );
+
+    if (listed.length === 0) {
+      log(`model: ${provider} listed no usable models`);
+      return cached;
+    }
+
+    await context.globalState.update(CATALOG_KEY, { ...store, [provider]: listed });
+    await context.globalState.update(CATALOG_FETCHED_KEY, { ...fetched, [provider]: Date.now() });
+    log(`model: ${provider} catalogue refreshed, ${listed.length} usable models`);
+
+    if (force) {
+      void vscode.window.showInformationMessage(
+        `Clarvis: ${listed.length} usable ${models.spec.label} models.`
+      );
+    }
+    return listed;
+  } catch (error) {
+    log(`model: ${provider} catalogue fetch failed (${String(error)})`);
+    return cached;
+  }
+}
+
+/** Refreshes the current provider's list from the command palette. */
+export async function refreshModelCatalog(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void
+): Promise<void> {
+  const listed = await cachedModels(context, models, log, true);
+  if (listed.length === 0) {
+    void vscode.window.showWarningMessage(
+      `Clarvis: couldn't get a model list from ${models.spec.label} just now.`
+    );
+  }
+}
+
+/**
+ * Manages every provider's key in one place.
+ *
+ * Keys are stored **per provider and kept**, so switching provider is a one-click
+ * change rather than re-entering a key each time. Someone comparing a local model
+ * against a hosted one does that ten times in an afternoon.
+ */
+export async function manageKeys(models: ModelService, log: (m: string) => void): Promise<void> {
+  for (;;) {
+    const keyed = await models.keyedProviders();
+
+    const picked = await vscode.window.showQuickPick(
+      PROVIDERS.filter((spec) => spec.needsKey).map((spec) => ({
+        label: `${keyed[spec.id] ? '$(key) ' : '$(circle-outline) '}${spec.label}`,
+        description: keyed[spec.id] ? 'key stored' : 'no key',
+        detail: keyed[spec.id] ? 'Choose to replace or remove it' : 'Choose to add one',
+        id: spec.id,
+      })),
+      { placeHolder: 'API keys — stored in your OS keychain, one per provider' }
+    );
+    if (!picked) return;
+
+    if (!keyed[picked.id]) {
+      await promptForKey(models, picked.id, log);
+      continue;
+    }
+
+    const action = await vscode.window.showQuickPick(
+      [
+        { label: '$(edit) Replace the key', id: 'replace' },
+        { label: '$(trash) Remove the key', id: 'remove' },
+      ],
+      { placeHolder: `${providerSpec(picked.id)!.label}` }
+    );
+    if (!action) continue;
+
+    if (action.id === 'replace') await promptForKey(models, picked.id, log);
+    else {
+      await models.clearKey(picked.id);
+      void vscode.window.showInformationMessage(
+        `Clarvis: ${providerSpec(picked.id)!.label} key removed.`
+      );
+    }
+  }
+}
+
+/** Free-text model entry, for anything a provider doesn't list. */
+async function promptForModelName(current: string, log: (m: string) => void): Promise<void> {
+  const name = await vscode.window.showInputBox({
+    prompt: 'Model name, exactly as the provider spells it',
+    value: current,
+    ignoreFocusOut: true,
+  });
+  if (!name?.trim()) return;
+
+  await writeSetting('chat.model', name.trim());
+  log(`model: set to ${name.trim()} (typed)`);
+}
+
+/** Captures a key into the OS keychain. Never settings, never the log. */
+export async function promptForKey(
+  models: ModelService,
+  provider: ProviderId,
+  log: (m: string) => void
+): Promise<void> {
+  const spec = providerSpec(provider)!;
+
+  const key = await vscode.window.showInputBox({
+    prompt: `${spec.label} API key`,
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (!key?.trim()) return;
+
+  await models.setKey(provider, key);
+  log(`model: key stored for ${provider}`);
+  void vscode.window.showInformationMessage(
+    `Clarvis: ${spec.label} key stored in the system keychain.`
+  );
+}
+
+/**
+ * Writes to the scope that will actually take effect.
+ *
+ * Same trap the voice picker hit: writing Global unconditionally succeeds and does
+ * nothing whenever a workspace value exists, and the setting appears to snap back.
+ */
+async function writeSetting(key: string, value: string): Promise<void> {
+  const config = vscode.workspace.getConfiguration('clarvis');
+  const scope =
+    config.inspect(key)?.workspaceValue !== undefined
+      ? vscode.ConfigurationTarget.Workspace
+      : vscode.ConfigurationTarget.Global;
+
+  await config.update(key, value, scope);
+}

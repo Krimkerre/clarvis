@@ -1824,34 +1824,47 @@ executions with an empty command line are ignored outright.
 - Sources feeding fingerprints: `execution.read()` tail on nonzero-exit terminal
   commands (from M3's tracker), plus `languages.onDidChangeDiagnostics` for
   errors that never touch a terminal.
-- Candidate-fix capture: on a fingerprint match, watch the *next* successful
-  command/task in the same terminal session; record it as `resolvedBy`, labeled
-  `heuristic` wherever it's surfaced (never presented as certain).
+- Candidate-fix capture: **wait for the failing command to go red→green.** The
+  original note here said "record the next successful command" — that was wrong, and
+  M5's own checklist contradicted it. Between a failure and its fix you run `git
+  status`, a passing lint, and several other innocent things; the next success is
+  almost never the fix. Credit is only assigned when *the command that was failing runs
+  again and passes*, and goes to the last thing tried before that. A repeat failure
+  discards the candidates that evidently didn't work. Still a heuristic, always
+  surfaced as one — but grounded in an actual red→green rather than in coincidence.
 - Trigger: 3rd occurrence of a fingerprint within a rolling 7-day window → surface via
   the same delivery path as M3 (status message + avatar), text pulled from
   `resolvedBy` if present else "seen this 3× this week, no known fix yet."
 **Exit checklist:**
-- [ ] `fingerprint()` unit tests: same error at different line numbers/paths/timestamps
-      collapses to one key; genuinely different errors don't collide.
-- [ ] Trigger a fingerprint twice (not three times) in 7 days — confirm silence, no
-      premature suggestion at occurrence 2.
-- [ ] Trigger it a 3rd time — correct suggestion surfaces, `resolvedBy` text present
-      when a fix was captured, generic "no known fix yet" line when it wasn't.
-- [ ] 3rd occurrence lands *outside* the 7-day window (e.g. simulate an 8-day gap) —
-      confirm it does **not** fire; count resets rather than accumulating forever.
-- [ ] Candidate-fix capture: fail → run 2–3 unrelated successful commands → run the
-      *actual* fix — confirm `resolvedBy` captures the real fix, not just whatever
-      command happened to run next.
-- [ ] Diagnostics-sourced error (never touches a terminal) still fingerprints and
-      counts toward the 3× threshold, independent of the terminal path.
-- [ ] Suggestion never auto-applies anything — no file write, no command execution
-      triggered by the surfaced suggestion itself (rule 3, §2).
-- [ ] Restart the window between occurrences 1, 2, and 3 — count persists correctly
-      across `globalStorageUri`, not reset by reactivation.
-- [ ] Corrupt/missing `<project-hash>.json` on disk (delete it mid-session or hand-edit
-      to invalid JSON) — store reinitializes empty rather than crashing activation.
-- [ ] Confirm the M4 briefing's line 4 now populates on the next launch, with zero
-      changes made back in M4's code.
+- [x] `fingerprint()` unit tests: same error at different paths/lines/timestamps/hashes
+      collapses to one key; genuinely different errors don't collide. Normalisation is
+      deliberately conservative — a false match gives a confidently wrong suggestion,
+      which is worse than staying quiet.
+- [x] Twice in 7 days — silence. Confirmed live (runs 1 and 2 logged, nothing said).
+- [x] 3rd time — surfaces. Confirmed live: `pattern: surfaced f93d7d93 (3×)`. Also
+      surfaces *only* on that occurrence, not on every run after it, or a permanently
+      broken build would repeat itself into the mute button.
+- [x] Occurrences outside the window don't accumulate — unit-tested with a simulated
+      8-day gap rather than waiting a week.
+- [x] **Fix attribution, live:** `probe-flaky` fails → `unrelated-thing` succeeds
+      (the decoy) → `apply-the-fix` succeeds → `probe-flaky` passes. Result:
+      `"apply-the-fix" credited as the fix`. The decoy was *not* credited, which is
+      exactly what the original "next successful command" design would have done.
+- [x] Diagnostics source works independently — a TypeScript error in `bad.ts` was
+      recorded without any terminal involvement. Only *newly appeared* diagnostics
+      count; diagnostics re-fire on every keystroke, and counting redraws would hit the
+      threshold within seconds of typing.
+- [x] Suggestion never applies anything — the surface path is a notification and
+      nothing else. No file write, no command execution (rule 3, §2).
+- [x] State persists across a full restart — verified in
+      `globalStorage/.../ccc5b924.json`, written per change rather than at
+      `deactivate()` (M0's lesson).
+- [x] Corrupt/missing/hand-edited store starts empty rather than breaking activation —
+      unit-tested against garbage, wrong version, and malformed entries. Losing pattern
+      history is an annoyance; failing to start is not.
+- [x] M4's fourth line populates: `Seen "probe-build-fail" 3× this week.` M4 needed no
+      rework — it was built to omit the line until something could supply it, and M5
+      supplies it through a small hook.
 - **Exit:** trigger the same error three times (real repro, not a mocked store) →
   get the previous fix suggested, correctly, without it being applied to anything, and
   confirm the M4 briefing's line 4 now populates on the next launch with no M4 changes.

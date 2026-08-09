@@ -1415,6 +1415,33 @@ What it needs to establish, roughly in priority order:
 plan rather than a blocker. A plan that admits its unknowns beats one that invents
 answers to look complete.
 
+**One tooling question, asked once, in the last round: a linter.** Planning is the only
+honest moment for it — the project has not chosen anything yet, so asking is offering a
+decision rather than criticising an existing codebase (contrast §4.11, which governs
+projects that already exist and where the same question would be an unasked-for style
+opinion).
+
+It is asked plainly, with the trade stated rather than the category:
+
+> *Want a linter? It flags likely mistakes and keeps formatting consistent as we go —
+> useful on anything that outlives the weekend, mild overhead on a throwaway script.*
+
+Three rules on it:
+
+- **Asked last, and only once.** It is not a plan-shaping question like platform or
+  data; it comes after the things that are, and never returns.
+- **"No" is a real answer and is recorded as one** — written into the generated
+  `plan.md` as a decision, so nothing later re-litigates it and no future session
+  offers again.
+- **Yes means it goes in the plan, not in the repository right now.** Setting it up is
+  a task in milestone one like anything else, subject to the same sign-off. Planning
+  mode writes `plan.md` and nothing else (§0), and a linter config is project code.
+
+In **Tutor Mode** the question carries its explanation: what a linter is, that its
+warnings are advice rather than errors that stop the program, and that it will light
+up the screen at first and that this is normal. Defaulting a beginner into it silently
+would mean their first experience of their own code is 200 warnings they cannot read.
+
 #### The analysis — where Clarvis earns his keep
 
 Before writing anything, Clarvis reviews the idea and reports what he finds. This is
@@ -1683,6 +1710,10 @@ Four rules, and the first is the one that matters:
   connect tooling the project *already chose*. Suggesting ESLint to someone who never
   asked for it is imposing a style opinion on their codebase, which is not a butler's
   job. No config, no `devDependency`, no offer — silence.
+  **The one exception is a project being planned from scratch** (§4.9): there is no
+  codebase to have an opinion about yet, and the question is asked once, in the
+  interview, where it is a decision rather than a critique. A "no" recorded there is
+  binding here — this section never offers again for that project.
 - **Never bundle it, never install it silently.** Same rule as `ffmpeg` (§4.7): name
   what's missing, offer the action, let the user decide. A dependency that appears
   without consent is a dependency the user didn't audit.
@@ -2665,6 +2696,12 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   `plan.md` as the agent completes them.
 
 **Exit checklist:**
+- [ ] The interview asks about a linter exactly once, in the final round, with the
+      trade-off stated rather than the tool named — and never asks again.
+- [ ] Answering "no" writes that decision into the generated `plan.md`, so a later
+      session neither re-asks nor quietly adds one.
+- [ ] Answering "yes" produces a *task* in milestone one, not a config file written
+      during planning — §0 allows planning mode to touch `plan.md` and nothing else.
 - [ ] Seed Clarvis a genuinely one-line idea. He asks batched questions, reaches a
       draft in ~2–3 rounds, and doesn't interrogate.
 - [ ] Answer "I don't know yet" to something material — it lands as a recorded open
@@ -2797,6 +2834,8 @@ forever. No linter-specific consumption code — diagnostics already arrive gene
 
 **Exit checklist:**
 - [ ] README complete, privacy pitch is the first thing a reader sees.
+- [ ] A project planned with "no linter" recorded is never offered one again, by
+      either §4.9 or §4.11.
 - [ ] A workspace with an ESLint config but no extension gets **one** offer; declining
       it is remembered permanently, including across reloads.
 - [ ] A workspace with **no** ESLint config gets no offer at all, ever. Clarvis does not

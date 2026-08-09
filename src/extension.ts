@@ -11,6 +11,7 @@ import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
 import { ChatService } from './chat/ChatService';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
+import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
@@ -58,6 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
   registerVoiceCommands(context, voice, fish, panel, (message) => logger.write(message));
   // A retired engine shouldn't be discovered by every utterance failing.
   warnIfEngineUnknown((message) => logger.write(message));
+  // Voice ships off (§4.4), so it needs one introduction or nobody finds it. Asked
+  // once, ever — declining, or ignoring the notification, closes the subject.
+  offerVoiceSetup(context, () => fish.hasKey(), (message) => logger.write(message));
   // Housekeeping at shutdown rather than mid-briefing, where it would add latency to
   // the thing it exists to speed up.
   context.subscriptions.push({ dispose: () => void fish.evictCache() });
@@ -307,6 +311,8 @@ function registerVoiceCommands(
 
       await context.secrets.store(FISH_KEY_SECRET, key.trim());
       void vscode.window.showInformationMessage('Clarvis: key stored in the system keychain.');
+      // Setting a key is an unambiguous request for the feature it unlocks.
+      await enableVoiceAfterKey(log);
     }),
 
     vscode.commands.registerCommand('clarvis.clearFishKey', async () => {

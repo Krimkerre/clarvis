@@ -51,6 +51,18 @@ export class FishAudioProvider implements VoiceProvider {
    * Available with a key, within the daily cap. No gesture needed any more, and no
    * panel either — playback doesn't go through the webview.
    */
+  /**
+   * Whether a key is stored at all.
+   *
+   * Distinct from `isAvailable()`, which also weighs the daily cap and anything else
+   * that makes a request unwise right now. "Has the user set this up?" and "should I
+   * call the API this second?" are different questions, and the first-run offer needs
+   * the first one.
+   */
+  async hasKey(): Promise<boolean> {
+    return Boolean(await this.context.secrets.get(FISH_KEY_SECRET));
+  }
+
   async isAvailable(): Promise<boolean> {
     const key = await this.context.secrets.get(FISH_KEY_SECRET);
     return Boolean(key) && this.withinDailyCap();

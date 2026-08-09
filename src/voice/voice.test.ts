@@ -10,24 +10,17 @@ test('briefings, completions and chat replies may be spoken', () => {
   assert.equal(mayBeSpoken('chatReply'), true);
 });
 
-test('quips never speak', () => {
-  // §4.4, and not a soft preference: a voice heckling from the sidebar is the fastest
-  // route to someone disabling voice permanently.
-  assert.equal(mayBeSpoken('quip'), false);
+test('quips and pattern hits are spoken too', () => {
+  // Reversed at M8a. Volume is controlled by the §6 interruption budget — how often
+  // he surfaces at all — not by muting the funny half of what he says.
+  assert.equal(mayBeSpoken('quip'), true);
+  assert.equal(mayBeSpoken('patternHit'), true);
 });
 
-test('pattern hits never speak', () => {
-  assert.equal(mayBeSpoken('patternHit'), false);
-});
-
-test('the spoken set is exactly the solicited occasions', () => {
-  // Guards against a future occasion being added and silently inheriting speech.
-  // This test failing is the intended alarm, not an inconvenience — widening the
-  // scope should be a decision someone makes on purpose.
+test('everything he says can be spoken', () => {
   const all: SpeechOccasion[] = ['briefing', 'completion', 'chatReply', 'quip', 'patternHit'];
-  const spoken = all.filter(mayBeSpoken);
 
-  assert.deepEqual(spoken, ['briefing', 'completion', 'chatReply']);
+  assert.deepEqual(all.filter(mayBeSpoken), all);
 });
 
 import { cacheKey, selectForEviction, CACHE_LIMIT_BYTES } from './voiceCache';

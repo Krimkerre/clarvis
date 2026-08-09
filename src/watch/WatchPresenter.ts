@@ -65,9 +65,10 @@ export class WatchPresenter {
    * One job finished. Short jobs are logged but never surfaced — nobody wants a
    * notification for a two-second command.
    *
-   * Note: no rate limiting beyond this duration floor yet. M6's interruption
-   * budget (§6, ≤1 unsolicited surface per 10 min) closes that gap; until then a
-   * burst of slow jobs will produce a burst of notifications.
+   * Delivered through the Announcer, so the §6 interruption budget applies. It was
+   * bypassing it — this class took an Announcer and then called
+   * `showInformationMessage` directly, which meant a burst of slow jobs produced a
+   * burst of notifications no matter what the budget said.
    */
   private handleOutcome(outcome: Outcome): void {
     const minDurationSeconds = readMinDurationSeconds();
@@ -79,8 +80,10 @@ export class WatchPresenter {
 
     if (outcome.durationMs < minDurationSeconds * 1000) return;
 
-    this.avatar.setState(reactionTo(outcome));
-    vscode.window.showInformationMessage(outcomeMessage(outcome));
+    // The Announcer sets the face and returns it to rest on the same 4s hold, so a
+    // suppressed notice must not leave this class holding a reaction nothing showed.
+    if (!this.announcer.announce(outcomeMessage(outcome), reactionTo(outcome), 'completion')) return;
+
     this.startReactionHold();
   }
 

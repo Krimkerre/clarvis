@@ -80,6 +80,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // the transcript. Toasts disappear after a few seconds; the thing he said about
   // your build shouldn't be unrecoverable because you were looking elsewhere.
   announcer.onAnnounce(toTranscript);
+
+  // ...and is spoken. Only remarks that already survived the interruption budget get
+  // here, so the budget is what limits how much talking happens — not the scope.
+  announcer.onAnnounce((message, occasion) => voice.say(message, occasion));
 }
 
 /**
@@ -174,7 +178,7 @@ function startPatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
     // A suggestion, never an action (rule 3), and subject to the shared budget.
-    (message) => void announcer.announce(message, 'judging')
+    (message) => void announcer.announce(message, 'judging', 'patternHit')
   );
 
   void memory.start(tracker, context);

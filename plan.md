@@ -587,11 +587,19 @@ the personality pass it exists to deliver, and **before** chat and the agent.
 - **Still off until enabled** (`clarvis.voice.enabled`). Core to the *product* is not the
   same as unsolicited audio in a shared office; a voice that surprises you once is a
   voice you disable forever. The first-run prompt makes the offer clearly, once.
-- Hard scope: briefings, task-completion notifications, and **chat replies** (M8a).
-  Quips stay silent — a voice heckling you from the sidebar crosses from charming to
-  haunted. The line is *solicited vs. unsolicited*, not important vs. unimportant: an
-  answer to a question you just typed cannot startle you, which is the only thing this
-  scope exists to prevent. **Widened at M8a**; it was briefings and completions only.
+- **Everything he says may be spoken** — briefings, completion notices, chat replies,
+  pattern hits and quips alike. **Reversed at M8a**, twice: the original rule allowed
+  only briefings and completions, then gained chat replies, and now allows the lot.
+  The original reasoning ("a voice heckling you from the sidebar crosses from charming
+  to haunted") was right about the risk and wrong about the remedy — it fixed volume in
+  the wrong place. What governs volume is the §6 interruption budget: one unsolicited
+  surface per ten minutes, shared across M3, M5 and M6. Anything that has already
+  earned its way past that is worth hearing, and silencing only the audio meant the
+  voice carried the dull half of the character while the text carried the funny half.
+  The safeguards that make this defensible are unchanged: voice is **off by default**,
+  Mute stops him instantly mid-sentence and is one click from the prompt, and the
+  budget itself is untouched. If a day of dogfooding says otherwise, the rule reverts —
+  it is one function (`mayBeSpoken`) and one test.
 - **A mute control sits in the chat UI itself** (built in M8a), not only in settings.
   The moment you need silence — someone walks over, a call starts — is the moment you
   cannot go hunting through a settings pane, and `clarvis.voice.enabled` is a *setting*:
@@ -2155,6 +2163,26 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   request so a planning turn doesn't carry agent instructions. Quips are suppressed
   while a task runs (§4.6 *Personality under load*); §5 material returns when it
   finishes.
+- **M8g2 — Live quips.** Once a model is wired in, reactive remarks are *generated*
+  for the situation rather than drawn from `quipBank.ts` — the bank has five triggers
+  and two registers, which is a fixed number of jokes and therefore a countdown to
+  hearing them twice. The model gets the trigger, the facts (what failed, how long it
+  took, how many times before) and the §2.1 personality block, and returns one line.
+  Four constraints, each of which the naive version gets wrong:
+  - **The bank stays, as the fallback.** No key, no network, a slow response or a
+    refusal must degrade to a canned quip, never to silence and never to a stall — a
+    joke that arrives after you've moved on isn't a joke. Hard timeout, and the
+    generated line is dropped if it misses it.
+  - **Generation happens only *after* the interruption budget has allowed the surface**
+    (§6), not before. Generating first would spend tokens on remarks nobody will ever
+    see, on every single build.
+  - **Never during an agent run.** §4.6's *Personality under load* already says quips
+    are suppressed while a task runs; a model-generated one costs tokens from the same
+    budget the actual work is using.
+  - **No-repeat still applies.** The existing suppression of recently-used quips has to
+    cover generated lines too, or the model rediscovers its own favourite joke weekly.
+  Spoken like any other quip (§4.4), so latency is doubly visible — it delays the audio,
+  not just the text.
 
 **Exit checklist:**
 - [ ] No key set: ask each local-answer question type (failing state, branch, build
@@ -2180,6 +2208,18 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       just hidden in the UI.
 - [ ] Ask with no active selection — attaches the visible range, not an error, not the
       whole file.
+- [ ] A quip and a pattern hit are **spoken**, not just shown (§4.4 as revised) — and
+      each still counts against the one-per-ten-minutes budget rather than slipping
+      through because it went to the voice path.
+- [ ] Completion notices go through the Announcer's budget — fire several slow jobs
+      inside ten minutes and confirm only one surfaces. **This was broken until M8a**:
+      `WatchPresenter` held an `Announcer` and called `showInformationMessage` directly.
+- [ ] With a model wired (M8g2): a generated quip fires for a trigger the bank covers,
+      and reads as the same character as the canned one.
+- [ ] Kill the network mid-quip — the canned line arrives instead, within the timeout,
+      with no stall and no silence.
+- [ ] Start an agent run and trip a quip trigger — nothing is generated and nothing is
+      spoken, per §4.6 *Personality under load*.
 - [ ] **Mute, mid-sentence.** Start a briefing, hit mute while it's still talking —
       audio stops immediately, not at the end of the utterance. The queued rest of the
       utterances is dropped too, not merely paused, or unmuting replays a stale

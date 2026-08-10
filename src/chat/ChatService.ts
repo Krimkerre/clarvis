@@ -17,6 +17,8 @@ import { routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
+import { detectTestCommand } from '../agent/testCommand';
+import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
 /**
@@ -380,16 +382,45 @@ export class ChatService {
     // Only when there is something to review. A run that changed nothing has nothing
     // to merge, keep or throw away, and offering anyway is a dialog about an absence.
     const { commits, files } = runner.result;
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
     if (files.length > 0) {
-      // The likely answer first. "Review the run" made the common case — yes, keep it
-      // — a menu away, and a menu is where a beginner stops.
+      // The likely answer first, and the *useful* one first of all: a change nobody
+      // has run is a change nobody knows about. Offering to check it before offering
+      // to keep it is the order a careful person would work in.
+      const testCommand = await detectTestCommand(root);
+
       const answer = await vscode.window.showInformationMessage(
-        `Clarvis: ${files.length} file${files.length === 1 ? '' : 's'} changed, on a copy of your work.`,
+        `Clarvis: ${files.length} file${files.length === 1 ? '' : 's'} changed, on a temp branch.`,
+        ...(testCommand ? ['Check it works'] : []),
         'Keep it',
         'Show me first'
       );
 
       const base = this.context.workspaceState.get<string>('clarvis.agent.baseBranch');
+
+      if (answer === 'Check it works' && testCommand) {
+        const passed = await this.checkItWorks(testCommand);
+
+        // Pass or fail, the next offer follows from the result rather than repeating
+        // the same menu — that is the whole point of having run it.
+        const next = passed
+          ? await vscode.window.showInformationMessage('Clarvis: tests pass.', 'Keep it', 'Show me first')
+          : await vscode.window.showWarningMessage(
+              "Clarvis: tests fail. That may be my doing, or it may have been failing already.",
+              'Show me first',
+              'Bin it'
+            );
+
+        if (next === 'Keep it') {
+          await mergeRunBack(commits, files, this.log, base, (text) => void this.remark(text));
+          return;
+        }
+        if (next === 'Bin it' || next === 'Show me first') {
+          await reviewRun(commits, files, this.log, base, (text) => void this.remark(text));
+        }
+        return;
+      }
 
       if (answer === 'Keep it') {
         await mergeRunBack(commits, files, this.log, base, (text) => void this.remark(text));
@@ -397,13 +428,7 @@ export class ChatService {
       }
 
       if (answer === 'Show me first') {
-        await reviewRun(
-          commits,
-          files,
-          this.log,
-          base,
-          (text) => void this.remark(text)
-        );
+        await reviewRun(commits, files, this.log, base, (text) => void this.remark(text));
       }
     }
   }
@@ -447,6 +472,33 @@ export class ChatService {
     }
 
     if (spoken.trim()) this.voice.say(spoken, 'chatReply');
+  }
+
+  /**
+   * Runs the project's own tests and says how it went.
+   *
+   * In the same terminal the agent uses, so it reads as one continuous session rather
+   * than a second thing happening somewhere else. The result is reported in the
+   * transcript either way — a check whose outcome you have to go looking for is not
+   * much of a check.
+   */
+  private async checkItWorks(command: string): Promise<boolean> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    await this.remark(`Running ${command} to see if it still works.`);
+
+    this.terminal.announce(command);
+    const result = await runCommand(root, command, (chunk) => this.terminal.write(chunk));
+
+    const passed = result.exitCode === 0;
+    this.log(`check: "${command}" exited ${result.exitCode}`);
+
+    await this.note(
+      passed
+        ? `\`${command}\` passed.`
+        : `\`${command}\` failed — exit ${result.exitCode ?? 'killed'}. The output is in the Clarvis terminal.`
+    );
+
+    return passed;
   }
 
   /** Cancels the answer in flight, if there is one. */

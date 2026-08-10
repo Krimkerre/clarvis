@@ -403,7 +403,7 @@ export class AgentRunner {
     // Plain, and short. The previous version — "you're now on X (was Y), review the
     // diff, then merge it or throw it away" — is three git instructions to someone who
     // may not know what a diff is, and the decision is offered by a button anyway.
-    return `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a copy.`;
+    return `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a temp branch.`;
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */

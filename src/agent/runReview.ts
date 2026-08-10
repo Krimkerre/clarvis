@@ -123,12 +123,12 @@ export function reviewOptions(summary: RunSummary): ReviewOption[] {
     {
       action: 'return',
       label: `Decide later`,
-      detail: `Puts you back on \`${home}\` and keeps my changes on the copy. Nothing is lost.`,
+      detail: `Puts you back on \`${home}\` and keeps my changes on the temp branch. Nothing is lost.`,
     },
     {
       action: 'stay',
       label: 'Carry on from here',
-      detail: 'Keeps you on my copy. Anything you save from now on joins it rather than your own branch.',
+      detail: 'Keeps you on the temp branch. Anything you save from now on joins it rather than your own branch.',
     },
     {
       action: 'discard',

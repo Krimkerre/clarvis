@@ -60,3 +60,15 @@ test('a colon inside a real remark is not mistaken for a preface', () => {
     'Three failures: I am starting to see a pattern.'
   );
 });
+
+import { completionQuipPrompt } from './liveQuip';
+
+test('the closing aside is told not to restate the result', () => {
+  // A summary trying to be funny is a summary nobody can rely on, so the two are kept
+  // apart: the report is information, the aside is the exhale after it.
+  const prompt = completionQuipPrompt('fix the failing test', 'Fixed the comparison in app.js.');
+
+  assert.match(prompt, /aside, not a summary/);
+  assert.match(prompt, /Do not restate what you did/);
+  assert.match(prompt, /never about the user being slow or wrong/);
+});

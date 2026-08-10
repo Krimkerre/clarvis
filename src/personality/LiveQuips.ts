@@ -1,6 +1,12 @@
 import { ModelService } from '../model/ModelService';
 import { QuipTrigger } from './quipBank';
-import { acknowledgementPrompt, quipPrompt, sanitiseQuip, QuipContext } from './liveQuip';
+import {
+  acknowledgementPrompt,
+  completionQuipPrompt,
+  quipPrompt,
+  sanitiseQuip,
+  QuipContext,
+} from './liveQuip';
 
 /**
  * Asks the model for a line, within a deadline it will usually beat.
@@ -67,6 +73,23 @@ export class LiveQuips {
       return sanitiseQuip(text);
     } catch (error) {
       this.log(`quip: acknowledgement failed (${String(error)})`);
+      return undefined;
+    }
+  }
+
+  /** The aside after a finished task. Solicited, so no budget applies. */
+  async afterTask(task: string, summary: string): Promise<string | undefined> {
+    if (!(await this.models.isReady('chat'))) return undefined;
+
+    try {
+      const text = await Promise.race([
+        this.collect(completionQuipPrompt(task, summary)),
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
+      ]);
+
+      return sanitiseQuip(text);
+    } catch (error) {
+      this.log(`quip: completion line failed (${String(error)})`);
       return undefined;
     }
   }

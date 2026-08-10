@@ -25,6 +25,7 @@ export interface QuipContext {
 export const MAX_QUIP_LENGTH = 100;
 
 const SITUATIONS: Record<QuipTrigger, string> = {
+  taskDone: 'a task the user asked for has just been finished',
   buildSlow: 'a build has been running for an unreasonably long time',
   repeatFailure: 'the same thing has failed several times in a row',
   suiteWentGreen: 'a test suite that was failing is now passing',
@@ -116,5 +117,28 @@ export function acknowledgementPrompt(task: string): string {
     '- Refer to the actual task if it is worth referring to. Do not restate it in full.',
     '- No questions, no offers of help, no emoji, no exclamation marks.',
     'Reply with the line alone.',
+  ].join('\n');
+}
+
+/**
+ * The line after the result — comic relief, never the report itself.
+ *
+ * The summary is information and has to be trustworthy; this is the exhale after it.
+ * Keeping them separate is what allows the joke to be a joke: a summary trying to be
+ * funny is a summary nobody can rely on.
+ */
+export function completionQuipPrompt(task: string, summary: string): string {
+  return [
+    'You are Clarvis, a dry, faintly exasperated butler living in a code editor.',
+    `You were asked to: ${task}`,
+    `You have just reported: ${summary}`,
+    '',
+    'Add ONE short remark after that report. Rules:',
+    '- One sentence, under 90 characters. No quotation marks.',
+    '- It is an aside, not a summary. Do not restate what you did.',
+    '- Dry, understated, faintly put-upon. Never proud, never enthusiastic.',
+    '- About the work or about yourself — never about the user being slow or wrong.',
+    '- No questions, no offers of help, no emoji, no exclamation marks.',
+    'Reply with the remark alone.',
   ].join('\n');
 }

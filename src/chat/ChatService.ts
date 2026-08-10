@@ -20,6 +20,7 @@ import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
 import { headline } from '../agent/headline';
+import { QuipPicker } from '../personality/QuipPicker';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -65,11 +66,19 @@ export class ChatService {
   /** The answer currently streaming, so `Clarvis: Stop` has something to abort. */
   private streaming?: AbortController;
 
-  /** Writes the opening line for a run, when a model is configured. */
-  private live: { acknowledge(task: string): Promise<string | undefined> } | undefined;
+  /** Writes the opening and closing lines for a run, when a model is configured. */
+  private live:
+    | {
+        acknowledge(task: string): Promise<string | undefined>;
+        afterTask(task: string, summary: string): Promise<string | undefined>;
+      }
+    | undefined;
+
+  /** The bank, for the closing aside when no model is available. */
+  private readonly closers = new QuipPicker();
 
   /** Supplied by the composition root, so this class stays free of provider details. */
-  setLiveLines(live: { acknowledge(task: string): Promise<string | undefined> }): void {
+  setLiveLines(live: NonNullable<ChatService['live']>): void {
     this.live = live;
   }
 
@@ -435,7 +444,19 @@ export class ChatService {
     // remark, its narration, a note about where the work sits — and reading all of it
     // aloud buries the only sentence anyone is waiting for.
     const said = headline(spoken);
-    if (said) this.voice.say(said, 'chatReply');
+    if (!said) return;
+
+    // The aside comes *after* the result and never replaces it. A summary trying to be
+    // funny is a summary nobody can rely on; keeping them apart is what lets the joke
+    // be a joke.
+    const aside =
+      (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
+
+    if (aside) await this.note(aside);
+
+    // Spoken together, because two utterances a second apart sound like a stutter —
+    // and because the pause between them is the joke.
+    this.voice.say(aside ? `${said} ${aside}` : said, 'chatReply');
 
     // Commits the run made are not news about the user, so the personality is told
     // about them rather than left to congratulate Clarvis on his own work.

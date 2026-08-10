@@ -11,7 +11,15 @@
 export interface RunSummary {
   /** The branch the run worked on. Absent when git wasn't available. */
   branch?: string;
-  /** Where it started from, and where "go back" means. */
+  /**
+   * The branch the user was actually on when the run started.
+   *
+   * The most likely merge target by a distance, and the one a guess gets wrong: work
+   * started from a milestone branch belongs back on that milestone branch, not on the
+   * trunk the repository happens to have.
+   */
+  origin?: string;
+  /** The trunk, for repositories where that differs from where the run started. */
   base?: string;
   /**
    * An integration branch, when the repository has one.
@@ -31,7 +39,14 @@ export interface RunSummary {
   uncommitted: number;
 }
 
-export type ReviewAction = 'diff' | 'merge' | 'merge-integration' | 'return' | 'discard' | 'stay';
+export type ReviewAction =
+  | 'diff'
+  | 'merge'
+  | 'merge-integration'
+  | 'merge-origin'
+  | 'return'
+  | 'discard'
+  | 'stay';
 
 /**
  * Branch names that mean "work lands here before the trunk".
@@ -97,37 +112,17 @@ export function reviewOptions(summary: RunSummary): ReviewOption[] {
     ];
   }
 
-  const base = summary.base ?? 'your branch';
+  const home = summary.origin ?? summary.base ?? 'your branch';
   const options: ReviewOption[] = [
     {
       action: 'diff',
       label: 'Show me what changed',
       detail: `${summary.commits.length} commit(s), ${summary.files.length} file(s). Nothing moves.`,
     },
-  ];
-
-  // The integration branch comes first when there is one: a repository with `testing`
-  // has already decided work lands there before the trunk, and listing the trunk first
-  // invites skipping a step someone deliberately added.
-  if (summary.integration && summary.integration !== summary.base) {
-    options.push({
-      action: 'merge-integration',
-      label: `Merge into ${summary.integration}`,
-      detail: `The usual route — lands on ${summary.integration} rather than straight onto ${base}.`,
-    });
-  }
-
-  options.push(
-    {
-      action: 'merge',
-      label: `Merge into ${base}`,
-      detail: summary.integration
-        ? `Straight onto ${base}, skipping ${summary.integration}.`
-        : `Brings the work onto ${base} and puts you back there.`,
-    },
+    ...mergeTargets(summary),
     {
       action: 'return',
-      label: `Go back to ${base}, keep the branch`,
+      label: `Go back to ${home}, keep the branch`,
       detail: `The work stays on \`${summary.branch}\` for later. Nothing is lost.`,
     },
     {
@@ -138,12 +133,51 @@ export function reviewOptions(summary: RunSummary): ReviewOption[] {
     {
       action: 'discard',
       label: 'Throw it away',
-      detail: `Deletes \`${summary.branch}\` and everything on it, and returns you to ${base}.`,
+      detail: `Deletes \`${summary.branch}\` and everything on it, and returns you to ${home}.`,
       destructive: true,
-    }
-  );
+    },
+  ];
 
   return options;
+}
+
+/**
+ * Where the work could go, most likely first.
+ *
+ * Three candidates, in the order a person would consider them:
+ *  1. **where the run started** — a task begun from a milestone branch belongs back on
+ *     that milestone branch, and a guess at the trunk gets this wrong every time
+ *  2. **the integration branch**, when the repository has one it routes work through
+ *  3. **the trunk**, said plainly as the step that skips the others
+ *
+ * Deduplicated, because a repository where all three are the same branch should offer
+ * one option rather than the same option three times with different wording.
+ */
+export function mergeTargets(summary: RunSummary): ReviewOption[] {
+  const seen = new Set<string>();
+  const targets: ReviewOption[] = [];
+
+  const add = (branch: string | undefined, action: ReviewAction, detail: string) => {
+    if (!branch || branch === summary.branch || seen.has(branch)) return;
+    seen.add(branch);
+    targets.push({ action, label: `Merge into ${branch}`, detail });
+  };
+
+  add(summary.origin, 'merge-origin', 'Where this run started — usually where it belongs.');
+  add(
+    summary.integration,
+    'merge-integration',
+    summary.origin
+      ? 'The shared integration branch, rather than back where you were.'
+      : 'The usual route before anything reaches the trunk.'
+  );
+  add(
+    summary.base,
+    'merge',
+    seen.size > 0 ? 'Straight onto the trunk, skipping the branches above.' : 'Brings the work onto the trunk.'
+  );
+
+  return targets;
 }
 
 /**
@@ -186,5 +220,5 @@ export function describeRun(summary: RunSummary): string {
   const commits = `${summary.commits.length} commit${summary.commits.length === 1 ? '' : 's'}`;
   const files = `${summary.files.length} file${summary.files.length === 1 ? '' : 's'}`;
 
-  return `\`${summary.branch}\` — ${commits}, ${files}, branched from ${summary.base ?? 'unknown'}.`;
+  return `\`${summary.branch}\` — ${commits}, ${files}, branched from ${summary.origin ?? summary.base ?? 'unknown'}.`;
 }

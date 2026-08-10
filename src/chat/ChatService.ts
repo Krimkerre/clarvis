@@ -353,7 +353,9 @@ export class ChatService {
         `Clarvis: ${files.length} file(s) changed.`,
         'Review the run'
       );
-      if (review === 'Review the run') await reviewRun(commits, files, this.log);
+      if (review === 'Review the run') {
+        await reviewRun(commits, files, this.log, this.context.workspaceState.get('clarvis.agent.baseBranch'));
+      }
     }
   }
 

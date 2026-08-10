@@ -22,9 +22,11 @@ import { isAgentBranch } from './branchNames';
 export async function reviewRun(
   runCommits: string[],
   files: string[],
-  log: (message: string) => void
+  log: (message: string) => void,
+  /** The branch the run started from, remembered by AgentBranch. */
+  origin?: string
 ): Promise<void> {
-  const summary = await gather(runCommits, files);
+  const summary = await gather(runCommits, files, origin);
   if (!summary) {
     void vscode.window.showInformationMessage('Clarvis: no git repository here, so there is nothing to review.');
     return;
@@ -90,17 +92,24 @@ async function act(
     return;
   }
 
-  if (action === 'return' && summary.base) {
-    await repository.checkout(summary.base);
-    log(`review: returned to ${summary.base}, kept ${summary.branch}`);
+  const home = summary.origin ?? summary.base;
+
+  if (action === 'return' && home) {
+    await repository.checkout(home);
+    log(`review: returned to ${home}, kept ${summary.branch}`);
     void vscode.window.showInformationMessage(
-      `Clarvis: back on ${summary.base}. The work is on \`${summary.branch}\` when you want it.`
+      `Clarvis: back on ${home}. The work is on \`${summary.branch}\` when you want it.`
     );
     return;
   }
 
-  if ((action === 'merge' || action === 'merge-integration') && summary.branch) {
-    const target = action === 'merge-integration' ? summary.integration : summary.base;
+  if (action.startsWith('merge') && summary.branch) {
+    const target =
+      action === 'merge-origin'
+        ? summary.origin
+        : action === 'merge-integration'
+          ? summary.integration
+          : summary.base;
     if (!target) return;
 
     try {
@@ -120,22 +129,26 @@ async function act(
   }
 
   if (action === 'discard' && summary.branch) {
-    if (summary.base) await repository.checkout(summary.base);
+    if (home) await repository.checkout(home);
     try {
       await repository.deleteBranch(summary.branch, true);
       log(`review: discarded ${summary.branch}`);
-      void vscode.window.showInformationMessage(`Clarvis: gone. You're on ${summary.base}.`);
+      void vscode.window.showInformationMessage(`Clarvis: gone. You're on ${home}.`);
     } catch (error) {
       log(`review: could not delete ${summary.branch} (${String(error)})`);
       void vscode.window.showWarningMessage(
-        `Clarvis: I moved you to ${summary.base} but couldn't delete the branch. It's still there if you want it.`
+        `Clarvis: I moved you to ${home} but couldn't delete the branch. It's still there if you want it.`
       );
     }
   }
 }
 
 /** Reads the current state of the run from git. */
-async function gather(runCommits: string[], files: string[]): Promise<RunSummary | undefined> {
+async function gather(
+  runCommits: string[],
+  files: string[],
+  origin?: string
+): Promise<RunSummary | undefined> {
   const repository = gitRepository();
   if (!repository) return undefined;
 
@@ -157,6 +170,9 @@ async function gather(runCommits: string[], files: string[]): Promise<RunSummary
 
   return {
     branch,
+    // Only offered when it still exists: a branch deleted since the run would produce
+    // a merge target that fails at the moment the user picks it.
+    origin: origin && branches.includes(origin) && !isAgentBranch(origin) ? origin : undefined,
     base,
     integration: integrationBranch(branches, base),
     files,

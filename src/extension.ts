@@ -150,7 +150,12 @@ export function activate(context: vscode.ExtensionContext): void {
     // Available any time, not only after a run — the question "what is this branch and
     // what do I do with it" outlives the run that created it.
     vscode.commands.registerCommand('clarvis.reviewRun', () =>
-      reviewRun([], [], (message) => logger.write(message))
+      reviewRun(
+        [],
+        [],
+        (message) => logger.write(message),
+        context.workspaceState.get('clarvis.agent.baseBranch')
+      )
     ),
 
     // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so

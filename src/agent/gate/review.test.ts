@@ -94,15 +94,16 @@ test('the summary line names the branch, the counts and the base', () => {
 
 import { integrationBranch } from '../runReview';
 
-test('a repository with testing gets offered testing first', () => {
+test('a repository with testing gets offered testing before the trunk', () => {
   // A repo with `testing` has already decided work lands there before the trunk.
   // Listing the trunk first invites skipping a step someone deliberately added.
-  const options = reviewOptions(summary({ base: 'main', integration: 'testing' }));
+  // (No origin here: with one recorded it comes first — see the merge-target tests.)
+  const options = reviewOptions(summary({ base: 'main', integration: 'testing', origin: undefined }));
   const merges = options.filter((option) => option.action.startsWith('merge'));
 
   assert.equal(merges[0].action, 'merge-integration');
   assert.match(merges[0].label, /testing/);
-  assert.match(merges[1].detail, /skipping testing/);
+  assert.match(merges[1].detail, /skipping/);
 });
 
 test('without an integration branch the options are unchanged', () => {
@@ -128,4 +129,49 @@ test('integration branches are recognised by convention', () => {
 
 test('the base branch is never offered as its own integration target', () => {
   assert.equal(integrationBranch(['develop', 'main'], 'develop'), undefined);
+});
+
+import { mergeTargets } from '../runReview';
+
+test('where the run started is the first merge target', () => {
+  // Work begun from a milestone branch belongs back on that milestone branch. Guessing
+  // at the trunk gets this wrong every time, which is the case that prompted it.
+  const targets = mergeTargets(
+    summary({ origin: 'm8-chat-agent', integration: 'testing', base: 'main' })
+  );
+
+  assert.deepEqual(
+    targets.map((target) => target.action),
+    ['merge-origin', 'merge-integration', 'merge']
+  );
+  assert.match(targets[0].label, /m8-chat-agent/);
+});
+
+test('the trunk option says it skips the others', () => {
+  const targets = mergeTargets(summary({ origin: 'feature/x', integration: 'testing', base: 'main' }));
+
+  assert.match(targets[2].detail, /skipping/);
+});
+
+test('duplicate targets are offered once, not three times', () => {
+  // A repository where origin, integration and trunk are all the same branch should
+  // offer one option rather than the same one worded three ways.
+  const targets = mergeTargets(summary({ origin: 'main', integration: undefined, base: 'main' }));
+
+  assert.equal(targets.length, 1);
+  assert.match(targets[0].label, /main/);
+});
+
+test('the run branch is never offered as its own merge target', () => {
+  const targets = mergeTargets(
+    summary({ branch: 'clarvis/x', origin: 'clarvis/x', base: 'main' })
+  );
+
+  assert.ok(!targets.some((target) => target.label.includes('clarvis/x')));
+});
+
+test('with no origin recorded, the old ordering still holds', () => {
+  const targets = mergeTargets(summary({ origin: undefined, integration: 'testing', base: 'main' }));
+
+  assert.deepEqual(targets.map((target) => target.action), ['merge-integration', 'merge']);
 });

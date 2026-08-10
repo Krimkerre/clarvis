@@ -114,7 +114,17 @@ export function activate(context: vscode.ExtensionContext): void {
   // Called by the agent path the moment a run finishes: a branch the user just asked
   // for should be sorted out while they are still looking at it.
   context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow())
+    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow()),
+
+    // "Asked once" is right until someone changes their mind, or is testing. Without
+    // this the only way to be asked again about a branch is a new workspace.
+    vscode.commands.registerCommand('clarvis.forgetBranchAnswers', async () => {
+      await context.workspaceState.update('clarvis.branchFlow.seen', undefined);
+      await context.workspaceState.update('clarvis.branchFlow.kept', undefined);
+      logger.write('branch flow: forgot which branches had been asked about');
+      void vscode.window.showInformationMessage('Clarvis: I have forgotten which branches I asked about.');
+      await branchFlow.checkNow();
+    })
   );
 
 

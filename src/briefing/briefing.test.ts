@@ -248,3 +248,22 @@ test('an unfinished job is not described as a failure in the prompt', () => {
   assert.match(prompt, /still running/);
   assert.ok(!/failed with exit/.test(prompt), prompt);
 });
+
+import { isWorthRemembering } from './recentFiles';
+
+test("git's own scratch files are not the user's work", () => {
+  // Seen in a real session: committing through the Source Control view saves
+  // COMMIT_EDITMSG, and the briefing reported "last edits were to plan.md, README.md,
+  // and a commit message".
+  assert.equal(isWorthRemembering('/p/.git/COMMIT_EDITMSG'), false);
+  assert.equal(isWorthRemembering('/p/.git/MERGE_MSG'), false);
+  assert.equal(isWorthRemembering('/p/.git/rebase-merge/done'), false);
+  assert.equal(isWorthRemembering('/p/node_modules/x/index.js'), false);
+});
+
+test('ordinary files are still remembered', () => {
+  assert.equal(isWorthRemembering('/p/src/app.ts'), true);
+  assert.equal(isWorthRemembering('/p/README.md'), true);
+  // A file that merely mentions git in its name is the user's, not git's.
+  assert.equal(isWorthRemembering('/p/src/gitStatus.ts'), true);
+});

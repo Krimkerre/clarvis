@@ -64,6 +64,10 @@
         "title": "Clarvis: Run a Task"
       },
       {
+        "command": "clarvis.forgetBranchAnswers",
+        "title": "Clarvis: Forget Branch Flow Answers"
+      },
+      {
         "command": "clarvis.reviewRun",
         "title": "Clarvis: Review Agent Run"
       },

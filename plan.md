@@ -291,6 +291,55 @@ to say it out loud. Formal diction, impatient delivery.
 
 ---
 
+### 2.2 One voice, everywhere — *the rule this project got wrong once*
+
+**Personality is the medium, not a feature.** M6 built a quip bank and called that the
+character; everything built afterwards — the voice pickers, the gates, the review
+wizard, the branch flow, the tool narration — wrote its own strings at the call site,
+in the developer's voice. Each was fine alone. Together they produced an assistant who
+is witty in the chat panel and dead in every dialog, which is worse than one that was
+plain throughout, because the flatness reads as the character slipping.
+
+Three specific errors, recorded so they are not repeated:
+
+1. **Plainness was confused with blandness.** §4.6 rightly calls for language a
+   non-git-user understands. "Switching to `main`." is not plain Clarvis; it is no
+   Clarvis. Plain means *understood by anyone*, not *written by nobody*.
+2. **The model reached some surfaces and not others.** Chat, briefings and quips were
+   written live while dialogs and notifications stayed static, so the character
+   flickered depending on which control you touched.
+3. **Nothing tested for voice.** Every test constrained the character — length,
+   no-repeat, no jargon — and none asserted it was present. A dead line passed all of
+   them.
+
+**The rule, for everything built from here.** No user-facing sentence is composed at
+its call site. Every one declares its *purpose* and its *facts*, and
+`src/personality/say.ts` decides how it sounds:
+
+| Purpose | What it is | How much character |
+|---|---|---|
+| `report` | something happened | full — dry, brief, put-upon |
+| `warn` | something could be lost | the risk first, stated plainly; never a joke |
+| `ask` | a choice with consequences | plain; the consequence survives exactly |
+| `aside` | comic relief, after the facts | full — and never restating the facts |
+
+Three properties make this safe rather than decorative:
+
+- **Facts are passed through verbatim and checked.** A rewrite that drops the branch
+  name, the count or the command is rejected, because the character lives in the
+  framing and never in the facts.
+- **The written line always works.** It is the fallback, not a draft — no key, no
+  network, a slow model or a rejected rewrite all cost nothing.
+- **Warnings and choices are constrained by purpose, not by hope.** A personality layer
+  that can make a deletion prompt witty is a hazard; the licence for those purposes
+  forbids it, and a test asserts the prompt says so.
+
+**And it is tested.** `DEAD_PHRASES` fails the build on "successfully", "operation
+completed", "please note", "an error occurred" — the tells that a string was typed by
+someone filling in a dialog rather than written by a character. Every written line in
+the bank is checked against it, since the bank is what ships wherever a model is
+absent.
+
 ## 2.1 The System Prompt
 
 §2 describes the character; this is the character made executable. It ships in
@@ -2922,6 +2971,10 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       just hidden in the UI.
 - [ ] Ask with no active selection — attaches the visible range, not an error, not the
       whole file.
+- [ ] **Read every user-facing line of a full session and ask "would Clarvis say
+      this?"** — including dialogs, notifications and option lists, which is where the
+      character went missing the first time. §2.2's rule is that no sentence is
+      composed at its call site; this is the check that it held.
 - [ ] **Read a full session's git-facing output as someone who has never used git.**
       No jargon, every warning states what is at risk, and every option says what it
       does. This is a judgement call a person has to make; the automated check only

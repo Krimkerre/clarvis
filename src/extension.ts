@@ -24,6 +24,7 @@ import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelC
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { LiveQuips } from './personality/LiveQuips';
+import { Voice } from './personality/Voice';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
@@ -248,6 +249,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
+  chat.setVoiceWriter(new Voice(models, (message) => logger.write(message)));
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about

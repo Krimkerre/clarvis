@@ -21,6 +21,7 @@ import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
 import { headline } from '../agent/headline';
 import { QuipPicker } from '../personality/QuipPicker';
+import { Voice } from '../personality/Voice';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -76,6 +77,22 @@ export class ChatService {
 
   /** The bank, for the closing aside when no model is available. */
   private readonly closers = new QuipPicker();
+
+  /** Puts a line in character. Every user-facing sentence here goes through it. */
+  private voiceOf: Voice | undefined;
+
+  setVoiceWriter(voice: Voice): void {
+    this.voiceOf = voice;
+  }
+
+  /** Shorthand: in character where possible, verbatim where not. */
+  private async phrase(
+    purpose: 'report' | 'warn' | 'ask' | 'aside',
+    fallback: string,
+    keep?: string[]
+  ): Promise<string> {
+    return (await this.voiceOf?.say({ purpose, fallback, keep })) ?? fallback;
+  }
 
   /** Supplied by the composition root, so this class stays free of provider details. */
   setLiveLines(live: NonNullable<ChatService['live']>): void {
@@ -405,7 +422,7 @@ export class ChatService {
 
     // A single line while it works. Without it the panel sits silent for a minute and
     // the only signal is the avatar — but it is one line, not a running commentary.
-    await this.note('Working on it…');
+    await this.note(await this.phrase('report', 'Working on it…'));
 
     // **Nothing technical reaches the transcript.** Tool calls, commands and the
     // model's own working-out all go to the Clarvis terminal, where a build log
@@ -451,7 +468,11 @@ export class ChatService {
       const testCommand = await detectTestCommand(root);
 
       const answer = await vscode.window.showInformationMessage(
-        `Clarvis: ${files.length} file${files.length === 1 ? '' : 's'} changed, on a temp branch.`,
+        await this.phrase(
+          'report',
+          `${files.length} file${files.length === 1 ? '' : 's'} changed, on a temp branch.`,
+          [String(files.length)]
+        ),
         ...(testCommand ? ['Check it works'] : []),
         'Keep it',
         'Show me first'
@@ -465,7 +486,11 @@ export class ChatService {
         // Pass or fail, the next offer follows from the result rather than repeating
         // the same menu — that is the whole point of having run it.
         const next = passed
-          ? await vscode.window.showInformationMessage('Clarvis: tests pass.', 'Keep it', 'Show me first')
+          ? await vscode.window.showInformationMessage(
+              await this.phrase('report', 'The tests pass.'),
+              'Keep it',
+              'Show me first'
+            )
           : await vscode.window.showWarningMessage(
               "Clarvis: tests fail. That may be my doing, or it may have been failing already.",
               'Show me first',

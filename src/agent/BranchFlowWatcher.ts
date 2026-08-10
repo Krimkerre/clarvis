@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BranchFlow, flowBranches, matchesWork, parseBranchFlow, writeBranchFlow } from './branchFlow';
 import { isAgentBranch } from './branchNames';
+import { QuipPicker } from '../personality/QuipPicker';
 
 /**
  * Noticing a new branch, and asking where it belongs.
@@ -41,6 +42,15 @@ const STARTUP_MS = 4000;
 export class BranchFlowWatcher {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private startupTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /**
+   * Its own picker, so noticing branches doesn't repeat itself.
+   *
+   * Separate from M6's: that one's sass is unlocked by builds going wrong, and a
+   * branch appearing is not evidence of a bad morning. Sharing it would let an
+   * unrelated string of failures decide how rude he is about your branching.
+   */
+  private readonly quips = new QuipPicker();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -176,8 +186,15 @@ export class BranchFlowWatcher {
   ): Promise<void> {
     this.log(`branch flow: asking about "${branch}"`);
 
+    // Said before the question, so the question has a voice attached rather than
+    // arriving as a bare dialog. Deliberately not routed through the §6 interruption
+    // budget: the question itself is the interruption, it happens once per branch, and
+    // suppressing the remark while still showing the dialog would be the worst of both.
+    const quip = this.quips.pick('newBranch');
+    if (quip) this.say(`${quip.text} \`${branch}\`, to be precise — and it's not in plan.md.`);
+
     const picked = await vscode.window.showInformationMessage(
-      `Clarvis: there's a branch called \`${branch}\` that isn't in the flow in plan.md. Where does it fit?`,
+      `Clarvis: where does \`${branch}\` fit in the flow?`,
       'Work passes through it',
       'It\'s the trunk',
       'Not part of the flow'

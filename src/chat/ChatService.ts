@@ -333,7 +333,7 @@ export class ChatService {
     const controller = new AbortController();
     this.streaming = controller;
 
-    this.avatar.setState('thinking');
+    this.avatar.setState('thinking', 'chat');
     const turn: Turn = { speaker: 'clarvis', text: '', at: Date.now() };
     this.thread = appendTurn(this.thread, turn);
     this.panel.post({ type: 'chat-stream-start' });
@@ -346,7 +346,7 @@ export class ChatService {
         messages: this.modelMessages(),
         signal: controller.signal,
       })) {
-        if (text === '') this.avatar.setState('talking');
+        if (text === '') this.avatar.setState('talking', 'chat');
         text += fragment;
         turn.text = text;
         this.panel.post({ type: 'chat-stream', text: fragment });
@@ -365,7 +365,7 @@ export class ChatService {
     } finally {
       this.streaming = undefined;
       this.panel.post({ type: 'chat-stream-end' });
-      this.avatar.setState('neutral');
+      this.avatar.setState('neutral', 'chat');
       await this.persist();
     }
 
@@ -407,7 +407,7 @@ export class ChatService {
     // Written, not spoken. The user asked for one line of a run to be read aloud, and
     // that line is the result — "right, on it" is not news.
     await this.note(opening);
-    this.avatar.setState('thinking');
+    this.avatar.setState('thinking', 'chat');
 
     this.streaming?.abort();
     const controller = new AbortController();
@@ -422,7 +422,10 @@ export class ChatService {
     );
 
     this.agentBusy.running = true;
-    this.avatar.setState('thinking');
+    // Held for the whole run, so a build finishing three seconds in cannot wipe the
+    // expression of work the user is watching happen (M8e2).
+    const holdingFace = this.avatar.claim('agent');
+    this.avatar.setState('thinking', 'agent');
 
     // A single line while it works. Without it the panel sits silent for a minute and
     // the only signal is the avatar — but it is one line, not a running commentary.
@@ -449,7 +452,8 @@ export class ChatService {
     } finally {
       this.agentBusy.running = false;
       this.streaming = undefined;
-      this.avatar.setState('neutral');
+      this.avatar.setState('neutral', 'agent');
+      holdingFace();
     }
 
     // A run can create branches — "make a branch called testing3" is a perfectly
@@ -536,7 +540,7 @@ export class ChatService {
       this.log
     );
 
-    this.avatar.setState('thinking');
+    this.avatar.setState('thinking', 'chat');
     this.panel.post({ type: 'chat-stream-start' });
 
     // What was actually said, for the voice — accumulated from the stream rather than
@@ -556,7 +560,7 @@ export class ChatService {
     } finally {
       this.streaming = undefined;
       this.panel.post({ type: 'chat-stream-end' });
-      this.avatar.setState('neutral');
+      this.avatar.setState('neutral', 'chat');
       await this.persist();
     }
 
@@ -798,7 +802,7 @@ export class ChatService {
   /** Posts a reply, sets the face to match it, and returns the face to rest after. */
   private async say(text: string, state: Parameters<AvatarController['setState']>[0]): Promise<void> {
     await this.record({ speaker: 'clarvis', text, at: Date.now() });
-    this.avatar.setState(state);
+    this.avatar.setState(state, 'chat');
 
     // Spoken as well as written. The reply is on screen either way — voice is never
     // the only copy, so muting or a broken key costs delivery, never the answer.

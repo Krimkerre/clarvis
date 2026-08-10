@@ -2874,15 +2874,20 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   model, streaming its steps into the panel: each tool call, each file touched, each
   command run, with a live step and token counter. `clarvis.agent.maxStepsPerTask`
   hard-stops and asks. `Clarvis: Stop` aborts at the next tool boundary.
-- **M8e2 — Avatar arbitration.** `AvatarController` (M2/M3) gains priority-based
-  ownership per §4.6 *Who drives the avatar*: agent run > chat reply > watcher > idle.
-  A lower-priority source stops writing while a higher one holds it, rather than
-  fighting. This is the deliberate deferral M3 recorded — it shipped single-writer
-  because a second writer didn't exist yet.
-  Also required, both easy to miss: `WatchPresenter` must **suppress its completion
-  notifications for commands the agent started** (otherwise the user gets walk-away
-  toasts about work they're watching happen), and state changes need a **minimum dwell
-  time (~800ms) with repeat-collapsing** so fast tool sequences don't strobe the face.
+- **M8e2 — Avatar arbitration. ✅ Built.** `src/avatarArbitration.ts` holds the order —
+  agent run > chat reply > watcher > idle — as a pure rule, testable without a webview.
+  `AvatarController` gains `claim(source)`, which returns the only way to release, and a
+  `source` argument on `setState`; a write from a weaker source is logged and dropped.
+  **Equal rank wins**, which the spec did not say and which matters: a run goes thinking
+  → talking → neutral, and treating its own second write as a fight would freeze the face
+  on the first.
+  The two easy-to-miss halves are done too. `WatchPresenter` takes an `agentRunning`
+  predicate and holds its completion notices during a run — keyed on *a run is
+  happening* rather than on which command the agent started, which is the simpler thing
+  and covers everything seen so far; a command outliving its run would still leak, and
+  tagging outcomes at the source is the fix if that is ever observed. Dwell is 800ms with
+  repeat-collapsing, keeping only the newest pending expression: a queue of faces would
+  play back after the fact, which is worse than dropping the ones nobody would have seen.
 - **M8e3 — Expressive replies.** The model emits a §3 state alongside each reply as
   structured metadata, validated through `isButlerState()` with a `talking` fallback
   (§4.6 *The avatar during a reply*). Local answers use a fixed mapping instead. The tag

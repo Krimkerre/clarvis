@@ -34,7 +34,19 @@ export class WatchPresenter {
     private readonly avatar: AvatarController,
     private readonly log: (message: string) => void,
     /** Shared interruption budget (§6) — completion notices are unsolicited too. */
-    private readonly announcer: Announcer
+    private readonly announcer: Announcer,
+    /**
+     * Whether a run the user is watching is in progress.
+     *
+     * These notices exist for work you walked away from. During a run the user is
+     * already looking at the steps as they happen, so a toast announcing the test
+     * command the agent just ran is telling them what is on their screen.
+     *
+     * rdx: keyed on "a run is happening" rather than on which command the agent
+     * started. Tagging outcomes at the source would also catch a command that outlives
+     * its run, which is rare enough to be worth the simpler version until it is seen.
+     */
+    private readonly agentRunning: () => boolean = () => false
   ) {}
 
   /** Subscribes to a tracker's events. Call once per tracker. */
@@ -79,6 +91,11 @@ export class WatchPresenter {
     );
 
     if (outcome.durationMs < minDurationSeconds * 1000) return;
+
+    if (this.agentRunning()) {
+      this.log(`outcome suppressed: a run is in progress and is already reporting`);
+      return;
+    }
 
     // The Announcer sets the face and returns it to rest on the same 4s hold, so a
     // suppressed notice must not leave this class holding a reaction nothing showed.

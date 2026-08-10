@@ -98,13 +98,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const models = new ModelService(context, (message) => logger.write(message));
   registerModelCommands(context, models, (message) => logger.write(message));
 
-  const tracker = startTaskWatching(context, avatar, logger, announcer);
+  // One place that knows what a run is doing: whether one is in progress, and what it
+  // committed. Quips stay out of the way during one (§4.6 personality under load), the
+  // watcher holds its completion toasts (M8e2), and neither celebrates its commits.
+  // Declared before the watcher, which reads it.
+  const agentBusy: { running: boolean; noteCommit?: (hash: string) => void } = { running: false };
+
+  const tracker = startTaskWatching(context, avatar, logger, announcer, () => agentBusy.running);
   const memory = startPatternMemory(context, tracker, logger, announcer);
   const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
-  // One place that knows what a run is doing: whether one is in progress, and what it
-  // committed. Quips stay out of the way during one (§4.6 personality under load), and
-  // never celebrate its commits afterwards.
-  const agentBusy: { running: boolean; noteCommit?: (hash: string) => void } = { running: false };
 
   const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
   agentBusy.noteCommit = (hash) => personality.noteOwnCommit(hash);
@@ -302,6 +304,7 @@ function createAvatar(
   provider.onDidReportState((state) => avatar.setState(state));
 
   context.subscriptions.push(
+    { dispose: () => avatar.dispose() }, // the dwell timer, so a reload leaves nothing pending
     provider.disposable,
     statusBar.disposable,
     vscode.window.registerWebviewViewProvider(ButlerViewProvider.viewId, provider, {
@@ -348,12 +351,13 @@ function startTaskWatching(
   context: vscode.ExtensionContext,
   avatar: AvatarController,
   log: ClarvisLog,
-  announcer: Announcer
+  announcer: Announcer,
+  agentRunning: () => boolean
 ): BusyTracker {
   const tracker = new BusyTracker();
   wireBusyTracker(tracker, context);
 
-  const presenter = new WatchPresenter(avatar, (message) => log.write(message), announcer);
+  const presenter = new WatchPresenter(avatar, (message) => log.write(message), announcer, agentRunning);
   presenter.attachTo(tracker);
   context.subscriptions.push({ dispose: () => presenter.dispose() });
 

@@ -69,7 +69,7 @@ export class VoiceService {
       // Abandon the tail. Anything already chained keeps its own `muted` check, but
       // resetting the chain means unmute starts from silence rather than a backlog.
       this.queue = Promise.resolve();
-      this.avatar.setState('neutral');
+      this.avatar.setState('neutral', 'chat');
       this.log(`voice: muted${stopped ? ' (stopped playback in progress)' : ''}`);
     } else {
       this.log('voice: unmuted');
@@ -147,12 +147,12 @@ export class VoiceService {
     // Re-checked here, not just at say(): an utterance can sit in the queue for
     // seconds behind a long one, and mute pressed during that wait must apply to it.
     if (this.muted) return;
-    this.avatar.setState('talking');
+    this.avatar.setState('talking', 'chat');
 
     try {
       if (await this.primary.isAvailable()) {
         await this.primary.speak(utterance);
-        this.avatar.setState('neutral');
+        this.avatar.setState('neutral', 'chat');
         return;
       }
     } catch (error) {
@@ -166,7 +166,7 @@ export class VoiceService {
     } catch (error) {
       this.log(`voice: fallback failed too (${String(error)}); staying quiet`);
     } finally {
-      this.avatar.setState('neutral');
+      this.avatar.setState('neutral', 'chat');
     }
   }
 

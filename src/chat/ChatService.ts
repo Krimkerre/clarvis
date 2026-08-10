@@ -371,7 +371,10 @@ export class ChatService {
 
     // Spoken only once complete — speaking fragment by fragment would produce a
     // stutter, and the queue exists to serialise utterances, not syllables.
-    if (text) this.voice.say(text, 'chatReply');
+    if (text) {
+      this.logReply(text);
+      this.voice.say(text, 'chatReply');
+    }
   }
 
   /**
@@ -557,7 +560,22 @@ export class ChatService {
       await this.persist();
     }
 
-    if (spoken.trim()) this.voice.say(spoken, 'chatReply');
+    if (spoken.trim()) {
+      this.logReply(spoken);
+      this.voice.say(spoken, 'chatReply');
+    }
+  }
+
+  /**
+   * The reply itself, in the log.
+   *
+   * The steps were logged and the answer was not, so the log could show that a reply
+   * happened and never what it said — which is exactly the question being asked of it
+   * while the character is being tuned. The briefing has logged its own line since M4
+   * for the same reason; this is the surface that needed it more.
+   */
+  private logReply(text: string): void {
+    this.log(`chat | ${text.replace(/\s+/g, ' ').trim()}`);
   }
 
   /**

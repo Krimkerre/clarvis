@@ -454,7 +454,11 @@ export class AgentRunner {
       return characterWith(
         'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
-        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.'
+        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
+        // This path answers questions, and an answer here is *spoken*. The first
+        // reply after the character landed ran to twenty-two seconds of audio —
+        // correct, in voice, and far too long to listen to.
+        'Answer in a few sentences. Length is the failure mode: if the answer is running long you have started explaining rather than answering.'
       );
     }
 

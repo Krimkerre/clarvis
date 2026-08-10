@@ -1,12 +1,12 @@
 import { ModelService } from '../model/ModelService';
-import { acceptRewrite, Line, rewritePrompt } from './say';
+import { acceptRewrite, Line, Purpose, rewritePrompt } from './say';
 
 /**
  * Puts a line in Clarvis's voice, when there is a model to do it.
  *
  * Everything user-facing routes through here, so the character arrives everywhere at
  * once rather than being remembered surface by surface — which is how it came to be
- * present in chat and absent in every dialog.
+ * present in chat and absent in every dialog (§2.2).
  *
  * Three things keep it from being a liability:
  *  - **the written line always works**, so a missing key, a slow model or a rejected
@@ -55,7 +55,10 @@ export class Voice {
     let text = '';
 
     for await (const fragment of this.models.stream(
-      { system: 'You rewrite one line in character. Nothing else.', messages: [{ role: 'user', content: prompt }] },
+      {
+        system: 'You rewrite one line in character. Nothing else.',
+        messages: [{ role: 'user', content: prompt }],
+      },
       'chat'
     )) {
       text += fragment;
@@ -64,4 +67,32 @@ export class Voice {
 
     return text;
   }
+}
+
+/**
+ * The one voice, reachable from anywhere that speaks.
+ *
+ * A module-level accessor rather than a constructor argument, deliberately. Forty-odd
+ * places in this extension say something to a person — pickers, watchers, wizards,
+ * commands — and threading a writer into each is the friction that caused the original
+ * problem: it was always easier to type the string than to plumb the character through.
+ *
+ * Unset, `phrase()` returns the written line, so nothing depends on it having been
+ * wired. That matters for tests, and for the first seconds of activation.
+ */
+let writer: Voice | undefined;
+
+export function setVoice(voice: Voice): void {
+  writer = voice;
+}
+
+/**
+ * The line, in character where possible and verbatim where not.
+ *
+ * `keep` names the facts that must survive — branch names, counts, commands — and a
+ * rewrite that loses one is rejected rather than used.
+ */
+export async function phrase(purpose: Purpose, fallback: string, keep?: string[]): Promise<string> {
+  if (!writer) return fallback;
+  return writer.say({ purpose, fallback, keep });
 }

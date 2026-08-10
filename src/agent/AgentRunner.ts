@@ -5,6 +5,7 @@ import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
 import { isLookingAround, narrateTool } from './toolNarration';
 import { commitSubject } from './commitSubject';
+import { phrase } from '../personality/Voice';
 import { classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
@@ -130,7 +131,10 @@ export class AgentRunner {
     options: { readOnly: boolean; addendum: string }
   ): AsyncGenerator<AgentEvent> {
     if (!this.root) {
-      yield this.record({ kind: 'error', text: 'There is no folder open, so there is nothing to work on.' });
+      yield this.record({
+        kind: 'error',
+        text: await phrase('report', 'There is no folder open, so there is nothing to work on.'),
+      });
       return;
     }
 
@@ -179,7 +183,11 @@ export class AgentRunner {
 
     while (this.steps < cap) {
       if (signal.aborted) {
-        yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
+        yield this.record({
+          kind: 'done',
+          text: await phrase('report', 'Stopped.'),
+          files: [...this.touched],
+        });
         return;
       }
 

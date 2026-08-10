@@ -3,6 +3,7 @@ import { ModelService } from './ModelService';
 import { ModelChoice } from './ModelProvider';
 import { PROVIDERS, ProviderId, providerSpec } from './providers';
 import { ModelRole } from './roles';
+import { phrase } from '../personality/Voice';
 
 /** Cached model lists, per provider. */
 const CATALOG_KEY = 'clarvis.model.catalog';
@@ -339,7 +340,7 @@ export async function promptForKey(
   await models.setKey(provider, key);
   log(`model: key stored for ${provider}`);
   void vscode.window.showInformationMessage(
-    `Clarvis: ${spec.label} key stored in the system keychain.`
+    await phrase('report', `${spec.label} key stored in the system keychain.`, [spec.label])
   );
 }
 

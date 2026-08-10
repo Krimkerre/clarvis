@@ -10,6 +10,7 @@ import {
   RunSummary,
 } from './runReview';
 import { isAgentBranch } from './branchNames';
+import { phrase } from '../personality/Voice';
 import { parseBranchFlow, BranchFlow } from './branchFlow';
 
 /**
@@ -65,7 +66,9 @@ export async function reviewRun(
 ): Promise<void> {
   const summary = await gather(runCommits, files, origin);
   if (!summary) {
-    void vscode.window.showInformationMessage('Clarvis: no git repository here, so there is nothing to review.');
+    void vscode.window.showInformationMessage(
+      await phrase('report', 'There is no git repository here, so there is nothing to review.')
+    );
     return;
   }
 
@@ -163,7 +166,11 @@ async function act(
       // A conflict still warrants a notification: it needs doing something about now,
       // and the transcript is not where someone is looking mid-merge.
       void vscode.window.showWarningMessage(
-        `Clarvis: the merge into ${target} didn't apply cleanly — the conflicts are in Source Control.`
+        await phrase(
+          'warn',
+          `The merge into ${target} didn't apply cleanly — the conflicts are in Source Control.`,
+          [target]
+        )
       );
     }
     return;

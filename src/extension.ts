@@ -25,6 +25,7 @@ import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { LiveQuips } from './personality/LiveQuips';
 import { Voice } from './personality/Voice';
+import { phrase, setVoice } from './personality/Voice';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
@@ -133,7 +134,9 @@ export function activate(context: vscode.ExtensionContext): void {
       await context.workspaceState.update('clarvis.branchFlow.seen', undefined);
       await context.workspaceState.update('clarvis.branchFlow.kept', undefined);
       logger.write('branch flow: forgot which branches had been asked about');
-      void vscode.window.showInformationMessage('Clarvis: I have forgotten which branches I asked about.');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'I have forgotten which branches I asked about.')
+      );
       await branchFlow.checkNow();
     })
   );
@@ -211,7 +214,7 @@ export function activate(context: vscode.ExtensionContext): void {
       const record = Checkpoint.stored(context);
 
       if (!record || record.entries.length === 0) {
-        void vscode.window.showInformationMessage('Clarvis: there is nothing to undo.');
+        void vscode.window.showInformationMessage(await phrase('report', 'There is nothing to undo.'));
         return;
       }
 
@@ -228,9 +231,12 @@ export function activate(context: vscode.ExtensionContext): void {
       if (confirmed !== 'Undo it') return;
 
       const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
-      const summary =
-        `Clarvis: restored ${result.restored}, removed ${result.deleted}` +
-        (result.failed.length > 0 ? `, failed on ${result.failed.join(', ')}` : '.');
+      const summary = await phrase(
+        result.failed.length > 0 ? 'warn' : 'report',
+        `Restored ${result.restored} file(s), removed ${result.deleted}` +
+          (result.failed.length > 0 ? `, and failed on ${result.failed.join(', ')}.` : '.'),
+        [String(result.restored), String(result.deleted)]
+      );
 
       // A partial restore is reported as a warning, not an information message: half
       // undone is a state someone needs to look at rather than be reassured about.
@@ -249,7 +255,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
-  chat.setVoiceWriter(new Voice(models, (message) => logger.write(message)));
+  // One writer, reachable from every surface — see §2.2. Set as early as the model
+  // layer exists, so the first dialog of a session is already in character.
+  const voiceWriter = new Voice(models, (message) => logger.write(message));
+  setVoice(voiceWriter);
+  chat.setVoiceWriter(voiceWriter);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about

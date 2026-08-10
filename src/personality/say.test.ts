@@ -64,3 +64,32 @@ test('no written line in the quip bank sounds like a form', () => {
   }
   assert.ok(DEAD_PHRASES.length > 0);
 });
+
+import * as fsSync from 'fs';
+import * as pathSync from 'path';
+
+/** Every source file, so the check cannot be dodged by adding a new one. */
+function sourceFiles(directory: string): string[] {
+  return fsSync.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const full = pathSync.join(directory, entry.name);
+    if (entry.isDirectory()) return sourceFiles(full);
+    return entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts') ? [full] : [];
+  });
+}
+
+test('no user-facing string uses the phrasing of a form', () => {
+  // §2.2: the character is the medium, not a feature. This catches the tell — a line
+  // typed by someone filling in a dialog rather than written by someone speaking —
+  // wherever it appears, including in files that do not exist yet.
+  const root = pathSync.resolve(__dirname, '..');
+
+  for (const file of sourceFiles(root)) {
+    const contents = fsSync.readFileSync(file, 'utf8');
+
+    for (const dead of DEAD_PHRASES) {
+      // The declaration of the list itself is the one legitimate mention.
+      if (file.endsWith(`personality${pathSync.sep}say.ts`)) continue;
+      assert.doesNotMatch(contents, dead, `${pathSync.relative(root, file)} says it like a form`);
+    }
+  }
+});

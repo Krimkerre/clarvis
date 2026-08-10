@@ -3,6 +3,7 @@ import { AvatarController } from '../AvatarController';
 import { ButlerState } from '../panels/ButlerViewProvider';
 import { mayInterrupt, Priority } from './rateLimit';
 import { SpeechOccasion } from '../voice/speechScope';
+import { phrase } from './Voice';
 
 /** How long a reaction stays on the avatar's face before it settles back. */
 const REACTION_HOLD_MS = 4000;
@@ -63,7 +64,11 @@ export class Announcer {
     }
 
     this.lastSurfaceAt = now;
-    this.deliver(message, state, occasion);
+
+    // Phrased here rather than at each caller: completion notices, pattern hits and
+    // bank quips all arrive through this door, and the character should not depend on
+    // which of them it was.
+    void phrase('report', message).then((said) => this.deliver(said, state, occasion));
     return true;
   }
 

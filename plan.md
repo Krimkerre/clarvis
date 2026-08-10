@@ -1921,7 +1921,7 @@ cannot do — all of it leans on Clarvis already watching the user's real work (
   switch *out* of tutor mode — not to try harder at teaching someone who isn't in the
   mood.
 
-#### Git, taught as it happens
+#### Git, taught as it happens *(design — M12, not built)*
 
 Version control is the largest thing a beginner meets here that has nothing to do with
 their project, and Clarvis uses it constantly — a branch per task, a commit per run.
@@ -1948,8 +1948,41 @@ Four rules, each of which the naive version gets wrong:
 - **The lesson answers "is my work safe"**, because that is the actual question. Each
   one names the consequence — *"anything merged elsewhere beforehand is perfectly
   safe"*, *"nothing is broken and nothing is lost"* — rather than defining a term. The
-  same jargon ban as §4.6 applies, and is tested: teaching the concept is not a licence
-  to teach the vocabulary that hides it.
+  same jargon ban as §4.6 applies, and should be tested: teaching the concept is not a
+  licence to teach the vocabulary that hides it.
+- **A cap on how many fire together**, which the three-sentence rule does not provide.
+
+**Sample wording**, drafted and read back as a full session before being parked. These
+are the shape to aim for, not final copy:
+
+> *I just made a branch. A branch is a separate copy of the project's history — work
+> done on one doesn't touch the others. I do every task on my own branch so that if the
+> result is wrong, you throw the branch away and nothing of yours was ever changed.
+> That's the whole safety net: it isn't that I'm careful, it's that my work starts
+> somewhere you can discard.*
+
+> *You've got uncommitted changes. Uncommitted means edited but not yet saved into the
+> project's history. They live in the folder rather than on a branch, which is why they
+> follow you when you switch. They are also the only thing here I genuinely cannot get
+> back for you, so they are worth committing before anything drastic.*
+
+**What a dry run of a whole session exposed** — worth fixing in the design before any
+of it is built again:
+
+- **Density, not length, is the problem.** Every lesson obeyed three sentences and the
+  session still carried ~250 words of instruction around a one-line fix. Three lessons
+  fired consecutively after one merge, at exactly the moment the user was trying to see
+  whether their change had landed. **M12 needs a rule for how many lessons may fire in
+  one exchange — one — with the rest deferred to their next natural trigger.**
+- **The first lesson arrived after the phrase it was needed for.** "Working on
+  `clarvis/…`. Your branch is untouched" means nothing before you know what a branch
+  is. Either the lesson precedes that line, or the line avoids the word.
+- **Two words for one thing.** The plain-language layer says "save point" and the
+  lesson says "commit". Pick one and use it everywhere, or teach the pair explicitly
+  in the same breath.
+- **The uncommitted warning fired twice** — once as a review warning, once as a lesson.
+  Acceptable for something that can lose work, but it should be a decision rather than
+  an accident of two systems both being careful.
 
 #### The things this mode gets wrong if unexamined
 

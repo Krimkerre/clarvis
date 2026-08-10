@@ -20,7 +20,6 @@ import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
-import { GitTutor } from './tutor/GitTutor';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -104,15 +103,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // Keeps plan.md's branch flow in step with the repository: a declared flow that has
   // gone stale is worse than none, since the wizard keeps offering branches it knows
   // while ignoring the one work now passes through.
-  // Teaches a git concept the first time it comes up, in tutor mode only (§4.10).
-  const gitTutor = new GitTutor(context, toTranscript, (message) => logger.write(message));
-
   const branchFlow = new BranchFlowWatcher(
     context,
     (message) => logger.write(message),
     toTranscriptSpoken,
-    toTranscript,
-    gitTutor
+    toTranscript
   );
   context.subscriptions.push(branchFlow.start());
 
@@ -231,7 +226,7 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, gitTutor, logger);
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, logger);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -407,7 +402,6 @@ function startChat(
   voice: VoiceService,
   models: ModelService,
   terminal: AgentTerminal,
-  gitTutor: GitTutor,
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -423,7 +417,6 @@ function startChat(
     voice,
     models,
     terminal,
-    gitTutor,
     (message) => log.write(message)
   );
 

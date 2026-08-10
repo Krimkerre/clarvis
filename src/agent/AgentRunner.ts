@@ -454,6 +454,18 @@ export class AgentRunner {
    * discovering otherwise. It is not where the constraints live.
    */
   private systemPrompt(readOnly = false): string {
+    return agentSystemPrompt(readOnly);
+  }
+}
+
+/**
+ * The agent's brief, outside the class so the voice check can send the real one.
+ *
+ * A harness that reconstructs the prompt it is testing tests nothing: the copy drifts,
+ * and the version that drifted is the one nobody read. So there is one definition and
+ * both callers use it.
+ */
+export function agentSystemPrompt(readOnly = false): string {
     // Note what is *absent* from both: any instruction about tone. That comes from
     // character() and nowhere else, because the last version repeated "be terse and dry"
     // here and that one clause outweighed everything the character was supposed to be.
@@ -473,7 +485,6 @@ export class AgentRunner {
       'When the task is done, stop calling tools and say what you changed — one line, in your own voice, not a changelog.',
       'Never pretend something worked when the tool said otherwise.'
     );
-  }
 }
 
 /** One readable line per tool call, for the panel. */

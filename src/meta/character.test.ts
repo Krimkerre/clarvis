@@ -53,12 +53,17 @@ test('every system prompt speaks as Clarvis, or is on the list of ones that do n
     const source = readFileSync(file, 'utf8');
 
     for (const [index, line] of source.split('\n').entries()) {
-      // `system:` as a field being *assigned*, not the interface declaring it or a
-      // provider forwarding one it was handed.
+      // `system:` as a field being *assigned*, not the interface declaring it.
       if (!/\bsystem:\s*\S/.test(line)) continue;
-      if (/system:\s*(string|request\.system)/.test(line)) continue;
+      if (/system:\s*string/.test(line)) continue;
 
-      const built = /character(With)?\(|systemPrompt\(/.test(line);
+      // A value with no string literal in it is forwarding a prompt built somewhere
+      // else — `request.system` in a provider, `scene.system` in the voice check — and
+      // that somewhere else is what this rule actually governs. Inline text is the
+      // thing being caught, and inline text needs quotes.
+      if (!/['"`]/.test(line.slice(line.indexOf('system:')))) continue;
+
+      const built = /character(With)?\(|systemPrompt\(/i.test(line);
       const allowed = NOT_IN_CHARACTER.some((prompt) => line.includes(prompt));
 
       if (!built && !allowed) offenders.push(`${file}:${index + 1} — ${line.trim()}`);

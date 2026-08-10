@@ -80,6 +80,10 @@
         "title": "Clarvis: Open Log File"
       },
       {
+        "command": "clarvis.debug.voiceCheck",
+        "title": "Clarvis: Debug — Voice Check"
+      },
+      {
         "command": "clarvis.debug.tools",
         "title": "Clarvis: Debug \u2014 Try a Tool"
       },

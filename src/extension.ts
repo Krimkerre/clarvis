@@ -31,6 +31,7 @@ import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
 import { characterWith } from './personality/character';
+import { runVoiceCheck } from './personality/voiceCheck';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -243,6 +244,18 @@ export function activate(context: vscode.ExtensionContext): void {
       // undone is a state someone needs to look at rather than be reassured about.
       if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
       else void vscode.window.showInformationMessage(summary);
+    }),
+
+    // Reads his lines back before they reach anyone. Opened as a document rather than
+    // logged, because the whole point is that a person sits and reads them.
+    vscode.commands.registerCommand('clarvis.debug.voiceCheck', async () => {
+      const report = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis: saying a few things…' },
+        () => runVoiceCheck(models, (message) => logger.write(message))
+      );
+
+      const document = await vscode.workspace.openTextDocument({ content: report, language: 'markdown' });
+      await vscode.window.showTextDocument(document, { preview: false });
     }),
 
     vscode.commands.registerCommand('clarvis.debug.tools', () =>

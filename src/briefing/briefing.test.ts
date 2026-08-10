@@ -212,3 +212,39 @@ test('restoring more than capacity truncates', () => {
 
   assert.deepEqual(files.list(), ['a', 'b']);
 });
+
+import { briefingPrompt } from './briefingLines';
+
+test('the briefing prompt carries the facts and the rules', () => {
+  // Same division as chat: this module knows what happened, the model knows how to
+  // say it. The §4.3 rules are repeated rather than left to inference.
+  const prompt = briefingPrompt({
+    git: { branch: 'main', dirtyCount: 2 },
+    failure: { label: 'npm test', exitCode: 1, at: 0 },
+    recentFiles: ['/a/b/checkout.ts'],
+    patternHint: 'That ECONNREFUSED again.',
+  })!;
+
+  assert.match(prompt, /main/);
+  assert.match(prompt, /npm test/);
+  assert.match(prompt, /checkout\.ts/);
+  assert.match(prompt, /ECONNREFUSED/);
+  assert.match(prompt, /four short sentences/);
+  assert.match(prompt, /invent nothing/);
+  assert.match(prompt, /never cheerful about a failure/);
+});
+
+test('nothing observed means no prompt, so silence stays silence', () => {
+  // A model asked to brief on an empty list will always find something to say, and
+  // §4.3 is explicit that a fresh window with nothing to report says nothing.
+  assert.equal(briefingPrompt({ recentFiles: [] }), undefined);
+});
+
+test('an unfinished job is not described as a failure in the prompt', () => {
+  // The same distinction the written lines make: no exit code means it never
+  // finished, and calling that "failed" would be a lie the model would repeat.
+  const prompt = briefingPrompt({ failure: { label: 'npm test', exitCode: undefined, at: 0 }, recentFiles: [] })!;
+
+  assert.match(prompt, /still running/);
+  assert.ok(!/failed with exit/.test(prompt), prompt);
+});

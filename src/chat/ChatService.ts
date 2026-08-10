@@ -8,9 +8,16 @@ import { readGitSummary } from '../briefing/gitSummary';
 import { VoiceService } from '../voice/VoiceService';
 import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
-import { localAnswer, WorkspaceFacts } from './localAnswer';
-import { chatAction, ChatAction } from './chatCommands';
+import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
+import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
+import { switchBranch } from '../agent/switchBranch';
+import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { ModelService, explain } from '../model/ModelService';
+import { routeFor } from './routing';
+import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
+import { AgentRunner } from '../agent/AgentRunner';
+import { reviewRun } from '../agent/reviewWizard';
+import { AgentTerminal } from '../agent/tools/commandTools';
 
 /**
  * The live session, written as it happens.
@@ -67,6 +74,7 @@ export class ChatService {
     private readonly patterns: () => Pattern[],
     private readonly voice: VoiceService,
     private readonly models: ModelService,
+    private readonly terminal: AgentTerminal,
     private readonly log: (message: string) => void
   ) {
     // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
@@ -85,6 +93,7 @@ export class ChatService {
     this.panel.onDidRequestHistory(() => void this.showHistory());
     this.panel.onDidRequestStop(() => this.stop());
     this.panel.onDidRequestModels(() => void vscode.commands.executeCommand('clarvis.configureModels'));
+    this.panel.onDidRequestMode(() => void this.chooseMode());
 
     // Keep the bowtie's tooltip honest when the settings change underneath it —
     // including from the picker it opens, so it never describes the previous choice.
@@ -92,6 +101,7 @@ export class ChatService {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
           this.postModelInfo();
+          this.postMode();
         }
       })
     );
@@ -107,6 +117,7 @@ export class ChatService {
       this.panel.post({ type: 'chat-thread', turns: this.thread });
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
       this.postModelInfo();
+      this.postMode();
     });
 
     this.voice.onMuteChange((muted) => this.panel.post({ type: 'mute', muted }));
@@ -120,19 +131,50 @@ export class ChatService {
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);
     if (action) {
-      await this.runAction(action);
+      await this.runAction(action, question);
       return;
     }
 
-    const reply = localAnswer(question, await this.facts());
+    const mode = this.mode();
+    const decision = routeFor(question);
 
-    if (!reply) {
-      // Beyond what was watched happen — this is what the model layer is for.
-      await this.answerWithModel(question);
+    // **Routing comes before the local answer.** It used to come after, and the local
+    // matcher swallowed jobs: "make a new branch called testing3" contains the word
+    // "branch", so it was answered with the current branch name and never reached the
+    // agent. A keyword match for a question is not evidence that a request is one.
+    if (decision.route === 'agent' && canEdit(mode)) {
+      this.log(`chat: routed to agent — ${decision.because}`);
+      await this.runAgent(question, mode === 'agent' ? 'Agent mode — treating that as a job.' : decision.because);
       return;
     }
 
-    await this.say(reply.text, reply.state);
+    // **The model phrases it; local state supplies the facts.** Canned answers are
+    // instant and free, and they always sound canned — five fixed shapes, however the
+    // question was asked. Handing the same facts to the model costs one cheap request
+    // and gets an answer in Clarvis's voice that can also reason about them.
+    this.log(`chat: routed to answer — ${decision.because}`);
+    const facts = await this.facts();
+
+    if (await this.models.isReady('chat')) {
+      const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${factsBlock(facts)}`;
+      await this.answerWithModel(question, addendum);
+      return;
+    }
+
+    // No model configured, or unreachable. The canned answers are the fallback rather
+    // than the default: worse prose, but they need no key and no network, which is
+    // exactly the situation they are for.
+    const reply = localAnswer(question, facts);
+    if (reply) {
+      this.log('chat: answered from local state (no model available)');
+      await this.say(reply.text, reply.state);
+      return;
+    }
+
+    await this.say(
+      "That's beyond what I've watched happen here, and there's no model wired up to think about it. The bowtie by the prompt sorts that out.",
+      'neutral'
+    );
   }
 
   /**
@@ -142,7 +184,50 @@ export class ChatService {
    * avatar's `thinking` → `talking` transition is meant to track the real stream
    * instead of a timer (§4.6).
    */
-  private async answerWithModel(question: string): Promise<void> {
+  /** The mode in force, defaulting to auto when the setting says something unknown. */
+  private mode(): ChatMode {
+    return modeSpec(
+      vscode.workspace.getConfiguration('clarvis').get<string>('chat.mode', 'auto')
+    ).id;
+  }
+
+  /** Lets the user pick how much Clarvis may do, and says what each choice means. */
+  private async chooseMode(): Promise<void> {
+    const current = this.mode();
+
+    const picked = await vscode.window.showQuickPick(
+      MODES.map((mode) => ({
+        label: `${mode.id === current ? '$(check) ' : ''}${mode.label}`,
+        description: mode.canEdit ? 'can change files' : 'read-only',
+        detail: mode.detail,
+        id: mode.id,
+      })),
+      { placeHolder: 'What should I be allowed to do?', matchOnDetail: true }
+    );
+    if (!picked) return;
+
+    const config = vscode.workspace.getConfiguration('clarvis');
+    const scope =
+      config.inspect('chat.mode')?.workspaceValue !== undefined
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global;
+
+    await config.update('chat.mode', picked.id, scope);
+    this.log(`chat: mode set to ${picked.id}`);
+    this.postMode();
+  }
+
+  private postMode(): void {
+    const spec = modeSpec(this.mode());
+    this.panel.post({
+      type: 'mode',
+      short: spec.short,
+      safe: !spec.canEdit,
+      detail: `${spec.label} — ${spec.detail}`,
+    });
+  }
+
+  private async answerWithModel(question: string, addendum = ''): Promise<void> {
     if (!(await this.models.isReady())) {
       const spec = this.models.spec('chat');
       this.log(`chat: no local answer, and ${spec.id} is not configured`);
@@ -152,6 +237,13 @@ export class ChatService {
           : `That's beyond what I've watched here, and ${spec.label} isn't answering on ${'`'}${spec.baseUrl}${'`'}. Is it running?`,
         'neutral'
       );
+      return;
+    }
+
+    // With a tool-capable chat model, questions get to *look* at the project rather
+    // than guess — reading a file to answer a question needs no branch and no commit.
+    if (await this.models.supportsTools('chat')) {
+      await this.answerWithTools(question, addendum);
       return;
     }
 
@@ -169,7 +261,7 @@ export class ChatService {
 
     try {
       for await (const fragment of this.models.stream({
-        system: this.systemPrompt(),
+        system: this.systemPrompt() + addendum,
         messages: this.modelMessages(),
         signal: controller.signal,
       })) {
@@ -214,6 +306,124 @@ export class ChatService {
       : 'same as chat';
 
     this.panel.post({ type: 'model-info', text: `Chat: ${chat}\nCoding: ${coding}\n\nClick to change` });
+  }
+
+  /**
+   * Hands a task to the agent, streaming its steps into the transcript.
+   *
+   * The route is **announced before anything starts**, because a misrouted question
+   * would otherwise begin editing files with no warning — and the announcement is what
+   * makes Stop a real option rather than a theoretical one.
+   */
+  private async runAgent(task: string, because: string): Promise<void> {
+    await this.say(because, 'thinking');
+
+    this.streaming?.abort();
+    const controller = new AbortController();
+    this.streaming = controller;
+
+    const runner = new AgentRunner(
+      this.context,
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      this.models,
+      this.terminal,
+      this.log
+    );
+
+    this.panel.post({ type: 'chat-stream-start' });
+    let spoken = '';
+
+    try {
+      for await (const event of runner.run(task, controller.signal)) {
+        if (!event.text) continue;
+
+        // Tool calls are shown as they happen — a step counter is the difference
+        // between watching work and watching a spinner.
+        const line = event.kind === 'tool' ? `\n${event.step}. ${event.text}` : event.text;
+        if (event.kind === 'text' || event.kind === 'done' || event.kind === 'error') {
+          spoken += event.text;
+        }
+
+        this.panel.post({ type: 'chat-stream', text: line });
+      }
+    } finally {
+      this.streaming = undefined;
+      this.panel.post({ type: 'chat-stream-end' });
+      this.avatar.setState('neutral');
+      await this.persist();
+    }
+
+    // Tool calls are never spoken — reading nine of them aloud would be a recital.
+    // What the model actually said is, including where the run left you.
+    if (spoken.trim()) this.voice.say(spoken, 'chatReply');
+
+    // A run can create branches — "make a branch called testing3" is a perfectly
+    // ordinary request — and one the user just asked for should be placed in the flow
+    // now, not a minute later when the connection to what they did has faded.
+    await vscode.commands.executeCommand('clarvis.checkBranchFlow');
+
+    // The close of a run is a decision, not an announcement: what changed, what the
+    // options are, and the user chooses. Offered rather than forced — a modal after
+    // every run would be its own nuisance.
+    // Only when there is something to review. A run that changed nothing has nothing
+    // to merge, keep or throw away, and offering anyway is a dialog about an absence.
+    const { commits, files } = runner.result;
+    if (files.length > 0) {
+      const review = await vscode.window.showInformationMessage(
+        `Clarvis: ${files.length} file(s) changed.`,
+        'Review the run'
+      );
+      if (review === 'Review the run') {
+        await reviewRun(
+          commits,
+          files,
+          this.log,
+          this.context.workspaceState.get('clarvis.agent.baseBranch'),
+          (text) => void this.remark(text)
+        );
+      }
+    }
+  }
+
+  /** The read-only tool loop, for questions that need to see the code. */
+  private async answerWithTools(question: string, addendum = ''): Promise<void> {
+    this.streaming?.abort();
+    const controller = new AbortController();
+    this.streaming = controller;
+
+    const runner = new AgentRunner(
+      this.context,
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+      this.models,
+      this.terminal,
+      this.log
+    );
+
+    this.avatar.setState('thinking');
+    this.panel.post({ type: 'chat-stream-start' });
+
+    // What was actually said, for the voice — accumulated from the stream rather than
+    // taken from the closing event, which no longer repeats it.
+    let spoken = '';
+
+    try {
+      for await (const event of runner.answer(question, controller.signal, addendum)) {
+        if (!event.text) continue;
+        if (event.kind === 'text' || event.kind === 'error') spoken += event.text;
+
+        this.panel.post({
+          type: 'chat-stream',
+          text: event.kind === 'tool' ? `\n${event.step}. ${event.text}\n` : event.text,
+        });
+      }
+    } finally {
+      this.streaming = undefined;
+      this.panel.post({ type: 'chat-stream-end' });
+      this.avatar.setState('neutral');
+      await this.persist();
+    }
+
+    if (spoken.trim()) this.voice.say(spoken, 'chatReply');
   }
 
   /** Cancels the answer in flight, if there is one. */
@@ -295,7 +505,23 @@ export class ChatService {
    * like a glitch, and if the user dismisses it there is otherwise no trace of what
    * they asked for.
    */
-  private async runAction(action: ChatAction): Promise<void> {
+  private async runAction(action: ChatAction, question = ''): Promise<void> {
+    // Handled here rather than by the agent: a checkout is one deterministic command,
+    // and routing it through a run would create an isolation branch, switch away from
+    // it, and then try to tidy that branch up by switching back — undoing the thing
+    // that was asked for.
+    if (action === 'explainGit') {
+      const lines = await describeGitPlainly();
+      await this.say(lines.join(' '), 'neutral');
+      return;
+    }
+
+    if (action === 'switchBranch') {
+      const said = await switchBranch(branchFromRequest(question), this.log);
+      if (said) await this.say(said, 'neutral');
+      return;
+    }
+
     // Actions that are not simply "run a command" — each needs a word first.
     if (action === 'help') {
       await this.say('The manual, then. Try not to look surprised.', 'neutral');
@@ -367,6 +593,20 @@ export class ChatService {
   /** Opens the manual, for the command-palette route as well as `/help`. */
   async openHelp(): Promise<void> {
     await this.openManual();
+  }
+
+  /**
+   * Says something out loud *and* writes it down.
+   *
+   * Distinct from `note()`, which only records. The difference is who already spoke:
+   * briefings, quips and completion notices are voiced by whatever raised them, so
+   * making `note()` speak would say all of them twice. The wizard has no voice of its
+   * own, and its lines are the direct result of a button the user just pressed —
+   * solicited, per §4.4, and therefore never a surprise.
+   */
+  async remark(text: string): Promise<void> {
+    await this.note(text);
+    this.voice.say(text, 'chatReply');
   }
 
   /** Clears the transcript and the stored copy behind it. */

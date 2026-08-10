@@ -5,6 +5,8 @@ import {
   ModelProvider,
   describeHttpFailure,
 } from './ModelProvider';
+import { StreamEvent, ToolCall } from './ModelProvider';
+import { openAiTools } from '../agent/toolRegistry';
 import { buildCatalog } from './openrouterCatalog';
 import { buildOpenAiCatalog } from './openaiCatalog';
 import { ProviderSpec, resolveBaseUrl } from './providers';
@@ -124,6 +126,98 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     }
   }
 
+  /**
+   * The tool-calling stream.
+   *
+   * OpenAI streams tool calls as deltas addressed by **index**, not by id: the first
+   * delta carries the id and name, and later ones append argument fragments with
+   * neither. Keying the accumulator on the id therefore loses every fragment after the
+   * first, which shows up as a tool called with `{}` — a bug that looks like the model
+   * being stupid rather than the parser being wrong.
+   */
+  async *streamWithTools(request: CompletionRequest): AsyncIterable<StreamEvent> {
+    const response = await this.post(request, openAiTools(request.tools));
+    const parser = new SseParser();
+    const pending = new Map<number, { id: string; name: string; args: string }>();
+
+    for await (const chunk of decodeStream(response.body!)) {
+      for (const payload of parser.push(chunk)) {
+        if (payload === '[DONE]') break;
+
+        let event: {
+          choices?: {
+            delta?: {
+              content?: string;
+              tool_calls?: {
+                index?: number;
+                id?: string;
+                function?: { name?: string; arguments?: string };
+              }[];
+            };
+            finish_reason?: string;
+          }[];
+        };
+
+        try {
+          event = JSON.parse(payload);
+        } catch {
+          this.log(`model: skipped an unparseable ${this.id} frame`);
+          continue;
+        }
+
+        const choice = event.choices?.[0];
+        if (choice?.delta?.content) yield { type: 'text', text: choice.delta.content };
+
+        for (const delta of choice?.delta?.tool_calls ?? []) {
+          const index = delta.index ?? 0;
+          const existing = pending.get(index) ?? { id: '', name: '', args: '' };
+
+          pending.set(index, {
+            id: delta.id ?? existing.id,
+            name: delta.function?.name ?? existing.name,
+            args: existing.args + (delta.function?.arguments ?? ''),
+          });
+        }
+      }
+    }
+
+    // Emitted at the end rather than as they complete: nothing marks a tool call
+    // finished mid-stream, so the arguments are only known to be whole once the
+    // stream is.
+    for (const call of pending.values()) {
+      yield { type: 'toolCall', call: toCall(call) };
+    }
+
+    yield { type: 'stop', reason: pending.size > 0 ? 'tools' : 'end' };
+  }
+
+  /** Shared request setup, so the two streams cannot drift apart. */
+  private async post(request: CompletionRequest, tools?: unknown[]): Promise<Response> {
+    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+      method: 'POST',
+      headers: await this.headers(),
+      signal: request.signal,
+      body: JSON.stringify({
+        model: request.model,
+        stream: true,
+        messages: [
+          { role: 'system', content: request.system },
+          ...request.messages.flatMap(toOpenAiMessages),
+        ],
+        ...(tools ? { tools } : {}),
+      }),
+    });
+
+    if (!response.ok) {
+      throw describeHttpFailure(response.status, await response.text(), this.spec.label);
+    }
+    if (!response.body) {
+      throw new ModelError(`${this.spec.label} sent nothing back.`, 'empty response body');
+    }
+
+    return response;
+  }
+
   async *stream(request: CompletionRequest): AsyncIterable<string> {
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -176,4 +270,56 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     if (key) headers.authorization = `Bearer ${key}`;
     return headers;
   }
+}
+
+function toCall(block: { id: string; name: string; args: string }): ToolCall {
+  let args: unknown = {};
+
+  try {
+    args = block.args ? JSON.parse(block.args) : {};
+  } catch {
+    // Validation in the registry turns this into a message the model can act on.
+    args = {};
+  }
+
+  return { id: block.id || block.name, name: block.name, args };
+}
+
+/**
+ * Converts a neutral message into OpenAI's shape.
+ *
+ * Returns an **array**, because one neutral message holding several tool results
+ * becomes several `role: 'tool'` messages — one per call id. Collapsing them into one
+ * is rejected, and matching results to calls by position rather than id is how the
+ * wrong output gets attributed to the wrong call.
+ */
+function toOpenAiMessages(message: {
+  role: 'user' | 'assistant';
+  content: string;
+  toolCalls?: ToolCall[];
+  toolResults?: { id: string; content: string; isError?: boolean }[];
+}): unknown[] {
+  if (message.toolResults?.length) {
+    return message.toolResults.map((result) => ({
+      role: 'tool',
+      tool_call_id: result.id,
+      content: result.content,
+    }));
+  }
+
+  if (message.toolCalls?.length) {
+    return [
+      {
+        role: 'assistant',
+        content: message.content || null,
+        tool_calls: message.toolCalls.map((call) => ({
+          id: call.id,
+          type: 'function',
+          function: { name: call.name, arguments: JSON.stringify(call.args ?? {}) },
+        })),
+      },
+    ];
+  }
+
+  return [{ role: message.role, content: message.content }];
 }

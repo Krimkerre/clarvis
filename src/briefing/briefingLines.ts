@@ -169,3 +169,53 @@ export function buildBriefingLines(facts: BriefingFacts, choose: Choose = random
   // Back into reading order — sorting by priority above was only about what survives.
   return [openerLine(facts, choose), ...body.filter((line) => kept.includes(line.text)).map((l) => l.text)];
 }
+
+/**
+ * The same facts, handed to a model to phrase.
+ *
+ * Identical reasoning to the chat path: this module knows what happened and says it in
+ * a fixed set of shapes, while a model says things well and knows nothing about the
+ * project. The canned lines remain the fallback for no key, no network, and a slow
+ * response — a briefing that arrives late is worse than a plain one that arrives on
+ * time.
+ *
+ * The instructions repeat §4.3's rules rather than trusting the model to infer them:
+ * four lines, no greeting for its own sake, and nothing invented.
+ */
+export function briefingPrompt(facts: BriefingFacts): string | undefined {
+  const observed: string[] = [];
+
+  if (facts.git) {
+    observed.push(
+      `Branch ${facts.git.branch}, ${facts.git.dirtyCount === 0 ? 'working tree clean' : `${facts.git.dirtyCount} file(s) uncommitted`}`
+    );
+  }
+
+  if (facts.failure) {
+    observed.push(
+      facts.failure.exitCode === undefined
+        ? `"${facts.failure.label}" was still running when the window closed`
+        : `"${facts.failure.label}" failed with exit ${facts.failure.exitCode} and has not been fixed`
+    );
+  }
+
+  if (facts.recentFiles.length > 0) {
+    observed.push(`Last edited: ${facts.recentFiles.slice(0, 3).map(basename).join(', ')}`);
+  }
+
+  if (facts.patternHint) observed.push(facts.patternHint);
+
+  // Nothing worth reporting means silence, exactly as the canned path decides — a
+  // model asked to brief on an empty list will always find something to say.
+  if (observed.length === 0) return undefined;
+
+  return [
+    'Brief the user on where they left off. This is the first thing they hear on opening the editor.',
+    'Rules: at most four short sentences. Open in character, matched to the mood of the facts —',
+    'never cheerful about a failure. State only what is listed below; invent nothing.',
+    'No greeting for its own sake, no offers of help, no questions.',
+    '',
+    'What you observed:',
+    ...observed.map((line) => `- ${line}`),
+  ].join('\n');
+}

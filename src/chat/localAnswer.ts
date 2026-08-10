@@ -196,3 +196,72 @@ function seconds(ms: number): string {
 function plural(count: number, one: string, many: string): string {
   return count === 1 ? one : many;
 }
+
+/**
+ * What Clarvis has watched happen, written for a model to read.
+ *
+ * The division of labour that matters: **the facts come from here, the phrasing comes
+ * from the model.** `localAnswer` knows the truth about this project and says it in
+ * five fixed shapes; a model says things well and knows nothing about your repository.
+ * Handing the facts over gets both, in one request, with no tool call — asking a model
+ * to run `gitStatus` to answer "what branch am I on?" costs two round trips to learn
+ * something already sitting in memory.
+ *
+ * Only what is *known* is included. An absent fact is omitted rather than sent as
+ * "none", because a model handed `lastFailure: none` will cheerfully write a sentence
+ * about there being no failures, which is noise nobody asked for.
+ */
+export function factsBlock(facts: WorkspaceFacts): string {
+  const lines: string[] = [];
+
+  if (facts.git) {
+    lines.push(
+      `Current branch: ${facts.git.branch}` +
+        (facts.git.dirtyCount > 0 ? `, ${facts.git.dirtyCount} uncommitted change(s)` : ', working tree clean')
+    );
+  }
+
+  if (facts.running.length > 0) {
+    const oldest = [...facts.running].sort((a, b) => a.startedAt - b.startedAt)[0];
+    lines.push(
+      `Running now: ${facts.running.length} job(s), oldest is "${oldest.label}", started ${Math.round(
+        (facts.now - oldest.startedAt) / 1000
+      )}s ago`
+    );
+  }
+
+  if (facts.lastOutcome) {
+    lines.push(
+      `Last finished: "${facts.lastOutcome.label}" exited ${facts.lastOutcome.exitCode ?? 'without a code'} after ${Math.round(
+        facts.lastOutcome.durationMs / 1000
+      )}s`
+    );
+  }
+
+  if (facts.lastFailure) {
+    lines.push(
+      `Still failing: "${facts.lastFailure.label}" (exit ${facts.lastFailure.exitCode ?? 'unknown'}), ${Math.round(
+        (facts.now - facts.lastFailure.at) / 60000
+      )} minutes ago`
+    );
+  }
+
+  if (facts.recentFiles.length > 0) {
+    lines.push(`Recently edited: ${facts.recentFiles.slice(0, 5).join(', ')}`);
+  }
+
+  for (const pattern of facts.patterns.slice(0, 3)) {
+    lines.push(
+      `Recurring error seen ${pattern.occurrences.length}x: ${pattern.sample}` +
+        (pattern.resolvedBy ? ` — last fixed by "${pattern.resolvedBy}"` : ' — never yet fixed')
+    );
+  }
+
+  if (lines.length === 0) return '';
+
+  return [
+    '',
+    'What you have observed in this project (do not invent anything beyond this):',
+    ...lines.map((line) => `- ${line}`),
+  ].join('\n');
+}

@@ -3,6 +3,14 @@ const esbuild = require('esbuild');
 // `npm run watch` passes --watch; `npm run build` (used before vsce package) doesn't.
 const watch = process.argv.includes('--watch');
 
+// Stamped into the bundle at build time.
+//
+// Installing a .vsix replaces the file on disk, but the running extension host keeps
+// the old bundle in memory until the window reloads — so "I installed it" and "it is
+// running" are different facts. Logging this at activation makes the difference
+// visible instead of something to remember: a stale host reports an old stamp.
+const buildStamp = new Date().toISOString();
+
 const options = {
   entryPoints: ['src/extension.ts'],
   bundle: true,
@@ -12,6 +20,7 @@ const options = {
   platform: 'node',
   sourcemap: true,
   minify: !watch, // keep watch-mode rebuilds fast and readable; minify real builds
+  define: { __CLARVIS_BUILD__: JSON.stringify(buildStamp) },
 };
 
 async function main() {

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { RecentFiles } from './recentFiles';
-import { buildBriefingLines } from './briefingLines';
+import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLines';
 import { readGitSummary } from './gitSummary';
 import { activeFailure, foldOutcome, parseRecord, FailureRecord } from './lastFailure';
 
@@ -18,6 +18,14 @@ const RECENT_FILES_KEY = 'clarvis.recentFiles';
 const STARTUP_DELAY_MS = 1500;
 
 /**
+ * How long the model gets before the canned briefing wins.
+ *
+ * Generous enough for a small model on a slow link, short enough that the briefing
+ * still belongs to the moment the window opened.
+ */
+const PHRASE_TIMEOUT_MS = 8000;
+
+/**
  * Assembles and delivers the "where you left off" briefing (§4.3), and owns the
  * cross-session memory it needs.
  *
@@ -30,6 +38,14 @@ export class BriefingService {
   private startupTimer: ReturnType<typeof setTimeout> | undefined;
   /** Supplied by M5's pattern memory; absent until then. */
   private patternHint: (() => string | undefined) | undefined;
+
+  /**
+   * Phrases the briefing with a model, when one is available.
+   *
+   * Injected rather than imported so this class keeps knowing nothing about providers,
+   * and so the canned path stays testable on its own.
+   */
+  private phraser: ((prompt: string) => Promise<string | undefined>) | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -51,6 +67,11 @@ export class BriefingService {
    */
   get recent(): string[] {
     return this.recentFiles.list();
+  }
+
+  /** Lets the composition root supply a model to do the phrasing. */
+  setPhraser(phraser: (prompt: string) => Promise<string | undefined>): void {
+    this.phraser = phraser;
   }
 
   /** Lets pattern memory (M5) contribute the fourth line without M4 knowing about it. */
@@ -76,9 +97,18 @@ export class BriefingService {
     tracker.onOutcome((outcome) => this.recordOutcome(outcome));
 
     this.startupTimer = setTimeout(async () => {
-      const lines = await this.build();
+      const facts = await this.facts();
+      const spoken = await this.phrase(facts);
+
+      if (spoken) {
+        deliver([spoken]);
+        this.log('briefing: phrased by the model');
+        return;
+      }
+
+      const lines = buildBriefingLines(facts);
       if (lines.length > 0) deliver(lines);
-      this.log(`briefing: ${lines.length} line(s)`);
+      this.log(`briefing: ${lines.length} line(s), from the bank`);
     }, STARTUP_DELAY_MS);
   }
 
@@ -103,16 +133,46 @@ export class BriefingService {
     void this.context.workspaceState.update(FAILURE_KEY, next);
   }
 
-  /** Gathers what's known and composes the lines. Missing facts are simply omitted. */
-  private async build(): Promise<string[]> {
+  /**
+   * Asks the model to phrase it, within a deadline.
+   *
+   * A briefing is the first thing the user hears, and one that arrives thirty seconds
+   * after the window opened has missed its own moment — so a slow model loses to the
+   * canned lines rather than delaying them.
+   */
+  private async phrase(facts: BriefingFacts): Promise<string | undefined> {
+    const prompt = briefingPrompt(facts);
+    if (!prompt || !this.phraser) return undefined;
+
+    try {
+      const text = await Promise.race([
+        this.phraser(prompt),
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), PHRASE_TIMEOUT_MS)),
+      ]);
+
+      return text?.trim() || undefined;
+    } catch (error) {
+      this.log(`briefing: model phrasing failed (${String(error)})`);
+      return undefined;
+    }
+  }
+
+  /**
+   * Gathers what's known. Missing facts are simply omitted.
+   *
+   * Split from composing the lines so both paths — the model and the bank — work from
+   * exactly the same facts, and neither can drift into knowing something the other
+   * doesn't.
+   */
+  private async facts(): Promise<BriefingFacts> {
     const stored = parseRecord(this.context.workspaceState.get(FAILURE_KEY));
     const failure: FailureRecord | undefined = activeFailure(stored, Date.now());
 
-    return buildBriefingLines({
+    return {
       git: await readGitSummary(),
       failure,
       recentFiles: this.recentFiles.list(),
       patternHint: this.patternHint?.(),
-    });
+    };
   }
 }

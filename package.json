@@ -60,6 +60,26 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.runTask",
+        "title": "Clarvis: Run a Task"
+      },
+      {
+        "command": "clarvis.reviewRun",
+        "title": "Clarvis: Review Agent Run"
+      },
+      {
+        "command": "clarvis.undoLastRun",
+        "title": "Clarvis: Undo Last Agent Run"
+      },
+      {
+        "command": "clarvis.openLog",
+        "title": "Clarvis: Open Log File"
+      },
+      {
+        "command": "clarvis.debug.tools",
+        "title": "Clarvis: Debug \u2014 Try a Tool"
+      },
+      {
         "command": "clarvis.debug.micProbe",
         "title": "Clarvis: Debug — Microphone Probe"
       },
@@ -111,6 +131,23 @@
           "type": "number",
           "default": 30,
           "description": "Tasks/commands/debug sessions shorter than this are tracked but never notified about."
+        },
+        "clarvis.agent.maxStepsPerTask": {
+          "type": "number",
+          "default": 25,
+          "description": "Tool calls before the agent stops and asks whether to carry on. A loop that never converges should not run up a bill unattended."
+        },
+        "clarvis.chat.mode": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "chat", "plan", "agent"],
+          "enumDescriptions": [
+            "Questions get answered, jobs get done, ambiguity gets answered.",
+            "Answer and read only. Clarvis will not change a thing.",
+            "Describe what would need doing. Still no edits.",
+            "Treat every message as a job."
+          ],
+          "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all \u2014 the code never calls it, rather than the prompt being asked not to."
         },
         "clarvis.chat.provider": {
           "type": "string",
@@ -209,7 +246,7 @@
     "watch": "node esbuild.js --watch",
     "package": "vsce package",
     "check-types": "tsc --noEmit",
-    "test": "rm -rf out && tsc --outDir out && node --test out/**/*.test.js"
+    "test": "rm -rf out && tsc --outDir out && node --test \"out/**/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

@@ -1,6 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { QuipTrigger } from './quipBank';
-import { quipPrompt, sanitiseQuip, QuipContext } from './liveQuip';
+import { acknowledgementPrompt, quipPrompt, sanitiseQuip, QuipContext } from './liveQuip';
 
 /**
  * Asks the model for a line, within a deadline it will usually beat.
@@ -44,6 +44,29 @@ export class LiveQuips {
       return quip;
     } catch (error) {
       this.log(`quip: model failed for ${trigger} (${String(error)})`);
+      return undefined;
+    }
+  }
+
+  /**
+   * The line said at the start of a run.
+   *
+   * Unlike a quip this is *solicited* — the user just asked for something — so it does
+   * not go through the interruption budget and is not suppressed during a run: it is
+   * the opening of the run itself.
+   */
+  async acknowledge(task: string): Promise<string | undefined> {
+    if (!(await this.models.isReady('chat'))) return undefined;
+
+    try {
+      const text = await Promise.race([
+        this.collect(acknowledgementPrompt(task)),
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
+      ]);
+
+      return sanitiseQuip(text);
+    } catch (error) {
+      this.log(`quip: acknowledgement failed (${String(error)})`);
       return undefined;
     }
   }

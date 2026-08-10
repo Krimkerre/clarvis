@@ -4,6 +4,7 @@ import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
 import { narrateTool } from './toolNarration';
+import { commitSubject } from './commitSubject';
 import { classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
@@ -450,25 +451,6 @@ export class AgentRunner {
       'Be terse and dry. Never pretend something worked when the tool said otherwise.',
     ].join(' ');
   }
-}
-
-/**
- * The commit subject: what the model said, unless it said nothing useful.
- *
- * Models often close with "Done." or "Fixed it." — perfectly good conversation and a
- * useless line in a history someone reads six months later. The task is a worse
- * sentence but a better record, so it wins whenever the narration is empty of content.
- */
-export function commitSubject(narration: string, task: string): string {
-  const first = narration
-    .trim()
-    .split('\n')
-    .map((line) => line.trim())
-    .find((line) => line.length > 0);
-
-  const useless = !first || first.length < 15 || /^(done|fixed( it)?|sure|ok(ay)?|there you go)[.!]?$/i.test(first);
-
-  return (useless ? task : first).slice(0, 72);
 }
 
 /** One readable line per tool call, for the panel. */

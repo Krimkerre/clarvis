@@ -130,7 +130,7 @@ test('listing the whole project reads differently from listing a folder', () => 
   assert.equal(narrateTool('listFiles', { directory: 'src/watch' }), 'Looking through src/watch');
 });
 
-import { commitSubject } from '../AgentRunner';
+import { commitSubject } from '../commitSubject';
 
 test('a useless closing line does not become the commit message', () => {
   // Models close with "Done." constantly. It is fine conversation and a useless line

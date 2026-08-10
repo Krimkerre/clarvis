@@ -64,6 +64,14 @@ export class ChatService {
   /** The answer currently streaming, so `Clarvis: Stop` has something to abort. */
   private streaming?: AbortController;
 
+  /** Writes the opening line for a run, when a model is configured. */
+  private live: { acknowledge(task: string): Promise<string | undefined> } | undefined;
+
+  /** Supplied by the composition root, so this class stays free of provider details. */
+  setLiveLines(live: { acknowledge(task: string): Promise<string | undefined> }): void {
+    this.live = live;
+  }
+
   /**
    * The last message that was *answered* rather than acted on.
    *
@@ -361,7 +369,10 @@ export class ChatService {
    * makes Stop a real option rather than a theoretical one.
    */
   private async runAgent(task: string, because: string): Promise<void> {
-    await this.say(because, 'thinking');
+    // Written for this job rather than the same sentence every time. It is the first
+    // thing said in every run, which makes it the most repeated line in the product.
+    const opening = (await this.live?.acknowledge(task)) ?? because;
+    await this.say(opening, 'thinking');
 
     this.streaming?.abort();
     const controller = new AbortController();

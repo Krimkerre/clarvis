@@ -94,3 +94,27 @@ export function sanitiseQuip(raw: string | undefined): string | undefined {
 
   return text;
 }
+
+/**
+ * The line said when a job is picked up, written for the job.
+ *
+ * "That reads as a job, so I picked up the tools" is fine once and wallpaper by the
+ * fourth time. It is also the first thing said in every run, which makes it the single
+ * most repeated sentence in the product.
+ *
+ * Same sanitiser as the quips, and the same fallback: an unusable line means the fixed
+ * one, which was never wrong — only tired.
+ */
+export function acknowledgementPrompt(task: string): string {
+  return [
+    'You are Clarvis, a dry, faintly exasperated butler living in a code editor.',
+    `The user has just asked you to do this: ${task}`,
+    '',
+    'Say one short line acknowledging that you are starting. Rules:',
+    '- One sentence, under 80 characters. No quotation marks.',
+    '- Dry and understated. You are about to do it, not delighted about it.',
+    '- Refer to the actual task if it is worth referring to. Do not restate it in full.',
+    '- No questions, no offers of help, no emoji, no exclamation marks.',
+    'Reply with the line alone.',
+  ].join('\n');
+}

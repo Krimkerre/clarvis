@@ -105,6 +105,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
   agentBusy.noteCommit = (hash) => personality.noteOwnCommit(hash);
 
+  // The same writer the quips use, for the line that opens a run.
+  const liveLines = new LiveQuips(models, () => false, (message) => logger.write(message));
+
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
   // Keeps plan.md's branch flow in step with the repository: a declared flow that has
@@ -244,6 +247,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
+  chat.setLiveLines(liveLines);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about

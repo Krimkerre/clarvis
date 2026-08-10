@@ -40,6 +40,7 @@ const STARTUP_MS = 4000;
 
 export class BranchFlowWatcher {
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private startupTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -61,6 +62,7 @@ export class BranchFlowWatcher {
 
     return new vscode.Disposable(() => {
       clearTimeout(this.timer);
+      clearTimeout(this.startupTimer);
       for (const subscription of subscriptions) subscription.dispose();
     });
   }
@@ -78,21 +80,46 @@ export class BranchFlowWatcher {
     for (const repository of api.repositories) this.watch(repository, subscriptions);
 
     this.log(`branch flow: watching (${api.repositories.length} repository/ies at start)`);
-    this.schedule(STARTUP_MS);
+    this.scheduleStartup();
   }
 
   private watch(repository: GitRepository, subscriptions: vscode.Disposable[]): void {
-    subscriptions.push(repository.state.onDidChange(() => this.schedule(SETTLE_MS)));
-    this.schedule(STARTUP_MS);
+    subscriptions.push(repository.state.onDidChange(() => this.schedule()));
+    this.scheduleStartup();
   }
 
-  /** Debounced, because the git extension fires this event constantly. */
-  private schedule(delay: number): void {
-    clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.check(), delay);
+  /**
+   * The one-off check after launch, on a timer of its own.
+   *
+   * Deliberately not shared with the debounce below: the git extension fires state
+   * changes constantly, and a single shared timer meant every one of them pushed the
+   * startup check further away. It never ran at all.
+   */
+  private scheduleStartup(): void {
+    clearTimeout(this.startupTimer);
+    this.startupTimer = setTimeout(() => void this.check(), STARTUP_MS);
+  }
+
+  /**
+   * Debounced, because the git extension fires this event constantly.
+   *
+   * **Trailing without resetting.** The obvious debounce — clear the timer and set a
+   * new one on every event — starves completely against an event source that never
+   * goes quiet: each change pushed the deadline out another minute, forever. This
+   * runs a minute after the *first* event of a burst instead, which is the behaviour
+   * the settle time was meant to have.
+   */
+  private schedule(): void {
+    if (this.timer) return;
+
+    this.timer = setTimeout(() => {
+      this.timer = undefined;
+      void this.check();
+    }, SETTLE_MS);
   }
 
   private async check(): Promise<void> {
+    this.log('branch flow: checking');
     const plan = await readPlan();
     if (!plan) {
       this.log('branch flow: no plan.md, nothing to keep in step');

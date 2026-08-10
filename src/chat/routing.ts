@@ -118,3 +118,61 @@ const ESCALATION = /^(go on(\s+then)?|go ahead|do it|just do it|yes please do|pl
 export function isDoItNow(text: string): boolean {
   return ESCALATION.test(text.trim().toLowerCase());
 }
+
+/**
+ * Whether the keyword router reached "answer" by *default* rather than by evidence.
+ *
+ * The distinction that decides whether asking a model is worth a request:
+ *  - "why did the build fail?" is a question by every signal there is — a leading
+ *    question word, a question mark. Nothing to classify.
+ *  - "edit the comment in plan.md to X" matched no verb the list happens to contain,
+ *    and no question signal either. It fell through, and falling through is not
+ *    evidence of anything.
+ *
+ * Only the second case is worth spending a request on, which keeps the cost near zero
+ * for ordinary conversation.
+ */
+export function needsClassification(text: string): boolean {
+  const message = text.trim().toLowerCase();
+
+  if (message.length === 0) return false;
+  if (message.endsWith('?')) return false;
+  if (QUESTION_OPENERS.test(message)) return false;
+  if (HYPOTHETICAL.test(message)) return false;
+
+  // A verb matched, so the router had a reason. Only the fall-through case is unclear.
+  if (WORK_VERBS.test(message) || WORK_PHRASES.some((phrase) => phrase.test(message))) return false;
+
+  // Very short fragments are conversation, not instructions: "hmm", "ok", "thanks".
+  return message.split(/\s+/).length >= 3;
+}
+
+/**
+ * Reads a classifier's reply, strictly.
+ *
+ * One word expected. Anything else — a sentence, an explanation, an apology — is
+ * treated as no answer at all, and the deterministic route stands. A classifier that
+ * cannot follow a one-word instruction is not one to trust with "should I edit their
+ * files".
+ */
+export function parseIntent(raw: string | undefined): Route | undefined {
+  if (!raw) return undefined;
+
+  const word = raw.trim().toUpperCase().replace(/[^A-Z]/g, '');
+  if (word === 'WORK') return 'agent';
+  if (word === 'QUESTION') return 'answer';
+  return undefined;
+}
+
+/** The classifier's instruction. Deliberately tiny: it is one decision, not a chat. */
+export function intentPrompt(text: string): string {
+  return [
+    'Decide whether this message asks for a change to be made to the code, or asks a question about it.',
+    '',
+    `Message: ${text}`,
+    '',
+    'Answer with exactly one word: WORK if it asks for something to be changed, created, deleted or run.',
+    'QUESTION if it asks for information, an explanation, or an opinion.',
+    'If it could be either, answer QUESTION.',
+  ].join('\n');
+}

@@ -414,3 +414,46 @@ test('"do it" does not fire on ordinary conversation', () => {
     assert.equal(isDoItNow(message), false, message);
   }
 });
+
+import { needsClassification, parseIntent, intentPrompt } from './routing';
+
+test('only a fall-through is worth asking the model about', () => {
+  // A question with a question mark needs no second opinion, and paying for one on
+  // every message would be absurd.
+  assert.equal(needsClassification('why did the build fail?'), false);
+  assert.equal(needsClassification('what does BusyTracker do'), false);
+  assert.equal(needsClassification('fix the failing test'), false, 'a matched verb needs no help');
+  assert.equal(needsClassification('we should maybe rename this'), false, 'hedging is already handled');
+
+  // The case that has been wrong twice: an unlisted verb, no question signal.
+  assert.equal(needsClassification('swap the port over to 8080'), true);
+  assert.equal(needsClassification('stick a comment at the top of app.js'), true);
+});
+
+test('fragments are conversation, not instructions', () => {
+  // "hmm", "ok", "thanks" should never cost a classification request.
+  assert.equal(needsClassification('hmm'), false);
+  assert.equal(needsClassification('ok thanks'), false);
+  assert.equal(needsClassification(''), false);
+});
+
+test('the classifier reply is parsed strictly', () => {
+  assert.equal(parseIntent('WORK'), 'agent');
+  assert.equal(parseIntent(' question \n'), 'answer');
+  assert.equal(parseIntent('WORK.'), 'agent');
+});
+
+test('anything but the two words leaves the deterministic route alone', () => {
+  // A classifier that cannot follow a one-word instruction is not one to trust with
+  // "should I edit their files".
+  assert.equal(parseIntent('I think this is asking for work to be done'), undefined);
+  assert.equal(parseIntent('Sure! WORK'), undefined);
+  assert.equal(parseIntent(''), undefined);
+  assert.equal(parseIntent(undefined), undefined);
+});
+
+test('the prompt tells it to answer QUESTION when unsure', () => {
+  // Ambiguity resolving toward answering is the whole safety property, and it has to
+  // survive being delegated to a model.
+  assert.match(intentPrompt('do the thing'), /could be either, answer QUESTION/);
+});

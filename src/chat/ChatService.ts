@@ -13,7 +13,8 @@ import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { ModelService, explain } from '../model/ModelService';
-import { isDoItNow, routeFor } from './routing';
+import { isDoItNow, needsClassification, routeFor } from './routing';
+import { classifyIntent } from './intentModel';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
@@ -163,6 +164,23 @@ export class ChatService {
     }
 
     const decision = routeFor(question);
+
+    // The keyword router fell through rather than deciding, so ask the model what the
+    // message actually is. Only in that case: a question with a question mark needs no
+    // second opinion, and paying for one on every message would be absurd.
+    if (
+      decision.route === 'answer' &&
+      canEdit(mode) &&
+      mode !== 'plan' &&
+      needsClassification(question)
+    ) {
+      const classified = await classifyIntent(this.models, question, this.log);
+      if (classified === 'agent') {
+        this.log('chat: routed to agent by the model, after the verb list missed it');
+        await this.runAgent(question, 'That reads as a job, so I picked up the tools.');
+        return;
+      }
+    }
 
     // **Routing comes before the local answer.** It used to come after, and the local
     // matcher swallowed jobs: "make a new branch called testing3" contains the word

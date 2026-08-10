@@ -33,18 +33,20 @@ test('quotes and second lines are stripped, not rejected', () => {
 });
 
 test('a warning is told to state the risk first and never joke about it', () => {
-  // The constraint that stops a personality layer becoming a hazard.
+  // The constraint that stops a personality layer becoming a hazard — kept even though
+  // warnings are no longer rewritten, because the licence is what a future caller
+  // would rely on if that ever changes.
   const prompt = rewritePrompt({ purpose: 'warn', fallback: 'This deletes work that exists nowhere else.' });
 
-  assert.match(prompt, /risk must be unmistakable/);
-  assert.match(prompt, /Never joke about what could be lost/);
+  assert.match(prompt, /State the risk first/);
+  assert.match(prompt, /never funny about what could be lost/);
 });
 
 test('a choice keeps its consequence exactly', () => {
   const prompt = rewritePrompt({ purpose: 'ask', fallback: 'Delete the branch?' });
 
   assert.match(prompt, /consequence of the choice must survive exactly/);
-  assert.match(prompt, /No jokes/);
+  assert.match(prompt, /no jokes/i);
 });
 
 test('dead phrases are what a form says, not a person', () => {
@@ -92,4 +94,27 @@ test('no user-facing string uses the phrasing of a form', () => {
       assert.doesNotMatch(contents, dead, `${pathSync.relative(root, file)} says it like a form`);
     }
   }
+});
+
+import { worthRewriting } from './say';
+
+test('the brief asks for a line that lands, not merely an inoffensive one', () => {
+  // The first version was a list of prohibitions with no instruction to be funny. A
+  // model given only bans writes the safest sentence available, and the safest
+  // sentence is a talking fridge.
+  const prompt = rewritePrompt({ purpose: 'report', fallback: 'The tests pass.' });
+
+  assert.match(prompt, /Never neutral/);
+  assert.match(prompt, /not impressed by any of it/);
+  // Real lines as the anchor: describing a voice produces a description-shaped
+  // sentence; examples of the thing produce the thing.
+  assert.match(prompt, /The repository was starting to worry/);
+});
+
+test('warnings and questions are left alone entirely', () => {
+  // They were already plain, exact and fine. Rewriting them bought stiffness.
+  assert.equal(worthRewriting('warn'), false);
+  assert.equal(worthRewriting('ask'), false);
+  assert.equal(worthRewriting('report'), true);
+  assert.equal(worthRewriting('aside'), true);
 });

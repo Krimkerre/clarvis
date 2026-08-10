@@ -1,5 +1,5 @@
 import { ModelService } from '../model/ModelService';
-import { acceptRewrite, Line, Purpose, rewritePrompt } from './say';
+import { acceptRewrite, Line, Purpose, rewritePrompt, worthRewriting } from './say';
 
 /**
  * Puts a line in Clarvis's voice, when there is a model to do it.
@@ -19,8 +19,13 @@ import { acceptRewrite, Line, Purpose, rewritePrompt } from './say';
 const DEADLINE_MS = 2000;
 
 export class Voice {
-  /** Rewrites already made, keyed by the written line. */
-  private readonly seen = new Map<string, string>();
+  /**
+   * **No cache.**
+   *
+   * The first version reused a rewrite for the whole session, so the third time a run
+   * finished you heard the same sentence you heard the first time — repetition being
+   * the exact failure the written bank already had, now with a model bill attached.
+   */
 
   constructor(
     private readonly models: ModelService,
@@ -29,8 +34,10 @@ export class Voice {
 
   /** The line, in character where possible and verbatim where not. */
   async say(line: Line): Promise<string> {
-    const cached = this.seen.get(line.fallback);
-    if (cached) return cached;
+    // A warning or a question was already plain, exact and fine. Rewriting it gained
+    // nothing and cost stiffness, which is most of what made the layer feel worse than
+    // the strings it replaced.
+    if (!worthRewriting(line.purpose)) return line.fallback;
 
     try {
       if (!(await this.models.isReady('chat'))) return line.fallback;
@@ -40,11 +47,7 @@ export class Voice {
         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
       ]);
 
-      const accepted = acceptRewrite(line, raw);
-      if (!accepted) return line.fallback;
-
-      this.seen.set(line.fallback, accepted);
-      return accepted;
+      return acceptRewrite(line, raw) ?? line.fallback;
     } catch (error) {
       this.log(`voice: rewrite failed (${String(error)})`);
       return line.fallback;

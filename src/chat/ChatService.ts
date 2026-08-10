@@ -8,7 +8,7 @@ import { readGitSummary } from '../briefing/gitSummary';
 import { VoiceService } from '../voice/VoiceService';
 import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
-import { localAnswer, WorkspaceFacts } from './localAnswer';
+import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
 import { chatAction, ChatAction } from './chatCommands';
 import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
@@ -146,18 +146,33 @@ export class ChatService {
       return;
     }
 
-    const reply = localAnswer(question, await this.facts());
+    // **The model phrases it; local state supplies the facts.** Canned answers are
+    // instant and free, and they always sound canned — five fixed shapes, however the
+    // question was asked. Handing the same facts to the model costs one cheap request
+    // and gets an answer in Clarvis's voice that can also reason about them.
+    this.log(`chat: routed to answer — ${decision.because}`);
+    const facts = await this.facts();
 
-    if (!reply) {
-      // Beyond what was watched happen — the model answers it. In plan mode it gets
-      // the planning addendum; in chat mode it simply answers. Neither can reach the
-      // agent, which is checked above and is a guarantee rather than a preference.
-      this.log(`chat: routed to answer — ${decision.because}`);
-      await this.answerWithModel(question, mode === 'plan' ? PLAN_ADDENDUM : '');
+    if (await this.models.isReady('chat')) {
+      const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${factsBlock(facts)}`;
+      await this.answerWithModel(question, addendum);
       return;
     }
 
-    await this.say(reply.text, reply.state);
+    // No model configured, or unreachable. The canned answers are the fallback rather
+    // than the default: worse prose, but they need no key and no network, which is
+    // exactly the situation they are for.
+    const reply = localAnswer(question, facts);
+    if (reply) {
+      this.log('chat: answered from local state (no model available)');
+      await this.say(reply.text, reply.state);
+      return;
+    }
+
+    await this.say(
+      "That's beyond what I've watched happen here, and there's no model wired up to think about it. The bowtie by the prompt sorts that out.",
+      'neutral'
+    );
   }
 
   /**

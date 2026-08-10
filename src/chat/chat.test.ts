@@ -310,3 +310,47 @@ test('questions containing work keywords still reach the local answer', () => {
     assert.equal(routeFor(message).route, 'answer', message);
   }
 });
+
+import { factsBlock } from './localAnswer';
+
+test('the facts block carries what Clarvis watched, for the model to phrase', () => {
+  // The division of labour: local state knows the truth about this project, the model
+  // knows how to say it. Handing the facts over gets both in one request, with no tool
+  // call — asking a model to run gitStatus to answer "what branch am I on?" spends two
+  // round trips learning something already in memory.
+  const block = factsBlock(
+    facts({
+      git: { branch: 'm8-chat-agent', dirtyCount: 3 },
+      lastFailure: { label: 'npm test', exitCode: 1, at: NOW - 5 * 60_000 },
+      recentFiles: ['src/chat/ChatService.ts'],
+      patterns: [{ sample: 'ECONNREFUSED', occurrences: [1, 2, 3], resolvedBy: 'docker compose up' }],
+    })
+  );
+
+  assert.match(block, /m8-chat-agent/);
+  assert.match(block, /3 uncommitted/);
+  assert.match(block, /npm test/);
+  assert.match(block, /ChatService\.ts/);
+  assert.match(block, /ECONNREFUSED/);
+  assert.match(block, /docker compose up/);
+});
+
+test('absent facts are omitted, not reported as absent', () => {
+  // A model handed "lastFailure: none" writes a sentence about there being no
+  // failures, which is noise nobody asked for.
+  const block = factsBlock(facts({ git: { branch: 'main', dirtyCount: 0 } }));
+
+  assert.ok(!/failing/i.test(block), block);
+  assert.ok(!/recently edited/i.test(block), block);
+  assert.match(block, /working tree clean/);
+});
+
+test('a project with nothing observed yields no block at all', () => {
+  // An empty heading followed by nothing would still cost tokens and say nothing.
+  assert.equal(factsBlock(facts()), '');
+});
+
+test('the block tells the model not to go beyond it', () => {
+  // Facts plus a free hand is how a model invents a branch name that sounds right.
+  assert.match(factsBlock(facts({ git: { branch: 'main', dirtyCount: 0 } })), /do not invent/i);
+});

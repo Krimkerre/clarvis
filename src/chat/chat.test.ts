@@ -383,3 +383,34 @@ test('switching branches is not confused with switching voice or engine', () => 
   assert.equal(chatAction('change the voice'), 'chooseVoice');
   assert.equal(chatAction('switch to testing3'), 'switchBranch');
 });
+
+import { isDoItNow } from './routing';
+
+test('edit and change route to the agent', () => {
+  // Missing from the first list, so "edit the comment in plan.md" was answered by the
+  // read-only path explaining that it cannot edit things — which reads as a refusal
+  // rather than a misunderstanding.
+  for (const message of [
+    'edit the wubbadubbalublub comment in plan.md to dubbawubbalublub',
+    'change the port to 8080 in config.ts',
+    'tweak the timeout in app.js',
+    'rewrite the readme intro',
+    'correct the typo in app.js',
+  ]) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('"do it" is recognised as a request to act on what was just said', () => {
+  // The recovery for a routing miss: four characters instead of a rephrase.
+  for (const message of ['do it', 'go on then', 'just do it', 'please do', 'fix it', 'make it so']) {
+    assert.equal(isDoItNow(message), true, message);
+  }
+});
+
+test('"do it" does not fire on ordinary conversation', () => {
+  // "yes" alone is far too common to hand to an agent.
+  for (const message of ['yes', 'why do it that way', 'what does it do', 'ok']) {
+    assert.equal(isDoItNow(message), false, message);
+  }
+});

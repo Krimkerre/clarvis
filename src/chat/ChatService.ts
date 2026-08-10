@@ -13,7 +13,7 @@ import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { ModelService, explain } from '../model/ModelService';
-import { routeFor } from './routing';
+import { isDoItNow, routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
@@ -62,6 +62,14 @@ export class ChatService {
 
   /** The answer currently streaming, so `Clarvis: Stop` has something to abort. */
   private streaming?: AbortController;
+
+  /**
+   * The last message that was *answered* rather than acted on.
+   *
+   * Kept so "do it" can mean it. Cleared once used, and never set by an agent run —
+   * "do it" after work has already happened would repeat the work.
+   */
+  private lastAnswered?: string;
   private lastOutcome?: { label: string; exitCode: number | undefined; durationMs: number };
 
   constructor(
@@ -143,6 +151,17 @@ export class ChatService {
     }
 
     const mode = this.mode();
+
+    // "Do it" means the thing just described. A verb list will always be missing the
+    // word someone used — this is the four-character recovery rather than a rephrase.
+    if (this.lastAnswered && isDoItNow(question) && canEdit(mode)) {
+      const task = this.lastAnswered;
+      this.lastAnswered = undefined;
+      this.log(`chat: escalating the previous message to the agent — "${task.slice(0, 60)}"`);
+      await this.runAgent(task, 'Right — doing it properly this time.');
+      return;
+    }
+
     const decision = routeFor(question);
 
     // **Routing comes before the local answer.** It used to come after, and the local
@@ -160,6 +179,7 @@ export class ChatService {
     // question was asked. Handing the same facts to the model costs one cheap request
     // and gets an answer in Clarvis's voice that can also reason about them.
     this.log(`chat: routed to answer — ${decision.because}`);
+    this.lastAnswered = question;
     const facts = await this.facts();
 
     if (await this.models.isReady('chat')) {

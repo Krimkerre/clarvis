@@ -23,13 +23,18 @@ export interface RouteDecision {
  * Deliberately about *the codebase*, not about Clarvis: "change the voice" is a
  * setting, handled by `chatCommands.ts` long before this runs.
  *
- * `make` and `build` were missing from the first version, so "make a new branch called
- * testing3" was answered rather than done — the most natural phrasing for a request
- * fell through the list because the list was written from the verbs I happened to
- * think of.
+ * **This list keeps being wrong, and always in the same direction.** `make` and `build`
+ * were missing at first, so "make a new branch called testing3" was answered rather
+ * than done. Then `edit` and `change` were missing, so "edit the comment in plan.md"
+ * was answered by a read-only path explaining that it cannot edit things — which reads
+ * as a refusal rather than a misunderstanding.
+ *
+ * A hand-written list of verbs will always be missing the one someone just used, which
+ * is why `isEscalation` exists: saying "do it" after a wrong answer is the recovery,
+ * and it costs the user four characters instead of a rephrase.
  */
 const WORK_VERBS =
-  /\b(fix|add|remove|delete|rename|refactor|implement|create|make|build|generate|scaffold|set ?up|initiali[sz]e|write|update|migrate|convert|extract|inline|split|merge|upgrade|bump|install|wire|hook up|clean up|tidy|format|sort|replace|revert|undo|move|copy|commit|branch off)\b/;
+  /\b(fix|add|remove|delete|rename|refactor|implement|create|make|build|generate|scaffold|set ?up|initiali[sz]e|write|rewrite|edit|change|adjust|tweak|correct|update|append|insert|migrate|convert|extract|inline|split|merge|upgrade|bump|install|wire|hook up|clean up|tidy|format|sort|replace|revert|undo|move|copy|commit|branch off)\b/;
 
 /** Phrasings that are a request for work even without an imperative verb. */
 const WORK_PHRASES = [
@@ -97,8 +102,19 @@ export function routeFor(text: string): RouteDecision {
  */
 export function isEscalation(text: string, hadUnsolicitedSurface: boolean): boolean {
   if (!hadUnsolicitedSurface) return false;
+  return ESCALATION.test(text.trim().toLowerCase());
+}
 
-  return /\b(go on|go ahead|do it|yes please|fix it|sort it|please do|carry on)\b/.test(
-    text.trim().toLowerCase()
-  );
+/**
+ * "Do it" after an answer, meaning *that thing you just described*.
+ *
+ * The recovery for a routing miss. A verb list will always lack the word someone just
+ * used, and rather than making them rephrase, the previous message is re-run as a job.
+ * Short and unambiguous phrases only — "yes" alone is too common in ordinary
+ * conversation to hand to an agent.
+ */
+const ESCALATION = /^(go on(\s+then)?|go ahead|do it|just do it|yes please do|please do|make it so|fix it|sort it out|carry on)\b/;
+
+export function isDoItNow(text: string): boolean {
+  return ESCALATION.test(text.trim().toLowerCase());
 }

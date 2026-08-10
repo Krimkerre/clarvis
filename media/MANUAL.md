@@ -38,6 +38,8 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 | `/mute` | Silence him (or bring him back) |
 | `/clear` | Delete this conversation |
 | `/history` | Read earlier conversations |
+| `/git` | Where you are, in plain words |
+| `/branch` | Switch branch (or say "switch to main") |
 | `/settings` | Open every Clarvis setting |
 | `/model` | Choose models, providers and keys |
 
@@ -161,9 +163,44 @@ Work done on one doesn't affect the others until you merge it. Clarvis does ever
 on its own branch, so if the result is wrong you throw the branch away and nothing of
 yours was touched.
 
-**After a task, Clarvis asks what to do with the result** — look at it, merge it, keep
-it for later, or bin it. Each option says what it does. If a branch holds work that
-exists nowhere else, it says so before deleting anything.
+### After a task: the review
+
+When a task changes files, Clarvis offers to review the run. Picking **Review the run**
+opens a short list, and every option says what it will do:
+
+| Option | What happens |
+|---|---|
+| **Show me what changed** | Opens the diff. Nothing moves. |
+| **Merge into `testing`** | Brings the work onto your integration branch, if the project has one |
+| **Merge into `main`** | Straight onto the trunk — it says plainly that this skips the step above |
+| **Go back to `<branch>`, keep the branch** | The work stays where it is for later. Nothing is lost. |
+| **Stay on this branch** | Carry on here. Anything you commit lands on the agent's branch. |
+| **Throw it away** | Deletes the branch and everything on it |
+
+The order is deliberate: looking is first because it can't go wrong, and throwing away
+is last because a list that opens with it gets clicked through.
+
+**It warns you before you can make a mess.** If the branch holds commits the task
+didn't make — yours, or another session's — it says so before you merge or delete,
+because those would go too. If you have unsaved changes, it says those follow you
+between branches and aren't part of any option.
+
+### Branch flow
+
+Your project's `plan.md` can describe how work moves through it:
+
+```markdown
+## Branch flow
+
+- trunk: main
+- integration: testing
+- work: clarvis/<task>
+```
+
+Clarvis reads this and offers **your** branches as merge targets rather than guessing
+at conventional names. When a branch appears that isn't covered, he asks where it fits
+and writes the answer in. When one disappears from your machine *and* the shared copy,
+he offers to take it out again. Editing that list by hand works exactly as well.
 
 **Nothing here can lose your work without telling you first.** The one thing worth
 knowing: changes you haven't saved into git aren't attached to a branch, so they follow

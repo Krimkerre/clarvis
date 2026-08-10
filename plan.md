@@ -994,6 +994,40 @@ root before use; anything resolving outside it is refused, symlinks included.
 Deliberately **not** tools: network fetches, package installs, `git push`, credential
 access. Those either sit behind a gate or stay out of reach entirely.
 
+#### Git for people who don't know git
+
+§6's audience are not git users. Most of git's vocabulary describes its
+*implementation* — detached HEAD, index, working tree, unstaged, unmerged — and none of
+it is needed to know what state you are in, what is at risk, and what to do next. So
+`src/agent/gitPlain.ts` owns the wording, is pure, and is tested with an assertion that
+**none of those words ever reach the user**.
+
+Two rules run through it:
+
+- **Say the consequence, not the command.** "Your edits would be left behind" beats
+  "checkout would overwrite local changes", and costs no more words.
+- **Never make a beginner guess whether something is dangerous.** If work could be
+  lost, that is the first thing said, in the same sentence as the offer.
+
+What it produces in practice:
+
+| Situation | What Clarvis says instead |
+|---|---|
+| Detached HEAD | "You're not on a branch — you're looking at a specific old version. Anything you change here is easy to lose." |
+| Uncommitted changes before a switch | "They'll come with you — they aren't tied to a branch until you save them into one." |
+| Deleting an unmerged branch | "It holds 2 save points that exist nowhere else. Deleting it deletes that work." |
+| A failed checkout | "A file you've edited here also differs there, so git refuses rather than choosing for you." |
+| On an agent branch | "A branch I made for a task. Keep it, merge it, or throw it away." |
+
+**No confirmation without danger.** Switching with nothing unsaved doesn't ask — a
+prompt with no risk behind it teaches people to click through the ones that matter.
+
+**A project with no remote is never told about pushing or pulling.** Advice about a
+shared copy that doesn't exist implies the user has missed a step they haven't.
+
+**`/git` answers "where am I"** in at most three lines, ordered by what would bite
+first: an unusual state, then unsaved work, then the ordinary facts.
+
 #### Gates — where an autonomous run stops and asks
 
 The agent runs a task end to end without pestering the user for each edit. It stops for:
@@ -2825,6 +2859,14 @@ alone, so the milestone can stop early without leaving a half-built thing behind
       just hidden in the UI.
 - [ ] Ask with no active selection — attaches the visible range, not an error, not the
       whole file.
+- [ ] **Read a full session's git-facing output as someone who has never used git.**
+      No jargon, every warning states what is at risk, and every option says what it
+      does. This is a judgement call a person has to make; the automated check only
+      catches the vocabulary.
+- [ ] Switch branch with unsaved work — told what happens to it *before* moving, and
+      offered to save it where it is. Switching with nothing unsaved does not ask.
+- [ ] `/git` in a detached state leads with that, not with the branch name.
+- [ ] A project with no remote is never advised to push or pull.
 - [ ] A quip and a pattern hit are **spoken**, not just shown (§4.4 as revised) — and
       each still counts against the one-per-ten-minutes budget rather than slipping
       through because it went to the voice path.

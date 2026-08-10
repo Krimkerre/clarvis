@@ -135,6 +135,16 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
   missing and hands you the install command rather than running anything itself, and
   everything else works without it.
 
+- **Git, without needing to know git** — the audience for this isn't a room full of git
+  experts, so Clarvis doesn't talk like one. `/git` answers *"where am I, and is
+  anything at risk?"* in plain words. `switch to main` changes branch — and if you have
+  unsaved work it tells you what will happen to it *before* moving, then offers to save
+  it where it is. After a task it asks what to do with the result: look at it, merge it,
+  keep it, or bin it, each option stating its consequence. It warns before a merge or
+  delete would take work the task didn't make, and it never uses the words *detached
+  HEAD*, *unstaged* or *unmerged* at you. Your project's `plan.md` can name your own
+  branch flow, and Clarvis follows it instead of guessing — asking where a new branch
+  fits, and offering to tidy up ones that no longer exist.
 - **Works with your linter, doesn't pick one for you** — ESLint findings (or any other
   tool that reports problems) already feed pattern memory like anything else. If a
   project is set up for a linter that isn't running, Clarvis offers to connect it, once.

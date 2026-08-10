@@ -72,7 +72,8 @@ export function narrateCommand(command: string | undefined): string {
 const COMMAND_PHRASES: { pattern: RegExp; said: string }[] = [
   { pattern: /^git\s+(log|show|reflog)\b/, said: 'Reading the project history' },
   { pattern: /^git\s+(status|diff)\b/, said: 'Checking what has changed' },
-  { pattern: /^git\s+branch\s+-{1,2}[a-z]/i, said: 'Listing the branches' },
+  { pattern: /^git\s+branch\s+-{1,2}[dD]\b/, said: 'Deleting a branch' },
+  { pattern: /^git\s+branch\s*(-{1,2}[a-z-]+\s*)*$/i, said: 'Listing the branches' },
   { pattern: /^git\s+branch\s+\S/, said: 'Making a branch' },
   { pattern: /^git\s+(checkout|switch)\b/, said: 'Switching branch' },
   { pattern: /^git\s+(add|commit)\b/, said: 'Saving the changes' },

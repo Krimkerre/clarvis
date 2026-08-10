@@ -400,67 +400,36 @@ export class ChatService {
       this.log
     );
 
-    this.panel.post({ type: 'chat-stream-start' });
     this.agentBusy.running = true;
-    let spoken = '';
+    this.avatar.setState('thinking');
 
-    // A run of reading steps collapses into one line. Nine "Reading x" entries describe
-    // the machinery; "Having a look at the project" describes what is happening, and
-    // the log still has every step for when something goes wrong.
-    let looking = false;
+    // A single line while it works. Without it the panel sits silent for a minute and
+    // the only signal is the avatar — but it is one line, not a running commentary.
+    await this.note('Working on it…');
+
+    // **Nothing technical reaches the transcript.** Tool calls, commands and the
+    // model's own working-out all go to the Clarvis terminal, where a build log
+    // belongs. The chat gets what a person would say: the result, and an aside.
+    this.terminal.announce(`clarvis: ${task}`);
+
+    let narration = '';
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
 
-        if (event.kind === 'tool' && event.quiet) {
-          if (looking) continue;
-          looking = true;
-          this.panel.post({ type: 'chat-stream', text: '\nHaving a look at the project…\n' });
-          continue;
-        }
-        if (event.kind === 'tool') looking = false;
+        if (event.kind === 'text') narration += event.text;
 
-        // Tool calls are shown as they happen — watching work rather than a spinner.
-        // No step numbers here: they are scaffolding for a log, and in a conversation
-        // they make a person sound like a build system.
-        const line = event.kind === 'tool' ? `\n${event.text}…\n` : event.text;
-        // Collected in full for the transcript's sake; only the headline is spoken.
-        if (event.kind === 'text' || event.kind === 'done' || event.kind === 'error') {
-          spoken += event.text;
-        }
-
-        this.panel.post({ type: 'chat-stream', text: line });
+        // Everything, verbatim, in the place that is meant to be read line by line.
+        this.terminal.write(
+          event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : event.text
+        );
       }
     } finally {
       this.agentBusy.running = false;
       this.streaming = undefined;
-      this.panel.post({ type: 'chat-stream-end' });
       this.avatar.setState('neutral');
-      await this.persist();
     }
-
-    // **One line, not the lot.** A finished run has said several things — an opening
-    // remark, its narration, a note about where the work sits — and reading all of it
-    // aloud buries the only sentence anyone is waiting for.
-    const said = headline(spoken);
-    if (!said) return;
-
-    // The aside comes *after* the result and never replaces it. A summary trying to be
-    // funny is a summary nobody can rely on; keeping them apart is what lets the joke
-    // be a joke.
-    const aside =
-      (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
-
-    if (aside) await this.note(aside);
-
-    // Spoken together, because two utterances a second apart sound like a stutter —
-    // and because the pause between them is the joke.
-    this.voice.say(aside ? `${said} ${aside}` : said, 'chatReply');
-
-    // Commits the run made are not news about the user, so the personality is told
-    // about them rather than left to congratulate Clarvis on his own work.
-    for (const hash of runner.result.commits) this.agentBusy.noteCommit?.(hash);
 
     // A run can create branches — "make a branch called testing3" is a perfectly
     // ordinary request — and one the user just asked for should be placed in the flow

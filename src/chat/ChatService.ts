@@ -11,6 +11,7 @@ import { archiveSession, describeSession, formatSession, parseHistory, Session }
 import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
 import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
+import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
@@ -509,6 +510,12 @@ export class ChatService {
     // and routing it through a run would create an isolation branch, switch away from
     // it, and then try to tidy that branch up by switching back — undoing the thing
     // that was asked for.
+    if (action === 'explainGit') {
+      const lines = await describeGitPlainly();
+      await this.say(lines.join(' '), 'neutral');
+      return;
+    }
+
     if (action === 'switchBranch') {
       const said = await switchBranch(branchFromRequest(question), this.log);
       if (said) await this.say(said, 'neutral');

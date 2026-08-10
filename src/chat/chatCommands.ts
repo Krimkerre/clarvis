@@ -35,7 +35,8 @@ export type ChatAction =
   | 'toggleMute'
   | 'openSettings'
   | 'chooseModel'
-  | 'switchBranch';
+  | 'switchBranch'
+  | 'explainGit';
 
 interface Intent {
   action: ChatAction;
@@ -108,6 +109,11 @@ const INTENTS: Intent[] = [
     action: 'showHistory',
     slash: ['/history'],
     phrases: [/\b(earlier|previous|past|old).{0,20}\b(chat|conversation)s?\b/],
+  },
+  {
+    action: 'explainGit',
+    slash: ['/git', '/status', '/where'],
+    phrases: [/\bwhere am i\b/, /\bwhat'?s going on with git\b/, /\bexplain git\b/, /\bgit status\b/],
   },
   {
     action: 'switchBranch',

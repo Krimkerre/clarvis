@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { isAgentBranch } from './branchNames';
+import { explainSwitchFailure, planSwitch } from './gitPlain';
 
 /**
  * Changing branch, from the chat box.
@@ -37,15 +38,63 @@ export async function switchBranch(
       : `There's no branch called \`${target}\` here.`;
   }
 
+  // What this will do to work in progress, said *before* it happens. Git carries
+  // uncommitted changes across a switch when it can and refuses when it can't,
+  // explaining neither — which is the moment a beginner loses confidence.
+  const dirty = repository.state.workingTreeChanges.length;
+  const plan = planSwitch(
+    { branch: current, detached: !current, dirty, ahead: 0, behind: 0, onAgentBranch: false, hasRemote: true },
+    target
+  );
+
+  if (plan.needsConfirmation) {
+    const choice = await vscode.window.showWarningMessage(
+      plan.explanation,
+      { modal: true },
+      plan.saferFirst ?? 'Save them here first',
+      'Bring them with me'
+    );
+
+    if (!choice) return 'Left you where you were.';
+
+    if (choice === plan.saferFirst) {
+      const saved = await commitEverything(repository, current, log);
+      if (!saved) {
+        return "I couldn't save your changes, so I've not moved you. Nothing is lost — they're still here.";
+      }
+    }
+  }
+
   try {
     await repository.checkout(target);
     log(`branch: switched to ${target}`);
     return `You're on \`${target}\` now.`;
   } catch (error) {
     log(`branch: could not switch to ${target} (${String(error)})`);
-    // Almost always uncommitted changes that would be overwritten. Saying which is
-    // more useful than reporting that git said no.
-    return `I couldn't switch to \`${target}\` — usually that means uncommitted changes would be trampled. The Source Control view will say which.`;
+    return explainSwitchFailure(target);
+  }
+}
+
+/**
+ * Saves everything before moving, when the user asks for that.
+ *
+ * `all: true` is right *here* and nowhere else in this project: the user explicitly
+ * chose "save my changes before switching", and saving only some of them would leave
+ * the rest to follow them across anyway — the exact confusion this option exists to
+ * prevent.
+ */
+async function commitEverything(
+  repository: GitRepository,
+  branch: string | undefined,
+  log: (message: string) => void
+): Promise<boolean> {
+  try {
+    await repository.commit(`Work in progress on ${branch ?? 'this branch'}`, { all: true });
+    log('branch: saved changes before switching');
+    return true;
+  } catch (error) {
+    log(`branch: could not save before switching (${String(error)})`);
+    return false;
   }
 }
 
@@ -77,7 +126,8 @@ interface GitExports {
 }
 
 interface GitRepository {
-  state: { HEAD?: { name?: string } };
+  state: { HEAD?: { name?: string }; workingTreeChanges: unknown[] };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
   checkout(name: string): Promise<void>;
+  commit(message: string, options?: { all: boolean }): Promise<void>;
 }

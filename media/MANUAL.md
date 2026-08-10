@@ -145,6 +145,30 @@ carried the funny half.
 
 ---
 
+## Git, without needing to know git
+
+Clarvis uses git to keep your work safe, and tries not to make you learn it.
+
+**`/git`** — *"where am I, and is anything at risk?"* — answered in plain words. What
+branch you're on, what's unsaved, whether the shared copy has moved on.
+
+**`switch to <name>`** or **`switch branch`** — changes branch. If you have unsaved
+work, Clarvis says what will happen to it *before* moving, and offers to save it where
+it is instead.
+
+**Branches, in one paragraph.** A branch is a separate copy of the project's history.
+Work done on one doesn't affect the others until you merge it. Clarvis does every task
+on its own branch, so if the result is wrong you throw the branch away and nothing of
+yours was touched.
+
+**After a task, Clarvis asks what to do with the result** — look at it, merge it, keep
+it for later, or bin it. Each option says what it does. If a branch holds work that
+exists nowhere else, it says so before deleting anything.
+
+**Nothing here can lose your work without telling you first.** The one thing worth
+knowing: changes you haven't saved into git aren't attached to a branch, so they follow
+you around until you save them. Clarvis says so whenever it matters.
+
 ## Conversations
 
 **Each window starts fresh.** Yesterday's questions were about yesterday's problems.

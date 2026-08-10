@@ -220,3 +220,51 @@ test('rewriting twice is still stable, with prose present', () => {
 
   assert.equal(once, twice);
 });
+
+import { missingBranches, withoutBranch } from '../branchFlow';
+
+test('a branch deleted locally but alive on the remote is not reported', () => {
+  // Deleting a merged branch locally is routine housekeeping. Asking about it every
+  // time would punish exactly the habit worth having.
+  const flow = { trunk: 'main', integration: 'testing', extra: ['staging'] };
+
+  assert.deepEqual(missingBranches(flow, ['main'], ['origin/testing', 'origin/staging']), []);
+});
+
+test('a branch gone from both local and remote is reported', () => {
+  const flow = { trunk: 'main', integration: 'testing', extra: ['staging'] };
+
+  assert.deepEqual(missingBranches(flow, ['main', 'testing'], ['origin/main', 'origin/testing']), ['staging']);
+});
+
+test('the trunk is never reported as missing', () => {
+  // A repository whose trunk has vanished has a much larger problem than a stale line
+  // in a document, and offering to delete the entry answers the wrong question.
+  const flow = { trunk: 'production', integration: 'testing' };
+
+  assert.deepEqual(missingBranches(flow, [], []), ['testing']);
+});
+
+test('a repository with no remote at all still works', () => {
+  // Local-only projects are ordinary. With no remote, "gone from the remote too" is
+  // satisfied by the branch simply not existing locally.
+  const flow = { trunk: 'master', integration: 'staging' };
+
+  assert.deepEqual(missingBranches(flow, ['master'], []), ['staging']);
+});
+
+test('removing a branch leaves the rest of the flow intact', () => {
+  const flow = { trunk: 'main', integration: 'testing', extra: ['staging', 'qa'], work: ['clarvis/<task>'] };
+  const next = withoutBranch(flow, 'staging');
+
+  assert.equal(next.trunk, 'main');
+  assert.equal(next.integration, 'testing');
+  assert.deepEqual(next.extra, ['qa']);
+  assert.deepEqual(next.work, ['clarvis/<task>']);
+});
+
+test('removing the primary integration branch clears that slot', () => {
+  const next = withoutBranch({ trunk: 'main', integration: 'testing' }, 'testing');
+
+  assert.equal(next.integration, undefined);
+});

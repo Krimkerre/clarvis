@@ -1,5 +1,13 @@
 import * as vscode from 'vscode';
-import { BranchFlow, flowBranches, matchesWork, parseBranchFlow, writeBranchFlow } from './branchFlow';
+import {
+  BranchFlow,
+  flowBranches,
+  matchesWork,
+  missingBranches,
+  parseBranchFlow,
+  withoutBranch,
+  writeBranchFlow,
+} from './branchFlow';
 import { isAgentBranch } from './branchNames';
 import { QuipPicker } from '../personality/QuipPicker';
 
@@ -17,6 +25,9 @@ import { QuipPicker } from '../personality/QuipPicker';
 
 /** Branches already asked about — including ones the user said to ignore. */
 const SEEN_KEY = 'clarvis.branchFlow.seen';
+
+/** Branches already asked about *removing*, so a declined prune is not re-offered. */
+const KEPT_KEY = 'clarvis.branchFlow.kept';
 
 /**
  * Long enough that a branch created and deleted in a moment is never asked about.
@@ -186,6 +197,12 @@ export class BranchFlowWatcher {
       .map((entry) => entry.name ?? '')
       .filter(Boolean);
 
+    // Remote branches are fetched separately and treated as "still exists": a branch
+    // deleted locally after merging is routine housekeeping, not an abandoned one.
+    const remotes = (await repository.getBranches({ remote: true }).catch(() => []))
+      .map((entry) => entry.name ?? '')
+      .filter(Boolean);
+
     const seen = this.context.workspaceState.get<string[]>(SEEN_KEY) ?? [];
     const known = new Set([...flowBranches(flow), ...seen]);
 
@@ -195,6 +212,13 @@ export class BranchFlowWatcher {
     const unknown = branches.filter(
       (name) => !known.has(name) && !isAgentBranch(name) && !matchesWork(name, flow.work)
     );
+
+    // A flow naming branches nobody has is a document quietly lying about the project.
+    const gone = missingBranches(flow, branches, remotes);
+    if (gone.length > 0) {
+      await this.offerPrune(flow, plan, gone);
+      return;
+    }
 
     // Logged either way: "checked and found nothing" and "never ran" look identical
     // from the outside, and telling them apart took a session.
@@ -207,6 +231,40 @@ export class BranchFlowWatcher {
     // One at a time. Three questions at once about three branches is a form, and
     // people close forms.
     await this.ask(unknown[0], flow, plan, options.remark);
+  }
+
+  /**
+   * Offers to drop a branch from the flow once it exists nowhere.
+   *
+   * Asked rather than pruned silently: the document is the user's, and a line they
+   * wrote deliberately — a release branch recreated each cycle, say — is not
+   * Clarvis's to delete because it happens to be absent today.
+   */
+  private async offerPrune(
+    flow: BranchFlow,
+    plan: { uri: vscode.Uri; text: string },
+    gone: string[]
+  ): Promise<void> {
+    const kept = this.context.workspaceState.get<string[]>(KEPT_KEY) ?? [];
+    const branch = gone.find((name) => !kept.includes(name));
+    if (!branch) return;
+
+    this.log(`branch flow: "${branch}" is in the flow but exists nowhere`);
+
+    const picked = await vscode.window.showInformationMessage(
+      `Clarvis: \`${branch}\` is in plan.md's flow but doesn't exist locally or on the remote. Drop it?`,
+      'Drop it',
+      'Keep it'
+    );
+
+    // Recorded either way, dismissal included — otherwise the question returns every
+    // time the window opens, about a branch the user has already considered.
+    await this.context.workspaceState.update(KEPT_KEY, [...kept, branch]);
+    if (picked !== 'Drop it') return;
+
+    await this.writePlan(plan, withoutBranch(flow, branch));
+    this.note(`Dropped \`${branch}\` from the flow in plan.md.`);
+    await this.offerToCommit(branch);
   }
 
   private async ask(
@@ -282,7 +340,7 @@ export class BranchFlowWatcher {
 
     try {
       await repository.add([vscode.Uri.joinPath(root, 'plan.md').fsPath]);
-      await repository.commit(`Add ${branch} to the branch flow`, { all: false });
+      await repository.commit(`Update the branch flow (${branch})`, { all: false });
       this.log('branch flow: committed plan.md');
       this.note('Committed. Only plan.md — whatever else you have in flight is still yours.');
     } catch (error) {

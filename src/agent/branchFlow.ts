@@ -223,3 +223,44 @@ function renderSection(flow: BranchFlow): string {
     '',
   ].join('\n');
 }
+
+/**
+ * Removes a branch from a flow, wherever it sits.
+ *
+ * Returns the flow unchanged when the branch isn't in it, so the caller can compare
+ * and skip a pointless rewrite of the document.
+ */
+export function withoutBranch(flow: BranchFlow, branch: string): BranchFlow {
+  return {
+    ...flow,
+    trunk: flow.trunk === branch ? undefined : flow.trunk,
+    integration: flow.integration === branch ? undefined : flow.integration,
+    extra: (flow.extra ?? []).filter((name) => name !== branch),
+  };
+}
+
+/**
+ * Branches the flow names that no longer exist anywhere.
+ *
+ * **Local *and* remote.** Deleting a branch locally after merging it is routine — the
+ * work is on the trunk and the branch was tidy-up — and asking about that every time
+ * would punish good housekeeping. A branch gone from the remote as well is one the
+ * project has actually finished with.
+ *
+ * The trunk is never reported: a repository whose trunk is missing has a much larger
+ * problem than a stale line in a document, and offering to delete the entry would be
+ * answering the wrong question.
+ */
+export function missingBranches(flow: BranchFlow, local: string[], remote: string[]): string[] {
+  const known = new Set([...local, ...remote.map(stripRemote)]);
+
+  return [flow.integration, ...(flow.extra ?? [])]
+    .filter((name): name is string => Boolean(name))
+    .filter((name) => !known.has(name));
+}
+
+/** `origin/testing` → `testing`, so the two lists can be compared at all. */
+function stripRemote(ref: string): string {
+  const slash = ref.indexOf('/');
+  return slash === -1 ? ref : ref.slice(slash + 1);
+}

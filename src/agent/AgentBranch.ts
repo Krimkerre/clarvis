@@ -144,6 +144,17 @@ export class AgentBranch {
       const commits = await repository.log({ range: `${this.previousBranch}..${this.created}` });
       if (commits.length > 0) return false;
 
+      // **The run may have moved on purpose.** "Change to the milestone branch" ends
+      // with the user somewhere else by request — and tidying up by returning them to
+      // where they started silently undoes the thing they asked for. Seen live.
+      const head = repository.state.HEAD?.name;
+      if (head !== this.created) {
+        await repository.deleteBranch(this.created, false);
+        this.log(`branch: removed ${this.created}; left you on ${head ?? 'where the run put you'}`);
+        this.created = undefined;
+        return true;
+      }
+
       await repository.checkout(this.previousBranch);
       await repository.deleteBranch(this.created, false);
       this.log(`branch: removed ${this.created}, it held nothing`);

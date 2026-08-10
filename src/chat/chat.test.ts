@@ -457,3 +457,18 @@ test('the prompt tells it to answer QUESTION when unsure', () => {
   // survive being delegated to a model.
   assert.match(intentPrompt('do the thing'), /could be either, answer QUESTION/);
 });
+
+test('"change to the milestone branch" is a checkout, not an agent task', () => {
+  // Seen live: it ran a whole agent task to do one deterministic thing, and the
+  // cleanup then switched the user back, silently undoing the request.
+  assert.equal(chatAction('change to the milestone branch'), 'switchBranch');
+  assert.equal(branchFromRequest('change to the milestone branch'), 'milestone');
+  assert.equal(branchFromRequest('move to testing'), 'testing');
+  assert.equal(branchFromRequest('change to milestone/1'), 'milestone/1');
+});
+
+test('changing a setting is still not a branch switch', () => {
+  // "change to a different voice" must never reach git.
+  assert.equal(chatAction('change to a different voice'), 'chooseVoice');
+  assert.equal(chatAction('change the model'), 'chooseModel');
+});

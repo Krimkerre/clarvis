@@ -120,7 +120,16 @@ const INTENTS: Intent[] = [
     slash: ['/branch', '/checkout'],
     // Deliberately below voice, engine and model: "switch to a different engine" is
     // about Clarvis, not about git, and those intents claim it first.
-    phrases: [/\bcheck ?out\b/, /\bswitch to\b/, /\bswitch branch(es)?\b/, /\bgo to\b.*\bbranch\b/],
+    phrases: [
+      /\bcheck ?out\b/,
+      /\bswitch to\b/,
+      /\bswitch branch(es)?\b/,
+      // "change to the milestone branch" is a checkout, and routing it to the agent
+      // means a whole run to do one deterministic thing. Requires the word "branch",
+      // so "change to a different voice" is untouched.
+      /\b(change|move|go) to\b.*\bbranch\b/,
+      /\b(change|move|go) to\b\s+\S+\s*$/,
+    ],
   },
   {
     action: 'openSettings',
@@ -203,8 +212,11 @@ function wantsManual(text: string): boolean {
  * yesterday" and try to check out a sentence.
  */
 export function branchFromRequest(text: string): string | undefined {
+  // Handles "switch to x", "checkout x", "change to the x branch" and "go to x
+  // branch" — the trailing noun is optional and stripped, since "the milestone
+  // branch" names `milestone`, not a branch called "branch".
   const match =
-    /\b(?:switch to|check ?out|go to)\s+(?:the\s+)?(?:branch\s+)?([A-Za-z0-9._\/-]+)\s*$/i.exec(
+    /\b(?:switch to|check ?out|change to|move to|go to)\s+(?:the\s+)?(?:branch\s+)?([A-Za-z0-9._\/-]+)(?:\s+branch)?\s*$/i.exec(
       text.trim()
     );
 

@@ -373,7 +373,11 @@ export class ChatService {
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
     const opening = (await this.live?.acknowledge(task)) ?? because;
-    await this.say(opening, 'thinking');
+
+    // Written, not spoken. The user asked for one line of a run to be read aloud, and
+    // that line is the result — "right, on it" is not news.
+    await this.note(opening);
+    this.avatar.setState('thinking');
 
     this.streaming?.abort();
     const controller = new AbortController();

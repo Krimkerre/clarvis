@@ -133,31 +133,27 @@ export class ChatService {
       return;
     }
 
+    const mode = this.mode();
+    const decision = routeFor(question);
+
+    // **Routing comes before the local answer.** It used to come after, and the local
+    // matcher swallowed jobs: "make a new branch called testing3" contains the word
+    // "branch", so it was answered with the current branch name and never reached the
+    // agent. A keyword match for a question is not evidence that a request is one.
+    if (decision.route === 'agent' && canEdit(mode)) {
+      this.log(`chat: routed to agent — ${decision.because}`);
+      await this.runAgent(question, mode === 'agent' ? 'Agent mode — treating that as a job.' : decision.because);
+      return;
+    }
+
     const reply = localAnswer(question, await this.facts());
 
     if (!reply) {
-      // Beyond what was watched happen. Either the model answers it, or the agent does
-      // it — §4.6 routing, with ambiguity resolving toward answering.
-      const mode = this.mode();
-
-      // **The mode decides before the router does.** In chat and plan mode the agent
-      // path is never called — not discouraged in a prompt, not gated behind a
-      // confirmation, simply not reachable. That is what makes it a guarantee.
-      if (mode === 'agent') {
-        await this.runAgent(question, 'Agent mode — treating that as a job.');
-        return;
-      }
-
-      if (!canEdit(mode)) {
-        await this.answerWithModel(question, mode === 'plan' ? PLAN_ADDENDUM : '');
-        return;
-      }
-
-      const decision = routeFor(question);
-      this.log(`chat: routed to ${decision.route} — ${decision.because}`);
-
-      if (decision.route === 'agent') await this.runAgent(question, decision.because);
-      else await this.answerWithModel(question);
+      // Beyond what was watched happen — the model answers it. In plan mode it gets
+      // the planning addendum; in chat mode it simply answers. Neither can reach the
+      // agent, which is checked above and is a guarantee rather than a preference.
+      this.log(`chat: routed to answer — ${decision.because}`);
+      await this.answerWithModel(question, mode === 'plan' ? PLAN_ADDENDUM : '');
       return;
     }
 

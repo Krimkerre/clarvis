@@ -289,3 +289,24 @@ test('the same verbs in a question still get answered', () => {
     assert.equal(routeFor(message).route, 'answer', message);
   }
 });
+
+import { localAnswer as localAnswerFor } from './localAnswer';
+
+test('a job mentioning a watched keyword is not swallowed by the local answer', () => {
+  // The bug: "make a new branch called testing3" contains "branch", so the local
+  // matcher answered with the current branch name and the request never reached the
+  // agent at all — no routing line in the log, nothing done.
+  const facts = { now: NOW, running: [], recentFiles: [], patterns: [], git: { branch: 'main', dirtyCount: 0 } };
+
+  // The local matcher still answers it in isolation...
+  assert.ok(localAnswerFor('make a new branch called testing3', facts));
+  // ...which is why routing has to be consulted first.
+  assert.equal(routeFor('make a new branch called testing3').route, 'agent');
+});
+
+test('questions containing work keywords still reach the local answer', () => {
+  // The reordering must not send genuine questions to the agent.
+  for (const message of ['what branch am I on?', 'which branch is this', 'have we seen this error before?']) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});

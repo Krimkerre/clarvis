@@ -75,8 +75,11 @@ export class ChatService {
     private readonly voice: VoiceService,
     private readonly models: ModelService,
     private readonly terminal: AgentTerminal,
-    /** Shared flag so quips keep out of the way while a run is happening. */
-    private readonly agentBusy: { running: boolean },
+    /**
+     * Shared run state: whether a run is happening, and what it committed. Quips keep
+     * out of the way during one, and never celebrate its commits afterwards.
+     */
+    private readonly agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
     private readonly log: (message: string) => void
   ) {
     // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
@@ -361,6 +364,10 @@ export class ChatService {
     // Tool calls are never spoken — reading nine of them aloud would be a recital.
     // What the model actually said is, including where the run left you.
     if (spoken.trim()) this.voice.say(spoken, 'chatReply');
+
+    // Commits the run made are not news about the user, so the personality is told
+    // about them rather than left to congratulate Clarvis on his own work.
+    for (const hash of runner.result.commits) this.agentBusy.noteCommit?.(hash);
 
     // A run can create branches — "make a branch called testing3" is a perfectly
     // ordinary request — and one the user just asked for should be placed in the flow

@@ -97,7 +97,13 @@ export function activate(context: vscode.ExtensionContext): void {
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
   const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
-  startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
+  // One place that knows what a run is doing: whether one is in progress, and what it
+  // committed. Quips stay out of the way during one (§4.6 personality under load), and
+  // never celebrate its commits afterwards.
+  const agentBusy: { running: boolean; noteCommit?: (hash: string) => void } = { running: false };
+
+  const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
+  agentBusy.noteCommit = (hash) => personality.noteOwnCommit(hash);
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
@@ -131,11 +137,6 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
   // shared so a probe run reads as one transcript rather than one window per command.
-  // One place that knows whether a run is in progress. Quips stay out of the way
-  // during one (§4.6 personality under load), and asking the model for a joke while
-  // it is doing real work spends the same budget twice.
-  const agentBusy = { running: false };
-
   const agentTerminal = new AgentTerminal();
   context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
   context.subscriptions.push(
@@ -418,7 +419,7 @@ function startChat(
   voice: VoiceService,
   models: ModelService,
   terminal: AgentTerminal,
-  agentBusy: { running: boolean },
+  agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -596,13 +597,14 @@ function startPersonality(
   announcer: Announcer,
   models: ModelService,
   busy: () => boolean
-): void {
+): Personality {
   const personality = new Personality(announcer, (message) => log.write(message));
 
   // Written lines when a model is configured; the bank when it isn't, is slow, or
   // returns something unusable.
   personality.setLiveQuips(new LiveQuips(models, busy, (message) => log.write(message)));
   personality.start(tracker, context);
+  return personality;
 }
 
 /**

@@ -37,6 +37,20 @@ export class Personality {
   /** Writes a line for the moment, when a model is configured. Absent is normal. */
   private live: { write(trigger: QuipTrigger, sharp: boolean, detail?: string): Promise<string | undefined> } | undefined;
 
+  /**
+   * Commits Clarvis made himself, which are not news about the user.
+   *
+   * Seen live: an agent run committed, the git poll noticed a new commit after a quiet
+   * stretch, and Clarvis congratulated the user on committing — for work he had just
+   * done. Applauding your own commit is the least earned remark this product can make.
+   */
+  private readonly ownCommits = new Set<string>();
+
+  /** Told by the agent path what it committed, so those commits stay unremarked. */
+  noteOwnCommit(hash: string): void {
+    this.ownCommits.add(hash);
+  }
+
   /** Lets the composition root supply a model without this class knowing about providers. */
   setLiveQuips(live: { write(trigger: QuipTrigger, sharp: boolean, detail?: string): Promise<string | undefined> }): void {
     this.live = live;
@@ -108,7 +122,12 @@ export class Personality {
 
     if (head && this.lastKnownHead && head !== this.lastKnownHead) {
       const quiet = this.lastCommitSeenAt === undefined || now - this.lastCommitSeenAt > COMMIT_SILENCE_MS;
-      if (quiet) this.say('firstCommitAfterSilence', 'impressed', 'the first commit in a while');
+
+      // A commit Clarvis made is still a commit — it resets the silence — but it is
+      // not something to congratulate anyone for.
+      if (quiet && !this.ownCommits.has(head)) {
+        this.say('firstCommitAfterSilence', 'impressed', 'the first commit in a while');
+      }
       this.lastCommitSeenAt = now;
     }
     if (head) this.lastKnownHead = head;

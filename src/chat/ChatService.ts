@@ -14,7 +14,8 @@ import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { ModelService, explain } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
-import { classifyIntent } from './intentModel';
+import { classifyAction, classifyIntent } from './intentModel';
+import { ACTION_QUESTIONS, worthInferring } from './actionIntent';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
@@ -187,6 +188,10 @@ export class ChatService {
       await this.runAction(action, question);
       return;
     }
+
+    // The matcher missed. A model may recognise it anyway — but only as a suggestion,
+    // and a declined suggestion falls through to a normal answer (M8f2).
+    if (await this.offerInferredAction(question)) return;
 
     const mode = this.mode();
 
@@ -697,7 +702,7 @@ export class ChatService {
    * — so a misclick would silently destroy the history. Skipped entirely when the
    * thread is already empty, since confirming a no-op is just noise.
    */
-  private async confirmAndClear(): Promise<void> {
+  async confirmAndClear(): Promise<void> {
     if (this.thread.length === 0) return;
 
     const confirmed = await vscode.window.showWarningMessage(
@@ -717,6 +722,38 @@ export class ChatService {
    * like a glitch, and if the user dismisses it there is otherwise no trace of what
    * they asked for.
    */
+  /**
+   * Offers to do the thing a model thinks was meant, and does it only if told to.
+   *
+   * Returns whether the message has been dealt with. `false` covers three different
+   * outcomes deliberately — nothing was inferred, the guess was declined, the model was
+   * unavailable — because all three mean the same thing to the caller: answer normally.
+   * A declined suggestion left hanging would be the worst of both, having interrupted
+   * *and* not answered.
+   */
+  private async offerInferredAction(question: string): Promise<boolean> {
+    if (!worthInferring(question)) return false;
+
+    const guess = await classifyAction(this.models, question, this.log);
+    if (!guess) return false;
+
+    // Modal, because it interrupts something the user is waiting on and a toast that
+    // times out unanswered would leave the question unanswered too.
+    const answer = await vscode.window.showInformationMessage(
+      ACTION_QUESTIONS[guess],
+      { modal: true, detail: 'I may have misread that — say no and I will just answer.' },
+      'Yes'
+    );
+
+    if (answer !== 'Yes') {
+      this.log(`action intent: declined ${guess}, answering instead`);
+      return false;
+    }
+
+    await this.runAction(guess, question);
+    return true;
+  }
+
   private async runAction(action: ChatAction, question = ''): Promise<void> {
     // Handled here rather than by the agent: a checkout is one deterministic command,
     // and routing it through a run would create an isolation branch, switch away from

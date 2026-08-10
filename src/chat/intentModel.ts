@@ -1,5 +1,7 @@
 import { ModelService } from '../model/ModelService';
 import { intentPrompt, parseIntent, Route } from './routing';
+import { actionPrompt, parseAction } from './actionIntent';
+import { ChatAction } from './chatCommands';
 
 /**
  * Asking the model whether a message is a job or a question.
@@ -37,6 +39,35 @@ export async function classifyIntent(
     return route;
   } catch (error) {
     log(`intent: classification failed (${String(error)})`);
+    return undefined;
+  }
+}
+
+/**
+ * Whether a message was asking for one of the extension's own actions (M8f2).
+ *
+ * Same shape as the route classifier above and for the same reasons — a deadline,
+ * strict parsing, and silence on anything unexpected. What it returns is a *suggestion*:
+ * the caller asks the user before doing anything with it.
+ */
+export async function classifyAction(
+  models: ModelService,
+  text: string,
+  log: (message: string) => void
+): Promise<ChatAction | undefined> {
+  if (!(await models.isReady('chat'))) return undefined;
+
+  try {
+    const raw = await Promise.race([
+      collect(models, actionPrompt(text)),
+      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
+    ]);
+
+    const action = parseAction(raw);
+    log(`action intent: model said ${action ?? 'none'} for "${text.slice(0, 50)}"`);
+    return action;
+  } catch (error) {
+    log(`action intent: classification failed (${String(error)})`);
     return undefined;
   }
 }

@@ -2902,7 +2902,24 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   `BUTLER_STATES` and `isButlerState()` moved to `src/butlerState.ts`, which imports
   nothing: validating a state name used to require importing the webview provider, and
   therefore `vscode`, and therefore could not be unit-tested.
-- **M8f2 — Model-assisted command intent.** The regex matcher (`chatCommands.ts`,
+- **M8f2 — Model-assisted command intent. ✅ Built.** `src/chat/actionIntent.ts` (pure:
+  prompt, allow-list parse, and the question each action gets asked as) plus
+  `classifyAction()` alongside the route classifier it shares a deadline and a collector
+  with. All six rules below hold, with **one deliberate deviation**, recorded here rather
+  than quietly made:
+  - *The gate is message length, not `isRequest`.* The rule below says to reuse that
+    heuristic — but `isRequest` demands a verb from a list (change, set, pick, open), and
+    **every example this feature exists for has no such verb**: "I can't stand this
+    voice", "you're too loud". Gating on it would have spent the request only on messages
+    the deterministic matcher already handles and never on the ones it misses, which is
+    the feature inverted. Twelve words or fewer instead: commands are short, tasks and
+    pasted stack traces are not. There is a test asserting the matcher still misses those
+    three phrasings, so if it ever starts catching one, that is the news.
+  - *Rule 4 was found unmet on paths that predate this.* `clarvis.clearConversation` ran
+    the raw `clear()`, and `clarvis.clearFishKey` deleted the key with no confirmation at
+    all. Both confirm for themselves now, whatever route reaches them: agreeing that a
+    guess was right is not the same as agreeing to lose the thread.
+- **M8f2 — original spec.** The regex matcher (`chatCommands.ts`,
   shipped in M8a) covers the phrasings people actually type; a model can cover the rest
   — *"I can't stand this voice"*, *"you're too loud"*, *"where do I put my key"*. When a
   model is connected and the deterministic matcher returns null, the message may be

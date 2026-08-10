@@ -474,7 +474,11 @@ function startChat(
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.clear()),
+    // Through the confirming path, not the raw one. M8f2 rule: a destructive action
+    // asks for itself whatever route reached it — a typed "/clear", a chat phrasing, or
+    // a model's guess that the user already said yes to. Two prompts is correct here;
+    // agreeing that a guess was right is not the same as agreeing to lose the thread.
+    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.confirmAndClear()),
     vscode.commands.registerCommand('clarvis.showHistory', () => void chat.showHistory()),
     vscode.commands.registerCommand('clarvis.openManual', () => void chat.openHelp())
   );
@@ -558,8 +562,17 @@ function registerVoiceCommands(
     }),
 
     vscode.commands.registerCommand('clarvis.clearFishKey', async () => {
+      // Same rule, and this one had no confirmation at all: the key is not recoverable
+      // from here, and getting another means going back to the provider for it.
+      const confirmed = await vscode.window.showWarningMessage(
+        'Remove the stored Fish Audio key? You will need to paste it in again to use the voice.',
+        { modal: true },
+        'Remove'
+      );
+      if (confirmed !== 'Remove') return;
+
       await context.secrets.delete(FISH_KEY_SECRET);
-      void vscode.window.showInformationMessage('Clarvis: key removed.');
+      void vscode.window.showInformationMessage(await phrase('report', 'Key removed.'));
     }),
 
     vscode.commands.registerCommand('clarvis.chooseVoice', () => chooseVoice(fish, voice, log)),

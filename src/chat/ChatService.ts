@@ -255,17 +255,20 @@ export class ChatService {
     );
 
     this.panel.post({ type: 'chat-stream-start' });
-    let closing = '';
+    let spoken = '';
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
+        if (!event.text) continue;
+
         // Tool calls are shown as they happen — a step counter is the difference
         // between watching work and watching a spinner.
-        const line =
-          event.kind === 'tool' ? `\n${event.step}. ${event.text}` : event.text;
+        const line = event.kind === 'tool' ? `\n${event.step}. ${event.text}` : event.text;
+        if (event.kind === 'text' || event.kind === 'done' || event.kind === 'error') {
+          spoken += event.text;
+        }
 
-        if (event.kind === 'done' || event.kind === 'error') closing = event.text;
-        this.panel.post({ type: 'chat-stream', text: event.kind === 'tool' ? line : line });
+        this.panel.post({ type: 'chat-stream', text: line });
       }
     } finally {
       this.streaming = undefined;
@@ -274,9 +277,9 @@ export class ChatService {
       await this.persist();
     }
 
-    // Only the closing line is spoken. Reading nine tool calls aloud would be a
-    // recital, and the interesting part is what changed.
-    if (closing) this.voice.say(closing, 'chatReply');
+    // Tool calls are never spoken — reading nine of them aloud would be a recital.
+    // What the model actually said is, including where the run left you.
+    if (spoken.trim()) this.voice.say(spoken, 'chatReply');
   }
 
   /** The read-only tool loop, for questions that need to see the code. */
@@ -295,11 +298,15 @@ export class ChatService {
 
     this.avatar.setState('thinking');
     this.panel.post({ type: 'chat-stream-start' });
-    let closing = '';
+
+    // What was actually said, for the voice — accumulated from the stream rather than
+    // taken from the closing event, which no longer repeats it.
+    let spoken = '';
 
     try {
       for await (const event of runner.answer(question, controller.signal)) {
-        if (event.kind === 'done' || event.kind === 'error') closing = event.text;
+        if (!event.text) continue;
+        if (event.kind === 'text' || event.kind === 'error') spoken += event.text;
 
         this.panel.post({
           type: 'chat-stream',
@@ -313,7 +320,7 @@ export class ChatService {
       await this.persist();
     }
 
-    if (closing) this.voice.say(closing, 'chatReply');
+    if (spoken.trim()) this.voice.say(spoken, 'chatReply');
   }
 
   /** Cancels the answer in flight, if there is one. */

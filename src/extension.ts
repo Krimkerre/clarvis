@@ -137,7 +137,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
             if (event.kind === 'done' || event.kind === 'error') {
               const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
-              void vscode.window.showInformationMessage(`Clarvis: ${event.text}${files}`);
+              // The closing event no longer repeats the narration, so it can be empty.
+              const text = event.text.trim() || 'Finished.';
+              void vscode.window.showInformationMessage(`Clarvis: ${text}${files}`);
             }
           }
         }

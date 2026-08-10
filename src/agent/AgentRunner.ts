@@ -173,9 +173,12 @@ export class AgentRunner {
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
         if (!options.readOnly) await this.finish(branch, task, narration);
+        // **Not the narration.** It has already been streamed as `text` events, and
+        // repeating it here printed every answer twice. The closing event carries only
+        // what the stream could not: where the run left you.
         yield this.record({
           kind: 'done',
-          text: options.readOnly ? narration.trim() || 'Nothing to say.' : this.summarise(narration, branch),
+          text: options.readOnly ? '' : this.closingNote(branch),
           files: [...this.touched],
         });
         return;
@@ -343,11 +346,10 @@ export class AgentRunner {
    * `clarvis/<task>` rather than where it started. Not saying so is how someone
    * commits their next hour of work onto an agent's branch without noticing.
    */
-  private summarise(narration: string, branch: AgentBranch): string {
-    const said = narration.trim() || 'Done.';
-    if (!branch.current) return said;
+  private closingNote(branch: AgentBranch): string {
+    if (!branch.current) return '';
 
-    return `${said}\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;
+    return `\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */

@@ -261,3 +261,31 @@ test('escalation needs something to escalate', () => {
   assert.equal(isEscalation('go on then', false), false);
   assert.equal(isEscalation('what did you mean', true), false);
 });
+
+test('the everyday verbs for asking for work all route to the agent', () => {
+  // "make a new branch called testing3" was answered rather than done: the verb list
+  // was written from the verbs I thought of, and `make` was not among them.
+  for (const message of [
+    'make a new branch called testing3',
+    'make me a helper function',
+    'build a parser for this format',
+    'generate the types from the schema',
+    'set up eslint',
+    'move BusyTracker into src/watch',
+    'revert the last change to README',
+  ]) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('the same verbs in a question still get answered', () => {
+  // Widening the verb list must not start turning questions into work.
+  for (const message of [
+    'how do I make a new branch?',
+    'what would you build here',
+    'should we set up eslint',
+    'can you generate types from a schema',
+  ]) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});

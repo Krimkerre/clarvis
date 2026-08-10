@@ -22,9 +22,14 @@ export interface RouteDecision {
  *
  * Deliberately about *the codebase*, not about Clarvis: "change the voice" is a
  * setting, handled by `chatCommands.ts` long before this runs.
+ *
+ * `make` and `build` were missing from the first version, so "make a new branch called
+ * testing3" was answered rather than done — the most natural phrasing for a request
+ * fell through the list because the list was written from the verbs I happened to
+ * think of.
  */
 const WORK_VERBS =
-  /\b(fix|add|remove|delete|rename|refactor|implement|create|write|update|migrate|convert|extract|inline|split|merge|upgrade|bump|install|wire|hook up|clean up|tidy|format|sort|replace)\b/;
+  /\b(fix|add|remove|delete|rename|refactor|implement|create|make|build|generate|scaffold|set ?up|initiali[sz]e|write|update|migrate|convert|extract|inline|split|merge|upgrade|bump|install|wire|hook up|clean up|tidy|format|sort|replace|revert|undo|move|copy|commit|branch off)\b/;
 
 /** Phrasings that are a request for work even without an imperative verb. */
 const WORK_PHRASES = [

@@ -51,6 +51,31 @@ export const EXAMPLES = [
   'The plan is sound. The plan was sound last Tuesday as well, when nobody read it.',
 ];
 
+/** How many of them any one prompt sees. */
+const SHOWN = 5;
+
+/**
+ * Which examples this prompt gets, rotating.
+ *
+ * **Because banning the quote only bought a paraphrase.** Told not to reuse the lines,
+ * the model stopped copying "At some point it stops being bad luck" and started writing
+ * "At some point the pattern stops being coincidence" — same joke, new words, invisible
+ * to a matcher and just as repetitive to the person hearing it. The pull is toward
+ * whichever example matches the situation, and repeat-failure is a situation that
+ * recurs, so that example was a permanent attractor.
+ *
+ * Rotating the window changes what is nearest to hand each time. Deliberately a counter
+ * rather than randomness: the sequence is reproducible, so a line that lands badly can
+ * be traced back to the set that produced it.
+ */
+let shownFrom = 0;
+
+function currentExamples(): string[] {
+  const window = Array.from({ length: SHOWN }, (_, index) => EXAMPLES[(shownFrom + index) % EXAMPLES.length]);
+  shownFrom = (shownFrom + 1) % EXAMPLES.length;
+  return window;
+}
+
 /**
  * The character, identically for every surface that speaks as him.
  *
@@ -112,7 +137,7 @@ export function character(): string {
     NEVER,
     '',
     'Lines of yours. Match this range, not just the first one:',
-    ...EXAMPLES.map((line) => `- ${line}`),
+    ...currentExamples().map((line) => `- ${line}`),
     '',
     // Caught by the voice check on its first run: the briefing ended on "At some point
     // it stops being bad luck", word for word, and a chat answer opened with "The plan

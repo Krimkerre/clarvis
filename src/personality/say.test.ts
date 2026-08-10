@@ -97,6 +97,7 @@ test('no user-facing string uses the phrasing of a form', () => {
 });
 
 import { worthRewriting } from './say';
+import { EXAMPLES } from './character';
 
 test('the brief asks for a line that lands, not merely an inoffensive one', () => {
   // The first version was a list of prohibitions with no instruction to be funny. A
@@ -107,8 +108,9 @@ test('the brief asks for a line that lands, not merely an inoffensive one', () =
   assert.match(prompt, /Never neutral/);
   assert.match(prompt, /entirely unimpressed/);
   // Real lines as the anchor: describing a voice produces a description-shaped
-  // sentence; examples of the thing produce the thing.
-  assert.match(prompt, /The repository was starting to worry/);
+  // sentence; examples of the thing produce the thing. Which lines appear rotates, so
+  // this asks that some of them do rather than naming one.
+  assert.ok(EXAMPLES.some((example) => prompt.includes(example)));
 });
 
 test('warnings and questions are left alone entirely', () => {

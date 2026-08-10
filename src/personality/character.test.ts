@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ANSWER_SHAPE, character, characterWith } from './character';
+import { ANSWER_SHAPE, EXAMPLES, character, characterWith } from './character';
 
 test('the voice comes last, after whatever rules the surface adds', () => {
   // Character-first was tried and lost. In chat the voice sat four hundred words above
@@ -25,11 +25,25 @@ test('the examples are the last thing read', () => {
 test('the examples cover more than one beat', () => {
   // The first set was four lines and all four were a task finishing, so there was
   // nothing for pushback or an opinion to imitate and the model wrote "done" four ways.
-  const prompt = character();
+  const bank = EXAMPLES.join('\n');
 
-  assert.match(prompt, /fourth time this week/); // a failure that keeps happening
-  assert.match(prompt, /four nested callbacks/); // an opinion about the code
-  assert.match(prompt, /asked me to undo it twice/); // pushback
+  assert.match(bank, /fourth time this week/); // a failure that keeps happening
+  assert.match(bank, /four nested callbacks/); // an opinion about the code
+  assert.match(bank, /asked me to undo it twice/); // pushback
+});
+
+test('consecutive prompts do not show the same examples', () => {
+  // Banning the quote only bought a paraphrase — "At some point the pattern stops being
+  // coincidence" for "At some point it stops being bad luck". The pull is toward
+  // whichever example matches the situation, so the window has to move.
+  assert.notEqual(character(), character());
+});
+
+test('every example still gets shown as the window comes round', () => {
+  // Rotating must not quietly retire the beats that fixed the flatness.
+  const seen = Array.from({ length: EXAMPLES.length }, () => character()).join('\n');
+
+  for (const example of EXAMPLES) assert.ok(seen.includes(example), example);
 });
 
 test('he volunteers his opinions rather than withholding them', () => {

@@ -363,6 +363,8 @@ export class ChatService {
     // The close of a run is a decision, not an announcement: what changed, what the
     // options are, and the user chooses. Offered rather than forced — a modal after
     // every run would be its own nuisance.
+    // Only when there is something to review. A run that changed nothing has nothing
+    // to merge, keep or throw away, and offering anyway is a dialog about an absence.
     const { commits, files } = runner.result;
     if (files.length > 0) {
       const review = await vscode.window.showInformationMessage(

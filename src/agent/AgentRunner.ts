@@ -34,6 +34,9 @@ export class AgentRunner {
   private readonly touched = new Set<string>();
   /** Commits this run made, so a review can tell them from anyone else's. */
   private readonly ownCommits: string[] = [];
+
+  /** Whether the run's own branch was removed for holding nothing. */
+  private tidied = false;
   private steps = 0;
 
   constructor(
@@ -178,7 +181,13 @@ export class AgentRunner {
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
-        if (!options.readOnly) await this.finish(branch, task, narration);
+        if (!options.readOnly) {
+          await this.finish(branch, task, narration);
+          // Nothing was kept, so the isolation branch is clutter. Tidied here rather
+          // than left for the review wizard, which would otherwise offer five options
+          // about an empty branch.
+          this.tidied = await branch.discardIfEmpty();
+        }
         // **Not the narration.** It has already been streamed as `text` events, and
         // repeating it here printed every answer twice. The closing event carries only
         // what the stream could not: where the run left you.
@@ -353,6 +362,9 @@ export class AgentRunner {
    * commits their next hour of work onto an agent's branch without noticing.
    */
   private closingNote(branch: AgentBranch): string {
+    if (this.tidied) {
+      return `\n\nNothing of mine to keep, so I've tidied my branch away. You're on \`${branch.previous}\`.`;
+    }
     if (!branch.current) return '';
 
     return `\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;

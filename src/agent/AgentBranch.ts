@@ -124,6 +124,40 @@ export class AgentBranch {
   }
 
   /**
+   * Removes the run's branch when it holds nothing.
+   *
+   * A task like "make a branch called testing3" changes no files and makes no commits
+   * — the work happened elsewhere — so the isolation branch is left behind as clutter
+   * nobody asked for, and the review wizard then offers five options about an empty
+   * branch.
+   *
+   * **Emptiness is verified against git, not assumed from our own bookkeeping.** A run
+   * can commit through `runCommand` without going through `commit()` above, and
+   * deleting a branch because we did not notice work happening would be the worst
+   * possible bug in this file. Returns whether it actually removed anything.
+   */
+  async discardIfEmpty(): Promise<boolean> {
+    const repository = this.repository();
+    if (!repository || !this.created || !this.previousBranch) return false;
+
+    try {
+      const commits = await repository.log({ range: `${this.previousBranch}..${this.created}` });
+      if (commits.length > 0) return false;
+
+      await repository.checkout(this.previousBranch);
+      await repository.deleteBranch(this.created, false);
+      this.log(`branch: removed ${this.created}, it held nothing`);
+
+      this.created = undefined;
+      return true;
+    } catch (error) {
+      // A failure here costs a stray branch, which is exactly what it was cleaning up.
+      this.log(`branch: could not remove the empty branch (${String(error)})`);
+      return false;
+    }
+  }
+
+  /**
    * Puts the user back on the branch they started on.
    *
    * The agent's branch is **left in place**, not deleted: it holds the work, and
@@ -179,4 +213,6 @@ interface GitRepository {
   checkout(name: string): Promise<void>;
   add(paths: string[]): Promise<void>;
   commit(message: string, options?: { all: boolean }): Promise<void>;
+  log(options: { range: string }): Promise<unknown[]>;
+  deleteBranch(name: string, force: boolean): Promise<void>;
 }

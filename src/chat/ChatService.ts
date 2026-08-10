@@ -390,9 +390,22 @@ export class ChatService {
     this.agentBusy.running = true;
     let spoken = '';
 
+    // A run of reading steps collapses into one line. Nine "Reading x" entries describe
+    // the machinery; "Having a look at the project" describes what is happening, and
+    // the log still has every step for when something goes wrong.
+    let looking = false;
+
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
+
+        if (event.kind === 'tool' && event.quiet) {
+          if (looking) continue;
+          looking = true;
+          this.panel.post({ type: 'chat-stream', text: '\nHaving a look at the project…\n' });
+          continue;
+        }
+        if (event.kind === 'tool') looking = false;
 
         // Tool calls are shown as they happen — watching work rather than a spinner.
         // No step numbers here: they are scaffolding for a log, and in a conversation

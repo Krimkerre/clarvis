@@ -3,7 +3,7 @@ import * as path from 'path';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
-import { narrateTool } from './toolNarration';
+import { isLookingAround, narrateTool } from './toolNarration';
 import { commitSubject } from './commitSubject';
 import { classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
@@ -26,6 +26,12 @@ import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 /** Reported as the run goes, so the panel can show work rather than a spinner. */
 export interface AgentEvent {
   kind: 'text' | 'tool' | 'gate' | 'done' | 'error';
+  /**
+   * True when this step is Clarvis reading rather than changing something.
+   *
+   * The transcript collapses a run of these into one line; the log keeps every one.
+   */
+  quiet?: boolean;
   /** For the transcript: what a person would say. */
   text: string;
   /**
@@ -233,12 +239,13 @@ export class AgentRunner {
 
         this.steps++;
 
+        const args = (call.args ?? {}) as Record<string, unknown>;
+
         yield this.record({
           kind: 'tool',
-          text: isToolName(call.name)
-            ? narrateTool(call.name, (call.args ?? {}) as Record<string, unknown>)
-            : `Asking for ${call.name}`,
+          text: isToolName(call.name) ? narrateTool(call.name, args) : `Asking for ${call.name}`,
           detail: describe(call),
+          quiet: isToolName(call.name) && isLookingAround(call.name, args),
           step: this.steps,
         });
 

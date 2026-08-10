@@ -155,3 +155,42 @@ test('a leading blank line does not defeat it', () => {
   // Streamed narration often starts with whitespace.
   assert.equal(commitSubject('\n\nRenamed the helper for clarity.', 'task'), 'Renamed the helper for clarity.');
 });
+
+import { narrateCommand, isLookingAround } from '../toolNarration';
+
+test('a command with commit hashes is described, not quoted', () => {
+  // "git show a1dc402 -- plan.md; echo ---; git show de8ee1f -- plan.md" is fine in a
+  // log and alarming in a conversation: §6's audience does not know what a hash is,
+  // and four of them make a routine look-up feel like something going wrong.
+  assert.equal(
+    narrateCommand('git show a1dc402 -- plan.md; echo ---; git show de8ee1f -- plan.md'),
+    'Reading the project history'
+  );
+  assert.equal(narrateCommand('git log --oneline --all -20'), 'Reading the project history');
+  assert.equal(narrateCommand('git branch -a'), 'Listing the branches');
+  assert.equal(narrateCommand('git branch milestone/1 master'), 'Making a branch');
+});
+
+test('short familiar commands are still shown as themselves', () => {
+  // A developer reads `npm test` faster than any sentence about it, and hiding it
+  // would be its own kind of unclear.
+  assert.equal(narrateCommand('npm test'), 'Running npm test');
+  assert.equal(narrateCommand('pytest'), 'Running pytest');
+});
+
+test('a long or compound command is summarised rather than pasted', () => {
+  assert.equal(narrateCommand('npm run build && npm run lint && npm test'), 'Running a few commands');
+  assert.equal(narrateCommand('node ' + 'x'.repeat(60)), 'Running a few commands');
+});
+
+test('reading steps are marked so they can be collapsed', () => {
+  assert.equal(isLookingAround('readFile', { path: 'a.ts' }), true);
+  assert.equal(isLookingAround('search', { pattern: 'x' }), true);
+  assert.equal(isLookingAround('runCommand', { command: 'git log --oneline' }), true);
+
+  // Anything that changes something is always shown.
+  assert.equal(isLookingAround('applyEdit', { path: 'a.ts' }), false);
+  assert.equal(isLookingAround('writeFile', { path: 'a.ts' }), false);
+  assert.equal(isLookingAround('runCommand', { command: 'npm test' }), false);
+  assert.equal(isLookingAround('runCommand', { command: 'git branch new-thing' }), false);
+});

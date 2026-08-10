@@ -1,5 +1,12 @@
 import * as vscode from 'vscode';
-import { describeRun, foreignCommits, reviewOptions, reviewWarnings, RunSummary } from './runReview';
+import {
+  describeRun,
+  foreignCommits,
+  integrationBranch,
+  reviewOptions,
+  reviewWarnings,
+  RunSummary,
+} from './runReview';
 import { isAgentBranch } from './branchNames';
 
 /**
@@ -92,18 +99,21 @@ async function act(
     return;
   }
 
-  if (action === 'merge' && summary.base && summary.branch) {
+  if ((action === 'merge' || action === 'merge-integration') && summary.branch) {
+    const target = action === 'merge-integration' ? summary.integration : summary.base;
+    if (!target) return;
+
     try {
-      await repository.checkout(summary.base);
+      await repository.checkout(target);
       await repository.merge(summary.branch);
-      log(`review: merged ${summary.branch} into ${summary.base}`);
-      void vscode.window.showInformationMessage(`Clarvis: merged into ${summary.base}.`);
+      log(`review: merged ${summary.branch} into ${target}`);
+      void vscode.window.showInformationMessage(`Clarvis: merged into ${target}.`);
     } catch (error) {
       // A conflict is a normal outcome, not a failure — and the user is now on the
-      // base branch with the merge in progress, which is exactly where they can fix it.
-      log(`review: merge failed (${String(error)})`);
+      // target branch with the merge in progress, which is exactly where they can fix it.
+      log(`review: merge into ${target} failed (${String(error)})`);
       void vscode.window.showWarningMessage(
-        `Clarvis: the merge didn't apply cleanly. You're on ${summary.base} with it half-done — the Source Control view has the conflicts.`
+        `Clarvis: the merge didn't apply cleanly. You're on ${target} with it half-done — the Source Control view has the conflicts.`
       );
     }
     return;
@@ -141,12 +151,14 @@ async function gather(runCommits: string[], files: string[]): Promise<RunSummary
     };
   }
 
-  const base = await findBase(repository, branch);
+  const branches = (await repository.getBranches({ remote: false })).map((entry) => entry.name ?? '');
+  const base = pickBase(branches, branch);
   const log = base ? await safeLog(repository, base, branch) : [];
 
   return {
     branch,
     base,
+    integration: integrationBranch(branches, base),
     files,
     commits: log,
     foreign: foreignCommits(log, runCommits),
@@ -155,13 +167,11 @@ async function gather(runCommits: string[], files: string[]): Promise<RunSummary
 }
 
 /** The most likely branch this one came from. */
-async function findBase(repository: GitRepository, branch: string): Promise<string | undefined> {
-  const branches = (await repository.getBranches({ remote: false })).map((entry) => entry.name ?? '');
-
-  // A non-agent branch is a candidate; conventional names first, since a base is
+function pickBase(branches: string[], branch: string): string | undefined {
+  // A non-agent branch is a candidate; conventional trunk names first, since a base is
   // almost always one of them.
   return (
-    ['main', 'master', 'develop'].find((name) => branches.includes(name)) ??
+    ['main', 'master'].find((name) => branches.includes(name)) ??
     branches.find((name) => name && name !== branch && !isAgentBranch(name))
   );
 }

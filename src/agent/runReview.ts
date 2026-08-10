@@ -13,6 +13,14 @@ export interface RunSummary {
   branch?: string;
   /** Where it started from, and where "go back" means. */
   base?: string;
+  /**
+   * An integration branch, when the repository has one.
+   *
+   * A repo with `testing` or `develop` has already decided that work lands somewhere
+   * before it lands on the trunk. Offering only "merge into main" ignores that
+   * decision and quietly routes agent work past the step the team put there.
+   */
+  integration?: string;
   /** Files the run itself touched. */
   files: string[];
   /** Every commit on the branch that isn't on the base. */
@@ -23,7 +31,22 @@ export interface RunSummary {
   uncommitted: number;
 }
 
-export type ReviewAction = 'diff' | 'merge' | 'return' | 'discard' | 'stay';
+export type ReviewAction = 'diff' | 'merge' | 'merge-integration' | 'return' | 'discard' | 'stay';
+
+/**
+ * Branch names that mean "work lands here before the trunk".
+ *
+ * Conventional rather than configurable: a project using something else can still
+ * merge by hand, and guessing at an unconventional name would be worse than not
+ * offering — an agent proposing a merge into the wrong branch is a bad suggestion
+ * dressed as a workflow.
+ */
+const INTEGRATION_NAMES = ['testing', 'develop', 'development', 'staging', 'dev'];
+
+/** The integration branch this repository uses, if it has one. */
+export function integrationBranch(branches: string[], base?: string): string | undefined {
+  return INTEGRATION_NAMES.find((name) => branches.includes(name) && name !== base);
+}
 
 export interface ReviewOption {
   action: ReviewAction;
@@ -81,10 +104,26 @@ export function reviewOptions(summary: RunSummary): ReviewOption[] {
       label: 'Show me what changed',
       detail: `${summary.commits.length} commit(s), ${summary.files.length} file(s). Nothing moves.`,
     },
+  ];
+
+  // The integration branch comes first when there is one: a repository with `testing`
+  // has already decided work lands there before the trunk, and listing the trunk first
+  // invites skipping a step someone deliberately added.
+  if (summary.integration && summary.integration !== summary.base) {
+    options.push({
+      action: 'merge-integration',
+      label: `Merge into ${summary.integration}`,
+      detail: `The usual route — lands on ${summary.integration} rather than straight onto ${base}.`,
+    });
+  }
+
+  options.push(
     {
       action: 'merge',
       label: `Merge into ${base}`,
-      detail: `Brings the work onto ${base} and puts you back there.`,
+      detail: summary.integration
+        ? `Straight onto ${base}, skipping ${summary.integration}.`
+        : `Brings the work onto ${base} and puts you back there.`,
     },
     {
       action: 'return',
@@ -101,8 +140,8 @@ export function reviewOptions(summary: RunSummary): ReviewOption[] {
       label: 'Throw it away',
       detail: `Deletes \`${summary.branch}\` and everything on it, and returns you to ${base}.`,
       destructive: true,
-    },
-  ];
+    }
+  );
 
   return options;
 }

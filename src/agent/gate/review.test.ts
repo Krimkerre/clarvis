@@ -91,3 +91,41 @@ test('the summary line names the branch, the counts and the base', () => {
   assert.match(line, /1 commit/);
   assert.match(line, /from main/);
 });
+
+import { integrationBranch } from '../runReview';
+
+test('a repository with testing gets offered testing first', () => {
+  // A repo with `testing` has already decided work lands there before the trunk.
+  // Listing the trunk first invites skipping a step someone deliberately added.
+  const options = reviewOptions(summary({ base: 'main', integration: 'testing' }));
+  const merges = options.filter((option) => option.action.startsWith('merge'));
+
+  assert.equal(merges[0].action, 'merge-integration');
+  assert.match(merges[0].label, /testing/);
+  assert.match(merges[1].detail, /skipping testing/);
+});
+
+test('without an integration branch the options are unchanged', () => {
+  const options = reviewOptions(summary({ integration: undefined }));
+
+  assert.equal(options.filter((option) => option.action.startsWith('merge')).length, 1);
+});
+
+test('an integration branch that is also the base is not offered twice', () => {
+  // Branching off testing and then being offered "merge into testing" as a separate
+  // step reads as a bug.
+  const options = reviewOptions(summary({ base: 'testing', integration: 'testing' }));
+
+  assert.equal(options.filter((option) => option.action.startsWith('merge')).length, 1);
+});
+
+test('integration branches are recognised by convention', () => {
+  assert.equal(integrationBranch(['main', 'testing', 'feature/x'], 'main'), 'testing');
+  assert.equal(integrationBranch(['main', 'develop'], 'main'), 'develop');
+  assert.equal(integrationBranch(['main', 'staging'], 'main'), 'staging');
+  assert.equal(integrationBranch(['main', 'feature/x'], 'main'), undefined);
+});
+
+test('the base branch is never offered as its own integration target', () => {
+  assert.equal(integrationBranch(['develop', 'main'], 'develop'), undefined);
+});

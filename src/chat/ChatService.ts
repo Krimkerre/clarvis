@@ -359,7 +359,7 @@ export class ChatService {
           files,
           this.log,
           this.context.workspaceState.get('clarvis.agent.baseBranch'),
-          (text) => void this.note(text)
+          (text) => void this.remark(text)
         );
       }
     }
@@ -557,6 +557,20 @@ export class ChatService {
   /** Opens the manual, for the command-palette route as well as `/help`. */
   async openHelp(): Promise<void> {
     await this.openManual();
+  }
+
+  /**
+   * Says something out loud *and* writes it down.
+   *
+   * Distinct from `note()`, which only records. The difference is who already spoke:
+   * briefings, quips and completion notices are voiced by whatever raised them, so
+   * making `note()` speak would say all of them twice. The wizard has no voice of its
+   * own, and its lines are the direct result of a button the user just pressed —
+   * solicited, per §4.4, and therefore never a surprise.
+   */
+  async remark(text: string): Promise<void> {
+    await this.note(text);
+    this.voice.say(text, 'chatReply');
   }
 
   /** Clears the transcript and the stored copy behind it. */

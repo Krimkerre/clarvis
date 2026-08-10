@@ -83,6 +83,11 @@ export function activate(context: vscode.ExtensionContext): void {
   let chat: ChatService | undefined;
   const toTranscript = (message: string) => void chat?.note(message);
 
+  // For surfaces with no voice of their own — the review wizard, the branch-flow
+  // questions. Everything else that reaches the transcript is already spoken by
+  // whatever raised it, and routing those through here would say them twice.
+  const toTranscriptSpoken = (message: string) => void chat?.remark(message);
+
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
   const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, toTranscript);
@@ -94,7 +99,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // gone stale is worse than none, since the wizard keeps offering branches it knows
   // while ignoring the one work now passes through.
   context.subscriptions.push(
-    new BranchFlowWatcher(context, (message) => logger.write(message), toTranscript).start()
+    new BranchFlowWatcher(context, (message) => logger.write(message), toTranscriptSpoken).start()
   );
 
   // The model layer (M8b). Local answers still need none of this — it is reached only
@@ -163,7 +168,7 @@ export function activate(context: vscode.ExtensionContext): void {
         [],
         (message) => logger.write(message),
         context.workspaceState.get('clarvis.agent.baseBranch'),
-        toTranscript
+        toTranscriptSpoken
       )
     ),
 

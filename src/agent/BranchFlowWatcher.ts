@@ -123,7 +123,11 @@ export class BranchFlowWatcher {
   async checkNow(): Promise<void> {
     clearTimeout(this.timer);
     this.timer = undefined;
-    await this.check();
+
+    // No remark on this path. The user asked for the branch a second ago; being told
+    // it exists is Clarvis narrating the user's own action back at them. The question
+    // still fires, because where it fits is the one thing he genuinely doesn't know.
+    await this.check({ remark: false });
   }
 
   /**
@@ -156,7 +160,7 @@ export class BranchFlowWatcher {
     }, SETTLE_MS);
   }
 
-  private async check(): Promise<void> {
+  private async check(options: { remark: boolean } = { remark: true }): Promise<void> {
     this.log('branch flow: checking');
     const plan = await readPlan();
     if (!plan) {
@@ -202,13 +206,14 @@ export class BranchFlowWatcher {
 
     // One at a time. Three questions at once about three branches is a form, and
     // people close forms.
-    await this.ask(unknown[0], flow, plan);
+    await this.ask(unknown[0], flow, plan, options.remark);
   }
 
   private async ask(
     branch: string,
     flow: BranchFlow,
-    plan: { uri: vscode.Uri; text: string }
+    plan: { uri: vscode.Uri; text: string },
+    remark: boolean
   ): Promise<void> {
     this.log(`branch flow: asking about "${branch}"`);
 
@@ -216,7 +221,7 @@ export class BranchFlowWatcher {
     // arriving as a bare dialog. Deliberately not routed through the §6 interruption
     // budget: the question itself is the interruption, it happens once per branch, and
     // suppressing the remark while still showing the dialog would be the worst of both.
-    const quip = this.quips.pick('newBranch');
+    const quip = remark ? this.quips.pick('newBranch') : undefined;
     if (quip) this.say(`${quip.text} \`${branch}\`, to be precise — and it's not in plan.md.`);
 
     const picked = await vscode.window.showInformationMessage(

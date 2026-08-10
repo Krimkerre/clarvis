@@ -148,14 +148,20 @@ export class AgentRunner {
       await checkpoint.begin(task);
       const isolation = await branch.begin(task);
 
-      // **Held back, not announced yet.** A task like "make a branch called testing3"
-      // touches no files, so the isolation branch is machinery the user never needed
-      // to hear about — it gets created, does nothing, and is tidied away. Telling
-      // them about it at the start means explaining a thing that turns out not to
-      // matter. Said at the moment it first *does* matter instead: the first edit.
-      this.pendingIsolation = isolation.isolated
-        ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
-        : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`;
+      // **Not announced at all when it works.** The isolation branch is machinery:
+      // the user asked for a change, not for a report on how it is being kept safe,
+      // and the closing line already says their own work is untouched. Saying it
+      // twice — once with a generated branch name nobody needs to read — is the
+      // narration this was supposed to remove.
+      //
+      // A *failure* to isolate is different, and is said, because it changes what
+      // undo means.
+      if (!isolation.isolated) {
+        yield this.record({
+          kind: 'text',
+          text: `${isolation.advice ?? "I couldn't work on a copy this time."} I've snapshotted your files, so the run can still be undone.`,
+        });
+      }
     }
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
@@ -225,12 +231,6 @@ export class AgentRunner {
         if (signal.aborted) break;
 
         this.steps++;
-
-        // The first change to the workspace is when isolation stops being trivia.
-        if (this.pendingIsolation && isToolName(call.name) && mutates(call.name)) {
-          yield this.record({ kind: 'text', text: this.pendingIsolation });
-          this.pendingIsolation = undefined;
-        }
 
         yield this.record({
           kind: 'tool',
@@ -395,11 +395,10 @@ export class AgentRunner {
    * commits their next hour of work onto an agent's branch without noticing.
    */
   private closingNote(branch: AgentBranch): string {
-    // Never mentioned the branch, so there is nothing to explain away. A run that
-    // created a branch, used it for nothing and removed it again is bookkeeping, and
-    // narrating bookkeeping is how a tool sounds busy rather than useful.
-    if (this.tidied || this.pendingIsolation) return '';
-    if (!branch.current) return '';
+    // A run that created a branch, used it for nothing and removed it again is
+    // bookkeeping, and narrating bookkeeping is how a tool sounds busy rather than
+    // useful.
+    if (this.tidied || !branch.current) return '';
 
     // Plain, and short. The previous version — "you're now on X (was Y), review the
     // diff, then merge it or throw it away" — is three git instructions to someone who

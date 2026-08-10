@@ -1,6 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { agentSystemPrompt } from '../agent/AgentRunner';
-import { ANSWER_SHAPE, characterWith } from './character';
+import { ANSWER_SHAPE, EXAMPLES, characterWith } from './character';
 import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
 import { rewritePrompt } from './say';
@@ -82,8 +82,17 @@ function scenes(): Scene[] {
       system: agentSystemPrompt(false),
       messages: [
         { role: 'user', content: 'add a comment to the top of app.js explaining what it does' },
-        { role: 'assistant', content: 'applyEdit app.js' },
-        { role: 'user', content: 'Tool result (applyEdit app.js): edit applied, 1 file changed' },
+        { role: 'assistant', content: 'I read app.js, then applied the edit.' },
+        // **The work is stated as finished, explicitly.** The first version of this
+        // scene ended on a tool result and got "I need to see what's in app.js first —
+        // readFile app.js" back: a fake tool result is not a real tool call, so the
+        // model tried to start the loop instead of closing it, and the summary voice
+        // went untested while the scene appeared to pass.
+        {
+          role: 'user',
+          content:
+            'Tool result (applyEdit app.js): edit applied, 1 file changed.\nThe task is now complete and no tools remain. Give your closing line.',
+        },
       ],
     },
     {
@@ -148,6 +157,26 @@ function spokenSeconds(text: string): number {
 }
 
 /**
+ * Any example line he has quoted back instead of writing his own.
+ *
+ * The first run of this check produced a briefing ending "At some point it stops being
+ * bad luck" — word for word from the examples — and I only noticed by reading carefully.
+ * A check that depends on the reader being sharp is a check that fails on a tired
+ * afternoon, so it is mechanical now.
+ *
+ * Matched on clauses rather than whole lines: the model lifted half an example, not all
+ * of it, and half is enough for the user to hear the same joke twice.
+ */
+function parroted(said: string): string[] {
+  const haystack = said.toLowerCase();
+
+  return EXAMPLES.flatMap((example) => example.split(/(?<=[.;])\s+/))
+    .map((clause) => clause.trim())
+    .filter((clause) => clause.split(/\s+/).length >= 4)
+    .filter((clause) => haystack.includes(clause.toLowerCase().replace(/[.]$/, '')));
+}
+
+/**
  * Says every line and returns them as a report.
  *
  * Run sequentially rather than in parallel: this exists to be read while it fills in,
@@ -183,8 +212,16 @@ export async function runVoiceCheck(
     }
 
     const said = text.trim() || '(nothing came back)';
-    out.push(said, '', `\`${said.split(/\s+/).length} words · ~${spokenSeconds(said)}s spoken\``, '');
+    const lifted = parroted(said);
+
+    out.push(said, '', `\`${said.split(/\s+/).length} words · ~${spokenSeconds(said)}s spoken\``);
+    if (lifted.length > 0) {
+      out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);
+    }
+    out.push('');
+
     log(`voice check | ${scene.name} | ${said.replace(/\s+/g, ' ')}`);
+    if (lifted.length > 0) log(`voice check | ${scene.name} | PARROTED: ${lifted.join(' | ')}`);
   }
 
   return out.join('\n');

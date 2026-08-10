@@ -18,7 +18,8 @@ test('the examples are the last thing read', () => {
   const prompt = character();
 
   assert.ok(prompt.indexOf('Lines of yours') > prompt.indexOf('How you speak'));
-  assert.ok(prompt.trimEnd().endsWith('when nobody read it.'));
+  // Only the do-not-quote-these line sits below them, and it has to: it is about them.
+  assert.ok(prompt.indexOf('Never reuse a line') > prompt.indexOf('Lines of yours'));
 });
 
 test('the examples cover more than one beat', () => {
@@ -46,4 +47,11 @@ test('the answer shape requires a line of his own, rather than banning things', 
   assert.match(ANSWER_SHAPE, /Part 2 is required/);
   assert.match(ANSWER_SHAPE, /An opinion, a jab at the situation/);
   assert.match(ANSWER_SHAPE, /Two sentences at most/);
+});
+
+test('the examples are marked as a register rather than a script', () => {
+  // The voice check's first run caught the model quoting them: a briefing ended "At
+  // some point it stops being bad luck", word for word. A model reaches for the example
+  // whose situation matches, which is exactly when the user would notice the repeat.
+  assert.match(character(), /Never reuse a line from that list/);
 });

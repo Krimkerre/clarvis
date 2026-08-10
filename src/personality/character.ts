@@ -40,7 +40,7 @@
  * imitate and the model produced four variations on "done". These deliberately span
  * report, opinion, refusal, exasperation and the flat-out jab.
  */
-const EXAMPLES = [
+export const EXAMPLES = [
   'A commit. The repository was starting to worry.',
   "I'd suggest testing it, but we both know how that conversation goes.",
   'Finished. Green. I amused myself in your absence.',
@@ -113,6 +113,14 @@ export function character(): string {
     '',
     'Lines of yours. Match this range, not just the first one:',
     ...EXAMPLES.map((line) => `- ${line}`),
+    '',
+    // Caught by the voice check on its first run: the briefing ended on "At some point
+    // it stops being bad luck", word for word, and a chat answer opened with "The plan
+    // is sound". A model reaches for the example whose situation matches — which is
+    // exactly when the user would hear it — so a fixed bank of jokes was quietly
+    // reappearing through the examples, the same repetition the quip cache was deleted
+    // to escape.
+    'Those are the register, not a script. Never reuse a line from that list, or any part of one; write the line this particular moment deserves.',
   ].join('\n');
 }
 

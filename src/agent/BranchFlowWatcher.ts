@@ -44,7 +44,9 @@ export class BranchFlowWatcher {
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /** Where to say things. The transcript, rather than a notification that vanishes. */
+    private readonly say: (text: string) => void = () => {}
   ) {}
 
   /**
@@ -199,9 +201,46 @@ export class BranchFlowWatcher {
         : { ...flow, extra: [...(flow.extra ?? []), branch] };
 
     await this.writePlan(plan, updated);
-    void vscode.window.showInformationMessage(
-      `Clarvis: noted in plan.md. I'll offer \`${branch}\` when a run finishes.`
+    this.say(
+      picked === "It's the trunk"
+        ? `Noted — \`${branch}\` is the trunk now, and \`${flow.trunk}\` stays in the flow as a step. plan.md says so.`
+        : `Noted in plan.md: work passes through \`${branch}\`. I'll offer it when a run finishes.`
     );
+
+    await this.offerToCommit(branch);
+  }
+
+  /**
+   * Offers to commit the change to `plan.md`.
+   *
+   * Offered, never done quietly: it is the user's document and their history, and a
+   * tool that commits on someone's behalf without asking has made a decision about
+   * what belongs in their log. Only `plan.md` is staged — never `-A`, for the same
+   * reason the agent never sweeps up unrelated work.
+   */
+  private async offerToCommit(branch: string): Promise<void> {
+    const answer = await vscode.window.showInformationMessage(
+      'Clarvis: commit that change to plan.md?',
+      'Commit it',
+      'Leave it'
+    );
+    if (answer !== 'Commit it') return;
+
+    const repository = (await gitApi())?.repositories?.[0];
+    if (!repository) return;
+
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    if (!root) return;
+
+    try {
+      await repository.add([vscode.Uri.joinPath(root, 'plan.md').fsPath]);
+      await repository.commit(`Add ${branch} to the branch flow`, { all: false });
+      this.log('branch flow: committed plan.md');
+      this.say('Committed. Only plan.md — whatever else you have in flight is still yours.');
+    } catch (error) {
+      this.log(`branch flow: commit failed (${String(error)})`);
+      this.say("I couldn't commit it — the change is saved in plan.md, so it's only the commit that's missing.");
+    }
   }
 
   /** Rewrites the section in place, leaving the rest of the document alone. */
@@ -277,4 +316,6 @@ interface GitApi {
 interface GitRepository {
   state: { onDidChange: vscode.Event<void> };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
+  add(paths: string[]): Promise<void>;
+  commit(message: string, options?: { all: boolean }): Promise<void>;
 }

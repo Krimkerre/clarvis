@@ -93,7 +93,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Keeps plan.md's branch flow in step with the repository: a declared flow that has
   // gone stale is worse than none, since the wizard keeps offering branches it knows
   // while ignoring the one work now passes through.
-  context.subscriptions.push(new BranchFlowWatcher(context, (message) => logger.write(message)).start());
+  context.subscriptions.push(
+    new BranchFlowWatcher(context, (message) => logger.write(message), toTranscript).start()
+  );
 
   // The model layer (M8b). Local answers still need none of this — it is reached only
   // when a question falls outside what Clarvis watched happen.
@@ -160,7 +162,8 @@ export function activate(context: vscode.ExtensionContext): void {
         [],
         [],
         (message) => logger.write(message),
-        context.workspaceState.get('clarvis.agent.baseBranch')
+        context.workspaceState.get('clarvis.agent.baseBranch'),
+        toTranscript
       )
     ),
 

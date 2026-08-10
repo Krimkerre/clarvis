@@ -175,3 +175,34 @@ test('with no origin recorded, the old ordering still holds', () => {
 
   assert.deepEqual(targets.map((target) => target.action), ['merge-integration', 'merge']);
 });
+
+import { narrateReview } from '../runReview';
+
+test('the outcome is said in the transcript, with the fact that matters after', () => {
+  // A notification vanishes; the transcript is where someone looks tomorrow to work
+  // out what happened to their work. So each line names where they now are.
+  const state = summary({ branch: 'clarvis/fix', origin: 'm8-chat-agent' });
+
+  assert.match(narrateReview('return', state), /m8-chat-agent/);
+  assert.match(narrateReview('return', state), /clarvis\/fix/);
+  assert.match(narrateReview('merge', state, { target: 'testing', ok: true }), /testing/);
+  assert.match(narrateReview('discard', state, { ok: true }), /m8-chat-agent/);
+});
+
+test('a failed merge says so plainly rather than claiming success', () => {
+  const line = narrateReview('merge', summary(), { target: 'testing', ok: false });
+
+  assert.match(line, /didn't go cleanly/);
+  assert.match(line, /conflicts/);
+});
+
+test('staying warns that commits land on the agent branch', () => {
+  // The exact mistake that happened during development, said out loud this time.
+  assert.match(narrateReview('stay', summary()), /lands on it/);
+});
+
+test('a failed delete does not pretend the branch is gone', () => {
+  const line = narrateReview('discard', summary(), { ok: false });
+
+  assert.match(line, /still there/);
+});

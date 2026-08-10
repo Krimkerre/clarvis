@@ -222,3 +222,47 @@ export function describeRun(summary: RunSummary): string {
 
   return `\`${summary.branch}\` — ${commits}, ${files}, branched from ${summary.origin ?? summary.base ?? 'unknown'}.`;
 }
+
+/**
+ * What Clarvis says in the transcript after a review choice.
+ *
+ * Notifications vanish; the transcript is where someone looks tomorrow to work out
+ * what happened to their work. So the outcome is *said*, in his own voice, with the
+ * one fact that matters afterwards — which branch you are on and where the work went.
+ *
+ * Pure, because the wording is the feature here and a wording test is worth more than
+ * a mock of the git API.
+ */
+export function narrateReview(
+  action: ReviewAction,
+  summary: RunSummary,
+  outcome: { target?: string; ok: boolean } = { ok: true }
+): string {
+  const branch = summary.branch ? `\`${summary.branch}\`` : 'the run';
+  const home = summary.origin ?? summary.base ?? 'your branch';
+
+  if (action === 'diff') return `The diff, then. ${summary.commits.length} commit(s) to read.`;
+
+  if (action === 'stay') {
+    return `Staying on ${branch}. Anything you commit from here lands on it, which may or may not be what you want.`;
+  }
+
+  if (action === 'return') {
+    return `Back on \`${home}\`. The work is sitting on ${branch} whenever you want to look at it.`;
+  }
+
+  if (action.startsWith('merge')) {
+    const target = outcome.target ?? home;
+    return outcome.ok
+      ? `Merged onto \`${target}\`. That's where you are now.`
+      : `The merge onto \`${target}\` didn't go cleanly — you're there with it half-applied, and the conflicts are in Source Control. Not my finest work.`;
+  }
+
+  if (action === 'discard') {
+    return outcome.ok
+      ? `Gone. You're on \`${home}\`, and ${branch} is not coming back.`
+      : `I moved you to \`${home}\` but couldn't delete ${branch}. It's still there, if you've changed your mind.`;
+  }
+
+  return '';
+}

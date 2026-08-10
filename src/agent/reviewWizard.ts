@@ -3,8 +3,10 @@ import {
   describeRun,
   foreignCommits,
   integrationBranch,
+  narrateReview,
   reviewOptions,
   reviewWarnings,
+  ReviewAction,
   RunSummary,
 } from './runReview';
 import { isAgentBranch } from './branchNames';
@@ -25,7 +27,9 @@ export async function reviewRun(
   files: string[],
   log: (message: string) => void,
   /** The branch the run started from, remembered by AgentBranch. */
-  origin?: string
+  origin?: string,
+  /** Where to say what happened. The transcript outlives a notification. */
+  say: (text: string) => void = () => {}
 ): Promise<void> {
   const summary = await gather(runCommits, files, origin);
   if (!summary) {
@@ -62,13 +66,14 @@ export async function reviewRun(
     if (proceed !== 'Throw it away') return;
   }
 
-  await act(picked.action, summary, log);
+  await act(picked.action, summary, log, say);
 }
 
 async function act(
-  action: string,
+  action: ReviewAction,
   summary: RunSummary,
-  log: (message: string) => void
+  log: (message: string) => void,
+  say: (text: string) => void
 ): Promise<void> {
   const repository = gitRepository();
   if (!repository) return;
@@ -85,11 +90,13 @@ async function act(
       );
     }
     log('review: showed the diff');
+    say(narrateReview('diff', summary));
     return;
   }
 
   if (action === 'stay') {
     log(`review: staying on ${summary.branch}`);
+    say(narrateReview('stay', summary));
     return;
   }
 
@@ -98,9 +105,7 @@ async function act(
   if (action === 'return' && home) {
     await repository.checkout(home);
     log(`review: returned to ${home}, kept ${summary.branch}`);
-    void vscode.window.showInformationMessage(
-      `Clarvis: back on ${home}. The work is on \`${summary.branch}\` when you want it.`
-    );
+    say(narrateReview('return', summary));
     return;
   }
 
@@ -117,13 +122,16 @@ async function act(
       await repository.checkout(target);
       await repository.merge(summary.branch);
       log(`review: merged ${summary.branch} into ${target}`);
-      void vscode.window.showInformationMessage(`Clarvis: merged into ${target}.`);
+      say(narrateReview(action, summary, { target, ok: true }));
     } catch (error) {
       // A conflict is a normal outcome, not a failure — and the user is now on the
       // target branch with the merge in progress, which is exactly where they can fix it.
       log(`review: merge into ${target} failed (${String(error)})`);
+      say(narrateReview(action, summary, { target, ok: false }));
+      // A conflict still warrants a notification: it needs doing something about now,
+      // and the transcript is not where someone is looking mid-merge.
       void vscode.window.showWarningMessage(
-        `Clarvis: the merge didn't apply cleanly. You're on ${target} with it half-done — the Source Control view has the conflicts.`
+        `Clarvis: the merge into ${target} didn't apply cleanly — the conflicts are in Source Control.`
       );
     }
     return;
@@ -134,12 +142,10 @@ async function act(
     try {
       await repository.deleteBranch(summary.branch, true);
       log(`review: discarded ${summary.branch}`);
-      void vscode.window.showInformationMessage(`Clarvis: gone. You're on ${home}.`);
+      say(narrateReview('discard', summary, { ok: true }));
     } catch (error) {
       log(`review: could not delete ${summary.branch} (${String(error)})`);
-      void vscode.window.showWarningMessage(
-        `Clarvis: I moved you to ${home} but couldn't delete the branch. It's still there if you want it.`
-      );
+      say(narrateReview('discard', summary, { ok: false }));
     }
   }
 }

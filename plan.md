@@ -1552,6 +1552,43 @@ to answer is unhelpful rather than neutral. A beginner asking "which should I pi
 deserves an answer, not a menu. It stays a recommendation: the reasoning is given, and
 choosing otherwise is met with "fine, here's what to watch out for" and nothing else.
 
+#### Branch flow — written down, then followed
+
+Every generated `plan.md` gets a **Branch flow** section naming the trunk, the
+integration branch if there is one, and the shape of agent branches:
+
+```markdown
+## Branch flow
+
+- trunk: main
+- integration: testing
+- work: clarvis/<task>
+```
+
+**Clarvis reads this back.** The review wizard (§4.6) offers merge targets from the
+project's own declaration rather than from convention — a wizard offering `main` to a
+team whose trunk is `production` is confidently wrong in a way that costs a merge.
+Editing the section changes what Clarvis offers, with no setting to find.
+
+Three rules, each of which prevents a specific failure:
+
+- **Declared beats conventional, but only if the branch exists.** A plan can describe a
+  branch nobody has created yet; offering to merge into it would fail at the moment
+  the user clicks.
+- **Absent means conventional, not broken.** A project without the section — including
+  every project that predates it — gets the `main`/`testing`/`develop` guess, which is
+  right most of the time.
+- **It is prose, not configuration.** Written as a readable list rather than a hidden
+  HTML comment or a config file: a document that conceals machine-readable settings
+  teaches people not to trust what they can see. The parser is correspondingly
+  forgiving — list markers vary, backticks and parenthetical asides are stripped, and
+  anything unparseable is ignored rather than fought over.
+
+**The interview asks for it** when a project's flow isn't obvious from the repository:
+one question, in the same final round as the linter and comment-style questions.
+"Straight to main, or through a testing branch first?" — with the trade stated, since a
+solo weekend project and a team repository want different answers.
+
 #### Conventions — the generated plan carries a standard, not just a task list
 
 Every generated `plan.md` gets a **Conventions** section, adapted from §0's clean code
@@ -2937,6 +2974,10 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   requirement that every option carry a downside are enforced in code (M9's prompt
   assembly), not left to the model's discretion, because an all-upside list is the
   failure mode that looks most like success.
+- **M9d3 — Branch flow.** `src/agent/branchFlow.ts` (built early, at M8f) writes the
+  section and parses it back. The generated document and the parser are covered by a
+  round-trip test: if they ever disagree, merges quietly go to the wrong branch and
+  nobody notices until they do.
 - **M9d2 — Conventions.** `src/planning/conventions.ts` renders §0's rules for the
   project's language, plus the recorded comment-style decision, into the generated
   `plan.md`. Language adaptation is a lookup with a generic fallback, not a model call —
@@ -2947,6 +2988,11 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   `plan.md` as the agent completes them.
 
 **Exit checklist:**
+- [ ] The generated `plan.md` contains a **Branch flow** section, and the review wizard
+      offers merge targets from it — check with a non-conventional trunk name
+      (`production`), which is where convention and declaration visibly disagree.
+- [ ] A declared branch that does not exist yet is **not** offered as a merge target.
+- [ ] A project with no Branch flow section still gets sensible options.
 - [ ] The language question is asked **after** what-it-does and where-it-runs are
       established, never in the first round.
 - [ ] Shortlists differ across three different project types (a CLI, a web app with

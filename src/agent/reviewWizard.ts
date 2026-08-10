@@ -8,6 +8,7 @@ import {
   RunSummary,
 } from './runReview';
 import { isAgentBranch } from './branchNames';
+import { parseBranchFlow, BranchFlow } from './branchFlow';
 
 /**
  * The close of an agent run: what happened, what you can do, you decide.
@@ -165,7 +166,11 @@ async function gather(
   }
 
   const branches = (await repository.getBranches({ remote: false })).map((entry) => entry.name ?? '');
-  const base = pickBase(branches, branch);
+
+  // The project's own declared flow wins over convention. A wizard offering `main` to
+  // a team whose trunk is `production` is confidently wrong in a way that costs a merge.
+  const flow = await declaredFlow();
+  const base = pickBase(branches, branch, flow);
   const log = base ? await safeLog(repository, base, branch) : [];
 
   return {
@@ -174,7 +179,10 @@ async function gather(
     // a merge target that fails at the moment the user picks it.
     origin: origin && branches.includes(origin) && !isAgentBranch(origin) ? origin : undefined,
     base,
-    integration: integrationBranch(branches, base),
+    integration:
+      flow.integration && branches.includes(flow.integration) && flow.integration !== base
+        ? flow.integration
+        : integrationBranch(branches, base),
     files,
     commits: log,
     foreign: foreignCommits(log, runCommits),
@@ -182,14 +190,35 @@ async function gather(
   };
 }
 
-/** The most likely branch this one came from. */
-function pickBase(branches: string[], branch: string): string | undefined {
-  // A non-agent branch is a candidate; conventional trunk names first, since a base is
-  // almost always one of them.
+/** The trunk: what the project declared, else what most projects call it. */
+function pickBase(branches: string[], branch: string, flow: BranchFlow): string | undefined {
+  // Only honoured if the branch actually exists — a plan can describe a branch nobody
+  // has created yet, and offering to merge into it would fail at the click.
+  if (flow.trunk && branches.includes(flow.trunk)) return flow.trunk;
+
   return (
     ['main', 'master'].find((name) => branches.includes(name)) ??
     branches.find((name) => name && name !== branch && !isAgentBranch(name))
   );
+}
+
+/**
+ * The branch flow declared in the workspace's `plan.md`, if there is one.
+ *
+ * Read fresh each time rather than cached: the document is edited by hand, and a
+ * cached flow would keep offering the old trunk after someone corrected it.
+ */
+async function declaredFlow(): Promise<BranchFlow> {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+  if (!root) return {};
+
+  try {
+    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(root, 'plan.md'));
+    return parseBranchFlow(Buffer.from(bytes).toString('utf8'));
+  } catch {
+    // No plan, or unreadable. Conventions still work.
+    return {};
+  }
 }
 
 async function safeLog(

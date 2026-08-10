@@ -46,18 +46,44 @@ export class BranchFlowWatcher {
     private readonly log: (message: string) => void
   ) {}
 
-  /** Starts watching, if there is a repository and a plan to keep in step. */
+  /**
+   * Starts watching.
+   *
+   * **Asynchronously, and without giving up.** The first version asked the Git
+   * extension for a repository during activation and returned a no-op when there
+   * wasn't one — which is always, because the Git extension activates *after* us and
+   * discovers repositories later still. The watcher silently never ran, and looked
+   * exactly like a working feature that had nothing to say.
+   */
   start(): vscode.Disposable {
-    const repository = gitRepository();
-    if (!repository) return new vscode.Disposable(() => undefined);
-
-    const subscription = repository.state.onDidChange(() => this.schedule(SETTLE_MS));
-    this.schedule(STARTUP_MS);
+    const subscriptions: vscode.Disposable[] = [];
+    void this.attach(subscriptions);
 
     return new vscode.Disposable(() => {
       clearTimeout(this.timer);
-      subscription.dispose();
+      for (const subscription of subscriptions) subscription.dispose();
     });
+  }
+
+  private async attach(subscriptions: vscode.Disposable[]): Promise<void> {
+    const api = await gitApi();
+    if (!api) {
+      this.log('branch flow: no Git extension, not watching');
+      return;
+    }
+
+    // Repositories are discovered asynchronously, so a repository opened after this
+    // point still needs wiring — including the common case of none existing yet.
+    subscriptions.push(api.onDidOpenRepository((repository) => this.watch(repository, subscriptions)));
+    for (const repository of api.repositories) this.watch(repository, subscriptions);
+
+    this.log(`branch flow: watching (${api.repositories.length} repository/ies at start)`);
+    this.schedule(STARTUP_MS);
+  }
+
+  private watch(repository: GitRepository, subscriptions: vscode.Disposable[]): void {
+    subscriptions.push(repository.state.onDidChange(() => this.schedule(SETTLE_MS)));
+    this.schedule(STARTUP_MS);
   }
 
   /** Debounced, because the git extension fires this event constantly. */
@@ -68,15 +94,24 @@ export class BranchFlowWatcher {
 
   private async check(): Promise<void> {
     const plan = await readPlan();
-    if (!plan) return;
+    if (!plan) {
+      this.log('branch flow: no plan.md, nothing to keep in step');
+      return;
+    }
 
     const flow = parseBranchFlow(plan.text);
     // No declared flow means nothing to keep in step. Offering to *create* one here
     // would be Clarvis proposing paperwork nobody asked for.
-    if (flowBranches(flow).length === 0) return;
+    if (flowBranches(flow).length === 0) {
+      this.log('branch flow: plan.md declares no flow');
+      return;
+    }
 
-    const repository = gitRepository();
-    if (!repository) return;
+    const repository = (await gitApi())?.repositories?.[0];
+    if (!repository) {
+      this.log('branch flow: no repository yet');
+      return;
+    }
 
     const branches = (await repository.getBranches({ remote: false }))
       .map((entry) => entry.name ?? '')
@@ -90,6 +125,13 @@ export class BranchFlowWatcher {
     // project with twelve milestone branches gets asked about all twelve.
     const unknown = branches.filter(
       (name) => !known.has(name) && !isAgentBranch(name) && !matchesWork(name, flow.work)
+    );
+
+    // Logged either way: "checked and found nothing" and "never ran" look identical
+    // from the outside, and telling them apart took a session.
+    this.log(
+      `branch flow: ${branches.length} branch(es), ${unknown.length} unaccounted for` +
+        (unknown.length > 0 ? ` (${unknown.join(', ')})` : '')
     );
     if (unknown.length === 0) return;
 
@@ -178,15 +220,31 @@ async function readPlan(): Promise<{ uri: vscode.Uri; text: string } | undefined
   }
 }
 
-function gitRepository(): GitRepository | undefined {
+/**
+ * The Git extension's API, activating it if it hasn't started yet.
+ *
+ * `isActive` is false during our own activation — checking it and giving up is how the
+ * watcher came to never run at all.
+ */
+async function gitApi(): Promise<GitApi | undefined> {
   const extension = vscode.extensions.getExtension<GitExports>('vscode.git');
-  if (!extension?.isActive) return undefined;
+  if (!extension) return undefined;
 
-  return extension.exports?.getAPI?.(1)?.repositories?.[0];
+  try {
+    const exports = extension.isActive ? extension.exports : await extension.activate();
+    return exports?.getAPI?.(1);
+  } catch {
+    return undefined;
+  }
 }
 
 interface GitExports {
-  getAPI(version: 1): { repositories: GitRepository[] };
+  getAPI(version: 1): GitApi;
+}
+
+interface GitApi {
+  repositories: GitRepository[];
+  onDidOpenRepository: vscode.Event<GitRepository>;
 }
 
 interface GitRepository {

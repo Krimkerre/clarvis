@@ -106,3 +106,26 @@ test('every read-only tool really is non-mutating', () => {
     assert.equal(tool.mutates, false, tool.name);
   }
 });
+
+import { narrateTool } from '../toolNarration';
+
+test('the transcript gets a sentence, not a log line', () => {
+  // "applyEdit: src/app.ts" is a log line that leaked into a conversation.
+  assert.equal(narrateTool('readFile', { path: 'app.js' }), 'Reading app.js');
+  assert.equal(narrateTool('applyEdit', { path: 'src/a.ts' }), 'Editing src/a.ts');
+  assert.equal(narrateTool('runCommand', { command: 'npm test' }), 'Running npm test');
+  assert.equal(narrateTool('gitStatus', {}), 'Checking where things stand in git');
+});
+
+test('missing arguments still produce a sentence', () => {
+  // A malformed call is reported to the model separately; the transcript should not
+  // read "Reading undefined" in the meantime.
+  assert.equal(narrateTool('readFile', {}), 'Reading a file');
+  assert.equal(narrateTool('runCommand', {}), 'Running a command');
+});
+
+test('listing the whole project reads differently from listing a folder', () => {
+  assert.equal(narrateTool('listFiles', {}), 'Looking through the project');
+  assert.equal(narrateTool('listFiles', { directory: '.' }), 'Looking through the project');
+  assert.equal(narrateTool('listFiles', { directory: 'src/watch' }), 'Looking through src/watch');
+});

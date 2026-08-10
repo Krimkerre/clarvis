@@ -3,6 +3,7 @@ import * as path from 'path';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
+import { narrateTool } from './toolNarration';
 import { classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
@@ -24,7 +25,16 @@ import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 /** Reported as the run goes, so the panel can show work rather than a spinner. */
 export interface AgentEvent {
   kind: 'text' | 'tool' | 'gate' | 'done' | 'error';
+  /** For the transcript: what a person would say. */
   text: string;
+  /**
+   * For the log: the tool name and its arguments.
+   *
+   * Two forms rather than one, because they have different readers. "Editing app.js"
+   * is what someone watching wants; `applyEdit: app.js` is what someone debugging
+   * wants, and neither is much use to the other.
+   */
+  detail?: string;
   /** Files touched so far, for the commit and the summary. */
   files?: string[];
   step?: number;
@@ -69,7 +79,7 @@ export class AgentRunner {
   private record(event: AgentEvent): AgentEvent {
     if (event.kind !== 'text') {
       const step = event.step ? `${event.step}. ` : '';
-      this.log(`agent [${event.kind}] ${step}${event.text.split('\n')[0]}`);
+      this.log(`agent [${event.kind}] ${step}${(event.detail ?? event.text).split('\n')[0]}`);
     }
     return event;
   }
@@ -222,7 +232,14 @@ export class AgentRunner {
           this.pendingIsolation = undefined;
         }
 
-        yield this.record({ kind: 'tool', text: describe(call), step: this.steps });
+        yield this.record({
+          kind: 'tool',
+          text: isToolName(call.name)
+            ? narrateTool(call.name, (call.args ?? {}) as Record<string, unknown>)
+            : `Asking for ${call.name}`,
+          detail: describe(call),
+          step: this.steps,
+        });
 
         const result = await this.dispatch(call, checkpoint, signal);
         results.push(result);

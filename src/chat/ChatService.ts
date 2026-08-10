@@ -75,6 +75,8 @@ export class ChatService {
     private readonly voice: VoiceService,
     private readonly models: ModelService,
     private readonly terminal: AgentTerminal,
+    /** Shared flag so quips keep out of the way while a run is happening. */
+    private readonly agentBusy: { running: boolean },
     private readonly log: (message: string) => void
   ) {
     // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
@@ -331,15 +333,17 @@ export class ChatService {
     );
 
     this.panel.post({ type: 'chat-stream-start' });
+    this.agentBusy.running = true;
     let spoken = '';
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
 
-        // Tool calls are shown as they happen — a step counter is the difference
-        // between watching work and watching a spinner.
-        const line = event.kind === 'tool' ? `\n${event.step}. ${event.text}` : event.text;
+        // Tool calls are shown as they happen — watching work rather than a spinner.
+        // No step numbers here: they are scaffolding for a log, and in a conversation
+        // they make a person sound like a build system.
+        const line = event.kind === 'tool' ? `\n${event.text}…\n` : event.text;
         if (event.kind === 'text' || event.kind === 'done' || event.kind === 'error') {
           spoken += event.text;
         }
@@ -347,6 +351,7 @@ export class ChatService {
         this.panel.post({ type: 'chat-stream', text: line });
       }
     } finally {
+      this.agentBusy.running = false;
       this.streaming = undefined;
       this.panel.post({ type: 'chat-stream-end' });
       this.avatar.setState('neutral');

@@ -23,6 +23,7 @@ import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
+import { LiveQuips } from './personality/LiveQuips';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
@@ -96,7 +97,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
   const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
-  startPersonality(context, tracker, logger, announcer);
+  startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
@@ -130,6 +131,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
   // shared so a probe run reads as one transcript rather than one window per command.
+  // One place that knows whether a run is in progress. Quips stay out of the way
+  // during one (§4.6 personality under load), and asking the model for a joke while
+  // it is doing real work spends the same budget twice.
+  const agentBusy = { running: false };
+
   const agentTerminal = new AgentTerminal();
   context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
   context.subscriptions.push(
@@ -236,7 +242,7 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, logger);
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -412,6 +418,7 @@ function startChat(
   voice: VoiceService,
   models: ModelService,
   terminal: AgentTerminal,
+  agentBusy: { running: boolean },
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -427,6 +434,7 @@ function startChat(
     voice,
     models,
     terminal,
+    agentBusy,
     (message) => log.write(message)
   );
 
@@ -585,9 +593,16 @@ function startPersonality(
   context: vscode.ExtensionContext,
   tracker: BusyTracker,
   log: ClarvisLog,
-  announcer: Announcer
+  announcer: Announcer,
+  models: ModelService,
+  busy: () => boolean
 ): void {
-  new Personality(announcer, (message) => log.write(message)).start(tracker, context);
+  const personality = new Personality(announcer, (message) => log.write(message));
+
+  // Written lines when a model is configured; the bank when it isn't, is slow, or
+  // returns something unusable.
+  personality.setLiveQuips(new LiveQuips(models, busy, (message) => log.write(message)));
+  personality.start(tracker, context);
 }
 
 /**

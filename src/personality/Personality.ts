@@ -34,6 +34,14 @@ export class Personality {
   private lastCommitSeenAt: number | undefined;
   private bigDiffAnnounced = false;
 
+  /** Writes a line for the moment, when a model is configured. Absent is normal. */
+  private live: { write(trigger: QuipTrigger, sharp: boolean, detail?: string): Promise<string | undefined> } | undefined;
+
+  /** Lets the composition root supply a model without this class knowing about providers. */
+  setLiveQuips(live: { write(trigger: QuipTrigger, sharp: boolean, detail?: string): Promise<string | undefined> }): void {
+    this.live = live;
+  }
+
   constructor(
     private readonly announcer: Announcer,
     private readonly log: (message: string) => void
@@ -56,7 +64,7 @@ export class Personality {
       this.picker.noteEvidence(); // a failure is evidence; sass is earned, not granted
 
       if (streak >= 3) {
-        this.say('repeatFailure', 'judging');
+        this.say('repeatFailure', 'judging', `"${outcome.label}" has failed ${streak} times in a row`);
         return;
       }
       return;
@@ -67,13 +75,13 @@ export class Personality {
     // Red → green on the same command is the only honest "it's fixed" signal — the
     // same reasoning M5 uses for crediting a fix.
     if (previous === 'red') {
-      this.say('suiteWentGreen', 'impressed');
+      this.say('suiteWentGreen', 'impressed', `"${outcome.label}" passes again`);
       return;
     }
 
     if (outcome.durationMs >= SLOW_BUILD_MS) {
       this.picker.noteEvidence(); // waiting nine minutes counts as a rough session
-      this.say('buildSlow', 'judging');
+      this.say('buildSlow', 'judging', `"${outcome.label}" took ${Math.round(outcome.durationMs / 60000)} minutes`);
     }
   }
 
@@ -100,7 +108,7 @@ export class Personality {
 
     if (head && this.lastKnownHead && head !== this.lastKnownHead) {
       const quiet = this.lastCommitSeenAt === undefined || now - this.lastCommitSeenAt > COMMIT_SILENCE_MS;
-      if (quiet) this.say('firstCommitAfterSilence', 'impressed');
+      if (quiet) this.say('firstCommitAfterSilence', 'impressed', 'the first commit in a while');
       this.lastCommitSeenAt = now;
     }
     if (head) this.lastKnownHead = head;
@@ -109,18 +117,32 @@ export class Personality {
     // for as long as the tree stays large.
     if (dirty >= BIG_DIFF_FILES && !this.bigDiffAnnounced) {
       this.bigDiffAnnounced = true;
-      this.say('bigDiff', 'surprised');
+      this.say('bigDiff', 'surprised', `${dirty} files changed at once`);
     } else if (dirty < BIG_DIFF_FILES) {
       this.bigDiffAnnounced = false;
     }
   }
 
-  private say(trigger: QuipTrigger, state: Parameters<Announcer['announce']>[1]): void {
+  private say(
+    trigger: QuipTrigger,
+    state: Parameters<Announcer['announce']>[1],
+    detail?: string
+  ): void {
     const quip = this.picker.pick(trigger);
     if (!quip) return;
 
     this.log(`quip ${trigger} (${quip.tone}) sass=${this.picker.sassUnlocked}`);
-    this.announcer.announce(quip.text, state, 'quip');
+
+    // The bank is the fallback, not the default. A written line is about *this*
+    // commit on *this* branch; the bank has a fixed number of jokes and is therefore
+    // a countdown to hearing one twice. The model is only asked once the budget has
+    // already agreed to let something through — see Announcer.announceWith.
+    void this.announcer.announceWith(
+      () => this.live?.write(trigger, this.picker.sassUnlocked, detail) ?? Promise.resolve(undefined),
+      quip.text,
+      state,
+      'quip'
+    );
   }
 }
 

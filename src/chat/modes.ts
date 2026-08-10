@@ -1,0 +1,69 @@
+/**
+ * How much Clarvis is allowed to do, chosen by the user rather than inferred.
+ *
+ * Routing (§4.6) guesses well, but a guess is still a guess — and the cost of the
+ * wrong one is a diff. This is the manual override: a mode that *cannot* reach the
+ * agent path is a guarantee, not a preference, because the code never calls it rather
+ * than the prompt asking it not to.
+ */
+export type ChatMode = 'auto' | 'chat' | 'plan' | 'agent';
+
+export interface ModeSpec {
+  id: ChatMode;
+  label: string;
+  /** Shown on the button, so the current mode is readable at a glance. */
+  short: string;
+  detail: string;
+  /** Whether this mode may ever change files. The whole point of the setting. */
+  canEdit: boolean;
+}
+
+export const MODES: ModeSpec[] = [
+  {
+    id: 'auto',
+    label: 'Auto',
+    short: 'Auto',
+    detail: 'I decide: questions get answered, jobs get done. Ambiguity gets answered.',
+    canEdit: true,
+  },
+  {
+    id: 'chat',
+    label: 'Chat only',
+    short: 'Chat',
+    detail: 'Answer and read the project. I will not change a thing, whatever you ask.',
+    canEdit: false,
+  },
+  {
+    id: 'plan',
+    label: 'Plan only',
+    short: 'Plan',
+    detail: 'Work out what to do and write it down. Still no edits — the plan is the output.',
+    canEdit: false,
+  },
+  {
+    id: 'agent',
+    label: 'Agent',
+    short: 'Agent',
+    detail: 'Treat everything as a job. Skips the guessing when you already know what you want.',
+    canEdit: true,
+  },
+];
+
+export function modeSpec(id: string): ModeSpec {
+  return MODES.find((mode) => mode.id === id) ?? MODES[0];
+}
+
+/** Whether a mode is allowed to run the agent at all. */
+export function canEdit(id: string): boolean {
+  return modeSpec(id).canEdit;
+}
+
+/**
+ * The instruction added when planning.
+ *
+ * Plan mode is the §0 discipline turned outward: say what you would do, in enough
+ * detail to be argued with, and stop. It is not "ask permission then act" — there is
+ * no acting available, which is what makes it restful to use.
+ */
+export const PLAN_ADDENDUM =
+  ' The user has put you in plan mode. Work out what would need to change and describe it: which files, what edits, in what order, and what could go wrong. Do not ask to proceed — you cannot, and offering would be theatre. End with the smallest first step.';

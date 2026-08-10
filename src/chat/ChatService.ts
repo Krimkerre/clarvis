@@ -12,6 +12,7 @@ import { localAnswer, WorkspaceFacts } from './localAnswer';
 import { chatAction, ChatAction } from './chatCommands';
 import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
+import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -89,6 +90,7 @@ export class ChatService {
     this.panel.onDidRequestHistory(() => void this.showHistory());
     this.panel.onDidRequestStop(() => this.stop());
     this.panel.onDidRequestModels(() => void vscode.commands.executeCommand('clarvis.configureModels'));
+    this.panel.onDidRequestMode(() => void this.chooseMode());
 
     // Keep the bowtie's tooltip honest when the settings change underneath it —
     // including from the picker it opens, so it never describes the previous choice.
@@ -96,6 +98,7 @@ export class ChatService {
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
           this.postModelInfo();
+          this.postMode();
         }
       })
     );
@@ -111,6 +114,7 @@ export class ChatService {
       this.panel.post({ type: 'chat-thread', turns: this.thread });
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
       this.postModelInfo();
+      this.postMode();
     });
 
     this.voice.onMuteChange((muted) => this.panel.post({ type: 'mute', muted }));
@@ -133,6 +137,21 @@ export class ChatService {
     if (!reply) {
       // Beyond what was watched happen. Either the model answers it, or the agent does
       // it — §4.6 routing, with ambiguity resolving toward answering.
+      const mode = this.mode();
+
+      // **The mode decides before the router does.** In chat and plan mode the agent
+      // path is never called — not discouraged in a prompt, not gated behind a
+      // confirmation, simply not reachable. That is what makes it a guarantee.
+      if (mode === 'agent') {
+        await this.runAgent(question, 'Agent mode — treating that as a job.');
+        return;
+      }
+
+      if (!canEdit(mode)) {
+        await this.answerWithModel(question, mode === 'plan' ? PLAN_ADDENDUM : '');
+        return;
+      }
+
       const decision = routeFor(question);
       this.log(`chat: routed to ${decision.route} — ${decision.because}`);
 
@@ -151,7 +170,50 @@ export class ChatService {
    * avatar's `thinking` → `talking` transition is meant to track the real stream
    * instead of a timer (§4.6).
    */
-  private async answerWithModel(question: string): Promise<void> {
+  /** The mode in force, defaulting to auto when the setting says something unknown. */
+  private mode(): ChatMode {
+    return modeSpec(
+      vscode.workspace.getConfiguration('clarvis').get<string>('chat.mode', 'auto')
+    ).id;
+  }
+
+  /** Lets the user pick how much Clarvis may do, and says what each choice means. */
+  private async chooseMode(): Promise<void> {
+    const current = this.mode();
+
+    const picked = await vscode.window.showQuickPick(
+      MODES.map((mode) => ({
+        label: `${mode.id === current ? '$(check) ' : ''}${mode.label}`,
+        description: mode.canEdit ? 'can change files' : 'read-only',
+        detail: mode.detail,
+        id: mode.id,
+      })),
+      { placeHolder: 'What should I be allowed to do?', matchOnDetail: true }
+    );
+    if (!picked) return;
+
+    const config = vscode.workspace.getConfiguration('clarvis');
+    const scope =
+      config.inspect('chat.mode')?.workspaceValue !== undefined
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global;
+
+    await config.update('chat.mode', picked.id, scope);
+    this.log(`chat: mode set to ${picked.id}`);
+    this.postMode();
+  }
+
+  private postMode(): void {
+    const spec = modeSpec(this.mode());
+    this.panel.post({
+      type: 'mode',
+      short: spec.short,
+      safe: !spec.canEdit,
+      detail: `${spec.label} — ${spec.detail}`,
+    });
+  }
+
+  private async answerWithModel(question: string, addendum = ''): Promise<void> {
     if (!(await this.models.isReady())) {
       const spec = this.models.spec('chat');
       this.log(`chat: no local answer, and ${spec.id} is not configured`);
@@ -167,7 +229,7 @@ export class ChatService {
     // With a tool-capable chat model, questions get to *look* at the project rather
     // than guess — reading a file to answer a question needs no branch and no commit.
     if (await this.models.supportsTools('chat')) {
-      await this.answerWithTools(question);
+      await this.answerWithTools(question, addendum);
       return;
     }
 
@@ -185,7 +247,7 @@ export class ChatService {
 
     try {
       for await (const fragment of this.models.stream({
-        system: this.systemPrompt(),
+        system: this.systemPrompt() + addendum,
         messages: this.modelMessages(),
         signal: controller.signal,
       })) {
@@ -283,7 +345,7 @@ export class ChatService {
   }
 
   /** The read-only tool loop, for questions that need to see the code. */
-  private async answerWithTools(question: string): Promise<void> {
+  private async answerWithTools(question: string, addendum = ''): Promise<void> {
     this.streaming?.abort();
     const controller = new AbortController();
     this.streaming = controller;
@@ -304,7 +366,7 @@ export class ChatService {
     let spoken = '';
 
     try {
-      for await (const event of runner.answer(question, controller.signal)) {
+      for await (const event of runner.answer(question, controller.signal, addendum)) {
         if (!event.text) continue;
         if (event.kind === 'text' || event.kind === 'error') spoken += event.text;
 

@@ -133,6 +133,18 @@
           "default": 25,
           "description": "Tool calls before the agent stops and asks whether to carry on. A loop that never converges should not run up a bill unattended."
         },
+        "clarvis.chat.mode": {
+          "type": "string",
+          "default": "auto",
+          "enum": ["auto", "chat", "plan", "agent"],
+          "enumDescriptions": [
+            "Questions get answered, jobs get done, ambiguity gets answered.",
+            "Answer and read only. Clarvis will not change a thing.",
+            "Describe what would need doing. Still no edits.",
+            "Treat every message as a job."
+          ],
+          "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all \u2014 the code never calls it, rather than the prompt being asked not to."
+        },
         "clarvis.chat.provider": {
           "type": "string",
           "default": "anthropic",

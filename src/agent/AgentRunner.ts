@@ -83,18 +83,22 @@ export class AgentRunner {
    *    "what does this file do?" at frontier prices is exactly what the two-model
    *    split exists to avoid
    */
-  async *answer(question: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
-    yield* this.loop(question, signal, { readOnly: true });
+  async *answer(
+    question: string,
+    signal: AbortSignal,
+    addendum = ''
+  ): AsyncGenerator<AgentEvent> {
+    yield* this.loop(question, signal, { readOnly: true, addendum });
   }
 
   async *run(task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
-    yield* this.loop(task, signal, { readOnly: false });
+    yield* this.loop(task, signal, { readOnly: false, addendum: '' });
   }
 
   private async *loop(
     task: string,
     signal: AbortSignal,
-    options: { readOnly: boolean }
+    options: { readOnly: boolean; addendum: string }
   ): AsyncGenerator<AgentEvent> {
     if (!this.root) {
       yield this.record({ kind: 'error', text: 'There is no folder open, so there is nothing to work on.' });
@@ -148,7 +152,7 @@ export class AgentRunner {
       try {
         for await (const event of this.models.streamWithTools(
           {
-            system: this.systemPrompt(options.readOnly),
+            system: this.systemPrompt(options.readOnly) + options.addendum,
             messages,
             signal,
             tools: options.readOnly ? readOnlyTools() : undefined,

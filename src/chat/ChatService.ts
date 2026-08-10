@@ -355,6 +355,11 @@ export class ChatService {
     // What the model actually said is, including where the run left you.
     if (spoken.trim()) this.voice.say(spoken, 'chatReply');
 
+    // A run can create branches — "make a branch called testing3" is a perfectly
+    // ordinary request — and one the user just asked for should be placed in the flow
+    // now, not a minute later when the connection to what they did has faded.
+    await vscode.commands.executeCommand('clarvis.checkBranchFlow');
+
     // The close of a run is a decision, not an announcement: what changed, what the
     // options are, and the user chooses. Offered rather than forced — a modal after
     // every run would be its own nuisance.

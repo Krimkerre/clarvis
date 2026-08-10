@@ -101,6 +101,20 @@ export class BranchFlowWatcher {
   }
 
   /**
+   * Checks right now, skipping the settle time.
+   *
+   * For branches the *agent* just created at the user's request. That is not churn —
+   * it is a deliberate act, the user is watching, and making them wait a minute to be
+   * asked where it fits turns a direct consequence into a mysterious interruption
+   * later. The settle time exists for branches that appear on their own.
+   */
+  async checkNow(): Promise<void> {
+    clearTimeout(this.timer);
+    this.timer = undefined;
+    await this.check();
+  }
+
+  /**
    * The one-off check after launch, on a timer of its own.
    *
    * Deliberately not shared with the debounce below: the git extension fires state

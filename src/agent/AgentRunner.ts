@@ -13,7 +13,7 @@ import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
-import { characterWith } from '../personality/character';
+import { ANSWER_SHAPE, characterWith } from '../personality/character';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -198,7 +198,14 @@ export class AgentRunner {
       try {
         for await (const event of this.models.streamWithTools(
           {
-            system: this.systemPrompt(options.readOnly) + options.addendum,
+            // The answer shape goes *after* the addendum, so it is the last thing read
+            // before the reply is written. Put anywhere earlier — including inside the
+            // character block — it lost to the summarise-the-document prior that a
+            // model falls into the moment tool results arrive.
+            system:
+              this.systemPrompt(options.readOnly) +
+              options.addendum +
+              (options.readOnly ? `\n\n${ANSWER_SHAPE}` : ''),
             messages,
             signal,
             tools: options.readOnly ? readOnlyTools() : undefined,
@@ -454,11 +461,7 @@ export class AgentRunner {
       return characterWith(
         'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
-        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
-        // This path answers questions, and an answer here is *spoken*. The first
-        // reply after the character landed ran to twenty-two seconds of audio —
-        // correct, in voice, and far too long to listen to.
-        'Answer in a few sentences. Length is the failure mode: if the answer is running long you have started explaining rather than answering.'
+        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.'
       );
     }
 

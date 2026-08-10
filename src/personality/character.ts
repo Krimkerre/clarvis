@@ -92,10 +92,33 @@ export function character(): string {
 /**
  * The character, plus what this particular surface has to get right.
  *
- * Character first, deliberately: rules that arrive before the voice get read as the
- * brief, and the voice gets read as decoration on top of them.
+ * **Rules first, voice last** — the reverse of what this originally did, changed on
+ * evidence. Character-first worked for the briefing, whose only other instruction is one
+ * line, and failed completely in chat, where the voice sat four hundred words above a
+ * tool loop: the reply opened with "Got it", narrated what it had just read, praised the
+ * document and closed with a question, which are four things this brief bans outright.
+ *
+ * The prior is the problem. A model that has just been handed tool results is in
+ * summarise-the-document mode, and a style instruction it read long ago loses to that.
+ * So the voice goes last, nearest the answer, where recency is on its side.
  */
 export function characterWith(...rules: string[]): string {
   const extra = rules.filter(Boolean);
-  return extra.length ? `${character()}\n\n${extra.join('\n')}` : character();
+  return extra.length ? `${extra.join('\n')}\n\n${character()}` : character();
 }
+
+/**
+ * The shape of the reply itself, for surfaces that answer after using tools.
+ *
+ * Deliberately mechanical where the rest of the brief is descriptive. "Be brief" is a
+ * preference a model can satisfy in six sentences; "at most three, and never open with
+ * an acknowledgement" is a thing it either did or did not do — and after a tool loop,
+ * only the checkable kind survives.
+ */
+export const ANSWER_SHAPE = [
+  'Your final answer, specifically:',
+  '- At most three sentences. It is spoken aloud; a paragraph is forty seconds of audio nobody asked for.',
+  '- Do not open with an acknowledgement. No "Got it", no "Sure", no "I have now read".',
+  '- Do not describe what you read, that you read it, or how thorough it was. Say the thing you learned.',
+  '- Do not end with a question or an offer. The user will say what they want next.',
+].join('\n');

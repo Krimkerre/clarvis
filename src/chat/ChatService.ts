@@ -19,6 +19,7 @@ import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
+import { headline } from '../agent/headline';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -411,6 +412,7 @@ export class ChatService {
         // No step numbers here: they are scaffolding for a log, and in a conversation
         // they make a person sound like a build system.
         const line = event.kind === 'tool' ? `\n${event.text}…\n` : event.text;
+        // Collected in full for the transcript's sake; only the headline is spoken.
         if (event.kind === 'text' || event.kind === 'done' || event.kind === 'error') {
           spoken += event.text;
         }
@@ -425,9 +427,11 @@ export class ChatService {
       await this.persist();
     }
 
-    // Tool calls are never spoken — reading nine of them aloud would be a recital.
-    // What the model actually said is, including where the run left you.
-    if (spoken.trim()) this.voice.say(spoken, 'chatReply');
+    // **One line, not the lot.** A finished run has said several things — an opening
+    // remark, its narration, a note about where the work sits — and reading all of it
+    // aloud buries the only sentence anyone is waiting for.
+    const said = headline(spoken);
+    if (said) this.voice.say(said, 'chatReply');
 
     // Commits the run made are not news about the user, so the personality is told
     // about them rather than left to congratulate Clarvis on his own work.

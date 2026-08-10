@@ -88,9 +88,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // whatever raised it, and routing those through here would say them twice.
   const toTranscriptSpoken = (message: string) => void chat?.remark(message);
 
+  // The model layer (M8b). Local answers still need none of this — it is reached only
+  // when a question falls outside what Clarvis watched happen.
+  const models = new ModelService(context, (message) => logger.write(message));
+  registerModelCommands(context, models, (message) => logger.write(message));
+
   const tracker = startTaskWatching(context, avatar, logger, announcer);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, toTranscript);
+  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
   startPersonality(context, tracker, logger, announcer);
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
@@ -102,10 +107,6 @@ export function activate(context: vscode.ExtensionContext): void {
     new BranchFlowWatcher(context, (message) => logger.write(message), toTranscriptSpoken).start()
   );
 
-  // The model layer (M8b). Local answers still need none of this — it is reached only
-  // when a question falls outside what Clarvis watched happen.
-  const models = new ModelService(context, (message) => logger.write(message));
-  registerModelCommands(context, models, (message) => logger.write(message));
 
   // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
   // shared so a probe run reads as one transcript rather than one window per command.
@@ -333,6 +334,7 @@ function startBriefing(
   log: ClarvisLog,
   memory: PatternMemory,
   voice: VoiceService,
+  models: ModelService,
   toTranscript: (message: string) => void
 ): BriefingService {
   const briefing = new BriefingService(context, (message) => log.write(message));
@@ -340,6 +342,22 @@ function startBriefing(
   // M5 supplies the briefing's fourth line. M4 needed no changes for this — it was
   // built to omit the line until something could provide it.
   briefing.setPatternHint(() => memory.briefingLine());
+
+  // The model phrases the briefing when one is configured; the written lines are the
+  // fallback. Same division as chat: local state knows the facts, the model says them
+  // in a way that doesn't sound like a form letter.
+  briefing.setPhraser(async (prompt) => {
+    if (!(await models.isReady('chat'))) return undefined;
+
+    let text = '';
+    for await (const fragment of models.stream(
+      { system: 'You are Clarvis: dry, brief, never cheerful about a failure.', messages: [{ role: 'user', content: prompt }] },
+      'chat'
+    )) {
+      text += fragment;
+    }
+    return text;
+  });
 
   briefing.start(tracker, (lines) => {
     // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;

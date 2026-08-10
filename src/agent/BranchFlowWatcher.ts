@@ -55,8 +55,20 @@ export class BranchFlowWatcher {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly log: (message: string) => void,
-    /** Where to say things. The transcript, rather than a notification that vanishes. */
-    private readonly say: (text: string) => void = () => {}
+    /**
+     * Spoken *and* written. Used for the one thing worth hearing: noticing a branch
+     * nobody told him about.
+     */
+    private readonly say: (text: string) => void = () => {},
+    /**
+     * Written only.
+     *
+     * The follow-ups — "noted in plan.md", "committed" — are confirmations of an
+     * action the user just took, and they are standing right there having taken it.
+     * Reading a receipt aloud after every button press is how a voice becomes
+     * something people switch off.
+     */
+    private readonly note: (text: string) => void = () => {}
   ) {}
 
   /**
@@ -232,7 +244,7 @@ export class BranchFlowWatcher {
         : { ...flow, extra: [...(flow.extra ?? []), branch] };
 
     await this.writePlan(plan, updated);
-    this.say(
+    this.note(
       picked === "It's the trunk"
         ? `Noted — \`${branch}\` is the trunk now, and \`${flow.trunk}\` stays in the flow as a step. plan.md says so.`
         : `Noted in plan.md: work passes through \`${branch}\`. I'll offer it when a run finishes.`
@@ -267,10 +279,10 @@ export class BranchFlowWatcher {
       await repository.add([vscode.Uri.joinPath(root, 'plan.md').fsPath]);
       await repository.commit(`Add ${branch} to the branch flow`, { all: false });
       this.log('branch flow: committed plan.md');
-      this.say('Committed. Only plan.md — whatever else you have in flight is still yours.');
+      this.note('Committed. Only plan.md — whatever else you have in flight is still yours.');
     } catch (error) {
       this.log(`branch flow: commit failed (${String(error)})`);
-      this.say("I couldn't commit it — the change is saved in plan.md, so it's only the commit that's missing.");
+      this.note("I couldn't commit it — the change is saved in plan.md, so it's only the commit that's missing.");
     }
   }
 

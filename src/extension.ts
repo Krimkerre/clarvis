@@ -103,7 +103,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // Keeps plan.md's branch flow in step with the repository: a declared flow that has
   // gone stale is worse than none, since the wizard keeps offering branches it knows
   // while ignoring the one work now passes through.
-  const branchFlow = new BranchFlowWatcher(context, (message) => logger.write(message), toTranscriptSpoken);
+  const branchFlow = new BranchFlowWatcher(
+    context,
+    (message) => logger.write(message),
+    toTranscriptSpoken,
+    toTranscript
+  );
   context.subscriptions.push(branchFlow.start());
 
   // Called by the agent path the moment a run finishes: a branch the user just asked

@@ -51,6 +51,20 @@ export class Personality {
     this.ownCommits.add(hash);
   }
 
+  /**
+   * Whether an agent run is in progress.
+   *
+   * §4.6 *Personality under load*: quips are suppressed while a task runs. That was
+   * only being applied to the *model-written* line — the canned one still announced,
+   * so a quip landed in the middle of a run. Suppression belongs to the whole remark,
+   * not to how it was produced.
+   */
+  private busy: () => boolean = () => false;
+
+  setBusySignal(busy: () => boolean): void {
+    this.busy = busy;
+  }
+
   /** Lets the composition root supply a model without this class knowing about providers. */
   setLiveQuips(live: { write(trigger: QuipTrigger, sharp: boolean, detail?: string): Promise<string | undefined> }): void {
     this.live = live;
@@ -147,6 +161,13 @@ export class Personality {
     state: Parameters<Announcer['announce']>[1],
     detail?: string
   ): void {
+    if (this.busy()) {
+      // Not deferred, dropped. A remark about a build that finished four minutes ago,
+      // delivered once the run ends, has outlived the moment it was about.
+      this.log(`quip ${trigger} suppressed — an agent run is in progress`);
+      return;
+    }
+
     const quip = this.picker.pick(trigger);
     if (!quip) return;
 

@@ -602,6 +602,7 @@ function startPersonality(
 
   // Written lines when a model is configured; the bank when it isn't, is slow, or
   // returns something unusable.
+  personality.setBusySignal(busy);
   personality.setLiveQuips(new LiveQuips(models, busy, (message) => log.write(message)));
   personality.start(tracker, context);
   return personality;

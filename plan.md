@@ -2888,10 +2888,20 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   tagging outcomes at the source is the fix if that is ever observed. Dwell is 800ms with
   repeat-collapsing, keeping only the newest pending expression: a queue of faces would
   play back after the fact, which is worse than dropping the ones nobody would have seen.
-- **M8e3 — Expressive replies.** The model emits a §3 state alongside each reply as
-  structured metadata, validated through `isButlerState()` with a `talking` fallback
-  (§4.6 *The avatar during a reply*). Local answers use a fixed mapping instead. The tag
-  must never leak into the visible reply text.
+- **M8e3 — Expressive replies. ✅ Built.** The model opens each reply with `[[judging]]`
+  and `src/chat/replyState.ts` takes it off the front, validated through `isButlerState()`
+  with a `talking` fallback. Local answers already carried a fixed mapping (`LocalReply.state`,
+  shipped at M8a), so only the model path was missing.
+  **Not a tool call and not a second request**, both considered: a tool is unavailable on
+  the plain streaming path, and a second request doubles the cost of every reply to
+  decide a facial expression.
+  *The tag must never be seen*, which is the whole risk of carrying it as text, so two
+  things stop it: the reader withholds the opening fragments until it knows whether a tag
+  is there — `[[jud` and `ging]]` arriving as separate fragments is ordinary, not an edge
+  case — and a sweep strips any marker appearing later regardless.
+  `BUTLER_STATES` and `isButlerState()` moved to `src/butlerState.ts`, which imports
+  nothing: validating a state name used to require importing the webview provider, and
+  therefore `vscode`, and therefore could not be unit-tested.
 - **M8f2 — Model-assisted command intent.** The regex matcher (`chatCommands.ts`,
   shipped in M8a) covers the phrasings people actually type; a model can cover the rest
   — *"I can't stand this voice"*, *"you're too loud"*, *"where do I put my key"*. When a

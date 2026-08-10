@@ -1,22 +1,12 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs';
+import { ButlerState, isButlerState } from '../butlerState';
 
-// The six expressions avatar.html's own setState() understands. Kept here (not
-// just inferred from the HTML) so the rest of the extension gets type-checked
-// state names instead of arbitrary strings.
-export const BUTLER_STATES = ['neutral', 'judging', 'impressed', 'thinking', 'talking', 'surprised'] as const;
-export type ButlerState = (typeof BUTLER_STATES)[number];
-
-/**
- * Narrows an arbitrary string to a ButlerState.
- *
- * Used at the extension's trust boundaries — the QuickPick (which is typed as plain
- * `string`) and messages arriving from the webview — so neither needs a cast that
- * would merely assert correctness rather than check it.
- */
-export function isButlerState(value: unknown): value is ButlerState {
-  return typeof value === 'string' && (BUTLER_STATES as readonly string[]).includes(value);
-}
+// The state union lives in butlerState.ts, which imports nothing — anything needing to
+// validate a state name should not have to pull the extension host in to do it. Both
+// are re-exported so existing imports of this module keep working.
+export { BUTLER_STATES, isButlerState } from '../butlerState';
+export type { ButlerState } from '../butlerState';
 
 // Random per-load token required by the webview's CSP (script-src 'nonce-...').
 // A fresh nonce each time buildHtml() runs means a script tag from a stale/cached

@@ -14,6 +14,7 @@ import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { ANSWER_SHAPE, characterWith } from '../personality/character';
+import { STATE_TAG_INSTRUCTION } from '../chat/replyState';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -205,7 +206,7 @@ export class AgentRunner {
             system:
               this.systemPrompt(options.readOnly) +
               options.addendum +
-              (options.readOnly ? `\n\n${ANSWER_SHAPE}` : ''),
+              (options.readOnly ? `\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}` : ''),
             messages,
             signal,
             tools: options.readOnly ? readOnlyTools() : undefined,

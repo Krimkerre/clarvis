@@ -23,6 +23,7 @@ import { headline } from '../agent/headline';
 import { QuipPicker } from '../personality/QuipPicker';
 import { Voice } from '../personality/Voice';
 import { characterWith } from '../personality/character';
+import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -339,17 +340,32 @@ export class ChatService {
     this.panel.post({ type: 'chat-stream-start' });
 
     let text = '';
+    // The face the model asked for, read off the front of its own reply (M8e3).
+    const reader = new ReplyStateReader();
 
     try {
       for await (const fragment of this.models.stream({
-        system: this.systemPrompt() + addendum,
+        system: `${this.systemPrompt() + addendum}\n\n${STATE_TAG_INSTRUCTION}`,
         messages: this.modelMessages(),
         signal: controller.signal,
       })) {
-        if (text === '') this.avatar.setState('talking', 'chat');
-        text += fragment;
+        const visible = reader.push(fragment);
+        if (!visible) continue; // still buffering the opening, deciding on a tag
+
+        // The expression applies at the *start* of the stream, so the face matches the
+        // tone while the reply is being read rather than arriving after it.
+        if (text === '') this.avatar.setState(reader.state ?? 'talking', 'chat');
+        text += visible;
         turn.text = text;
-        this.panel.post({ type: 'chat-stream', text: fragment });
+        this.panel.post({ type: 'chat-stream', text: visible });
+      }
+
+      const remainder = reader.flush();
+      if (remainder) {
+        if (text === '') this.avatar.setState(reader.state ?? 'talking', 'chat');
+        text += remainder;
+        turn.text = text;
+        this.panel.post({ type: 'chat-stream', text: remainder });
       }
     } catch (error) {
       // Stopping is not failing: the user asked for silence and gets it.
@@ -546,16 +562,32 @@ export class ChatService {
     // What was actually said, for the voice — accumulated from the stream rather than
     // taken from the closing event, which no longer repeats it.
     let spoken = '';
+    const reader = new ReplyStateReader();
 
     try {
       for await (const event of runner.answer(question, controller.signal, addendum)) {
         if (!event.text) continue;
-        if (event.kind === 'text' || event.kind === 'error') spoken += event.text;
 
-        this.panel.post({
-          type: 'chat-stream',
-          text: event.kind === 'tool' ? `\n${event.step}. ${event.text}\n` : event.text,
-        });
+        // Only prose carries the tag. Tool lines are ours, not the model's.
+        if (event.kind !== 'text') {
+          this.panel.post({ type: 'chat-stream', text: `\n${event.step}. ${event.text}\n` });
+          if (event.kind === 'error') spoken += event.text;
+          continue;
+        }
+
+        const visible = reader.push(event.text);
+        if (!visible) continue;
+
+        if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
+        spoken += visible;
+        this.panel.post({ type: 'chat-stream', text: visible });
+      }
+
+      const remainder = reader.flush();
+      if (remainder) {
+        if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
+        spoken += remainder;
+        this.panel.post({ type: 'chat-stream', text: remainder });
       }
     } finally {
       this.streaming = undefined;

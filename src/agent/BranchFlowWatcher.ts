@@ -25,6 +25,19 @@ const SEEN_KEY = 'clarvis.branchFlow.seen';
  */
 const SETTLE_MS = 60_000;
 
+/**
+ * The first check, timed to land just after the launch briefing.
+ *
+ * Branches that already exist when a window opens are not churn — they were there
+ * before Clarvis was, and making someone wait a minute to be told about one is a
+ * delay with no purpose. The settle time exists for *changes* during a session, which
+ * is a different thing.
+ *
+ * Behind the briefing (§4.3 fires at 1.5s) so the two never arrive together: a
+ * question stacked on top of a briefing gets dismissed along with it.
+ */
+const STARTUP_MS = 4000;
+
 export class BranchFlowWatcher {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -38,8 +51,8 @@ export class BranchFlowWatcher {
     const repository = gitRepository();
     if (!repository) return new vscode.Disposable(() => undefined);
 
-    const subscription = repository.state.onDidChange(() => this.schedule());
-    this.schedule();
+    const subscription = repository.state.onDidChange(() => this.schedule(SETTLE_MS));
+    this.schedule(STARTUP_MS);
 
     return new vscode.Disposable(() => {
       clearTimeout(this.timer);
@@ -48,9 +61,9 @@ export class BranchFlowWatcher {
   }
 
   /** Debounced, because the git extension fires this event constantly. */
-  private schedule(): void {
+  private schedule(delay: number): void {
     clearTimeout(this.timer);
-    this.timer = setTimeout(() => void this.check(), SETTLE_MS);
+    this.timer = setTimeout(() => void this.check(), delay);
   }
 
   private async check(): Promise<void> {

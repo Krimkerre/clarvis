@@ -9,7 +9,8 @@ import { VoiceService } from '../voice/VoiceService';
 import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
 import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
-import { chatAction, ChatAction } from './chatCommands';
+import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
+import { switchBranch } from '../agent/switchBranch';
 import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
@@ -129,7 +130,7 @@ export class ChatService {
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);
     if (action) {
-      await this.runAction(action);
+      await this.runAction(action, question);
       return;
     }
 
@@ -503,7 +504,17 @@ export class ChatService {
    * like a glitch, and if the user dismisses it there is otherwise no trace of what
    * they asked for.
    */
-  private async runAction(action: ChatAction): Promise<void> {
+  private async runAction(action: ChatAction, question = ''): Promise<void> {
+    // Handled here rather than by the agent: a checkout is one deterministic command,
+    // and routing it through a run would create an isolation branch, switch away from
+    // it, and then try to tidy that branch up by switching back — undoing the thing
+    // that was asked for.
+    if (action === 'switchBranch') {
+      const said = await switchBranch(branchFromRequest(question), this.log);
+      if (said) await this.say(said, 'neutral');
+      return;
+    }
+
     // Actions that are not simply "run a command" — each needs a word first.
     if (action === 'help') {
       await this.say('The manual, then. Try not to look surprised.', 'neutral');

@@ -263,8 +263,10 @@ export class BranchFlowWatcher {
     if (picked !== 'Drop it') return;
 
     await this.writePlan(plan, withoutBranch(flow, branch));
-    this.note(`Dropped \`${branch}\` from the flow in plan.md.`);
-    await this.offerToCommit(branch);
+    const committed = await this.commitPlan(branch);
+    this.note(
+      `Dropped \`${branch}\` from the flow${committed ? ', and plan.md is committed' : ' — plan.md is updated but not committed'}.`
+    );
   }
 
   private async ask(
@@ -275,27 +277,30 @@ export class BranchFlowWatcher {
   ): Promise<void> {
     this.log(`branch flow: asking about "${branch}"`);
 
-    // Said before the question, so the question has a voice attached rather than
-    // arriving as a bare dialog. Deliberately not routed through the §6 interruption
-    // budget: the question itself is the interruption, it happens once per branch, and
-    // suppressing the remark while still showing the dialog would be the worst of both.
+    // Only for a branch that turned up on its own. Being told one exists a second
+    // after asking for it is Clarvis narrating the user's own action back at them.
     const quip = remark ? this.quips.pick('newBranch') : undefined;
     if (quip) this.say(`${quip.text} \`${branch}\`, to be precise — and it's not in plan.md.`);
 
+    // **One question, not three.** It used to ask where the branch fits, then whether
+    // to commit, then report each in the transcript — four exchanges for a decision
+    // the user had already made by typing "make a branch". Committing plan.md is part
+    // of recording the answer, not a separate deliberation.
     const picked = await vscode.window.showInformationMessage(
-      `Clarvis: where does \`${branch}\` fit in the flow?`,
+      remark
+        ? `Clarvis: where does \`${branch}\` fit in the flow?`
+        : `Clarvis: done — \`${branch}\` exists. Add it to the flow?`,
       'Work passes through it',
-      'It\'s the trunk',
-      'Not part of the flow'
+      "It's the trunk",
+      'Leave it out'
     );
 
     // Dismissing is an answer too: it means "not now", and asking again next time
     // would make dismissal useless. Recorded either way.
     await this.remember(branch);
-    if (!picked) return;
 
-    if (picked === 'Not part of the flow') {
-      this.log(`branch flow: "${branch}" marked as outside the flow`);
+    if (!picked || picked === 'Leave it out') {
+      if (picked) this.log(`branch flow: "${branch}" marked as outside the flow`);
       return;
     }
 
@@ -307,45 +312,43 @@ export class BranchFlowWatcher {
         : { ...flow, extra: [...(flow.extra ?? []), branch] };
 
     await this.writePlan(plan, updated);
+    const committed = await this.commitPlan(branch);
+
+    // One line, at the end, saying what is now true — rather than a running commentary
+    // of each step that got there.
     this.note(
       picked === "It's the trunk"
-        ? `Noted — \`${branch}\` is the trunk now, and \`${flow.trunk}\` stays in the flow as a step. plan.md says so.`
-        : `Noted in plan.md: work passes through \`${branch}\`. I'll offer it when a run finishes.`
+        ? `\`${branch}\` is the trunk now, with \`${flow.trunk}\` kept as a step${committed ? ', and plan.md is committed' : ' — plan.md is updated but not committed'}.`
+        : `Noted — work passes through \`${branch}\`${committed ? ', and plan.md is committed' : '. plan.md is updated but not committed'}.`
     );
-
-    await this.offerToCommit(branch);
   }
 
   /**
-   * Offers to commit the change to `plan.md`.
+   * Commits `plan.md`, when the project is already tracking it in git.
    *
-   * Offered, never done quietly: it is the user's document and their history, and a
-   * tool that commits on someone's behalf without asking has made a decision about
-   * what belongs in their log. Only `plan.md` is staged — never `-A`, for the same
-   * reason the agent never sweeps up unrelated work.
+   * No separate question. Recording the answer *is* the action the user just approved,
+   * and asking twice about one decision is the friction this whole path is trying to
+   * remove. Only `plan.md` is staged — never `-A`, for the same reason the agent never
+   * sweeps up unrelated work — so nothing else of theirs can ride along.
+   *
+   * A project that does not commit its plan simply gets an uncommitted edit, which the
+   * closing line says plainly.
    */
-  private async offerToCommit(branch: string): Promise<void> {
-    const answer = await vscode.window.showInformationMessage(
-      'Clarvis: commit that change to plan.md?',
-      'Commit it',
-      'Leave it'
-    );
-    if (answer !== 'Commit it') return;
-
+  private async commitPlan(branch: string): Promise<boolean> {
     const repository = (await gitApi())?.repositories?.[0];
-    if (!repository) return;
-
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
-    if (!root) return;
+    if (!repository || !root) return false;
 
     try {
       await repository.add([vscode.Uri.joinPath(root, 'plan.md').fsPath]);
       await repository.commit(`Update the branch flow (${branch})`, { all: false });
       this.log('branch flow: committed plan.md');
-      this.note('Committed. Only plan.md — whatever else you have in flight is still yours.');
+      return true;
     } catch (error) {
+      // An untracked plan, a hook refusing, a mid-merge repository. The edit is saved
+      // either way, which is the part that matters.
       this.log(`branch flow: commit failed (${String(error)})`);
-      this.note("I couldn't commit it — the change is saved in plan.md, so it's only the commit that's missing.");
+      return false;
     }
   }
 

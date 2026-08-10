@@ -354,3 +354,32 @@ test('the block tells the model not to go beyond it', () => {
   // Facts plus a free hand is how a model invents a branch name that sounds right.
   assert.match(factsBlock(facts({ git: { branch: 'main', dirtyCount: 0 } })), /do not invent/i);
 });
+
+import { branchFromRequest } from './chatCommands';
+
+test('a named branch is switched to directly, without a picker', () => {
+  assert.equal(branchFromRequest('switch to testing3'), 'testing3');
+  assert.equal(branchFromRequest('checkout main'), 'main');
+  assert.equal(branchFromRequest('check out feature/login'), 'feature/login');
+});
+
+test('no name means the picker, rather than a guess', () => {
+  // "switch branch" is a request *for* the list; guessing which one would be worse
+  // than asking.
+  assert.equal(branchFromRequest('switch branch'), undefined);
+  assert.equal(branchFromRequest('check out the branch'), undefined);
+  assert.equal(branchFromRequest('switch to it'), undefined);
+});
+
+test('a sentence is not mistaken for a branch name', () => {
+  // A greedy match would try to check out "yesterday".
+  assert.equal(branchFromRequest('switch to the branch I was on yesterday'), undefined);
+});
+
+test('switching branches is not confused with switching voice or engine', () => {
+  // Those intents are listed first precisely so "switch to a different engine" never
+  // reaches git.
+  assert.equal(chatAction('switch to a different engine'), 'chooseEngine');
+  assert.equal(chatAction('change the voice'), 'chooseVoice');
+  assert.equal(chatAction('switch to testing3'), 'switchBranch');
+});

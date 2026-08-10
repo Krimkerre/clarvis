@@ -37,6 +37,13 @@ export class AgentRunner {
 
   /** Whether the run's own branch was removed for holding nothing. */
   private tidied = false;
+
+  /**
+   * The isolation announcement, waiting for a reason to exist.
+   *
+   * Undefined once said — or never said at all, for a run that changed nothing.
+   */
+  private pendingIsolation: string | undefined;
   private steps = 0;
 
   constructor(
@@ -131,12 +138,14 @@ export class AgentRunner {
       await checkpoint.begin(task);
       const isolation = await branch.begin(task);
 
-      yield this.record({
-        kind: 'text',
-        text: isolation.isolated
-          ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
-          : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`,
-      });
+      // **Held back, not announced yet.** A task like "make a branch called testing3"
+      // touches no files, so the isolation branch is machinery the user never needed
+      // to hear about — it gets created, does nothing, and is tidied away. Telling
+      // them about it at the start means explaining a thing that turns out not to
+      // matter. Said at the moment it first *does* matter instead: the first edit.
+      this.pendingIsolation = isolation.isolated
+        ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
+        : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`;
     }
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
@@ -206,6 +215,13 @@ export class AgentRunner {
         if (signal.aborted) break;
 
         this.steps++;
+
+        // The first change to the workspace is when isolation stops being trivia.
+        if (this.pendingIsolation && isToolName(call.name) && mutates(call.name)) {
+          yield this.record({ kind: 'text', text: this.pendingIsolation });
+          this.pendingIsolation = undefined;
+        }
+
         yield this.record({ kind: 'tool', text: describe(call), step: this.steps });
 
         const result = await this.dispatch(call, checkpoint, signal);
@@ -362,9 +378,10 @@ export class AgentRunner {
    * commits their next hour of work onto an agent's branch without noticing.
    */
   private closingNote(branch: AgentBranch): string {
-    if (this.tidied) {
-      return `\n\nNothing of mine to keep, so I've tidied my branch away. You're on \`${branch.previous}\`.`;
-    }
+    // Never mentioned the branch, so there is nothing to explain away. A run that
+    // created a branch, used it for nothing and removed it again is bookkeeping, and
+    // narrating bookkeeping is how a tool sounds busy rather than useful.
+    if (this.tidied || this.pendingIsolation) return '';
     if (!branch.current) return '';
 
     return `\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;

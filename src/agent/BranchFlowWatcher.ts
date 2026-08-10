@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { BranchFlow, flowBranches, parseBranchFlow, writeBranchFlow } from './branchFlow';
+import { BranchFlow, flowBranches, matchesWork, parseBranchFlow, writeBranchFlow } from './branchFlow';
 import { isAgentBranch } from './branchNames';
 
 /**
@@ -72,8 +72,12 @@ export class BranchFlowWatcher {
     const seen = this.context.workspaceState.get<string[]>(SEEN_KEY) ?? [];
     const known = new Set([...flowBranches(flow), ...seen]);
 
-    // Agent branches are ephemeral by design and are already described by `work:`.
-    const unknown = branches.filter((name) => !known.has(name) && !isAgentBranch(name));
+    // Agent branches are ephemeral by design, and anything matching a `work:` pattern
+    // is a feature branch rather than a step in the flow — without that check, a
+    // project with twelve milestone branches gets asked about all twelve.
+    const unknown = branches.filter(
+      (name) => !known.has(name) && !isAgentBranch(name) && !matchesWork(name, flow.work)
+    );
     if (unknown.length === 0) return;
 
     // One at a time. Three questions at once about three branches is a form, and

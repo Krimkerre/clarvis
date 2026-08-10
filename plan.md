@@ -120,6 +120,27 @@ that is a genuine preference rather than a settled practice — see §4.9's *Con
 
 ---
 
+## Branch flow
+
+How work moves through this project. Clarvis reads this when offering to merge an agent
+run, so changing it here changes what he offers — and he asks about any branch that
+appears and isn't covered by it.
+
+- trunk: main
+- integration: testing
+- work: clarvis/<task>
+- work: m*-*
+
+`main` only ever receives merges from `testing`. Each milestone gets its own branch,
+which merges to `testing` when the milestone's exit checklist passes, and `testing`
+merges to `main` once it holds. Agent runs branch from wherever they started and merge
+back there — usually the milestone branch, not the trunk.
+
+The two `work:` lines are what stop Clarvis asking about `m8-chat-agent` and the eleven
+other milestone branches: they are work in progress, not steps in the flow.
+
+---
+
 ## 1. Concept
 
 **Clarvis** is a sarcastic butler that activates with a VS Code window and dies with it.

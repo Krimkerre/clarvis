@@ -18,8 +18,17 @@ export interface BranchFlow {
   trunk?: string;
   /** The branch work passes through first, if the project uses one. */
   integration?: string;
-  /** Pattern for agent branches, e.g. `clarvis/<task>`. Informational. */
-  work?: string;
+  /**
+   * Patterns for branches that are *work*, not steps in the flow.
+   *
+   * Load-bearing, not informational: without these, every feature branch in the
+   * repository looks like an undeclared part of the flow and gets asked about. A
+   * project with twelve milestone branches would be interrogated twelve times.
+   *
+   * `<task>` and `*` both stand for "anything here" — `clarvis/<task>`, `feature/*`,
+   * `m*-*` are all sensible entries.
+   */
+  work?: string[];
   /**
    * Further branches the project routes work through, beyond the first.
    *
@@ -67,7 +76,7 @@ export function parseBranchFlow(markdown: string): BranchFlow {
       // steps rather than a correction of the first.
       if (flow.integration === undefined) flow.integration = value;
       else (flow.extra ??= []).push(value);
-    } else flow.work ??= value;
+    } else (flow.work ??= []).push(value);
   }
 
   return flow;
@@ -99,19 +108,25 @@ function cleanBranchName(raw: string): string | undefined {
  * comment teaches people not to trust what they can see.
  */
 export function branchFlowSection(trunk: string, integration?: string): string {
-  const lines = [
-    '## Branch flow',
-    '',
-    'How work moves through this project. Clarvis follows this when offering to merge',
-    'an agent run, so changing it here changes what he offers.',
-    '',
-    `- trunk: ${trunk}`,
-  ];
+  return renderSection({ trunk, integration, work: ['clarvis/<task>'] });
+}
 
-  if (integration) lines.push(`- integration: ${integration}`);
-  lines.push('- work: clarvis/<task>', '');
+/**
+ * Whether a branch is covered by a work pattern rather than being part of the flow.
+ *
+ * Anything between angle brackets, and `*`, match a run of characters. Everything else
+ * is literal — a pattern language rich enough to be surprising would be a pattern
+ * language people get wrong.
+ */
+export function matchesWork(branch: string, patterns: string[] = []): boolean {
+  return patterns.some((pattern) => {
+    const source = pattern
+      .replace(/[.+?^${}()|[\]\\]/g, '\\$&') // escape regex metacharacters
+      .replace(/<[^>]*>/g, '.+')
+      .replace(/\*/g, '.+');
 
-  return lines.join('\n');
+    return new RegExp(`^${source}$`).test(branch);
+  });
 }
 
 /** Every branch the flow names, for working out what is new. */
@@ -161,7 +176,8 @@ function renderSection(flow: BranchFlow): string {
   if (flow.trunk) lines.push(`- trunk: ${flow.trunk}`);
   if (flow.integration) lines.push(`- integration: ${flow.integration}`);
   for (const extra of flow.extra ?? []) lines.push(`- integration: ${extra}`);
-  lines.push(`- work: ${flow.work ?? 'clarvis/<task>'}`, '');
+  for (const work of flow.work ?? ['clarvis/<task>']) lines.push(`- work: ${work}`);
+  lines.push('');
 
   return lines.join('\n');
 }

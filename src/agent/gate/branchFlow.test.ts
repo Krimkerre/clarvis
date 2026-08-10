@@ -67,7 +67,7 @@ test('the generated section parses back to what it declared', () => {
 
   assert.equal(flow.trunk, 'main');
   assert.equal(flow.integration, 'testing');
-  assert.equal(flow.work, 'clarvis/<task>');
+  assert.deepEqual(flow.work, ['clarvis/<task>']);
 });
 
 test('a project with no integration branch generates and parses cleanly', () => {
@@ -126,4 +126,36 @@ test('rewriting twice is stable', () => {
   const twice = writeBranchFlow(once, parseBranchFlow(once));
 
   assert.equal(once, twice);
+});
+
+import { matchesWork } from '../branchFlow';
+
+test('work patterns cover feature branches, so they are never asked about', () => {
+  // Without this, a project with twelve milestone branches gets interrogated twelve
+  // times about branches that were obviously not steps in the flow.
+  const patterns = ['clarvis/<task>', 'm*-*', 'feature/*'];
+
+  assert.equal(matchesWork('clarvis/fix-the-test', patterns), true);
+  assert.equal(matchesWork('m8-chat-agent', patterns), true);
+  assert.equal(matchesWork('feature/login', patterns), true);
+});
+
+test('a work pattern does not swallow the flow branches', () => {
+  // A pattern loose enough to match `main` would silence the question entirely.
+  const patterns = ['clarvis/<task>', 'm*-*', 'feature/*'];
+
+  assert.equal(matchesWork('main', patterns), false);
+  assert.equal(matchesWork('testing', patterns), false);
+  assert.equal(matchesWork('staging', patterns), false);
+});
+
+test('patterns are literal apart from the wildcards', () => {
+  // A pattern language rich enough to be surprising is one people get wrong.
+  assert.equal(matchesWork('release.1', ['release.1']), true);
+  assert.equal(matchesWork('releaseX1', ['release.1']), false, 'the dot must not act as a wildcard');
+});
+
+test('no patterns means nothing matches, rather than everything', () => {
+  assert.equal(matchesWork('anything', []), false);
+  assert.equal(matchesWork('anything', undefined), false);
 });

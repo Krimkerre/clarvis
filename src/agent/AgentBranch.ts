@@ -104,18 +104,22 @@ export class AgentBranch {
    * sweeping it into an agent commit is how someone loses track of what they changed
    * versus what a machine did.
    */
-  async commit(message: string, files: string[]): Promise<boolean> {
+  async commit(message: string, files: string[]): Promise<string | undefined> {
     const repository = this.repository();
-    if (!repository || !this.created || files.length === 0) return false;
+    if (!repository || !this.created || files.length === 0) return undefined;
 
     try {
       await repository.add(files);
       await repository.commit(message, { all: false });
+
+      // The hash is what lets a later review tell this run's commits from the user's
+      // own — author and message are both written in the same voice.
+      const hash = repository.state.HEAD?.commit;
       this.log(`branch: committed ${files.length} file(s) — ${message}`);
-      return true;
+      return hash;
     } catch (error) {
       this.log(`branch: commit failed (${String(error)})`);
-      return false;
+      return undefined;
     }
   }
 
@@ -169,7 +173,7 @@ interface GitExports {
 }
 
 interface GitRepository {
-  state: { HEAD?: { name?: string } };
+  state: { HEAD?: { name?: string; commit?: string } };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
   createBranch(name: string, checkout: boolean): Promise<void>;
   checkout(name: string): Promise<void>;

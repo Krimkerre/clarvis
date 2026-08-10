@@ -1,0 +1,93 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  foreignCommits,
+  reviewOptions,
+  reviewWarnings,
+  describeRun,
+  RunSummary,
+} from '../runReview';
+
+function summary(overrides: Partial<RunSummary> = {}): RunSummary {
+  return {
+    branch: 'clarvis/fix-the-test',
+    base: 'main',
+    files: ['src/a.ts'],
+    commits: [{ hash: 'aaa', subject: 'Fixed the test' }],
+    foreign: [],
+    uncommitted: 0,
+    ...overrides,
+  };
+}
+
+test('commits the run did not make are identified', () => {
+  // The case that actually bit: an agent branch is checked out in the user's own
+  // working tree, so anything committed afterwards lands on it too.
+  const all = [
+    { hash: 'aaa', subject: 'Fixed the test' },
+    { hash: 'bbb', subject: 'Unrelated work by the user' },
+  ];
+
+  assert.deepEqual(foreignCommits(all, ['aaa']), [{ hash: 'bbb', subject: 'Unrelated work by the user' }]);
+});
+
+test('foreign commits are found by hash, not by author or message', () => {
+  // A model writes commit messages in the user's voice, and both commit as the same
+  // person, so neither is a signal.
+  const all = [{ hash: 'ccc', subject: 'Fixed the test' }];
+
+  assert.equal(foreignCommits(all, ['aaa']).length, 1);
+});
+
+test('a branch with foreign commits warns before any option is chosen', () => {
+  const warnings = reviewWarnings(
+    summary({ foreign: [{ hash: 'bbb', subject: 'My own half-finished refactor' }] })
+  );
+
+  assert.match(warnings[0], /weren't made by the run/);
+  assert.match(warnings[0], /half-finished refactor/);
+});
+
+test('uncommitted changes are flagged, because they follow you between branches', () => {
+  const warnings = reviewWarnings(summary({ uncommitted: 3 }));
+
+  assert.match(warnings.join(' '), /follow you between branches/);
+});
+
+test('changes with no commit are flagged as travelling with you', () => {
+  const warnings = reviewWarnings(summary({ commits: [], files: ['a.ts'] }));
+
+  assert.match(warnings.join(' '), /carries the changes with you/);
+});
+
+test('reviewing comes first and the destructive option comes last', () => {
+  // A list that opens with "throw it away" invites exactly the reflex click the
+  // wizard exists to prevent.
+  const options = reviewOptions(summary());
+
+  assert.equal(options[0].action, 'diff');
+  assert.equal(options[options.length - 1].action, 'discard');
+  assert.equal(options[options.length - 1].destructive, true);
+});
+
+test('every option states its consequence', () => {
+  for (const option of reviewOptions(summary())) {
+    assert.ok(option.detail.length > 15, option.action);
+  }
+});
+
+test('without a branch, only looking and undoing are offered', () => {
+  // Nothing was isolated, so "merge" and "go back" are meaningless — offering them
+  // would imply an isolation that does not exist.
+  const options = reviewOptions(summary({ branch: undefined, base: undefined }));
+
+  assert.deepEqual(options.map((option) => option.action), ['diff', 'discard']);
+});
+
+test('the summary line names the branch, the counts and the base', () => {
+  const line = describeRun(summary());
+
+  assert.match(line, /clarvis\/fix-the-test/);
+  assert.match(line, /1 commit/);
+  assert.match(line, /from main/);
+});

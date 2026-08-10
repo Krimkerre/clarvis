@@ -14,6 +14,7 @@ import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
+import { reviewRun } from '../agent/reviewWizard';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
 /**
@@ -342,6 +343,18 @@ export class ChatService {
     // Tool calls are never spoken — reading nine of them aloud would be a recital.
     // What the model actually said is, including where the run left you.
     if (spoken.trim()) this.voice.say(spoken, 'chatReply');
+
+    // The close of a run is a decision, not an announcement: what changed, what the
+    // options are, and the user chooses. Offered rather than forced — a modal after
+    // every run would be its own nuisance.
+    const { commits, files } = runner.result;
+    if (files.length > 0) {
+      const review = await vscode.window.showInformationMessage(
+        `Clarvis: ${files.length} file(s) changed.`,
+        'Review the run'
+      );
+      if (review === 'Review the run') await reviewRun(commits, files, this.log);
+    }
   }
 
   /** The read-only tool loop, for questions that need to see the code. */

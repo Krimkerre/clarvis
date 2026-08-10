@@ -1,0 +1,204 @@
+import * as vscode from 'vscode';
+import { describeRun, foreignCommits, reviewOptions, reviewWarnings, RunSummary } from './runReview';
+import { isAgentBranch } from './branchNames';
+
+/**
+ * The close of an agent run: what happened, what you can do, you decide.
+ *
+ * A run ends with the user on a branch they did not create, holding work they have not
+ * read. Leaving them there with "Done!" is how someone commits their next hour onto an
+ * agent branch — which happened during development, to the person who wrote it.
+ *
+ * Nothing here decides anything. It gathers state, states consequences, and does what
+ * it is told.
+ */
+export async function reviewRun(
+  runCommits: string[],
+  files: string[],
+  log: (message: string) => void
+): Promise<void> {
+  const summary = await gather(runCommits, files);
+  if (!summary) {
+    void vscode.window.showInformationMessage('Clarvis: no git repository here, so there is nothing to review.');
+    return;
+  }
+
+  const warnings = reviewWarnings(summary);
+  const options = reviewOptions(summary);
+
+  const picked = await vscode.window.showQuickPick(
+    options.map((option) => ({
+      label: option.destructive ? `$(trash) ${option.label}` : option.label,
+      detail: option.detail,
+      action: option.action,
+    })),
+    {
+      // The warnings ride in the placeholder so they are read before a choice, not
+      // after — a warning shown afterwards is an apology.
+      placeHolder: warnings.length > 0 ? `⚠ ${warnings[0]}` : describeRun(summary),
+      matchOnDetail: true,
+      ignoreFocusOut: true,
+    }
+  );
+  if (!picked) return;
+
+  // Every warning, not just the first, before anything irreversible happens.
+  if (picked.action === 'discard' && warnings.length > 0) {
+    const proceed = await vscode.window.showWarningMessage(
+      `Throw away \`${summary.branch}\`?`,
+      { modal: true, detail: warnings.join('\n\n') },
+      'Throw it away'
+    );
+    if (proceed !== 'Throw it away') return;
+  }
+
+  await act(picked.action, summary, log);
+}
+
+async function act(
+  action: string,
+  summary: RunSummary,
+  log: (message: string) => void
+): Promise<void> {
+  const repository = gitRepository();
+  if (!repository) return;
+
+  if (action === 'diff') {
+    // The editor's own diff, not a text dump: it is navigable, and it is the view the
+    // user already knows how to read.
+    await vscode.commands.executeCommand('workbench.view.scm');
+    if (summary.base && summary.branch) {
+      await vscode.commands.executeCommand(
+        'git.viewChanges',
+        undefined,
+        `${summary.base}...${summary.branch}`
+      );
+    }
+    log('review: showed the diff');
+    return;
+  }
+
+  if (action === 'stay') {
+    log(`review: staying on ${summary.branch}`);
+    return;
+  }
+
+  if (action === 'return' && summary.base) {
+    await repository.checkout(summary.base);
+    log(`review: returned to ${summary.base}, kept ${summary.branch}`);
+    void vscode.window.showInformationMessage(
+      `Clarvis: back on ${summary.base}. The work is on \`${summary.branch}\` when you want it.`
+    );
+    return;
+  }
+
+  if (action === 'merge' && summary.base && summary.branch) {
+    try {
+      await repository.checkout(summary.base);
+      await repository.merge(summary.branch);
+      log(`review: merged ${summary.branch} into ${summary.base}`);
+      void vscode.window.showInformationMessage(`Clarvis: merged into ${summary.base}.`);
+    } catch (error) {
+      // A conflict is a normal outcome, not a failure — and the user is now on the
+      // base branch with the merge in progress, which is exactly where they can fix it.
+      log(`review: merge failed (${String(error)})`);
+      void vscode.window.showWarningMessage(
+        `Clarvis: the merge didn't apply cleanly. You're on ${summary.base} with it half-done — the Source Control view has the conflicts.`
+      );
+    }
+    return;
+  }
+
+  if (action === 'discard' && summary.branch) {
+    if (summary.base) await repository.checkout(summary.base);
+    try {
+      await repository.deleteBranch(summary.branch, true);
+      log(`review: discarded ${summary.branch}`);
+      void vscode.window.showInformationMessage(`Clarvis: gone. You're on ${summary.base}.`);
+    } catch (error) {
+      log(`review: could not delete ${summary.branch} (${String(error)})`);
+      void vscode.window.showWarningMessage(
+        `Clarvis: I moved you to ${summary.base} but couldn't delete the branch. It's still there if you want it.`
+      );
+    }
+  }
+}
+
+/** Reads the current state of the run from git. */
+async function gather(runCommits: string[], files: string[]): Promise<RunSummary | undefined> {
+  const repository = gitRepository();
+  if (!repository) return undefined;
+
+  const branch = repository.state.HEAD?.name;
+  if (!branch || !isAgentBranch(branch)) {
+    // Not on an agent branch: the run either had no isolation or the user has already
+    // moved. Either way there is no branch to offer options about.
+    return {
+      files,
+      commits: [],
+      foreign: [],
+      uncommitted: repository.state.workingTreeChanges.length,
+    };
+  }
+
+  const base = await findBase(repository, branch);
+  const log = base ? await safeLog(repository, base, branch) : [];
+
+  return {
+    branch,
+    base,
+    files,
+    commits: log,
+    foreign: foreignCommits(log, runCommits),
+    uncommitted: repository.state.workingTreeChanges.length,
+  };
+}
+
+/** The most likely branch this one came from. */
+async function findBase(repository: GitRepository, branch: string): Promise<string | undefined> {
+  const branches = (await repository.getBranches({ remote: false })).map((entry) => entry.name ?? '');
+
+  // A non-agent branch is a candidate; conventional names first, since a base is
+  // almost always one of them.
+  return (
+    ['main', 'master', 'develop'].find((name) => branches.includes(name)) ??
+    branches.find((name) => name && name !== branch && !isAgentBranch(name))
+  );
+}
+
+async function safeLog(
+  repository: GitRepository,
+  base: string,
+  branch: string
+): Promise<{ hash: string; subject: string }[]> {
+  try {
+    const commits = await repository.log({ range: `${base}..${branch}` });
+    return commits.map((commit) => ({
+      hash: commit.hash,
+      subject: (commit.message ?? '').split('\n')[0],
+    }));
+  } catch {
+    // A missing base, a shallow clone, a rewritten history. Fewer facts, not a failure.
+    return [];
+  }
+}
+
+function gitRepository(): GitRepository | undefined {
+  const extension = vscode.extensions.getExtension<GitExports>('vscode.git');
+  if (!extension?.isActive) return undefined;
+
+  return extension.exports?.getAPI?.(1)?.repositories?.[0];
+}
+
+interface GitExports {
+  getAPI(version: 1): { repositories: GitRepository[] };
+}
+
+interface GitRepository {
+  state: { HEAD?: { name?: string }; workingTreeChanges: unknown[] };
+  getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
+  log(options: { range: string }): Promise<{ hash: string; message?: string }[]>;
+  checkout(name: string): Promise<void>;
+  merge(ref: string): Promise<void>;
+  deleteBranch(name: string, force: boolean): Promise<void>;
+}

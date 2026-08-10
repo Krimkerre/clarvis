@@ -32,6 +32,8 @@ export interface AgentEvent {
 
 export class AgentRunner {
   private readonly touched = new Set<string>();
+  /** Commits this run made, so a review can tell them from anyone else's. */
+  private readonly ownCommits: string[] = [];
   private steps = 0;
 
   constructor(
@@ -363,7 +365,13 @@ export class AgentRunner {
     const files = [...this.touched].map((file) => path.join(this.root!, file));
     const summary = narration.trim().split('\n')[0]?.slice(0, 72) || task.slice(0, 72);
 
-    await branch.commit(`${summary}\n\nTask: ${task}`, files);
+    const hash = await branch.commit(`${summary}\n\nTask: ${task}`, files);
+    if (hash) this.ownCommits.push(hash);
+  }
+
+  /** What this run committed and touched, for the review wizard. */
+  get result(): { commits: string[]; files: string[] } {
+    return { commits: [...this.ownCommits], files: [...this.touched] };
   }
 
   /**

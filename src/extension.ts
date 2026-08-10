@@ -18,6 +18,7 @@ import { buildStamp } from './buildStamp';
 import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
+import { reviewRun } from './agent/reviewWizard';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -145,6 +146,12 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       );
     }),
+
+    // Available any time, not only after a run — the question "what is this branch and
+    // what do I do with it" outlives the run that created it.
+    vscode.commands.registerCommand('clarvis.reviewRun', () =>
+      reviewRun([], [], (message) => logger.write(message))
+    ),
 
     // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
     // the escape hatch exists before the thing it rescues you from.

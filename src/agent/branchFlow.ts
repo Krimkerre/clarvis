@@ -148,36 +148,78 @@ export function flowBranches(flow: BranchFlow): string[] {
  * edit that makes people stop trusting a tool with their documents.
  */
 export function writeBranchFlow(markdown: string, flow: BranchFlow): string {
-  const section = renderSection(flow);
   const lines = markdown.split('\n');
   const start = lines.findIndex((line) => HEADING.test(line));
 
   if (start === -1) {
     const separator = markdown.endsWith('\n') ? '\n' : '\n\n';
-    return `${markdown}${separator}${section}`;
+    return `${markdown}${separator}${renderSection(flow)}`;
   }
 
   // The section runs to the next heading, or to the end of the document.
   let end = start + 1;
   while (end < lines.length && !/^#{1,6}\s/.test(lines[end])) end++;
 
-  return [...lines.slice(0, start), ...section.split('\n'), ...lines.slice(end)].join('\n');
+  const body = lines.slice(start + 1, end);
+  const entries = renderEntries(flow);
+  const firstEntry = body.findIndex((line) => ENTRY.test(line));
+
+  // **Only the list is ours.** Everything else in the section is something the user
+  // wrote — a note about why the flow is what it is, a warning about the release
+  // branch — and replacing the whole section deleted it. A tool that quietly eats
+  // prose is one people stop letting near their documents.
+  const kept = body.filter((line) => !ENTRY.test(line));
+
+  const rebuilt =
+    firstEntry === -1
+      ? [...trimTrailingBlanks(body), '', ...entries, '']
+      : [
+          ...trimTrailingBlanks(body.slice(0, firstEntry).filter((line) => !ENTRY.test(line))),
+          ...entries,
+          ...trimLeadingBlanks(kept.slice(countProseBefore(body, firstEntry))),
+        ];
+
+  return [...lines.slice(0, start + 1), ...rebuilt, ...lines.slice(end)].join('\n');
 }
 
+/** How many non-entry lines precede the first entry, so the rest can be re-attached. */
+function countProseBefore(body: string[], firstEntry: number): number {
+  return body.slice(0, firstEntry).filter((line) => !ENTRY.test(line)).length;
+}
+
+function trimTrailingBlanks(lines: string[]): string[] {
+  const copy = [...lines];
+  while (copy.length > 0 && copy[copy.length - 1].trim() === '') copy.pop();
+  return copy.length > 0 ? [...copy, ''] : [];
+}
+
+function trimLeadingBlanks(lines: string[]): string[] {
+  const copy = [...lines];
+  while (copy.length > 0 && copy[0].trim() === '') copy.shift();
+  return copy.length > 0 ? ['', ...copy] : [''];
+}
+
+/** Just the list, which is the part Clarvis owns. */
+function renderEntries(flow: BranchFlow): string[] {
+  const entries: string[] = [];
+
+  if (flow.trunk) entries.push(`- trunk: ${flow.trunk}`);
+  if (flow.integration) entries.push(`- integration: ${flow.integration}`);
+  for (const extra of flow.extra ?? []) entries.push(`- integration: ${extra}`);
+  for (const work of flow.work ?? ['clarvis/<task>']) entries.push(`- work: ${work}`);
+
+  return entries;
+}
+
+/** A whole section, for a document that has none. The prose here is a starting point. */
 function renderSection(flow: BranchFlow): string {
-  const lines = [
+  return [
     '## Branch flow',
     '',
     'How work moves through this project. Clarvis follows this when offering to merge',
     'an agent run, so changing it here changes what he offers.',
     '',
-  ];
-
-  if (flow.trunk) lines.push(`- trunk: ${flow.trunk}`);
-  if (flow.integration) lines.push(`- integration: ${flow.integration}`);
-  for (const extra of flow.extra ?? []) lines.push(`- integration: ${extra}`);
-  for (const work of flow.work ?? ['clarvis/<task>']) lines.push(`- work: ${work}`);
-  lines.push('');
-
-  return lines.join('\n');
+    ...renderEntries(flow),
+    '',
+  ].join('\n');
 }

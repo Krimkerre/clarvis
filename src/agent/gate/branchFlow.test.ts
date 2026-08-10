@@ -159,3 +159,64 @@ test('no patterns means nothing matches, rather than everything', () => {
   assert.equal(matchesWork('anything', []), false);
   assert.equal(matchesWork('anything', undefined), false);
 });
+
+test('prose inside the section survives a rewrite', () => {
+  // The failure this fixes, seen live: the section's own explanation was replaced by
+  // the generic boilerplate. Only the list is Clarvis's; the words around it are the
+  // user's, and a tool that quietly eats prose is one people stop trusting.
+  const plan = [
+    '## Branch flow',
+    '',
+    'We branch this way because the release train is weekly.',
+    '',
+    '- trunk: master',
+    '',
+    'Note: never merge straight to master on a Friday.',
+    '',
+    '## Milestones',
+  ].join('\n');
+
+  const next = writeBranchFlow(plan, { trunk: 'master', integration: 'staging' });
+
+  assert.match(next, /release train is weekly/);
+  assert.match(next, /never merge straight to master on a Friday/);
+  assert.match(next, /- integration: staging/);
+  assert.match(next, /## Milestones/);
+});
+
+test('the old entries are replaced, not appended to', () => {
+  const plan = '## Branch flow\n\n- trunk: old\n- integration: gone\n';
+  const next = writeBranchFlow(plan, { trunk: 'main' });
+
+  assert.ok(!next.includes('trunk: old'), next);
+  assert.ok(!next.includes('integration: gone'), next);
+  assert.match(next, /- trunk: main/);
+});
+
+test('the list stays where it was, between the prose around it', () => {
+  const plan = '## Branch flow\n\nBefore.\n\n- trunk: main\n\nAfter.\n';
+  const next = writeBranchFlow(plan, { trunk: 'main', integration: 'testing' });
+
+  const beforeIndex = next.indexOf('Before.');
+  const listIndex = next.indexOf('- trunk: main');
+  const afterIndex = next.indexOf('After.');
+
+  assert.ok(beforeIndex < listIndex && listIndex < afterIndex, next);
+});
+
+test('a section with prose but no list gains one without losing the prose', () => {
+  const plan = '## Branch flow\n\nWe have not written this down yet.\n';
+  const next = writeBranchFlow(plan, { trunk: 'main' });
+
+  assert.match(next, /We have not written this down yet/);
+  assert.match(next, /- trunk: main/);
+});
+
+test('rewriting twice is still stable, with prose present', () => {
+  // An edit that shuffles blank lines each run would churn the document forever.
+  const plan = '## Branch flow\n\nWhy we do it.\n\n- trunk: main\n\nCaveat.\n\n## Next\n';
+  const once = writeBranchFlow(plan, { trunk: 'main', integration: 'testing' });
+  const twice = writeBranchFlow(once, parseBranchFlow(once));
+
+  assert.equal(once, twice);
+});

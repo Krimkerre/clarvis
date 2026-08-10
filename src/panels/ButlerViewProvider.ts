@@ -116,6 +116,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         this.modelsRequested.fire();
         return;
       }
+      if (msg?.type === 'choose-mode') {
+        this.modeRequested.fire();
+        return;
+      }
     });
 
     // A freshly resolved view is blank: it has no idea what was said before it
@@ -130,6 +134,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly historyRequested = new vscode.EventEmitter<void>();
   private readonly stopRequested = new vscode.EventEmitter<void>();
   private readonly modelsRequested = new vscode.EventEmitter<void>();
+  private readonly modeRequested = new vscode.EventEmitter<void>();
   private readonly viewReady = new vscode.EventEmitter<void>();
 
   /** A question typed into the chat box. */
@@ -142,6 +147,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidRequestHistory = this.historyRequested.event;
   /** The bowtie next to the prompt was clicked. */
   readonly onDidRequestModels = this.modelsRequested.event;
+  /** The mode button was clicked. */
+  readonly onDidRequestMode = this.modeRequested.event;
   /** Stop was clicked while an answer was streaming. */
   readonly onDidRequestStop = this.stopRequested.event;
   /** The webview exists and can be populated. */
@@ -184,6 +191,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.historyRequested,
       this.stopRequested,
       this.modelsRequested,
+      this.modeRequested,
       this.viewReady
     );
   }
@@ -244,6 +252,12 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         font-size:12px; opacity:.75; }
       .clarvis-mute:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
       .clarvis-mute[data-muted="true"] { opacity:1; color: var(--vscode-errorForeground); }
+      /* The mode is a standing choice rather than a momentary one, so it reads as a
+         label with a value rather than another action button. */
+      .clarvis-mode { opacity:1; font-weight:600; }
+      /* A mode that cannot edit is worth seeing without reading: the colour is the
+         reassurance, the label is the detail. */
+      .clarvis-mode[data-safe="true"] { color: var(--vscode-charts-green, var(--vscode-terminal-ansiGreen)); }
       #clarvis-transcript { display:flex; flex-direction:column; gap:8px;
         flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
       .clarvis-turn { line-height:1.45; white-space:pre-wrap; word-break:break-word;
@@ -288,6 +302,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
            the input, where the hand already is, rather than at the top where reaching
            them means looking away from what you were typing. -->
       <div class="clarvis-chat-head">
+        <button id="clarvis-mode" class="clarvis-mute clarvis-mode"
+                title="What Clarvis is allowed to do">Auto</button>
         <button id="clarvis-history" class="clarvis-mute"
                 title="Earlier conversations from this workspace.">History</button>
         <button id="clarvis-clear" class="clarvis-mute"
@@ -417,6 +433,9 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       const modelsButton = document.getElementById('clarvis-models');
       modelsButton.addEventListener('click', () => vscode.postMessage({ type: 'models' }));
 
+      const modeButton = document.getElementById('clarvis-mode');
+      modeButton.addEventListener('click', () => vscode.postMessage({ type: 'choose-mode' }));
+
       const stopButton = document.getElementById('clarvis-stop');
       stopButton.addEventListener('click', () => vscode.postMessage({ type: 'stop' }));
 
@@ -468,6 +487,13 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         if (msg.type === 'chat-thread') {
           transcript.replaceChildren();
           for (const t of msg.turns || []) addTurn(t.speaker, t.text);
+          return;
+        }
+
+        if (msg.type === 'mode') {
+          modeButton.textContent = msg.short;
+          modeButton.dataset.safe = String(msg.safe);
+          modeButton.title = msg.detail;
           return;
         }
 

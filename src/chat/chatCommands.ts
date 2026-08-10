@@ -34,7 +34,9 @@ export type ChatAction =
   | 'showHistory'
   | 'toggleMute'
   | 'openSettings'
-  | 'chooseModel';
+  | 'chooseModel'
+  | 'switchBranch'
+  | 'explainGit';
 
 interface Intent {
   action: ChatAction;
@@ -109,6 +111,18 @@ const INTENTS: Intent[] = [
     phrases: [/\b(earlier|previous|past|old).{0,20}\b(chat|conversation)s?\b/],
   },
   {
+    action: 'explainGit',
+    slash: ['/git', '/status', '/where'],
+    phrases: [/\bwhere am i\b/, /\bwhat'?s going on with git\b/, /\bexplain git\b/, /\bgit status\b/],
+  },
+  {
+    action: 'switchBranch',
+    slash: ['/branch', '/checkout'],
+    // Deliberately below voice, engine and model: "switch to a different engine" is
+    // about Clarvis, not about git, and those intents claim it first.
+    phrases: [/\bcheck ?out\b/, /\bswitch to\b/, /\bswitch branch(es)?\b/, /\bgo to\b.*\bbranch\b/],
+  },
+  {
     action: 'openSettings',
     slash: ['/settings', '/options', '/config'],
     phrases: [/\b(settings|options|preferences|configure|configuration)\b/],
@@ -177,6 +191,31 @@ function wantsManual(text: string): boolean {
   );
 }
 
+/**
+ * The branch named in a switch request, if one was named.
+ *
+ * `switch to testing3` should just switch, without a picker to click through — but
+ * `switch branch` on its own is a request *for* the picker. Returning undefined is
+ * how the caller tells those apart.
+ *
+ * Deliberately narrow about what a branch name looks like: letters, digits and the
+ * punctuation git allows. A greedy match would swallow "switch to the branch I was on
+ * yesterday" and try to check out a sentence.
+ */
+export function branchFromRequest(text: string): string | undefined {
+  const match =
+    /\b(?:switch to|check ?out|go to)\s+(?:the\s+)?(?:branch\s+)?([A-Za-z0-9._\/-]+)\s*$/i.exec(
+      text.trim()
+    );
+
+  const name = match?.[1];
+  if (!name) return undefined;
+
+  // "switch to branch" and "checkout the branch" name nothing — the noun is the word
+  // "branch" itself, and checking out a branch called "branch" is not what was meant.
+  return /^(branch|branches|it|that|there)$/i.test(name) ? undefined : name;
+}
+
 /** Whether this reads as "do something" rather than "tell me something". */
 function isRequest(text: string): boolean {
   // A leading question word means they want an answer, not a dialog — even when the
@@ -185,7 +224,7 @@ function isRequest(text: string): boolean {
   if (/^(what|which|why|when|who|is|are|does|did|can you tell)\b/.test(text)) return false;
 
   const verbs =
-    /\b(change|set|pick|choose|switch|select|open|show|configure|update|edit|swap|add|enter|remove|delete|forget|clear|wipe|reset|test|try|preview|use a different)\b/;
+    /\b(change|set|pick|choose|switch|select|open|show|configure|update|edit|swap|add|enter|remove|delete|forget|clear|wipe|reset|test|try|preview|check ?out|go to|use a different)\b/;
 
   return verbs.test(text) || /\b(mute|unmute|be quiet|shut up|silence|stop talking)\b/.test(text);
 }

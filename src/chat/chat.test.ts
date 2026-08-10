@@ -193,3 +193,193 @@ test('"help me" is a request for assistance, not for documentation', () => {
 test('talking about the help command does not invoke it', () => {
   assert.equal(chatAction('what does /help do?'), null);
 });
+
+import { routeFor, isEscalation } from './routing';
+
+test('a job goes to the agent', () => {
+  for (const message of [
+    'fix the failing test in src/watch',
+    'add a comment to README.md',
+    'rename BusyTracker to JobTracker',
+    'refactor the voice service',
+    'make it stop double-notifying',
+    'get the tests passing',
+  ]) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('a question is answered even when it contains a work verb', () => {
+  // "How do I fix this?" wants an explanation; "fix this" wants a fix. Missing that
+  // distinction is the likeliest way this router starts editing files mid-conversation.
+  for (const message of [
+    'how do I fix the failing test?',
+    'what would you change about this file',
+    'why did the build fail?',
+    'should I rename this class',
+    'can you explain what BusyTracker does',
+    'is it worth refactoring the voice service',
+  ]) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+test('a question mark always wins', () => {
+  // The clearest signal a person can give, and they mean it.
+  assert.equal(routeFor('fix the failing test?').route, 'answer');
+});
+
+test('thinking out loud is not an instruction', () => {
+  for (const message of [
+    'I was thinking of renaming this module',
+    'we should probably add tests here',
+    'what if we split this file',
+  ]) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+test('ambiguity resolves toward answering', () => {
+  // The two mistakes are not equal: a question wrongly routed to the agent starts
+  // editing a codebase nobody asked it to touch.
+  for (const message of ['the tests', 'hmm', 'BusyTracker', 'that thing from yesterday']) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+test('every decision carries a reason worth showing', () => {
+  // The route is announced before work starts, so the user can stop a wrong one.
+  assert.ok(routeFor('fix the test').because.length > 10);
+  assert.ok(routeFor('why did it fail?').because.length > 10);
+});
+
+test('escalation needs something to escalate', () => {
+  // Rule 3: a pattern hit is an observation. Replying to it is what makes it a
+  // request — the same words with nothing preceding them are not.
+  assert.equal(isEscalation('go on then', true), true);
+  assert.equal(isEscalation('fix it', true), true);
+  assert.equal(isEscalation('go on then', false), false);
+  assert.equal(isEscalation('what did you mean', true), false);
+});
+
+test('the everyday verbs for asking for work all route to the agent', () => {
+  // "make a new branch called testing3" was answered rather than done: the verb list
+  // was written from the verbs I thought of, and `make` was not among them.
+  for (const message of [
+    'make a new branch called testing3',
+    'make me a helper function',
+    'build a parser for this format',
+    'generate the types from the schema',
+    'set up eslint',
+    'move BusyTracker into src/watch',
+    'revert the last change to README',
+  ]) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('the same verbs in a question still get answered', () => {
+  // Widening the verb list must not start turning questions into work.
+  for (const message of [
+    'how do I make a new branch?',
+    'what would you build here',
+    'should we set up eslint',
+    'can you generate types from a schema',
+  ]) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+import { localAnswer as localAnswerFor } from './localAnswer';
+
+test('a job mentioning a watched keyword is not swallowed by the local answer', () => {
+  // The bug: "make a new branch called testing3" contains "branch", so the local
+  // matcher answered with the current branch name and the request never reached the
+  // agent at all — no routing line in the log, nothing done.
+  const facts = { now: NOW, running: [], recentFiles: [], patterns: [], git: { branch: 'main', dirtyCount: 0 } };
+
+  // The local matcher still answers it in isolation...
+  assert.ok(localAnswerFor('make a new branch called testing3', facts));
+  // ...which is why routing has to be consulted first.
+  assert.equal(routeFor('make a new branch called testing3').route, 'agent');
+});
+
+test('questions containing work keywords still reach the local answer', () => {
+  // The reordering must not send genuine questions to the agent.
+  for (const message of ['what branch am I on?', 'which branch is this', 'have we seen this error before?']) {
+    assert.equal(routeFor(message).route, 'answer', message);
+  }
+});
+
+import { factsBlock } from './localAnswer';
+
+test('the facts block carries what Clarvis watched, for the model to phrase', () => {
+  // The division of labour: local state knows the truth about this project, the model
+  // knows how to say it. Handing the facts over gets both in one request, with no tool
+  // call — asking a model to run gitStatus to answer "what branch am I on?" spends two
+  // round trips learning something already in memory.
+  const block = factsBlock(
+    facts({
+      git: { branch: 'm8-chat-agent', dirtyCount: 3 },
+      lastFailure: { label: 'npm test', exitCode: 1, at: NOW - 5 * 60_000 },
+      recentFiles: ['src/chat/ChatService.ts'],
+      patterns: [{ sample: 'ECONNREFUSED', occurrences: [1, 2, 3], resolvedBy: 'docker compose up' }],
+    })
+  );
+
+  assert.match(block, /m8-chat-agent/);
+  assert.match(block, /3 uncommitted/);
+  assert.match(block, /npm test/);
+  assert.match(block, /ChatService\.ts/);
+  assert.match(block, /ECONNREFUSED/);
+  assert.match(block, /docker compose up/);
+});
+
+test('absent facts are omitted, not reported as absent', () => {
+  // A model handed "lastFailure: none" writes a sentence about there being no
+  // failures, which is noise nobody asked for.
+  const block = factsBlock(facts({ git: { branch: 'main', dirtyCount: 0 } }));
+
+  assert.ok(!/failing/i.test(block), block);
+  assert.ok(!/recently edited/i.test(block), block);
+  assert.match(block, /working tree clean/);
+});
+
+test('a project with nothing observed yields no block at all', () => {
+  // An empty heading followed by nothing would still cost tokens and say nothing.
+  assert.equal(factsBlock(facts()), '');
+});
+
+test('the block tells the model not to go beyond it', () => {
+  // Facts plus a free hand is how a model invents a branch name that sounds right.
+  assert.match(factsBlock(facts({ git: { branch: 'main', dirtyCount: 0 } })), /do not invent/i);
+});
+
+import { branchFromRequest } from './chatCommands';
+
+test('a named branch is switched to directly, without a picker', () => {
+  assert.equal(branchFromRequest('switch to testing3'), 'testing3');
+  assert.equal(branchFromRequest('checkout main'), 'main');
+  assert.equal(branchFromRequest('check out feature/login'), 'feature/login');
+});
+
+test('no name means the picker, rather than a guess', () => {
+  // "switch branch" is a request *for* the list; guessing which one would be worse
+  // than asking.
+  assert.equal(branchFromRequest('switch branch'), undefined);
+  assert.equal(branchFromRequest('check out the branch'), undefined);
+  assert.equal(branchFromRequest('switch to it'), undefined);
+});
+
+test('a sentence is not mistaken for a branch name', () => {
+  // A greedy match would try to check out "yesterday".
+  assert.equal(branchFromRequest('switch to the branch I was on yesterday'), undefined);
+});
+
+test('switching branches is not confused with switching voice or engine', () => {
+  // Those intents are listed first precisely so "switch to a different engine" never
+  // reaches git.
+  assert.equal(chatAction('switch to a different engine'), 'chooseEngine');
+  assert.equal(chatAction('change the voice'), 'chooseVoice');
+  assert.equal(chatAction('switch to testing3'), 'switchBranch');
+});

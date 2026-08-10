@@ -7,6 +7,8 @@
  * know whether to offer the agent at all, not because this interface runs tools.
  */
 
+import type { ToolSchema } from '../agent/toolRegistry';
+
 /**
  * A model as offered to the user.
  *
@@ -23,10 +25,47 @@ export interface ModelChoice {
 export interface ModelMessage {
   role: 'user' | 'assistant';
   content: string;
+  /** Tool calls this assistant turn asked for, when it did. */
+  toolCalls?: ToolCall[];
+  /** Results being handed back for a previous turn's calls. */
+  toolResults?: ToolResult[];
 }
+
+/** A model asking for a tool, before anything has checked whether that tool exists. */
+export interface ToolCall {
+  /** The provider's own id, needed to match a result back to its call. */
+  id: string;
+  name: string;
+  args: unknown;
+}
+
+export interface ToolResult {
+  id: string;
+  content: string;
+  isError?: boolean;
+}
+
+/**
+ * A fragment of a streamed reply.
+ *
+ * Text and tool calls arrive interleaved on the same stream — a model narrates what it
+ * is about to do and then asks for it — so they share one channel rather than two,
+ * which is also what keeps the ordering intact for the panel.
+ */
+export type StreamEvent =
+  | { type: 'text'; text: string }
+  | { type: 'toolCall'; call: ToolCall }
+  | { type: 'stop'; reason: 'end' | 'tools' };
 
 export interface CompletionRequest {
   system: string;
+  /**
+   * Which tools to offer. Omitted means all of them — the agent path.
+   *
+   * Typed as the registry's own schema so a caller cannot invent one here: the
+   * allow-list is the registry, and this is a *selection* from it.
+   */
+  tools?: ToolSchema[];
   messages: ModelMessage[];
   model: string;
   /** Abort signal from the caller — `Clarvis: Stop`, or the panel closing. */
@@ -48,6 +87,15 @@ export interface ModelProvider {
 
   /** Yields text fragments as they arrive. Throws `ModelError` on failure. */
   stream(request: CompletionRequest): AsyncIterable<string>;
+
+  /**
+   * The same stream, with tools offered and tool calls surfaced.
+   *
+   * Separate from `stream()` rather than an option on it: the answer path must never
+   * accidentally offer tools, and a caller that cannot handle a `toolCall` event
+   * should be unable to receive one.
+   */
+  streamWithTools?(request: CompletionRequest): AsyncIterable<StreamEvent>;
 
   /**
    * Whether this provider *and this model* can call tools.

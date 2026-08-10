@@ -13,6 +13,13 @@ import { ChatService } from './chat/ChatService';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
+import { probeTools } from './agent/tools/toolProbe';
+import { buildStamp } from './buildStamp';
+import { AgentTerminal } from './agent/tools/commandTools';
+import { Checkpoint } from './agent/Checkpoint';
+import { AgentRunner } from './agent/AgentRunner';
+import { reviewRun } from './agent/reviewWizard';
+import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -35,7 +42,9 @@ let log: ClarvisLog | undefined;
 export function activate(context: vscode.ExtensionContext): void {
   // Local binding: `log` is module-scoped (deactivate() needs it) and therefore
   // mutable, which stops TypeScript narrowing it inside the closures below.
-  const logger = new ClarvisLog();
+  const logger = new ClarvisLog(context.logUri);
+  // Which build is *running*, as opposed to which is installed. See esbuild.js.
+  logger.write(`Clarvis build ${buildStamp()}`);
   log = logger;
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');
@@ -74,19 +83,150 @@ export function activate(context: vscode.ExtensionContext): void {
   let chat: ChatService | undefined;
   const toTranscript = (message: string) => void chat?.note(message);
 
-  const tracker = startTaskWatching(context, avatar, logger, announcer);
-  const memory = startPatternMemory(context, tracker, logger, announcer);
-  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, toTranscript);
-  startPersonality(context, tracker, logger, announcer);
+  // For surfaces with no voice of their own — the review wizard, the branch-flow
+  // questions. Everything else that reaches the transcript is already spoken by
+  // whatever raised it, and routing those through here would say them twice.
+  const toTranscriptSpoken = (message: string) => void chat?.remark(message);
 
-  // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
-  // because it reads the state those three own.
   // The model layer (M8b). Local answers still need none of this — it is reached only
   // when a question falls outside what Clarvis watched happen.
   const models = new ModelService(context, (message) => logger.write(message));
   registerModelCommands(context, models, (message) => logger.write(message));
 
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, logger);
+  const tracker = startTaskWatching(context, avatar, logger, announcer);
+  const memory = startPatternMemory(context, tracker, logger, announcer);
+  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
+  startPersonality(context, tracker, logger, announcer);
+
+  // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
+  // because it reads the state those three own.
+  // Keeps plan.md's branch flow in step with the repository: a declared flow that has
+  // gone stale is worse than none, since the wizard keeps offering branches it knows
+  // while ignoring the one work now passes through.
+  const branchFlow = new BranchFlowWatcher(
+    context,
+    (message) => logger.write(message),
+    toTranscriptSpoken,
+    toTranscript
+  );
+  context.subscriptions.push(branchFlow.start());
+
+  // Called by the agent path the moment a run finishes: a branch the user just asked
+  // for should be sorted out while they are still looking at it.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow())
+  );
+
+
+  // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
+  // shared so a probe run reads as one transcript rather than one window per command.
+  const agentTerminal = new AgentTerminal();
+  context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.openLog', async () => {
+      if (!logger.filePath) {
+        void vscode.window.showWarningMessage('Clarvis: no log file — writing to it failed at startup.');
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
+      await vscode.window.showTextDocument(document);
+    }),
+    // The agent (M8e). A command for now; M8f routes chat requests into it.
+    vscode.commands.registerCommand('clarvis.runTask', async () => {
+      const task = await vscode.window.showInputBox({
+        prompt: 'What should I do?',
+        placeHolder: 'e.g. fix the failing test in src/watch',
+        ignoreFocusOut: true,
+      });
+      if (!task?.trim()) return;
+
+      const controller = new AbortController();
+      const runner = new AgentRunner(
+        context,
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        models,
+        agentTerminal,
+        (message) => logger.write(message)
+      );
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
+        async (progress, token) => {
+          // Cancel must reach the run itself, not merely close the notification.
+          token.onCancellationRequested(() => controller.abort());
+
+          for await (const event of runner.run(task.trim(), controller.signal)) {
+            // No logging here: AgentRunner records every event itself, so both callers
+            // produce the same trail rather than each rolling their own.
+            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
+
+            if (event.kind === 'done' || event.kind === 'error') {
+              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
+              // The closing event no longer repeats the narration, so it can be empty.
+              const text = event.text.trim() || 'Finished.';
+              void vscode.window.showInformationMessage(`Clarvis: ${text}${files}`);
+            }
+          }
+        }
+      );
+    }),
+
+    // Available any time, not only after a run — the question "what is this branch and
+    // what do I do with it" outlives the run that created it.
+    vscode.commands.registerCommand('clarvis.reviewRun', () =>
+      reviewRun(
+        [],
+        [],
+        (message) => logger.write(message),
+        context.workspaceState.get('clarvis.agent.baseBranch'),
+        toTranscriptSpoken
+      )
+    ),
+
+    // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
+    // the escape hatch exists before the thing it rescues you from.
+    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const record = Checkpoint.stored(context);
+
+      if (!record || record.entries.length === 0) {
+        void vscode.window.showInformationMessage('Clarvis: there is nothing to undo.');
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(
+        `Undo the last run — "${record.task}"?`,
+        {
+          modal: true,
+          detail:
+            `${record.entries.length} file(s) go back to how they were before it started. ` +
+            'Anything you changed since then in those files goes too.',
+        },
+        'Undo it'
+      );
+      if (confirmed !== 'Undo it') return;
+
+      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
+      const summary =
+        `Clarvis: restored ${result.restored}, removed ${result.deleted}` +
+        (result.failed.length > 0 ? `, failed on ${result.failed.join(', ')}` : '.');
+
+      // A partial restore is reported as a warning, not an information message: half
+      // undone is a state someone needs to look at rather than be reassured about.
+      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
+      else void vscode.window.showInformationMessage(summary);
+    }),
+
+    vscode.commands.registerCommand('clarvis.debug.tools', () =>
+      probeTools(
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        (message) => logger.write(message),
+        agentTerminal
+      )
+    )
+  );
+
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, logger);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -204,6 +344,7 @@ function startBriefing(
   log: ClarvisLog,
   memory: PatternMemory,
   voice: VoiceService,
+  models: ModelService,
   toTranscript: (message: string) => void
 ): BriefingService {
   const briefing = new BriefingService(context, (message) => log.write(message));
@@ -211,6 +352,22 @@ function startBriefing(
   // M5 supplies the briefing's fourth line. M4 needed no changes for this — it was
   // built to omit the line until something could provide it.
   briefing.setPatternHint(() => memory.briefingLine());
+
+  // The model phrases the briefing when one is configured; the written lines are the
+  // fallback. Same division as chat: local state knows the facts, the model says them
+  // in a way that doesn't sound like a form letter.
+  briefing.setPhraser(async (prompt) => {
+    if (!(await models.isReady('chat'))) return undefined;
+
+    let text = '';
+    for await (const fragment of models.stream(
+      { system: 'You are Clarvis: dry, brief, never cheerful about a failure.', messages: [{ role: 'user', content: prompt }] },
+      'chat'
+    )) {
+      text += fragment;
+    }
+    return text;
+  });
 
   briefing.start(tracker, (lines) => {
     // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;
@@ -244,6 +401,7 @@ function startChat(
   briefing: BriefingService,
   voice: VoiceService,
   models: ModelService,
+  terminal: AgentTerminal,
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -258,6 +416,7 @@ function startChat(
     () => memory.known,
     voice,
     models,
+    terminal,
     (message) => log.write(message)
   );
 

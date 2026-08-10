@@ -1,5 +1,7 @@
 /** The dev moments worth remarking on (§5). */
 export type QuipTrigger =
+  /** A branch appeared that the project's declared flow doesn't account for. */
+  | 'newBranch'
   | 'buildSlow'
   | 'repeatFailure'
   | 'suiteWentGreen'
@@ -57,4 +59,39 @@ export const QUIPS: Quip[] = [
   { id: 'diff-1', trigger: 'bigDiff', tone: 'polite', text: "That's a substantial diff. Consider a commit before it becomes a lifestyle." },
   { id: 'diff-2', trigger: 'bigDiff', tone: 'earned', text: "Ambitious. I'll alert the reviewer's next of kin." },
   { id: 'diff-3', trigger: 'bigDiff', tone: 'earned', text: 'Two hundred files. This is no longer a change, it is a weather event.' },
+
+  // A branch nobody told him about. The joke is always about the branch or about
+  // himself — never about the user being disorganised, which is §2's line: the
+  // situation is fair game, the person is not.
+  { id: 'branch-1', trigger: 'newBranch', tone: 'polite', text: 'A new branch has appeared, unannounced.' },
+  {
+    id: 'branch-2',
+    trigger: 'newBranch',
+    tone: 'polite',
+    text: "There's a branch here I've not been introduced to.",
+  },
+  {
+    id: 'branch-3',
+    trigger: 'newBranch',
+    tone: 'polite',
+    text: 'A branch materialised while I was looking the other way.',
+  },
+  {
+    id: 'branch-4',
+    trigger: 'newBranch',
+    tone: 'earned',
+    text: "Another branch. The plan says three. I'm keeping score, and the plan is losing.",
+  },
+  {
+    id: 'branch-5',
+    trigger: 'newBranch',
+    tone: 'earned',
+    text: 'A branch has wandered in without paperwork. I do so hate an undocumented arrival.',
+  },
+  {
+    id: 'branch-6',
+    trigger: 'newBranch',
+    tone: 'earned',
+    text: "Branches are appearing faster than I write them down. Partly my job, admittedly.",
+  },
 ];

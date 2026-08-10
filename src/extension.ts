@@ -19,6 +19,7 @@ import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
+import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -89,6 +90,11 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
+  // Keeps plan.md's branch flow in step with the repository: a declared flow that has
+  // gone stale is worse than none, since the wizard keeps offering branches it knows
+  // while ignoring the one work now passes through.
+  context.subscriptions.push(new BranchFlowWatcher(context, (message) => logger.write(message)).start());
+
   // The model layer (M8b). Local answers still need none of this — it is reached only
   // when a question falls outside what Clarvis watched happen.
   const models = new ModelService(context, (message) => logger.write(message));

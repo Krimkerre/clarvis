@@ -1584,6 +1584,34 @@ Three rules, each of which prevents a specific failure:
   forgiving — list markers vary, backticks and parenthetical asides are stripped, and
   anything unparseable is ignored rather than fought over.
 
+**A new branch is noticed and asked about.** A declared flow goes stale the moment
+someone adds `staging`, and a stale flow is worse than none — the wizard keeps
+confidently offering the branches it knows while ignoring the one work now passes
+through. So Clarvis asks once, and writes the answer into `plan.md`:
+
+> *There's a branch called `staging` that isn't in the flow in plan.md. Where does it
+> fit?* — **Work passes through it** / **It's the trunk** / **Not part of the flow**
+
+Four rules on it, each preventing a specific nuisance:
+
+- **Never guessed from the name.** A branch could be a release line, a colleague's
+  work, or a stray checkout. Inferring would be wrong often enough to be worse than
+  silence.
+- **Asked once per branch, and dismissing counts as an answer.** Otherwise dismissal
+  is meaningless and the question returns forever.
+- **A minute of settling first.** Branch churn is normal — a checkout, a rebase, a
+  mistake corrected ten seconds later — and asking about each is the pestering §6
+  exists to prevent.
+- **One branch at a time.** Three questions at once is a form, and people close forms.
+- **Only when a flow already exists.** A project that never declared one is not
+  offered paperwork it did not ask for.
+
+Naming a new trunk keeps the old one as a step rather than discarding it: a project
+moving from `master` to `main` still routes work through the old branch for a while.
+The section is rewritten **in place**, through a `WorkspaceEdit` so it lands in the
+editor's undo stack — this is the user's document, and a tool that edits it should be
+undoable like anything else.
+
 **The interview asks for it** when a project's flow isn't obvious from the repository:
 one question, in the same final round as the linter and comment-style questions.
 "Straight to main, or through a testing branch first?" — with the trade stated, since a

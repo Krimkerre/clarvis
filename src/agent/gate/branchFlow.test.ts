@@ -76,3 +76,54 @@ test('a project with no integration branch generates and parses cleanly', () => 
   assert.equal(flow.trunk, 'main');
   assert.equal(flow.integration, undefined);
 });
+
+import { writeBranchFlow, flowBranches } from '../branchFlow';
+
+test('rewriting the section leaves the rest of the document alone', () => {
+  // The failure this prevents: regenerating the whole file from a parsed flow, which
+  // silently deletes every sentence someone wrote elsewhere.
+  const plan = '# Project\n\nIntro prose.\n\n## Branch flow\n\n- trunk: main\n\n## Milestones\n\n- M1\n';
+  const next = writeBranchFlow(plan, { trunk: 'main', integration: 'testing' });
+
+  assert.match(next, /Intro prose/);
+  assert.match(next, /## Milestones/);
+  assert.match(next, /- M1/);
+  assert.match(next, /- integration: testing/);
+});
+
+test('a plan with no section gets one appended', () => {
+  const next = writeBranchFlow('# Project\n\nSome prose.\n', { trunk: 'main' });
+
+  assert.match(next, /## Branch flow/);
+  assert.equal(parseBranchFlow(next).trunk, 'main');
+});
+
+test('an added branch round-trips through the document', () => {
+  // Written, then read back by the wizard. If these disagree the feature is broken in
+  // a way nobody notices until a merge goes to the wrong branch.
+  const written = writeBranchFlow('# P\n', { trunk: 'main', integration: 'testing', extra: ['qa'] });
+  const flow = parseBranchFlow(written);
+
+  assert.equal(flow.trunk, 'main');
+  assert.equal(flow.integration, 'testing');
+  assert.deepEqual(flow.extra, ['qa']);
+  assert.deepEqual(flowBranches(flow), ['main', 'testing', 'qa']);
+});
+
+test('a project can route work through more than one branch', () => {
+  // A flow is not always three branches. Forcing a second integration step into
+  // "trunk" would misrepresent the workflow the user just described.
+  const flow = parseBranchFlow('## Branch flow\n- trunk: main\n- integration: staging\n- integration: qa\n');
+
+  assert.equal(flow.integration, 'staging');
+  assert.deepEqual(flow.extra, ['qa']);
+});
+
+test('rewriting twice is stable', () => {
+  // An edit that grows the section every time it runs would eventually be noticed as
+  // a bug, but only after it had made a mess of the document.
+  const once = writeBranchFlow('# P\n', { trunk: 'main', integration: 'testing' });
+  const twice = writeBranchFlow(once, parseBranchFlow(once));
+
+  assert.equal(once, twice);
+});

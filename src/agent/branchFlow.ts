@@ -20,6 +20,14 @@ export interface BranchFlow {
   integration?: string;
   /** Pattern for agent branches, e.g. `clarvis/<task>`. Informational. */
   work?: string;
+  /**
+   * Further branches the project routes work through, beyond the first.
+   *
+   * A flow is not always three branches: a project can have `staging` *and* `qa`, and
+   * forcing the second into "trunk" or discarding it would misrepresent the workflow
+   * the user just described.
+   */
+  extra?: string[];
 }
 
 /** The heading this looks under. Matched loosely — people write headings by hand. */
@@ -54,8 +62,12 @@ export function parseBranchFlow(markdown: string): BranchFlow {
     if (!value) continue;
 
     if (key === 'trunk' || key === 'main branch') flow.trunk ??= value;
-    else if (key === 'integration' || key === 'staging') flow.integration ??= value;
-    else flow.work ??= value;
+    else if (key === 'integration' || key === 'staging') {
+      // The first integration branch is the primary one; later ones are additional
+      // steps rather than a correction of the first.
+      if (flow.integration === undefined) flow.integration = value;
+      else (flow.extra ??= []).push(value);
+    } else flow.work ??= value;
   }
 
   return flow;
@@ -98,6 +110,58 @@ export function branchFlowSection(trunk: string, integration?: string): string {
 
   if (integration) lines.push(`- integration: ${integration}`);
   lines.push('- work: clarvis/<task>', '');
+
+  return lines.join('\n');
+}
+
+/** Every branch the flow names, for working out what is new. */
+export function flowBranches(flow: BranchFlow): string[] {
+  return [flow.trunk, flow.integration, ...(flow.extra ?? [])].filter(
+    (name): name is string => Boolean(name)
+  );
+}
+
+/**
+ * Writes a flow back into a plan document.
+ *
+ * Replaces the existing section in place when there is one, so the surrounding
+ * document — and whatever the user wrote around it — survives. Appends only when the
+ * section is genuinely absent.
+ *
+ * Rewriting the whole file from the parsed flow would be simpler and would silently
+ * delete every sentence someone added under that heading, which is exactly the kind of
+ * edit that makes people stop trusting a tool with their documents.
+ */
+export function writeBranchFlow(markdown: string, flow: BranchFlow): string {
+  const section = renderSection(flow);
+  const lines = markdown.split('\n');
+  const start = lines.findIndex((line) => HEADING.test(line));
+
+  if (start === -1) {
+    const separator = markdown.endsWith('\n') ? '\n' : '\n\n';
+    return `${markdown}${separator}${section}`;
+  }
+
+  // The section runs to the next heading, or to the end of the document.
+  let end = start + 1;
+  while (end < lines.length && !/^#{1,6}\s/.test(lines[end])) end++;
+
+  return [...lines.slice(0, start), ...section.split('\n'), ...lines.slice(end)].join('\n');
+}
+
+function renderSection(flow: BranchFlow): string {
+  const lines = [
+    '## Branch flow',
+    '',
+    'How work moves through this project. Clarvis follows this when offering to merge',
+    'an agent run, so changing it here changes what he offers.',
+    '',
+  ];
+
+  if (flow.trunk) lines.push(`- trunk: ${flow.trunk}`);
+  if (flow.integration) lines.push(`- integration: ${flow.integration}`);
+  for (const extra of flow.extra ?? []) lines.push(`- integration: ${extra}`);
+  lines.push(`- work: ${flow.work ?? 'clarvis/<task>'}`, '');
 
   return lines.join('\n');
 }

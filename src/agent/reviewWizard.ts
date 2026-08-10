@@ -29,7 +29,9 @@ export async function reviewRun(
   /** The branch the run started from, remembered by AgentBranch. */
   origin?: string,
   /** Where to say what happened. The transcript outlives a notification. */
-  say: (text: string) => void = () => {}
+  say: (text: string) => void = () => {},
+  /** Teaches the concept behind whatever the user chose, in tutor mode. */
+  tutor?: { teach(concept: 'merge' | 'discard' | 'conflict' | 'uncommitted'): Promise<void> }
 ): Promise<void> {
   const summary = await gather(runCommits, files, origin);
   if (!summary) {
@@ -66,14 +68,22 @@ export async function reviewRun(
     if (proceed !== 'Throw it away') return;
   }
 
-  await act(picked.action, summary, log, say);
+  // Said before acting when it changes what the choice means, after when it explains
+  // what just happened.
+  if (summary.uncommitted > 0) await tutor?.teach('uncommitted');
+
+  await act(picked.action, summary, log, say, tutor);
+
+  if (picked.action.startsWith('merge')) await tutor?.teach('merge');
+  if (picked.action === 'discard') await tutor?.teach('discard');
 }
 
 async function act(
   action: ReviewAction,
   summary: RunSummary,
   log: (message: string) => void,
-  say: (text: string) => void
+  say: (text: string) => void,
+  tutor?: { teach(concept: 'merge' | 'discard' | 'conflict' | 'uncommitted'): Promise<void> }
 ): Promise<void> {
   const repository = gitRepository();
   if (!repository) return;
@@ -128,6 +138,7 @@ async function act(
       // target branch with the merge in progress, which is exactly where they can fix it.
       log(`review: merge into ${target} failed (${String(error)})`);
       say(narrateReview(action, summary, { target, ok: false }));
+      void tutor?.teach('conflict');
       // A conflict still warrants a notification: it needs doing something about now,
       // and the transcript is not where someone is looking mid-merge.
       void vscode.window.showWarningMessage(

@@ -1921,6 +1921,36 @@ cannot do — all of it leans on Clarvis already watching the user's real work (
   switch *out* of tutor mode — not to try harder at teaching someone who isn't in the
   mood.
 
+#### Git, taught as it happens
+
+Version control is the largest thing a beginner meets here that has nothing to do with
+their project, and Clarvis uses it constantly — a branch per task, a commit per run.
+Leaving that unexplained means the tool is doing something invisible and consequential
+on their behalf, which is the opposite of learning by doing.
+
+So each git concept is taught **the first time it actually occurs**, never from a
+syllabus: `branch` when a run isolates itself, `commit` when one lands, `switch` after
+the files change under them, `merge` and `discard` when they choose one, `conflict`
+when a merge stops, `uncommitted` when it is about to matter, `flow` when one is written
+into `plan.md`.
+
+Four rules, each of which the naive version gets wrong:
+
+- **Three sentences at most**: what it is, why it happened here, what it means for
+  them. Longer is a tutorial nobody reads; shorter is a definition rather than an
+  explanation. Enforced by a test.
+- **Once per user, not once per project.** Someone who learned what a branch is on
+  their first project has learned it — teaching it again in their second is the tutor
+  forgetting them, which is worse than never having taught it.
+- **After the event, not before it**, except where knowing first changes the choice.
+  "You just switched branch, here is what that did" lands; the same words as a warning
+  beforehand are theory about something that has not happened.
+- **The lesson answers "is my work safe"**, because that is the actual question. Each
+  one names the consequence — *"anything merged elsewhere beforehand is perfectly
+  safe"*, *"nothing is broken and nothing is lost"* — rather than defining a term. The
+  same jargon ban as §4.6 applies, and is tested: teaching the concept is not a licence
+  to teach the vocabulary that hides it.
+
 #### The things this mode gets wrong if unexamined
 
 - **Sarcasm at a beginner is just contempt.** §2's rules already aim the humour at
@@ -3355,6 +3385,11 @@ cleanest milestone to cut.
 - [ ] Teaching moments fire from actual events (third repeat of an error, first stack
       trace, first successful run) and share the §6 budget — a burst of failures does
       not produce a burst of lectures.
+- [ ] Each git concept is taught once, at the moment it first happens, and never
+      repeated — including in a second project, since the record is per user.
+- [ ] A run in tutor mode explains the branch it made *before* the user has to decide
+      what to do with it.
+- [ ] No lesson uses vocabulary the plain-language layer avoids.
 - [ ] A wrong prediction is received as useful, not corrected coldly. Same human read
       as the humour check, and the same reason: nothing automated catches tone.
 - [ ] Explanations distinguish load-bearing code from ceremony, and the ceremony call

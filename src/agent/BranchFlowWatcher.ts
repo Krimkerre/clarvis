@@ -79,7 +79,9 @@ export class BranchFlowWatcher {
      * Reading a receipt aloud after every button press is how a voice becomes
      * something people switch off.
      */
-    private readonly note: (text: string) => void = () => {}
+    private readonly note: (text: string) => void = () => {},
+    /** Teaches what a branch flow is, the first time one is written. */
+    private readonly tutor?: { teach(concept: 'flow' | 'commit'): Promise<void> }
   ) {}
 
   /**
@@ -313,6 +315,9 @@ export class BranchFlowWatcher {
 
     await this.writePlan(plan, updated);
     const committed = await this.commitPlan(branch);
+
+    await this.tutor?.teach('flow');
+    if (committed) await this.tutor?.teach('commit');
 
     // One line, at the end, saying what is now true — rather than a running commentary
     // of each step that got there.

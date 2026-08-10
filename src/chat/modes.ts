@@ -6,7 +6,7 @@
  * agent path is a guarantee, not a preference, because the code never calls it rather
  * than the prompt asking it not to.
  */
-export type ChatMode = 'auto' | 'chat' | 'plan' | 'agent';
+export type ChatMode = 'auto' | 'chat' | 'plan' | 'agent' | 'tutor';
 
 export interface ModeSpec {
   id: ChatMode;
@@ -39,6 +39,13 @@ export const MODES: ModeSpec[] = [
     short: 'Plan',
     detail: 'Work out what to do and write it down. Still no edits — the plan is the output.',
     canEdit: false,
+  },
+  {
+    id: 'tutor',
+    label: 'Tutor',
+    short: 'Tutor',
+    detail: 'Like Auto, but I explain what I am doing — including git, the first time each thing comes up.',
+    canEdit: true,
   },
   {
     id: 'agent',

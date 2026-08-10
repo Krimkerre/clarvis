@@ -12,6 +12,7 @@ import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
 import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
+import { GitTutor } from '../tutor/GitTutor';
 import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
@@ -75,6 +76,7 @@ export class ChatService {
     private readonly voice: VoiceService,
     private readonly models: ModelService,
     private readonly terminal: AgentTerminal,
+    private readonly gitTutor: GitTutor,
     private readonly log: (message: string) => void
   ) {
     // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
@@ -332,9 +334,15 @@ export class ChatService {
 
     this.panel.post({ type: 'chat-stream-start' });
     let spoken = '';
+    let taughtBranch = false;
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
+        // The first time a run isolates itself is the moment "branch" needs explaining.
+        if (!taughtBranch && event.kind === 'text' && event.text.includes('Working on')) {
+          taughtBranch = true;
+          void this.gitTutor.teach('branch');
+        }
         if (!event.text) continue;
 
         // Tool calls are shown as they happen — a step counter is the difference
@@ -379,7 +387,8 @@ export class ChatService {
           files,
           this.log,
           this.context.workspaceState.get('clarvis.agent.baseBranch'),
-          (text) => void this.remark(text)
+          (text) => void this.remark(text),
+          this.gitTutor
         );
       }
     }
@@ -519,6 +528,9 @@ export class ChatService {
     if (action === 'switchBranch') {
       const said = await switchBranch(branchFromRequest(question), this.log);
       if (said) await this.say(said, 'neutral');
+      // After the fact: the explanation lands better once they have seen the files
+      // change than as a warning before anything happened.
+      await this.gitTutor.teach('switch');
       return;
     }
 

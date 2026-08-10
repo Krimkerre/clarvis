@@ -129,3 +129,29 @@ test('listing the whole project reads differently from listing a folder', () => 
   assert.equal(narrateTool('listFiles', { directory: '.' }), 'Looking through the project');
   assert.equal(narrateTool('listFiles', { directory: 'src/watch' }), 'Looking through src/watch');
 });
+
+import { commitSubject } from '../AgentRunner';
+
+test('a useless closing line does not become the commit message', () => {
+  // Models close with "Done." constantly. It is fine conversation and a useless line
+  // in a history someone reads six months later.
+  assert.equal(commitSubject('Done.', 'edit the comment in plan.md'), 'edit the comment in plan.md');
+  assert.equal(commitSubject('Fixed it!', 'fix the failing test'), 'fix the failing test');
+  assert.equal(commitSubject('  ', 'add a comment'), 'add a comment');
+});
+
+test('a descriptive closing line is kept', () => {
+  assert.equal(
+    commitSubject('Changed the comment to dubbawubbalublub in plan.md.', 'edit it'),
+    'Changed the comment to dubbawubbalublub in plan.md.'
+  );
+});
+
+test('the subject stays short enough to read in a log', () => {
+  assert.ok(commitSubject('x'.repeat(200), 'task').length <= 72);
+});
+
+test('a leading blank line does not defeat it', () => {
+  // Streamed narration often starts with whitespace.
+  assert.equal(commitSubject('\n\nRenamed the helper for clarity.', 'task'), 'Renamed the helper for clarity.');
+});

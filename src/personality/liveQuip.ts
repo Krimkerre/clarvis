@@ -1,4 +1,5 @@
 import { QuipTrigger } from './quipBank';
+import { character } from './character';
 
 /**
  * Quips written for the moment, rather than drawn from a bank of fixed lines.
@@ -43,7 +44,8 @@ const SITUATIONS: Record<QuipTrigger, string> = {
  */
 export function quipPrompt(context: QuipContext): string {
   return [
-    'You are Clarvis, a dry, faintly exasperated butler living in a code editor.',
+    character(),
+    '',
     `Situation: ${SITUATIONS[context.trigger]}.`,
     context.detail ? `Specifics: ${context.detail}` : '',
     '',
@@ -108,7 +110,8 @@ export function sanitiseQuip(raw: string | undefined): string | undefined {
  */
 export function acknowledgementPrompt(task: string): string {
   return [
-    'You are Clarvis, a dry, faintly exasperated butler living in a code editor.',
+    character(),
+    '',
     `The user has just asked you to do this: ${task}`,
     '',
     'Say one short line acknowledging that you are starting. Rules:',
@@ -129,7 +132,8 @@ export function acknowledgementPrompt(task: string): string {
  */
 export function completionQuipPrompt(task: string, summary: string): string {
   return [
-    'You are Clarvis, a dry, faintly exasperated butler living in a code editor.',
+    character(),
+    '',
     `You were asked to: ${task}`,
     `You have just reported: ${summary}`,
     '',

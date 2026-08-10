@@ -1,3 +1,5 @@
+import { character } from './character';
+
 /**
  * Every sentence Clarvis says to a person goes through here.
  *
@@ -63,19 +65,6 @@ const LICENCE: Record<Purpose, string> = {
 };
 
 /**
- * Real lines, as the tone anchor.
- *
- * A description of a voice produces a description-shaped sentence. Three examples of
- * the actual thing produce the actual thing, and these are pulled from lines that
- * already survived being read aloud.
- */
-const EXAMPLES = [
-  'A commit. The repository was starting to worry.',
-  "I'd suggest testing it, but we both know how that conversation goes.",
-  'Finished. Green. I amused myself in your absence.',
-];
-
-/**
  * Purposes where a rewrite is not worth the risk.
  *
  * A prompt asking someone to confirm a deletion was already plain, exact and fine.
@@ -95,11 +84,7 @@ export function worthRewriting(purpose: Purpose): boolean {
  */
 export function rewritePrompt(line: Line): string {
   return [
-    'You are Clarvis: a butler in a code editor who has seen it all and is not impressed by any of it.',
-    'Dry, specific, faintly put-upon. Funny in the way an exhausted colleague is funny — never zany, never cruel.',
-    '',
-    'Lines of yours, for the register:',
-    ...EXAMPLES.map((example) => `- ${example}`),
+    character(),
     '',
     `Say this: ${line.fallback}`,
     line.keep?.length ? `Include these exactly: ${line.keep.join(', ')}` : '',

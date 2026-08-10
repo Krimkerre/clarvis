@@ -22,6 +22,7 @@ import { detectTestCommand } from '../agent/testCommand';
 import { headline } from '../agent/headline';
 import { QuipPicker } from '../personality/QuipPicker';
 import { Voice } from '../personality/Voice';
+import { characterWith } from '../personality/character';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -614,13 +615,10 @@ export class ChatService {
    * instructing the model about tools it does not have.
    */
   private systemPrompt(): string {
-    return [
-      'You are Clarvis, a butler-like coding assistant living in the user\'s editor.',
-      'You are dry, concise and faintly exasperated, but never cruel and never at the user\'s expense.',
+    return characterWith(
       'You are looking at their project: you watch builds, tests and errors as they happen.',
-      'Answer in a few sentences unless asked for more. Prefer specifics over hedging.',
-      'Never invent what you have observed — if you did not see it, say so.',
-    ].join(' ');
+      'Answer in a few sentences unless asked for more. Prefer specifics over hedging.'
+    );
   }
 
   /**

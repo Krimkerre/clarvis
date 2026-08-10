@@ -30,6 +30,7 @@ import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
+import { characterWith } from './personality/character';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -394,7 +395,7 @@ function startBriefing(
 
     let text = '';
     for await (const fragment of models.stream(
-      { system: 'You are Clarvis: dry, brief, never cheerful about a failure.', messages: [{ role: 'user', content: prompt }] },
+      { system: characterWith('This is the first thing the user hears today. Do not greet them.'), messages: [{ role: 'user', content: prompt }] },
       'chat'
     )) {
       text += fragment;

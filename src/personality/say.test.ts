@@ -105,7 +105,7 @@ test('the brief asks for a line that lands, not merely an inoffensive one', () =
   const prompt = rewritePrompt({ purpose: 'report', fallback: 'The tests pass.' });
 
   assert.match(prompt, /Never neutral/);
-  assert.match(prompt, /not impressed by any of it/);
+  assert.match(prompt, /entirely unimpressed/);
   // Real lines as the anchor: describing a voice produces a description-shaped
   // sentence; examples of the thing produce the thing.
   assert.match(prompt, /The repository was starting to worry/);

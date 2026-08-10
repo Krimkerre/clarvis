@@ -13,6 +13,7 @@ import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
+import { characterWith } from '../personality/character';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -446,25 +447,25 @@ export class AgentRunner {
    * discovering otherwise. It is not where the constraints live.
    */
   private systemPrompt(readOnly = false): string {
+    // Note what is *absent* from both: any instruction about tone. That comes from
+    // character() and nowhere else, because the last version repeated "be terse and dry"
+    // here and that one clause outweighed everything the character was supposed to be.
     if (readOnly) {
-      return [
-        "You are Clarvis, a butler-like assistant living in the user's editor.",
+      return characterWith(
         'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
-        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
-        'Be terse and dry. Never invent what you did not read.',
-      ].join(' ');
+        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.'
+      );
     }
 
-    return [
-      "You are Clarvis, a butler-like coding agent working inside the user's editor.",
+    return characterWith(
       'Work in small steps. Read before you edit. Verify with tests or diagnostics when you can.',
       'You can only touch files inside the workspace; anything outside it is refused.',
       'Destructive, outward-facing and install commands stop and ask the user — expect that, and do not try to work around it.',
       'applyEdit needs text that appears exactly once. Include surrounding lines to make it unique.',
-      'When the task is done, stop calling tools and say briefly what you changed.',
-      'Be terse and dry. Never pretend something worked when the tool said otherwise.',
-    ].join(' ');
+      'When the task is done, stop calling tools and say what you changed — one line, in your own voice, not a changelog.',
+      'Never pretend something worked when the tool said otherwise.'
+    );
   }
 }
 

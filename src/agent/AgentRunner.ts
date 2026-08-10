@@ -401,7 +401,10 @@ export class AgentRunner {
     if (this.tidied || this.pendingIsolation) return '';
     if (!branch.current) return '';
 
-    return `\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;
+    // Plain, and short. The previous version — "you're now on X (was Y), review the
+    // diff, then merge it or throw it away" — is three git instructions to someone who
+    // may not know what a diff is, and the decision is offered by a button anyway.
+    return `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a copy.`;
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */

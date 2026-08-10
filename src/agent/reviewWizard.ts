@@ -22,6 +22,38 @@ import { parseBranchFlow, BranchFlow } from './branchFlow';
  * Nothing here decides anything. It gathers state, states consequences, and does what
  * it is told.
  */
+/**
+ * Merges the run straight back where it came from, without the menu.
+ *
+ * The common case by a distance: the change is fine and belongs on the branch the user
+ * was on. Making them open a list of six options to say yes is the friction this
+ * exists to remove — the list is still one click away for everything else.
+ */
+export async function mergeRunBack(
+  runCommits: string[],
+  files: string[],
+  log: (message: string) => void,
+  origin?: string,
+  say: (text: string) => void = () => {}
+): Promise<void> {
+  const summary = await gather(runCommits, files, origin);
+  if (!summary?.branch) return;
+
+  // Still warned about: a merge that would carry someone else's commits is not made
+  // safe by being quick.
+  const warnings = reviewWarnings(summary);
+  if (warnings.length > 0) {
+    const proceed = await vscode.window.showWarningMessage(
+      `Merge \`${summary.branch}\` into \`${summary.origin ?? summary.base}\`?`,
+      { modal: true, detail: warnings.join('\n\n') },
+      'Merge it'
+    );
+    if (proceed !== 'Merge it') return;
+  }
+
+  await act('merge-origin', summary, log, say);
+}
+
 export async function reviewRun(
   runCommits: string[],
   files: string[],

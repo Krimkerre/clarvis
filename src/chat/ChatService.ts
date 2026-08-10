@@ -16,7 +16,7 @@ import { ModelService, explain } from '../model/ModelService';
 import { routeFor } from './routing';
 import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
-import { reviewRun } from '../agent/reviewWizard';
+import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
 /**
@@ -381,16 +381,27 @@ export class ChatService {
     // to merge, keep or throw away, and offering anyway is a dialog about an absence.
     const { commits, files } = runner.result;
     if (files.length > 0) {
-      const review = await vscode.window.showInformationMessage(
-        `Clarvis: ${files.length} file(s) changed.`,
-        'Review the run'
+      // The likely answer first. "Review the run" made the common case — yes, keep it
+      // — a menu away, and a menu is where a beginner stops.
+      const answer = await vscode.window.showInformationMessage(
+        `Clarvis: ${files.length} file${files.length === 1 ? '' : 's'} changed, on a copy of your work.`,
+        'Keep it',
+        'Show me first'
       );
-      if (review === 'Review the run') {
+
+      const base = this.context.workspaceState.get<string>('clarvis.agent.baseBranch');
+
+      if (answer === 'Keep it') {
+        await mergeRunBack(commits, files, this.log, base, (text) => void this.remark(text));
+        return;
+      }
+
+      if (answer === 'Show me first') {
         await reviewRun(
           commits,
           files,
           this.log,
-          this.context.workspaceState.get('clarvis.agent.baseBranch'),
+          base,
           (text) => void this.remark(text)
         );
       }

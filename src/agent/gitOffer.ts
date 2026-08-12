@@ -25,10 +25,17 @@ export async function offerGitFix(
   root: string | undefined,
   log: (message: string) => void
 ): Promise<void> {
-  if (context.workspaceState.get<boolean>(DECLINED_KEY)) return;
+  // Every early return here used to be silent — reading one session's log gave no way
+  // to tell "already declined" apart from "something else stopped it", which cost a
+  // grep across every session file this project has ever written to answer a question
+  // one log line should have settled on its own.
+  if (context.workspaceState.get<boolean>(DECLINED_KEY)) {
+    log('git offer: already declined, not asking again');
+    return;
+  }
 
   const problem = await probeGitProblem();
-  if (!problem) return;
+  if (!problem) return; // a real repository — nothing to offer, nothing worth logging
 
   // No binary means no button that would work — `adviseOnGit` already omits `.action`
   // for it, and `protect()`'s plain-text explanation (now reaching the chat) is the

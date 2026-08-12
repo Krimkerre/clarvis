@@ -117,23 +117,23 @@ export function reviewOptions(summary: RunSummary): ReviewOption[] {
     {
       action: 'diff',
       label: 'Show me what changed',
-      detail: `${summary.commits.length} commit(s), ${summary.files.length} file(s). Nothing moves.`,
+      detail: `${summary.files.length} file${summary.files.length === 1 ? '' : 's'}. Just looking — nothing moves.`,
     },
     ...mergeTargets(summary),
     {
       action: 'return',
-      label: `Go back to ${home}, keep the branch`,
-      detail: `The work stays on \`${summary.branch}\` for later. Nothing is lost.`,
+      label: `Decide later`,
+      detail: `Puts you back on \`${home}\` and keeps my changes on the temp branch. Nothing is lost.`,
     },
     {
       action: 'stay',
-      label: 'Stay on this branch',
-      detail: 'Carry on working here. Anything you commit lands on the agent branch.',
+      label: 'Carry on from here',
+      detail: 'Keeps you on the temp branch. Anything you save from now on joins it rather than your own branch.',
     },
     {
       action: 'discard',
-      label: 'Throw it away',
-      detail: `Deletes \`${summary.branch}\` and everything on it, and returns you to ${home}.`,
+      label: 'Bin it',
+      detail: `Deletes my changes entirely and puts you back on \`${home}\`. Yours are untouched either way.`,
       destructive: true,
     },
   ];
@@ -163,18 +163,20 @@ export function mergeTargets(summary: RunSummary): ReviewOption[] {
     targets.push({ action, label: `Merge into ${branch}`, detail });
   };
 
-  add(summary.origin, 'merge-origin', 'Where this run started — usually where it belongs.');
+  add(summary.origin, 'merge-origin', 'Back where you were working. Usually the right answer.');
   add(
     summary.integration,
     'merge-integration',
     summary.origin
-      ? 'The shared integration branch, rather than back where you were.'
-      : 'The usual route before anything reaches the trunk.'
+      ? 'The branch this project tests things on, rather than back where you were.'
+      : 'The branch this project tests things on.'
   );
   add(
     summary.base,
     'merge',
-    seen.size > 0 ? 'Straight onto the trunk, skipping the branches above.' : 'Brings the work onto the trunk.'
+    seen.size > 0
+      ? 'Straight onto the main branch, skipping the steps above.'
+      : 'Onto the main branch.'
   );
 
   return targets;
@@ -241,7 +243,14 @@ export function narrateReview(
   const branch = summary.branch ? `\`${summary.branch}\`` : 'the run';
   const home = summary.origin ?? summary.base ?? 'your branch';
 
-  if (action === 'diff') return `The diff, then. ${summary.commits.length} commit(s) to read.`;
+  if (action === 'diff') {
+    // "0 commit(s) to read" is what the standalone `Review Run` command produces when it
+    // is opened without a run behind it — a count of nothing, offered as though it were
+    // news. Seen live.
+    return summary.commits.length === 0
+      ? 'The diff, then — though there are no commits from a run in it.'
+      : `The diff, then. ${summary.commits.length} commit(s) to read.`;
+  }
 
   if (action === 'stay') {
     return `Staying on ${branch}. Anything you commit from here lands on it, which may or may not be what you want.`;
@@ -254,7 +263,7 @@ export function narrateReview(
   if (action.startsWith('merge')) {
     const target = outcome.target ?? home;
     return outcome.ok
-      ? `Merged onto \`${target}\`. That's where you are now.`
+      ? `Done — the changes are part of \`${target}\` now, and that's where you are.`
       : `The merge onto \`${target}\` didn't go cleanly — you're there with it half-applied, and the conflicts are in Source Control. Not my finest work.`;
   }
 

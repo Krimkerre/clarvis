@@ -23,13 +23,18 @@ export interface RouteDecision {
  * Deliberately about *the codebase*, not about Clarvis: "change the voice" is a
  * setting, handled by `chatCommands.ts` long before this runs.
  *
- * `make` and `build` were missing from the first version, so "make a new branch called
- * testing3" was answered rather than done — the most natural phrasing for a request
- * fell through the list because the list was written from the verbs I happened to
- * think of.
+ * **This list keeps being wrong, and always in the same direction.** `make` and `build`
+ * were missing at first, so "make a new branch called testing3" was answered rather
+ * than done. Then `edit` and `change` were missing, so "edit the comment in plan.md"
+ * was answered by a read-only path explaining that it cannot edit things — which reads
+ * as a refusal rather than a misunderstanding.
+ *
+ * A hand-written list of verbs will always be missing the one someone just used, which
+ * is why `isEscalation` exists: saying "do it" after a wrong answer is the recovery,
+ * and it costs the user four characters instead of a rephrase.
  */
 const WORK_VERBS =
-  /\b(fix|add|remove|delete|rename|refactor|implement|create|make|build|generate|scaffold|set ?up|initiali[sz]e|write|update|migrate|convert|extract|inline|split|merge|upgrade|bump|install|wire|hook up|clean up|tidy|format|sort|replace|revert|undo|move|copy|commit|branch off)\b/;
+  /\b(fix|add|remove|delete|rename|refactor|implement|create|make|build|generate|scaffold|set ?up|initiali[sz]e|write|rewrite|edit|change|adjust|tweak|correct|update|append|insert|migrate|convert|extract|inline|split|merge|upgrade|bump|install|wire|hook up|clean up|tidy|format|sort|replace|revert|undo|move|copy|commit|branch off)\b/;
 
 /** Phrasings that are a request for work even without an imperative verb. */
 const WORK_PHRASES = [
@@ -97,8 +102,77 @@ export function routeFor(text: string): RouteDecision {
  */
 export function isEscalation(text: string, hadUnsolicitedSurface: boolean): boolean {
   if (!hadUnsolicitedSurface) return false;
+  return ESCALATION.test(text.trim().toLowerCase());
+}
 
-  return /\b(go on|go ahead|do it|yes please|fix it|sort it|please do|carry on)\b/.test(
-    text.trim().toLowerCase()
-  );
+/**
+ * "Do it" after an answer, meaning *that thing you just described*.
+ *
+ * The recovery for a routing miss. A verb list will always lack the word someone just
+ * used, and rather than making them rephrase, the previous message is re-run as a job.
+ * Short and unambiguous phrases only — "yes" alone is too common in ordinary
+ * conversation to hand to an agent.
+ */
+const ESCALATION = /^(go on(\s+then)?|go ahead|do it|just do it|yes please do|please do|make it so|fix it|sort it out|carry on)\b/;
+
+export function isDoItNow(text: string): boolean {
+  return ESCALATION.test(text.trim().toLowerCase());
+}
+
+/**
+ * Whether the keyword router reached "answer" by *default* rather than by evidence.
+ *
+ * The distinction that decides whether asking a model is worth a request:
+ *  - "why did the build fail?" is a question by every signal there is — a leading
+ *    question word, a question mark. Nothing to classify.
+ *  - "edit the comment in plan.md to X" matched no verb the list happens to contain,
+ *    and no question signal either. It fell through, and falling through is not
+ *    evidence of anything.
+ *
+ * Only the second case is worth spending a request on, which keeps the cost near zero
+ * for ordinary conversation.
+ */
+export function needsClassification(text: string): boolean {
+  const message = text.trim().toLowerCase();
+
+  if (message.length === 0) return false;
+  if (message.endsWith('?')) return false;
+  if (QUESTION_OPENERS.test(message)) return false;
+  if (HYPOTHETICAL.test(message)) return false;
+
+  // A verb matched, so the router had a reason. Only the fall-through case is unclear.
+  if (WORK_VERBS.test(message) || WORK_PHRASES.some((phrase) => phrase.test(message))) return false;
+
+  // Very short fragments are conversation, not instructions: "hmm", "ok", "thanks".
+  return message.split(/\s+/).length >= 3;
+}
+
+/**
+ * Reads a classifier's reply, strictly.
+ *
+ * One word expected. Anything else — a sentence, an explanation, an apology — is
+ * treated as no answer at all, and the deterministic route stands. A classifier that
+ * cannot follow a one-word instruction is not one to trust with "should I edit their
+ * files".
+ */
+export function parseIntent(raw: string | undefined): Route | undefined {
+  if (!raw) return undefined;
+
+  const word = raw.trim().toUpperCase().replace(/[^A-Z]/g, '');
+  if (word === 'WORK') return 'agent';
+  if (word === 'QUESTION') return 'answer';
+  return undefined;
+}
+
+/** The classifier's instruction. Deliberately tiny: it is one decision, not a chat. */
+export function intentPrompt(text: string): string {
+  return [
+    'Decide whether this message asks for a change to be made to the code, or asks a question about it.',
+    '',
+    `Message: ${text}`,
+    '',
+    'Answer with exactly one word: WORK if it asks for something to be changed, created, deleted or run.',
+    'QUESTION if it asks for information, an explanation, or an opinion.',
+    'If it could be either, answer QUESTION.',
+  ].join('\n');
 }

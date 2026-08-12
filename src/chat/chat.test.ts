@@ -311,7 +311,6 @@ test('questions containing work keywords still reach the local answer', () => {
   }
 });
 
-import { factsBlock } from './localAnswer';
 
 test('the facts block carries what Clarvis watched, for the model to phrase', () => {
   // The division of labour: local state knows the truth about this project, the model
@@ -382,4 +381,118 @@ test('switching branches is not confused with switching voice or engine', () => 
   assert.equal(chatAction('switch to a different engine'), 'chooseEngine');
   assert.equal(chatAction('change the voice'), 'chooseVoice');
   assert.equal(chatAction('switch to testing3'), 'switchBranch');
+});
+
+import { isDoItNow } from './routing';
+
+test('edit and change route to the agent', () => {
+  // Missing from the first list, so "edit the comment in plan.md" was answered by the
+  // read-only path explaining that it cannot edit things — which reads as a refusal
+  // rather than a misunderstanding.
+  for (const message of [
+    'edit the wubbadubbalublub comment in plan.md to dubbawubbalublub',
+    'change the port to 8080 in config.ts',
+    'tweak the timeout in app.js',
+    'rewrite the readme intro',
+    'correct the typo in app.js',
+  ]) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('"do it" is recognised as a request to act on what was just said', () => {
+  // The recovery for a routing miss: four characters instead of a rephrase.
+  for (const message of ['do it', 'go on then', 'just do it', 'please do', 'fix it', 'make it so']) {
+    assert.equal(isDoItNow(message), true, message);
+  }
+});
+
+test('"do it" does not fire on ordinary conversation', () => {
+  // "yes" alone is far too common to hand to an agent.
+  for (const message of ['yes', 'why do it that way', 'what does it do', 'ok']) {
+    assert.equal(isDoItNow(message), false, message);
+  }
+});
+
+import { needsClassification, parseIntent, intentPrompt } from './routing';
+import { factsBlock } from './localAnswer';
+
+test('only a fall-through is worth asking the model about', () => {
+  // A question with a question mark needs no second opinion, and paying for one on
+  // every message would be absurd.
+  assert.equal(needsClassification('why did the build fail?'), false);
+  assert.equal(needsClassification('what does BusyTracker do'), false);
+  assert.equal(needsClassification('fix the failing test'), false, 'a matched verb needs no help');
+  assert.equal(needsClassification('we should maybe rename this'), false, 'hedging is already handled');
+
+  // The case that has been wrong twice: an unlisted verb, no question signal.
+  assert.equal(needsClassification('swap the port over to 8080'), true);
+  assert.equal(needsClassification('stick a comment at the top of app.js'), true);
+});
+
+test('fragments are conversation, not instructions', () => {
+  // "hmm", "ok", "thanks" should never cost a classification request.
+  assert.equal(needsClassification('hmm'), false);
+  assert.equal(needsClassification('ok thanks'), false);
+  assert.equal(needsClassification(''), false);
+});
+
+test('the classifier reply is parsed strictly', () => {
+  assert.equal(parseIntent('WORK'), 'agent');
+  assert.equal(parseIntent(' question \n'), 'answer');
+  assert.equal(parseIntent('WORK.'), 'agent');
+});
+
+test('anything but the two words leaves the deterministic route alone', () => {
+  // A classifier that cannot follow a one-word instruction is not one to trust with
+  // "should I edit their files".
+  assert.equal(parseIntent('I think this is asking for work to be done'), undefined);
+  assert.equal(parseIntent('Sure! WORK'), undefined);
+  assert.equal(parseIntent(''), undefined);
+  assert.equal(parseIntent(undefined), undefined);
+});
+
+test('the prompt tells it to answer QUESTION when unsure', () => {
+  // Ambiguity resolving toward answering is the whole safety property, and it has to
+  // survive being delegated to a model.
+  assert.match(intentPrompt('do the thing'), /could be either, answer QUESTION/);
+});
+
+test('"change to the milestone branch" is a checkout, not an agent task', () => {
+  // Seen live: it ran a whole agent task to do one deterministic thing, and the
+  // cleanup then switched the user back, silently undoing the request.
+  assert.equal(chatAction('change to the milestone branch'), 'switchBranch');
+  assert.equal(branchFromRequest('change to the milestone branch'), 'milestone');
+  assert.equal(branchFromRequest('move to testing'), 'testing');
+  assert.equal(branchFromRequest('change to milestone/1'), 'milestone/1');
+});
+
+test('changing a setting is still not a branch switch', () => {
+  // "change to a different voice" must never reach git.
+  assert.equal(chatAction('change to a different voice'), 'chooseVoice');
+  assert.equal(chatAction('change the model'), 'chooseModel');
+});
+
+test('an old failure is not reported in thousands of minutes', () => {
+  // "failing for 4186 minutes" is true, useless, and reads as a broken tool. The facts
+  // are the one part of what he says that must never sound wrong.
+  const base = {
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+  };
+
+  const recent = factsBlock({
+    ...base,
+    lastFailure: { label: 'build', exitCode: 1, at: base.now - 12 * 60_000 },
+  } as never);
+  const old = factsBlock({
+    ...base,
+    lastFailure: { label: 'build', exitCode: 1, at: base.now - 70 * 60 * 60_000 },
+  } as never);
+
+  assert.match(recent, /12m ago/);
+  assert.match(old, /3d ago/);
+  assert.doesNotMatch(old, /\d{4}m ago/);
 });

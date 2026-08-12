@@ -95,7 +95,9 @@ export function recordClip(
       const child = spawn(candidate.command, candidate.args(file, seconds), { stdio: 'ignore' });
       log(`record: spawned ${candidate.command} pid=${child.pid}`);
 
-      child.on('error', () => attempt(index + 1).then(resolve, reject));
+      // `void`: the handler is a void callback, and the recursion settles the outer
+      // promise itself rather than returning one to a listener that would drop it.
+      child.on('error', () => void attempt(index + 1).then(resolve, reject));
 
       child.on('exit', (code, signal) => {
         log(`record: exit code=${code} signal=${signal}`);

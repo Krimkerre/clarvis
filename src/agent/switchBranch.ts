@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { isAgentBranch } from './branchNames';
 import { explainSwitchFailure, planSwitch } from './gitPlain';
+import { phrase } from '../personality/Voice';
 
 /**
  * Changing branch, from the chat box.
@@ -17,7 +18,9 @@ export async function switchBranch(
   log: (message: string) => void
 ): Promise<string | undefined> {
   const repository = await gitRepository();
-  if (!repository) return "There's no git repository here, so there's nothing to switch to.";
+  if (!repository) {
+    return phrase('report', "There's no git repository here, so there's nothing to switch to.");
+  }
 
   const branches = (await repository.getBranches({ remote: false }))
     .map((entry) => entry.name ?? '')
@@ -27,15 +30,15 @@ export async function switchBranch(
   const target = requested ?? (await pickBranch(branches, current));
   if (!target) return undefined;
 
-  if (target === current) return `You're already on \`${target}\`.`;
+  if (target === current) return phrase('report', `You're already on \`${target}\`.`, [target]);
 
   if (!branches.includes(target)) {
     // Named something that isn't there. Better to say so than to create it silently —
     // "switch to tesitng3" is a typo, not a request for a new branch.
     const near = branches.filter((name) => name.toLowerCase().includes(target.toLowerCase()));
     return near.length > 0
-      ? `There's no \`${target}\`. Did you mean \`${near[0]}\`?`
-      : `There's no branch called \`${target}\` here.`;
+      ? phrase('ask', `There's no \`${target}\`. Did you mean \`${near[0]}\`?`, [target, near[0]])
+      : phrase('report', `There's no branch called \`${target}\` here.`, [target]);
   }
 
   // What this will do to work in progress, said *before* it happens. Git carries
@@ -55,12 +58,15 @@ export async function switchBranch(
       'Bring them with me'
     );
 
-    if (!choice) return 'Left you where you were.';
+    if (!choice) return phrase('report', 'Left you where you were.');
 
     if (choice === plan.saferFirst) {
       const saved = await commitEverything(repository, current, log);
       if (!saved) {
-        return "I couldn't save your changes, so I've not moved you. Nothing is lost — they're still here.";
+        return phrase(
+          'warn',
+          "I couldn't save your changes, so I've not moved you. Nothing is lost — they're still here."
+        );
       }
     }
   }
@@ -68,10 +74,10 @@ export async function switchBranch(
   try {
     await repository.checkout(target);
     log(`branch: switched to ${target}`);
-    return `You're on \`${target}\` now.`;
+    return phrase('report', `You're on \`${target}\` now.`, [target]);
   } catch (error) {
     log(`branch: could not switch to ${target} (${String(error)})`);
-    return explainSwitchFailure(target);
+    return phrase('warn', explainSwitchFailure(target), [target]);
   }
 }
 

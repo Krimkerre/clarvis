@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { phrase } from '../personality/Voice';
 
 /**
  * Whether the voice offer has already been made.
@@ -71,7 +72,11 @@ async function ask(
     // Shown as a link the user chooses to follow, rather than a browser opening
     // uninvited. The setting stays off either way; they can enable it when ready.
     const next = await vscode.window.showInformationMessage(
-      `Clarvis: sign in at ${FISH_KEYS_URL} and create an API key, then run "Clarvis: Set Fish Audio Key". I won't bring it up again.`,
+      await phrase(
+      'report',
+      `Sign in at ${FISH_KEYS_URL} and create an API key, then run "Clarvis: Set Fish Audio Key". I won't bring it up again.`,
+      [FISH_KEYS_URL]
+    ),
       'Open the page',
       'Later'
     );
@@ -95,5 +100,7 @@ export async function enableVoiceAfterKey(log: (message: string) => void): Promi
 
   await config.update('voice.enabled', true, vscode.ConfigurationTarget.Global);
   log('voice: enabled, since a key was just set');
-  void vscode.window.showInformationMessage('Clarvis: voice is on. Mute is beside the chat prompt.');
+  void vscode.window.showInformationMessage(
+    await phrase('report', 'Voice is on. Mute is beside the chat prompt.')
+  );
 }

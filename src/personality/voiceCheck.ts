@@ -159,6 +159,14 @@ function scenes(): Scene[] {
  * screen was thirty-nine seconds of audio. Speech runs near 150 words a minute, so this
  * is deliberately crude — it only has to make "that is too long" obvious at a glance.
  */
+/**
+ * The point at which a spoken reply has outstayed its welcome.
+ *
+ * Two sentences and an aside runs to about fifteen seconds. Twenty allows for a long
+ * one; past that it is a paragraph being read at someone.
+ */
+const LONG_SECONDS = 20;
+
 function spokenSeconds(text: string): number {
   return Math.round((text.trim().split(/\s+/).length / 150) * 60);
 }
@@ -222,6 +230,13 @@ export async function runVoiceCheck(
     const lifted = parroted(said);
 
     out.push(said, '', `\`${said.split(/\s+/).length} words · ~${spokenSeconds(said)}s spoken\``);
+    // Length is the failure that keeps coming back, and it is invisible on screen: a
+    // reply that reads fine is forty seconds of audio. Flagged rather than judged by
+    // eye, the same way parroting is.
+    if (spokenSeconds(said) > LONG_SECONDS) {
+      out.push('', `> **Too long to listen to:** ~${spokenSeconds(said)}s, against a ${LONG_SECONDS}s ceiling.`);
+      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(said)}s`);
+    }
     if (lifted.length > 0) {
       out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);
     }

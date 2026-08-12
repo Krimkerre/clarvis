@@ -278,8 +278,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       .clarvis-bowtie:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
       /* Distinct from the bowtie: this one appears mid-answer and must read as an
          interruption, not another menu. */
-      .clarvis-stop { color: var(--vscode-errorForeground); opacity:1; }
-      .clarvis-stop[hidden] { display:none; }
+      /* Greyed and inert while idle; unmistakable, and clickable, while he is working. */
+      .clarvis-stop[data-busy="false"] { opacity:.4; cursor:default; }
+      .clarvis-stop[data-busy="false"]:hover { background:none; opacity:.4; }
+      .clarvis-stop[data-busy="true"] { color: var(--vscode-errorForeground); opacity:1; }
       #clarvis-input { flex:1 1 auto; box-sizing:border-box; resize:none; padding:6px 8px;
         font-family: inherit; font-size: inherit; border-radius:4px;
         color: var(--vscode-input-foreground); background: var(--vscode-input-background);
@@ -304,7 +306,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
              this one is where your eye is while *watching* a run, which is the moment
              you actually want it. Both hidden until there is something to stop, so the
              row does not carry a dead control. -->
-        <button id="clarvis-stop-top" class="clarvis-mute clarvis-stop" hidden
+        <button id="clarvis-stop-top" class="clarvis-mute clarvis-stop" data-busy="false" disabled
                 title="Stop what Clarvis is doing">Stop</button>
       </div>
       <div class="clarvis-prompt">
@@ -319,8 +321,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         <!-- Sits with the prompt, not with the controls above: stopping is something
              you do *while typing was the last thing you did*, so it belongs where the
              hand already is. Hidden until there is something to stop. -->
-        <button id="clarvis-stop" class="clarvis-bowtie clarvis-stop" hidden
-                title="Stop the answer in progress">
+        <button id="clarvis-stop" class="clarvis-bowtie clarvis-stop" data-busy="false" disabled
+                title="Stop what Clarvis is doing">
           <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
             <rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/>
           </svg>
@@ -438,7 +440,20 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         document.getElementById('clarvis-stop'),
         document.getElementById('clarvis-stop-top'),
       ];
-      const showStop = (visible) => stopButtons.forEach((button) => { button.hidden = !visible; });
+      // **Always visible.** Hiding it until something was running meant hunting for a
+      // control at the moment you least want to hunt — and it was wrong twice about
+      // when "running" was. It only changes colour now: live when there is something
+      // to stop, quiet when there is not, and clickable either way.
+      // **Always visible, greyed when there is nothing to stop.** Hiding it meant hunting
+      // for a control at the moment you least want to hunt — and it was wrong twice
+      // about when "running" was, so it was missing during every agent run. Disabled
+      // rather than merely faint: grey that still accepts a click is a button that
+      // looks broken.
+      const showStop = (busy) =>
+        stopButtons.forEach((button) => {
+          button.dataset.busy = busy ? 'true' : 'false';
+          button.disabled = !busy;
+        });
       stopButtons.forEach((button) =>
         button.addEventListener('click', () => vscode.postMessage({ type: 'stop' }))
       );

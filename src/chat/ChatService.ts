@@ -145,7 +145,10 @@ export class ChatService {
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
     this.panel.onDidRequestClear(() => void this.confirmAndClear());
     this.panel.onDidRequestHistory(() => void this.showHistory());
-    this.panel.onDidRequestStop(() => this.stop());
+    // The same path a typed "stop" takes, so clicking it while nothing is running says
+    // so rather than silently doing nothing — which, on an always-visible button, would
+    // read as the button being broken.
+    this.panel.onDidRequestStop(() => void this.stopFromChat());
     this.panel.onDidRequestModels(() => void vscode.commands.executeCommand('clarvis.configureModels'));
     this.panel.onDidRequestMode(() => void this.chooseMode());
 

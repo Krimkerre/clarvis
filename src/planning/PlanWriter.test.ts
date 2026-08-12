@@ -42,6 +42,14 @@ test('established answers land in their sections', () => {
   assert.match(plan, /## 3\. Language\n\n\*\*Python\*\* — fast to write, and the libraries are mature/);
 });
 
+test('a section with a recorded question shows what was asked, not just the answer', () => {
+  const withQuestion: InterviewState = {
+    answers: [{ topic: 'scope', text: 'no GUI', question: 'What should this explicitly not do?' }],
+  };
+  const plan = renderPlan({ seed: 'renames photos', state: withQuestion, verdicts: [] });
+  assert.match(plan, /## 4\. Scope\n\n\*\*Asked:\*\* What should this explicitly not do\?\n\nno GUI/);
+});
+
 test('an unanswered topic renders honestly, not invented', () => {
   const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
   assert.match(plan, /## 5\. Data\n\n_Not yet determined\._/);

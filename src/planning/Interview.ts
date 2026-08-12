@@ -45,7 +45,9 @@ export async function runInterview(
 
   log(`planning: interview started — "${seed.trim()}"`);
 
-  const state: InterviewState = { answers: [{ topic: 'what-it-does', text: seed.trim() }] };
+  const state: InterviewState = {
+    answers: [{ topic: 'what-it-does', text: seed.trim(), question: 'What are you building?' }],
+  };
   state.projectName = await resolveProjectName(models, seed.trim(), log);
 
   for (;;) {
@@ -63,6 +65,10 @@ export async function runInterview(
         log(`planning: interview paused at "${topic}"`);
         return { state, seed: seed.trim() };
       }
+      // The raw shortlist is `Name | advantage | cost` per line — real for a
+      // QuickPick, unreadable as "what was asked" in a written plan. A plain
+      // recap reads honestly instead of dumping the pipe-delimited format.
+      answer.question = 'Which language should this be built in?';
       log(`planning: "${topic}" answered — ${answer.text}${answer.reasoning ? ` (${answer.reasoning})` : ''}`);
       state.answers.push(answer);
       continue;
@@ -83,6 +89,7 @@ export async function runInterview(
     }
 
     const answer = toAnswer(topic, raw);
+    answer.question = question;
     log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
     state.answers.push(answer);
   }

@@ -1,5 +1,5 @@
 import { branchFlowSection } from '../agent/branchFlow';
-import { InterviewState, TopicId } from './interviewTopics';
+import { Answer, InterviewState, TopicId } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
 
 /**
@@ -55,12 +55,25 @@ const WORKING_PROCESS_SECTION = [
   '  new sign-off — rather than growing silently inside Code Mode.',
 ].join('\n');
 
-function answerText(state: InterviewState, topic: TopicId): string | undefined {
-  return state.answers.find((answer) => answer.topic === topic)?.text;
+function findAnswer(state: InterviewState, topic: TopicId): Answer | undefined {
+  return state.answers.find((answer) => answer.topic === topic);
 }
 
-function section(heading: string, body: string | undefined): string {
-  return [heading, '', body ?? '_Not yet determined._'].join('\n');
+function answerText(state: InterviewState, topic: TopicId): string | undefined {
+  return findAnswer(state, topic)?.text;
+}
+
+/**
+ * A section rendered with the question that produced it, not just the answer.
+ *
+ * Found live: a plan with only answers — "no GUI", "the most common ones" — reads as
+ * vague once you're a few sections in, because half the meaning was in what was
+ * actually asked. Showing the question restores that context for a later reader who
+ * wasn't in the room for the interview.
+ */
+function section(heading: string, answer: Answer | undefined): string {
+  if (!answer?.text) return [heading, '', '_Not yet determined._'].join('\n');
+  return [heading, '', ...(answer.question ? [`**Asked:** ${answer.question}`, ''] : []), answer.text].join('\n');
 }
 
 export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): string {
@@ -80,20 +93,22 @@ export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): s
     '',
     '---',
     '',
-    section('## 1. Concept', answerText(state, 'what-it-does')),
+    section('## 1. Concept', findAnswer(state, 'what-it-does')),
     '',
-    section('## 2. Where it runs', answerText(state, 'who-and-where')),
+    section('## 2. Where it runs', findAnswer(state, 'who-and-where')),
     '',
     section(
       '## 3. Language',
-      language?.text ? `**${language.text}**${language.reasoning ? ` — ${language.reasoning}` : ''}` : undefined
+      language?.text
+        ? { ...language, text: `**${language.text}**${language.reasoning ? ` — ${language.reasoning}` : ''}` }
+        : undefined
     ),
     '',
-    section('## 4. Scope', answerText(state, 'scope')),
+    section('## 4. Scope', findAnswer(state, 'scope')),
     '',
-    section('## 5. Data', answerText(state, 'data')),
+    section('## 5. Data', findAnswer(state, 'data')),
     '',
-    section('## 6. Linter', answerText(state, 'linter')),
+    section('## 6. Linter', findAnswer(state, 'linter')),
     '',
     '## 7. Milestone 1 — v1',
     '',

@@ -28,6 +28,8 @@ export interface Answer {
   text: string | undefined;
   /** Why, when the user gave a reason for "you pick" or a bad-fit choice anyway. */
   reasoning?: string;
+  /** What was actually asked, so a later reader has the context, not just the answer. */
+  question?: string;
 }
 
 export interface InterviewState {

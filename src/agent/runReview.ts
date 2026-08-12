@@ -243,7 +243,14 @@ export function narrateReview(
   const branch = summary.branch ? `\`${summary.branch}\`` : 'the run';
   const home = summary.origin ?? summary.base ?? 'your branch';
 
-  if (action === 'diff') return `The diff, then. ${summary.commits.length} commit(s) to read.`;
+  if (action === 'diff') {
+    // "0 commit(s) to read" is what the standalone `Review Run` command produces when it
+    // is opened without a run behind it — a count of nothing, offered as though it were
+    // news. Seen live.
+    return summary.commits.length === 0
+      ? 'The diff, then — though there are no commits from a run in it.'
+      : `The diff, then. ${summary.commits.length} commit(s) to read.`;
+  }
 
   if (action === 'stay') {
     return `Staying on ${branch}. Anything you commit from here lands on it, which may or may not be what you want.`;

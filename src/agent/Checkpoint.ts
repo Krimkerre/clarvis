@@ -176,6 +176,18 @@ export class Checkpoint {
     }
 
     log(`checkpoint: undo restored ${restored}, deleted ${deleted}, failed ${failed.length}`);
+
+    // **Spent once.** The record used to survive the undo, so a second `Undo Last Agent
+    // Run` — an hour later, or next week — would cheerfully restore the same copies over
+    // whatever the user had done since. Seen in a live log: undo ran twice, and the
+    // second one reported restoring a file that had already been put back.
+    //
+    // Kept when something failed, because then it is the only way to try the rest again.
+    if (failed.length === 0) {
+      await context.globalState.update(RECORD_KEY, undefined);
+      log('checkpoint: undone, and the record is spent');
+    }
+
     return { restored, deleted, failed, stuckOn };
   }
 

@@ -15,15 +15,18 @@ export interface Isolation {
 /**
  * The sentence for a run built on top of another run.
  *
- * Ends with the remedy rather than the diagnosis: the situation is recoverable in one
- * command, and a warning that does not say how to stop recurring is just a complaint.
+ * **Does not claim a specific cause.** The first version asserted "you have unsaved
+ * changes to a file that differs between the two" unconditionally — true for the dirty-
+ * tree case this was written for, and flatly wrong the day a fresh `git init` had never
+ * had a first commit: the real reason was an unborn base ref, not a file conflict, and
+ * the message stated the wrong one as fact. It says what is actually known — the switch
+ * did not work — and ends with the remedy rather than a diagnosis nobody verified.
  */
 function stackedAdvice(base: string | undefined, stacked: string): string {
   return (
-    `I couldn't start from \`${base ?? 'your branch'}\`: you have unsaved changes to a file that ` +
-    `differs between the two, and switching would have overwritten them. So this run sits on top of ` +
-    `\`${stacked}\` and carries that run's changes as well as its own. Commit or stash those changes ` +
-    `and the next run will start clean.`
+    `I couldn't start cleanly from \`${base ?? 'your branch'}\`, so this run sits on top of ` +
+    `\`${stacked}\` and carries that run's changes as well as its own. If something there needs ` +
+    `committing or stashing, doing that will let the next run start clean.`
   );
 }
 

@@ -193,8 +193,17 @@ export function briefingPrompt(facts: BriefingFacts): string | undefined {
   const observed: string[] = [];
 
   if (facts.git) {
+    // Untracked files named as what they are, for the same reason the written lines do
+    // it: "uncommitted" about a file the user never edited is a statement they know to
+    // be false, and one false fact costs the rest their credibility.
+    const untracked = facts.git.untrackedCount
+      ? `, plus ${facts.git.untrackedCount} untracked file(s) git has never been told about`
+      : '';
+
     observed.push(
-      `Branch ${facts.git.branch}, ${facts.git.dirtyCount === 0 ? 'working tree clean' : `${facts.git.dirtyCount} file(s) uncommitted`}`
+      `Branch ${facts.git.branch}, ` +
+        (facts.git.dirtyCount === 0 ? 'working tree clean' : `${facts.git.dirtyCount} file(s) uncommitted`) +
+        untracked
     );
   }
 

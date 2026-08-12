@@ -85,6 +85,11 @@ still there to scroll back to.
 
 `/model` opens everything: providers, models, and keys.
 
+**Picking a provider walks you straight into its models.** Choosing one clears whichever
+model was set — a model belongs to the provider that offered it, and carrying one across
+means asking OpenAI for a Claude model and getting an error nobody can explain — so the
+list of that provider's models opens next, with the key prompt first if it needs one.
+
 **Two models, on purpose.** Chat and coding are configured separately, and the coding
 one follows chat until you say otherwise:
 

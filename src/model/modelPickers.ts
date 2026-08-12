@@ -28,6 +28,7 @@ type FetchedStore = Partial<Record<ProviderId, number>>;
  * is *who you have an account with*, the model is *which one you want today*.
  */
 export async function chooseProvider(
+  context: vscode.ExtensionContext,
   models: ModelService,
   log: (m: string) => void,
   role: ModelRole = 'chat'
@@ -57,6 +58,13 @@ export async function chooseProvider(
   if (spec.needsKey && !keyed[picked.id]) {
     await promptForKey(models, picked.id, log);
   }
+
+  // **Straight on to the models.** Choosing a provider clears the model — carrying one
+  // across means asking OpenAI for a Claude model and getting a 404 nobody can explain —
+  // so stopping here left the user with a provider and nothing to answer with, and no
+  // sign that a second picker existed. The key prompt comes first, because the list
+  // cannot be fetched without it.
+  await chooseModel(context, models, log, role);
 }
 
 /**
@@ -255,7 +263,7 @@ export async function configureModels(
     return;
   }
 
-  if (next.id === 'provider') await chooseProvider(models, log, role);
+  if (next.id === 'provider') await chooseProvider(context, models, log, role);
   else await chooseModel(context, models, log, role);
 }
 

@@ -389,7 +389,7 @@ function registerModelCommands(
       'clarvis.configureModels',
       () => void configureModels(context, models, log)
     ),
-    vscode.commands.registerCommand('clarvis.chooseProvider', () => void chooseProvider(models, log)),
+    vscode.commands.registerCommand('clarvis.chooseProvider', () => void chooseProvider(context, models, log)),
     vscode.commands.registerCommand('clarvis.chooseModel', () => void chooseModel(context, models, log)),
     vscode.commands.registerCommand('clarvis.manageModelKeys', () => void manageKeys(models, log)),
     vscode.commands.registerCommand(

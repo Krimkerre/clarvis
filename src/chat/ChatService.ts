@@ -5,6 +5,7 @@ import { BusyTracker } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
 import { VoiceService } from '../voice/VoiceService';
 import { Transcript } from './Transcript';
+import { Busy } from './Busy';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { chatAction, isStopRequest } from './chatCommands';
@@ -47,8 +48,8 @@ export class ChatService {
    */
 
 
-  /** The answer currently streaming, so `Clarvis: Stop` has something to abort. */
-  private streaming?: AbortController;
+  /** Whether he is doing something, and how to make him stop. */
+  private readonly busy: Busy;
 
   /** Writes the opening and closing lines for a run, when a model is configured. */
   private live:
@@ -138,6 +139,7 @@ export class ChatService {
   ) {
     this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
     this.transcript = new Transcript(context, panel, log);
+    this.busy = new Busy(panel, agentBusy);
     this.actions = new ChatActions(
       panel,
       voice,
@@ -181,7 +183,7 @@ export class ChatService {
       this.transcript.replay();
       // A panel moved mid-run comes back blank, and a run with no Stop button is a run
       // you cannot call off.
-      this.setBusy(Boolean(this.streaming) || this.agentBusy.running);
+      this.busy.show(this.busy.isBusy);
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
       this.actions.postModelInfo();
       this.actions.postMode();
@@ -305,14 +307,11 @@ export class ChatService {
     }
 
     // A fresh controller per question: Stop must abort this turn, not every future one.
-    this.streaming?.abort();
-    const controller = new AbortController();
-    this.streaming = controller;
+    const controller = this.busy.start('reply');
 
     this.avatar.setState('thinking', 'chat');
     const turn = this.transcript.begin('clarvis');
     this.panel.post({ type: 'chat-stream-start' });
-    this.setBusy(true);
 
     let text = '';
     // The face the model asked for, read off the front of its own reply (M8e3).
@@ -354,9 +353,8 @@ export class ChatService {
         this.panel.post({ type: 'chat-stream', text: `\n\n${friendly}` });
       }
     } finally {
-      this.streaming = undefined;
+      this.busy.finish();
       this.panel.post({ type: 'chat-stream-end' });
-      this.setBusy(false);
       this.avatar.setState('neutral', 'chat');
       await this.transcript.persist();
     }
@@ -386,9 +384,7 @@ export class ChatService {
     await this.note(opening);
     this.avatar.setState('thinking', 'chat');
 
-    this.streaming?.abort();
-    const controller = new AbortController();
-    this.streaming = controller;
+    const controller = this.busy.start('reply');
 
     const runner = new AgentRunner(
       this.context,
@@ -398,8 +394,7 @@ export class ChatService {
       this.log
     );
 
-    this.agentBusy.running = true;
-    this.setBusy(true);
+
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
     // expression of work the user is watching happen (M8e2).
     const holdingFace = this.avatar.claim('agent');
@@ -424,9 +419,7 @@ export class ChatService {
         );
       }
     } finally {
-      this.agentBusy.running = false;
-      this.setBusy(false);
-      this.streaming = undefined;
+      this.busy.finish();
       this.avatar.setState('neutral', 'agent');
       holdingFace();
     }
@@ -503,9 +496,7 @@ export class ChatService {
 
   /** The read-only tool loop, for questions that need to see the code. */
   private async answerWithTools(question: string, addendum = ''): Promise<void> {
-    this.streaming?.abort();
-    const controller = new AbortController();
-    this.streaming = controller;
+    const controller = this.busy.start('reply');
 
     const runner = new AgentRunner(
       this.context,
@@ -517,7 +508,6 @@ export class ChatService {
 
     this.avatar.setState('thinking', 'chat');
     this.panel.post({ type: 'chat-stream-start' });
-    this.setBusy(true);
 
     // What was actually said, for the voice — accumulated from the stream rather than
     // taken from the closing event, which no longer repeats it.
@@ -558,9 +548,8 @@ export class ChatService {
         this.panel.post({ type: 'chat-stream', text: remainder });
       }
     } finally {
-      this.streaming = undefined;
+      this.busy.finish();
       this.panel.post({ type: 'chat-stream-end' });
-      this.setBusy(false);
       this.avatar.setState('neutral', 'chat');
       await this.transcript.persist();
     }
@@ -600,7 +589,7 @@ export class ChatService {
 
   /** Cancels the answer in flight, if there is one. */
   stop(): void {
-    this.streaming?.abort();
+    this.busy.stop();
   }
 
   /**
@@ -612,13 +601,6 @@ export class ChatService {
    * run: invisible in the one situation it exists for, and visible only while a reply
    * was already finishing.
    */
-  private setBusy(busy: boolean): void {
-    if (busy) this.stopAnnounced = false;
-    this.panel.post({ type: 'busy', busy });
-  }
-
-  /** Whether "Stopped." has already been said about whatever is running. */
-  private stopAnnounced = false;
 
   /**
    * "Stop", typed rather than clicked.
@@ -628,13 +610,13 @@ export class ChatService {
    * being asked what "stop" means.
    */
   private async stopFromChat(): Promise<void> {
-    const busy = Boolean(this.streaming) || this.agentBusy.running;
+    const busy = this.busy.isBusy;
 
     // **Once per thing stopped.** Four clicks during one run produced four separate
     // replies — and because each was a rewrite of the word "Stopped." with no facts
     // attached, the model filled the space with invented history: a test suite failing
     // on a branch that does not exist, for a number of days nothing measures.
-    if (busy && this.stopAnnounced) {
+    if (busy && !this.busy.claimAnnouncement()) {
       this.stop();
       return;
     }
@@ -646,8 +628,7 @@ export class ChatService {
     }
 
     this.log('chat: stopped by typed request');
-    this.stopAnnounced = true;
-    const runWillSayIt = this.agentBusy.running;
+    const runWillSayIt = this.busy.isRunning;
     this.stop();
 
     // **One "Stopped." per stop.** A run reports its own ending, so saying it here too

@@ -244,8 +244,8 @@ export class AgentBranch {
     if (!repository || !this.created || !this.previousBranch) return false;
 
     try {
-      const commits = await repository.log({ range: `${this.previousBranch}..${this.created}` });
-      if (commits.length > 0) return false;
+      const commits = await this.commitsOnBranch(repository);
+      if (commits > 0) return false;
 
       // **The run may have moved on purpose.** "Change to the milestone branch" ends
       // with the user somewhere else by request — and tidying up by returning them to
@@ -268,6 +268,31 @@ export class AgentBranch {
       // A failure here costs a stray branch, which is exactly what it was cleaning up.
       this.log(`branch: could not remove the empty branch (${String(error)})`);
       return false;
+    }
+  }
+
+  /**
+   * How many commits the run's branch has beyond where it started.
+   *
+   * **`base..branch` fails when `base` is unborn** — a freshly `git init`'d repository,
+   * before anything has ever been committed. `master` is not a valid revision yet, so the
+   * range throws `unknown revision`, and a genuinely empty run's tidy-up quietly failed,
+   * observed live straight after the git-init offer's first real use. Falls back to the
+   * branch's own log, and if even that has no revision to show — nothing has ever been
+   * committed anywhere in the repository — that is unambiguously empty: there is nothing
+   * on the branch that removing it could lose.
+   */
+  private async commitsOnBranch(repository: GitRepository): Promise<number> {
+    try {
+      const commits = await repository.log({ range: `${this.previousBranch}..${this.created}` });
+      return commits.length;
+    } catch {
+      try {
+        const commits = await repository.log({ range: this.created! });
+        return commits.length;
+      } catch {
+        return 0;
+      }
     }
   }
 

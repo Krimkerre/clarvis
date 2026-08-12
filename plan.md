@@ -3384,10 +3384,19 @@ find anything. `src/planning/Analysis.ts` is the model-calling glue; no model
 configured means no analysis runs, not a fabricated one — there is no honest written
 fallback for "find the problems in this idea" the way there is for a question.
 `clarvis.planProject` now runs it automatically once the interview reaches "enough to
-draft", and findings are appended to the summary document. **Findings only, no
-verdicts yet** — accept/reject/modify (M9c) is not built, so nothing found is
-actionable beyond reading it. M9c, M9d (generation, including Branch flow and
-conventions) are not built.
+draft", and findings are appended to the summary document.
+
+**M9c started (13 Aug).** `src/planning/Verdicts.ts` — accept/reject/modify per
+finding via a chained QuickPick, same temporary-front-end discipline as the rest of
+M9. `src/planning/verdictSummary.ts` (pure, tested) renders each verdict: accepted
+findings unchanged, rejected findings struck through with the reason recorded
+alongside them, modified findings show the user's own text, never the original. A
+cancelled prompt counts as accept rather than silently dropping a finding nobody
+rejected. `clarvis.planProject` now also carries the same acknowledgement/aside
+quips (`LiveQuips`) chat and the agent already use, surfaced via
+`showInformationMessage` since chained input boxes have no chat transcript to write
+into. M9d (generation, including Branch flow and conventions) is not built — this
+still ends at a summary document, not a written `plan.md`.
 
 
 

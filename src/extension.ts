@@ -24,6 +24,8 @@ import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { runInterview } from './planning/Interview';
 import { runAnalysis } from './planning/Analysis';
+import { collectVerdicts } from './planning/Verdicts';
+import { formatVerdict } from './planning/verdictSummary';
 import { openQuestions, readyToDraft } from './planning/interviewTopics';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
@@ -133,7 +135,7 @@ export function activate(context: vscode.ExtensionContext): void {
   startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
   const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
-  registerPlanningCommand(context, models, logger);
+  registerPlanningCommand(context, models, logger, liveLines);
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
@@ -627,13 +629,27 @@ function startBranchFlow(
  * Deliberately separate from the chat panel rather than routed through ChatService:
  * this is the first slice of a large milestone, and the eventual "questions arrive in
  * the chat panel" experience is a later piece of work, not something this needed to
- * wait for. Now also runs M9b — the analysis pass — once the interview reaches "enough
- * to draft". Findings are reported, not yet actionable: M9c (accept/reject/modify) and
- * M9d (writing `plan.md`) are not built yet.
+ * wait for. Runs M9b (analysis) once the interview reaches "enough to draft", then
+ * M9c (accept/reject/modify per finding) over whatever it found. M9d (writing
+ * `plan.md` itself) is not built yet — this still ends at a summary document.
+ *
+ * **Carries the same personality quips as chat and the agent** — the acknowledgement
+ * on the way in, the aside after the summary on the way out. Chained input boxes are
+ * not a chat transcript, so both surface via `showInformationMessage` instead of
+ * `note()`; the lines themselves come from the same `LiveQuips` instance everything
+ * else uses, not a second copy.
  */
-function registerPlanningCommand(context: vscode.ExtensionContext, models: ModelService, logger: ClarvisLog): void {
+function registerPlanningCommand(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  logger: ClarvisLog,
+  liveLines: LiveQuips
+): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.planProject', async () => {
+      const opening = await liveLines.acknowledge('plan this project');
+      if (opening) void vscode.window.showInformationMessage(opening);
+
       const result = await runInterview(models, (message) => logger.write(message));
       if (!result) return;
 
@@ -663,14 +679,9 @@ function registerPlanningCommand(context: vscode.ExtensionContext, models: Model
         if (analysis.noPlanNeeded) {
           lines.push('', '## Analysis', `This may not need a plan: ${analysis.noPlanNeeded}`);
         } else if (analysis.findings.length > 0) {
+          const verdicts = await collectVerdicts(analysis.findings, (message) => logger.write(message));
           lines.push('', '## Analysis');
-          for (const finding of analysis.findings) {
-            lines.push(
-              `- **[${finding.class}]** ${finding.what}`,
-              `  Why it matters: ${finding.whyItMatters}`,
-              `  Suggested fix: ${finding.suggestedResolution}`
-            );
-          }
+          for (const verdict of verdicts) lines.push(...formatVerdict(verdict));
         }
       }
 
@@ -682,6 +693,13 @@ function registerPlanningCommand(context: vscode.ExtensionContext, models: Model
 
       const document = await vscode.workspace.openTextDocument({ content: lines.join('\n'), language: 'markdown' });
       await vscode.window.showTextDocument(document, { preview: false });
+
+      // The aside, same rule as everywhere else it appears: separate from the summary,
+      // never folded into it, so the document stays trustworthy and the joke stays a
+      // joke. Shown, not written into the document — it is a remark about the moment,
+      // not part of the plan.
+      const aside = await liveLines.afterTask('plan this project', lines.join('\n'));
+      if (aside) void vscode.window.showInformationMessage(aside);
     })
   );
 }

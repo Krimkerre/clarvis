@@ -13,6 +13,7 @@ import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
+import { explainHeldBack } from './dirtyAtStart';
 import { ANSWER_SHAPE, characterWith } from '../personality/character';
 import { STATE_TAG_INSTRUCTION } from '../chat/replyState';
 
@@ -429,17 +430,28 @@ export class AgentRunner {
     // Plain, and short. The previous version — "you're now on X (was Y), review the
     // diff, then merge it or throw it away" — is three git instructions to someone who
     // may not know what a diff is, and the decision is offered by a button anyway.
-    return `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a temp branch.`;
+    //
+    // A file the user was already editing is the exception worth a second sentence:
+    // it is the one case where their work and mine are tangled together in the same
+    // file, and staying quiet about that is how someone loses track of which is which.
+    const tangled = explainHeldBack(branch.heldBack);
+
+    return (
+      `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a temp branch.` +
+      (tangled ? `\n\n${tangled}` : '')
+    );
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */
   private async finish(branch: AgentBranch, task: string, narration: string): Promise<void> {
     if (this.touched.size === 0 || !branch.current) return;
 
-    const files = [...this.touched].map((file) => path.join(this.root!, file));
+    // Workspace-relative, deliberately: this is the form the run records and the form
+    // the "already modified before we started" check compares against. AgentBranch
+    // makes them absolute for git at the last moment.
     const summary = commitSubject(narration, task);
 
-    const hash = await branch.commit(`${summary}\n\nTask: ${task}`, files);
+    const hash = await branch.commit(`${summary}\n\nTask: ${task}`, [...this.touched]);
     if (hash) this.ownCommits.push(hash);
   }
 

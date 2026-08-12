@@ -1,5 +1,7 @@
 import * as vscode from 'vscode';
+import { join } from 'path';
 import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch } from './branchNames';
+import { CommitPlan, planCommit } from './dirtyAtStart';
 
 /** The branch runs start from, remembered so a second run does not stack on the first. */
 const BASE_BRANCH_KEY = 'clarvis.agent.baseBranch';
@@ -20,6 +22,21 @@ export class AgentBranch {
   /** The branch the user was on, so it can be restored. */
   private previousBranch: string | undefined;
   private created: string | undefined;
+
+  /**
+   * Files the user was already editing when the run began.
+   *
+   * Captured at `begin()` because that is the only moment the distinction exists: once
+   * the run starts editing, a modified file looks the same whoever modified it.
+   */
+  private theirsAtStart: string[] = [];
+
+  /** What the last commit deliberately left alone, for the closing line. */
+  private lastHeldBack: string[] = [];
+
+  get heldBack(): string[] {
+    return this.lastHeldBack;
+  }
 
   constructor(
     private readonly log: (message: string) => void,
@@ -65,21 +82,34 @@ export class AgentBranch {
     // first — stacking unrelated work and making a bad first run poison the second.
     // Observed in a live session: run two branched off run one.
     const base = head && !isAgentBranch(head) ? head : this.rememberedBase(existing);
+    // Where the run will actually start from, which is not always where it wanted to.
+    let startedFrom = head;
+
     if (base && head && base !== head) {
       try {
         await repository.checkout(base);
+        startedFrom = base;
         this.log(`branch: returned to ${base} before starting a new run`);
       } catch (error) {
-        // A dirty tree can block the checkout. Better to branch from here than to
-        // refuse the run outright.
+        // A dirty tree blocks the checkout. Better to branch from here than to refuse
+        // the run outright — but the log used to claim "(was master)" afterwards
+        // regardless, which made a stacked branch look like a clean one in the one
+        // record anybody would check.
         this.log(`branch: could not return to ${base} (${String(error)}), branching from ${head}`);
       }
     }
 
     if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
 
+    // Whatever the user had in flight before any of this. Recorded even when isolation
+    // fails, since that is when it matters most.
+    this.theirsAtStart = workingTreePaths(repository);
+    if (this.theirsAtStart.length > 0) {
+      this.log(`branch: ${this.theirsAtStart.length} file(s) already modified — those stay the user's`);
+    }
+
     const name = branchNameFor(task, existing);
-    this.previousBranch = base ?? head;
+    this.previousBranch = startedFrom;
 
     try {
       await repository.createBranch(name, true);
@@ -108,14 +138,28 @@ export class AgentBranch {
     const repository = this.repository();
     if (!repository || !this.created || files.length === 0) return undefined;
 
+    // Files the user was already editing are theirs, whatever this run did to them.
+    const plan: CommitPlan = planCommit(files, this.theirsAtStart);
+    this.lastHeldBack = plan.heldBack;
+
+    if (plan.heldBack.length > 0) {
+      this.log(`branch: not committing ${plan.heldBack.join(', ')} — modified before the run started`);
+    }
+    if (plan.commit.length === 0) {
+      this.log('branch: nothing to commit that was not already the user\'s');
+      return undefined;
+    }
+
+    const root = repository.rootUri?.fsPath;
+
     try {
-      await repository.add(files);
+      await repository.add(root ? plan.commit.map((file) => join(root, file)) : plan.commit);
       await repository.commit(message, { all: false });
 
       // The hash is what lets a later review tell this run's commits from the user's
       // own — author and message are both written in the same voice.
       const hash = repository.state.HEAD?.commit;
-      this.log(`branch: committed ${files.length} file(s) — ${message}`);
+      this.log(`branch: committed ${plan.commit.length} file(s) — ${message}`);
       return hash;
     } catch (error) {
       this.log(`branch: commit failed (${String(error)})`);
@@ -218,7 +262,13 @@ interface GitExports {
 }
 
 interface GitRepository {
-  state: { HEAD?: { name?: string; commit?: string } };
+  state: {
+    HEAD?: { name?: string; commit?: string };
+    /** Modified-but-uncommitted files, as the Git extension reports them. */
+    workingTreeChanges?: { uri: { fsPath: string } }[];
+    indexChanges?: { uri: { fsPath: string } }[];
+  };
+  rootUri?: { fsPath: string };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
   createBranch(name: string, checkout: boolean): Promise<void>;
   checkout(name: string): Promise<void>;
@@ -226,4 +276,22 @@ interface GitRepository {
   commit(message: string, options?: { all: boolean }): Promise<void>;
   log(options: { range: string }): Promise<unknown[]>;
   deleteBranch(name: string, force: boolean): Promise<void>;
+}
+
+/**
+ * What the user already had in flight, as workspace-relative paths.
+ *
+ * Both lists, because a staged-but-uncommitted change is just as much theirs as an
+ * unstaged one — and `git commit` would take it along without being asked.
+ *
+ * Relative rather than absolute so it compares directly against the paths the run
+ * records, which `canonicalRelative` has already normalised for case.
+ */
+function workingTreePaths(repository: GitRepository): string[] {
+  const root = repository.rootUri?.fsPath;
+  const changes = [...(repository.state.workingTreeChanges ?? []), ...(repository.state.indexChanges ?? [])];
+
+  return changes.map((change) =>
+    root ? vscode.workspace.asRelativePath(change.uri.fsPath, false) : change.uri.fsPath
+  );
 }

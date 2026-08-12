@@ -3231,6 +3231,38 @@ end-to-end ones:
   nothing touched. With no key set, M8a alone still answers what it can and says
   plainly why it can't do the rest.
 
+### M5 amendment — an error has to survive to count
+
+Diagnostics were counted the moment they appeared. There was already a twelve-second
+grace after activation, on the reasoning that a language server reports pre-existing
+errors late — but that covers the start of a session and nothing after it, and most of
+what a language server emits is transient: a half-written line is an error until it is
+finished, and reopening a project produces a burst of "Cannot find name 'process'" that
+resolves itself as soon as types load.
+
+Observed rather than predicted. A briefing opened with *"that `Type 'string' is not
+assignable to type 'number'` error has shown up twice this week"* about an error that
+never survived long enough for anyone to read it, and the store held four more of the
+same kind, each one occurrence short of being announced aloud.
+
+An error is now counted only if it is **still present six seconds later**, re-read from
+the editor rather than trusted from the event — the question is whether it is there
+*now*, and the editor is the only thing that knows. Timers are tracked and cancelled on
+teardown, like every other timer here.
+
+Two related corrections went with it. `topPattern` surfaced anything seen twice while an
+unsolicited remark needs three, so the briefing had a lower bar than the rule it was
+meant to follow (§4.2: three times in seven days); it is the same bar now. And there is
+a way to say *forget about it*, because the failure record only ever cleared itself when
+that same job succeeded — which never happens for a probe, or a suite someone is
+deliberately leaving red.
+
+**Untestable, and worth being honest about.** The confirmation path needs a live language
+server; nothing in the suite covers it. It was found by reading a briefing and will be
+verified the same way.
+
+---
+
 ### M8 aftermath — the linter, and the split
 
 Added after M8 closed, on a report that the project had "too much cyclomatic complexity"

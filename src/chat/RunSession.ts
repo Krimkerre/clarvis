@@ -116,11 +116,11 @@ export class RunSession {
       holdingFace();
     }
 
-    await this.close(task, summary);
+    const { commits, files } = runner.result;
+    await this.close(task, summary, files.length);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
-    const { commits, files } = runner.result;
     if (files.length > 0) await this.offerReview(commits, files);
   }
 
@@ -137,12 +137,18 @@ export class RunSession {
    * and has to be trustworthy; the aside is comic relief after it. A summary trying to
    * be funny is a summary nobody can rely on.
    */
-  private async close(task: string, summary: string): Promise<void> {
-    if (!summary) return;
+  private async close(task: string, summary: string, changed: number): Promise<void> {
+    // **A run that changed nothing still ends.** There is no closing line in that case —
+    // "your own work is untouched" is meaningless when nothing was touched at all — so
+    // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
+    // crash looks, and this is the shape of a run that was refused, or that read a file
+    // and correctly declined to act on it.
+    const said = summary || (changed === 0 ? await this.phrase('report', 'Nothing needed changing.') : '');
+    if (!said) return;
 
-    await this.note(summary);
+    await this.note(said);
 
-    const aside = (await this.live?.afterTask(task, summary)) ?? this.closers.pick('taskDone')?.text;
+    const aside = (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
     if (aside) await this.note(aside);
   }
 

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MODES, modeSpec, canEdit } from './modes';
 import { isStopRequest } from './chatCommands';
-import { chatAction } from './chatCommands';
+import { chatAction, forgetTarget } from './chatCommands';
 
 test('only auto and agent may change files', () => {
   // The reason the setting exists. If this ever inverts, a "chat only" mode starts
@@ -70,4 +70,20 @@ test('asking about the failure is still a question', () => {
   // "Why is the build failing" wants an answer, not amnesia.
   assert.equal(chatAction('why is the build failing?'), null);
   assert.equal(chatAction('what failed'), null);
+});
+
+test('the job named in a forget request is extracted', () => {
+  // After the failure record has gone there is nothing left to take the name from, so
+  // it has to come from what the user typed — which is how the first version failed.
+  assert.equal(forgetTarget('forget about probe-build-fail'), 'probe-build-fail');
+  assert.equal(forgetTarget('/forget npm run lint'), 'npm run lint');
+  assert.equal(forgetTarget('stop mentioning the flaky-suite'), 'flaky-suite');
+});
+
+test('a forget with no subject names nothing rather than guessing', () => {
+  // "Forget the failing build" describes a failure without naming one, and a substring
+  // match on "build" would take out anything whose error text mentions one.
+  for (const vague of ['forget the failing build', 'forget about it', 'ignore that failure', '/forget']) {
+    assert.equal(forgetTarget(vague), undefined, vague);
+  }
 });

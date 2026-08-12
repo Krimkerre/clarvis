@@ -277,3 +277,40 @@ export function isStopRequest(text: string): boolean {
     text.trim()
   );
 }
+
+/**
+ * The job named in a "forget about X" request.
+ *
+ * Needed because the two things he remembers are cleared by name, and after the failure
+ * record has gone there is nothing left to take the name *from* — which is exactly how
+ * the first version failed: it read the record, found it already empty, and returned
+ * without touching the pattern the user could still see in every briefing.
+ *
+ * Returns undefined when the request names nothing in particular ("forget the failing
+ * build"), so the caller can say what it does remember rather than guessing.
+ */
+export function forgetTarget(text: string): string | undefined {
+  const stripped = text
+    .trim()
+    .toLowerCase()
+    .replace(/^\/forget\s*/, '')
+    .replace(/^(please\s+)?(forget|drop|ignore|stop mentioning|stop going on about|let go of)\s+/, '')
+    .replace(/^(about|all about)\s+/, '')
+    .replace(/^(the|that|this)\s+/, '')
+    .replace(/\b(job|command|task|thing)\b/g, '')
+    .trim();
+
+  // Words that describe a failure rather than name one. "Forget the failing build" is a
+  // request without a subject, and a substring match on "build" would take out anything
+  // whose error text happens to mention one.
+  //
+  // Checked word by word rather than against the whole phrase, because the description
+  // is usually two of them — "failing build", "broken tests" — and a whole-phrase match
+  // let those straight through.
+  if (!stripped) return undefined; // a bare `/forget`, which names nothing at all
+
+  const vague = /^(fail|fails|failed|failing|failure|failures|broken|red|build|builds|test|tests|suite|error|errors|it|one|thing)$/;
+  const named = stripped.split(/\s+/).filter((word) => !vague.test(word));
+
+  return named.length > 0 ? stripped : undefined;
+}

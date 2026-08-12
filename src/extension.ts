@@ -341,16 +341,17 @@ function startChat(
     // happens when the same job succeeds.
     vscode.commands.registerCommand('clarvis.forgetFailure', async () => {
       const stored = parseRecord(context.workspaceState.get(FAILURE_KEY));
-      if (!stored) {
-        void vscode.window.showInformationMessage(await phrase('report', 'There is no failure on my mind.'));
-        return;
-      }
+      if (stored) await context.workspaceState.update(FAILURE_KEY, undefined);
 
-      await context.workspaceState.update(FAILURE_KEY, undefined);
-      await memory.forget(stored.label);
-      log.write(`chat: forgot the failure "${stored.label}"`);
+      // Both stores, independently: the record may already be gone while the pattern —
+      // the line the user actually sees every morning — is still there.
+      const dropped = stored ? await memory.forget(stored.label) : 0;
+      log.write(`chat: forget from the palette — record ${stored ? 'cleared' : 'was empty'}, ${dropped} pattern(s)`);
+
       void vscode.window.showInformationMessage(
-        await phrase('report', `Forgotten. ${stored.label} is your business now.`, [stored.label])
+        stored || dropped > 0
+          ? await phrase('report', `Forgotten. ${stored?.label ?? 'That'} is your business now.`)
+          : await phrase('report', 'There is nothing on my mind to forget.')
       );
     }),
 

@@ -170,7 +170,8 @@ export class ChatService {
       (text) => this.note(text),
       log,
       context,
-      (needle) => this.forgetPattern(needle)
+      (needle) => this.forgetPattern(needle),
+      patterns
     );
 
     this.panel.onDidAsk((question) => void this.ask(question));

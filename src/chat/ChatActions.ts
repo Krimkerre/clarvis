@@ -2,13 +2,14 @@ import * as vscode from 'vscode';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { VoiceService } from '../voice/VoiceService';
 import { ModelService } from '../model/ModelService';
-import { branchFromRequest, ChatAction } from './chatCommands';
+import { branchFromRequest, ChatAction, forgetTarget } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { MODES, ChatMode, modeSpec } from './modes';
 import { ACTION_QUESTIONS, worthInferring } from './actionIntent';
 import { classifyAction } from './intentModel';
 import { FAILURE_KEY, parseRecord } from '../briefing/lastFailure';
+import type { Pattern } from '../memory/patterns';
 
 /**
  * Doing the things chat can do, as opposed to answering.
@@ -34,7 +35,9 @@ export class ChatActions {
     private readonly log: (message: string) => void,
     private readonly context: vscode.ExtensionContext,
     /** Drops what pattern memory remembers about a job. Separate store, same request. */
-    private readonly forgetPattern: (needle: string) => Promise<number>
+    private readonly forgetPattern: (needle: string) => Promise<number>,
+    /** What he currently remembers, for when a forget matches nothing. */
+    private readonly knownPatterns: () => Pattern[]
   ) {}
 
   /** What Clarvis is currently allowed to do, from settings. */
@@ -174,7 +177,7 @@ export class ChatActions {
       ).then(() => vscode.commands.executeCommand('clarvis.configureModels')).then(() => undefined);
     }
 
-    if (action === 'forgetFailure') return this.forgetFailure();
+    if (action === 'forgetFailure') return this.forgetFailure(question);
 
     if (action === 'toggleMute') {
       const muted = !this.voice.isMuted;
@@ -198,21 +201,37 @@ export class ChatActions {
    * Deleting the record rather than muting the line: there is nothing to remember, and
    * a suppression list would be a second thing to explain and to forget about.
    */
-  private async forgetFailure(): Promise<void> {
+  private async forgetFailure(question: string): Promise<void> {
     const stored = parseRecord(this.context.workspaceState.get(FAILURE_KEY));
 
-    if (!stored) {
-      await this.say('There is no failure on my mind. This is as clear as I get.', 'neutral');
+    // **Both stores, independently.** The first version read the record, and returned
+    // early when it was empty — so a second "forget" after the record had already gone
+    // never reached the pattern memory, and he carried on opening with "seen it 4× this
+    // week" while insisting there was no failure on his mind.
+    if (stored) await this.context.workspaceState.update(FAILURE_KEY, undefined);
+
+    const needle = forgetTarget(question) ?? stored?.label;
+    const dropped = needle ? await this.forgetPattern(needle) : 0;
+
+    this.log(`chat: forget "${needle ?? 'nothing named'}" — record ${stored ? 'cleared' : 'was empty'}, ${dropped} pattern(s)`);
+
+    if (stored || dropped > 0) {
+      await this.say(`Forgotten. \`${needle ?? stored?.label}\` is your business now, not mine.`, 'neutral');
       return;
     }
 
-    await this.context.workspaceState.update(FAILURE_KEY, undefined);
-    // The other store. "Seen it 4× this week" is the same subject raised again, and to
-    // the person who just asked him to drop it, indistinguishable from being ignored.
-    await this.forgetPattern(stored.label);
+    // Nothing matched. Saying what he *does* remember is more use than "nothing to do":
+    // the name he has it under is rarely the name the user typed.
+    const known = this.knownPatterns()
+      .map((pattern) => pattern.sample.split('\n')[0].slice(0, 40))
+      .slice(0, 3);
 
-    this.log(`chat: forgot the failure "${stored.label}"`);
-    await this.say(`Forgotten. \`${stored.label}\` is your business now, not mine.`, 'neutral');
+    await this.say(
+      known.length > 0
+        ? `Nothing under that name. What I remember: ${known.join('; ')}.`
+        : 'There is nothing on my mind to forget. This is as clear as I get.',
+      'neutral'
+    );
   }
 
   /**

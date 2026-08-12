@@ -3,6 +3,29 @@ import { join } from 'path';
 import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 
+/** What `begin()` managed, and what the user needs told about it. */
+export interface Isolation {
+  isolated: boolean;
+  branch?: string;
+  /** Said before any work happens, when the arrangement is not the usual one. */
+  advice?: string;
+}
+
+/**
+ * The sentence for a run built on top of another run.
+ *
+ * Ends with the remedy rather than the diagnosis: the situation is recoverable in one
+ * command, and a warning that does not say how to stop recurring is just a complaint.
+ */
+function stackedAdvice(base: string | undefined, stacked: string): string {
+  return (
+    `I couldn't start from \`${base ?? 'your branch'}\`: you have unsaved changes to a file that ` +
+    `differs between the two, and switching would have overwritten them. So this run sits on top of ` +
+    `\`${stacked}\` and carries that run's changes as well as its own. Commit or stash those changes ` +
+    `and the next run will start clean.`
+  );
+}
+
 /** The branch runs start from, remembered so a second run does not stack on the first. */
 const BASE_BRANCH_KEY = 'clarvis.agent.baseBranch';
 
@@ -61,14 +84,13 @@ export class AgentBranch {
    * world they are in — an agent editing your working branch is a different proposition
    * from one editing its own, and quietly doing the former would be a betrayal.
    */
-  async begin(task: string): Promise<{ isolated: boolean; branch?: string; advice?: string }> {
+  async begin(task: string): Promise<Isolation> {
     const repository = this.repository();
 
     if (!repository) {
       const problem: GitProblem = gitExtension() ? 'no-repository' : 'no-extension';
-      const advice = adviseOnGit(problem);
       this.log(`branch: not isolating — ${problem}`);
-      return { isolated: false, advice: advice.message };
+      return { isolated: false, advice: adviseOnGit(problem).message };
     }
 
     const existing: string[] = (await repository.getBranches({ remote: false })).map(
@@ -76,74 +98,87 @@ export class AgentBranch {
     );
 
     const head = repository.state.HEAD?.name;
+    const base = await this.baseFor(head, existing);
+    this.noteTheirWork(repository);
 
-    // **Branch from the user's branch, not from the last run's.** A finished run leaves
-    // the editor on `clarvis/<task>`, so a second task would otherwise branch off the
-    // first — stacking unrelated work and making a bad first run poison the second.
-    // Observed in a live session: run two branched off run one.
+    const name = branchNameFor(task, existing);
+
+    // First choice: start at the base, whatever we are standing on now.
+    if (base && head && base !== head && (await this.startAt(repository, name, base, base))) {
+      return { isolated: true, branch: name };
+    }
+
+    // Second: start here. Fine from an ordinary branch, and a stacked run from an
+    // agent branch — which is worth a sentence, because it changes what merging means.
+    if (await this.startAt(repository, name, undefined, head)) {
+      const stacked = head && isAgentBranch(head) ? head : undefined;
+      return { isolated: true, branch: name, advice: stacked && stackedAdvice(base, stacked) };
+    }
+
+    // Neither worked: a detached HEAD, or a hook refusing the checkout. Not worth
+    // failing the run over — checkpoints still cover undo.
+    return {
+      isolated: false,
+      advice: "I couldn't create a branch to work on, so I'll snapshot files instead and you can undo the run.",
+    };
+  }
+
+  /**
+   * Where a run should start from.
+   *
+   * **The user's branch, not the last run's.** A finished run leaves the editor on
+   * `clarvis/<task>`, so a second task would otherwise branch off the first — stacking
+   * unrelated work and letting a bad first run poison the second. Observed live: run two
+   * branched off run one.
+   */
+  private async baseFor(head: string | undefined, existing: string[]): Promise<string | undefined> {
     const base = head && !isAgentBranch(head) ? head : this.rememberedBase(existing);
-
     if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
+    return base;
+  }
 
-    // Whatever the user had in flight before any of this. Recorded even when isolation
-    // fails, since that is when it matters most.
+  /** Whatever the user had in flight. Recorded even when isolation fails — especially then. */
+  private noteTheirWork(repository: GitRepository): void {
     this.theirsAtStart = workingTreePaths(repository);
     if (this.theirsAtStart.length > 0) {
       this.log(`branch: ${this.theirsAtStart.length} file(s) already modified — those stay the user's`);
     }
+  }
 
-    const name = branchNameFor(task, existing);
-
-    // **Created *at* the base, rather than checked out and then branched.** The previous
-    // version switched to `master` first, and a dirty working tree makes that switch
-    // fail — at which point it branched from wherever it happened to be, which was the
-    // last run's branch. Three runs in one session produced three branches stacked on
-    // each other, each carrying the one before it.
-    //
-    // `createBranch(name, checkout, ref)` needs no intermediate switch, so the ordinary
-    // dirty-tree case now starts from the right place instead of the nearest place.
-    if (base && head && base !== head) {
-      try {
-        await repository.createBranch(name, true, base);
-        this.created = name;
-        this.previousBranch = base;
-        this.log(`branch: working on ${name}, started from ${base}`);
-        return { isolated: true, branch: name };
-      } catch (error) {
-        // Still possible: the switch would overwrite a modified file that differs
-        // between here and the base. Falling through builds on the current branch,
-        // which is the old behaviour — but it is now *said*, because a run stacked on
-        // an earlier run's work is a materially different promise from a clean one.
-        this.log(`branch: could not start from ${base} (${String(error)})`);
-      }
-    }
-
-    this.previousBranch = head;
-
+  /**
+   * Creates the branch and switches to it, reporting whether it worked.
+   *
+   * **Created *at* a ref rather than checked out and then branched.** The first version
+   * switched to `master` first, and a dirty working tree fails that switch — at which
+   * point it branched from wherever it happened to be, which was the previous run's
+   * branch. `createBranch(name, checkout, ref)` needs no intermediate switch, so the
+   * ordinary dirty-tree case starts from the right place instead of the nearest one.
+   *
+   * `false` rather than a throw: both callers treat failure as "try the next option",
+   * and the last one turns it into an honest refusal.
+   */
+  private async startAt(
+    repository: GitRepository,
+    name: string,
+    ref: string | undefined,
+    /**
+     * Where the user was, passed in rather than read back afterwards.
+     *
+     * Read from `HEAD` after the call it would be the branch just created, since the
+     * switch has already happened — so undo would offer to return you to the very branch
+     * you were undoing. Caught by re-reading this refactor, not by a test.
+     */
+    previous: string | undefined
+  ): Promise<boolean> {
     try {
-      await repository.createBranch(name, true);
+      await repository.createBranch(name, true, ref);
       this.created = name;
-
-      // Stacked, and the user is told. Only when it actually is: branching from an
-      // ordinary branch is the normal case and needs no sentence.
-      const stacked = head && isAgentBranch(head) ? head : undefined;
-      this.log(`branch: working on ${name}, started from ${head ?? 'detached'}${stacked ? ' (stacked)' : ''}`);
-
-      return {
-        isolated: true,
-        branch: name,
-        advice: stacked
-          ? `I couldn't start from \`${base ?? 'your branch'}\`: you have unsaved changes to a file that differs between the two, and switching would have overwritten them. So this run sits on top of \`${stacked}\` and carries that run's changes as well as its own. Commit or stash those changes and the next run will start clean.`
-          : undefined,
-      };
+      this.previousBranch = previous;
+      this.log(`branch: working on ${name}, started from ${previous ?? 'detached'}`);
+      return true;
     } catch (error) {
-      // Dirty tree, detached HEAD, a hook refusing the checkout. None of these are
-      // worth failing the run over — checkpoints still cover undo.
-      this.log(`branch: could not create ${name} (${String(error)})`);
-      return {
-        isolated: false,
-        advice: "I couldn't create a branch to work on, so I'll snapshot files instead and you can undo the run.",
-      };
+      this.log(`branch: could not start from ${ref ?? 'here'} (${String(error)})`);
+      return false;
     }
   }
 

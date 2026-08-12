@@ -20,6 +20,7 @@ import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
+import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -559,6 +560,23 @@ function startBranchFlow(
   // for should be sorted out while they are still looking at it.
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow()),
+
+    // The palette route to the same thing chat does. A job that fails on purpose — a
+    // probe, a deliberately red suite — never clears its own record, because that only
+    // happens when the same job succeeds.
+    vscode.commands.registerCommand('clarvis.forgetFailure', async () => {
+      const stored = parseRecord(context.workspaceState.get(FAILURE_KEY));
+      if (!stored) {
+        void vscode.window.showInformationMessage(await phrase('report', 'There is no failure on my mind.'));
+        return;
+      }
+
+      await context.workspaceState.update(FAILURE_KEY, undefined);
+      logger.write(`chat: forgot the failure "${stored.label}"`);
+      void vscode.window.showInformationMessage(
+        await phrase('report', `Forgotten. ${stored.label} is your business now.`, [stored.label])
+      );
+    }),
 
     // "Asked once" is right until someone changes their mind, or is testing. Without
     // this the only way to be asked again about a branch is a new workspace.

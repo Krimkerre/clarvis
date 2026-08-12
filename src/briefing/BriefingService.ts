@@ -3,10 +3,9 @@ import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { RecentFiles } from './recentFiles';
 import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLines';
 import { readGitSummary } from './gitSummary';
-import { activeFailure, foldOutcome, parseRecord, FailureRecord } from './lastFailure';
+import { activeFailure, foldOutcome, parseRecord, FailureRecord, FAILURE_KEY } from './lastFailure';
 
 /** Key under which the last failing job is persisted for the next session. */
-const FAILURE_KEY = 'clarvis.lastFailure';
 
 /** Recently-saved files, persisted so the briefing has something to report at launch. */
 const RECENT_FILES_KEY = 'clarvis.recentFiles';

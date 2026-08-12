@@ -58,6 +58,14 @@ server" is a job, not an interruption, so that still gets treated as work.
 
 ---
 
+**A job that fails on purpose can be dismissed.** He remembers the last thing that
+failed and brings it up at launch, which is right for a test you mean to fix and wrong
+for a probe or a deliberately red suite — those never clear themselves, because the
+record only clears when *that same job succeeds*. Say `forget about the failing build`,
+or `/forget`, and it is gone.
+
+---
+
 ## What Clarvis does on his own
 
 He talks unprompted in four situations, and never more than **once a minute** in total
@@ -144,6 +152,7 @@ is the good one, and needs a key of your own.
 | Change quality vs. cost | `/engine` — defaults to `s2.1-pro-free`, their best model on a free tier |
 | Hear a test line | `/testvoice` |
 | Silence him right now | **Mute**, or `/mute` — stops him mid-sentence |
+| Stop him mentioning a failed job | `/forget`, or "forget about the failing build" |
 
 **Mute is for the next ten minutes, not forever.** It clears when you reload the
 window. To turn voice off properly, use the setting.

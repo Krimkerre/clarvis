@@ -19,8 +19,6 @@ import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
 import { Voice } from '../personality/Voice';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
-/** Where M4 stored the failure record, re-read here rather than duplicated. */
-const FAILURE_KEY = 'clarvis.lastFailure';
 
 /**
  * The chat panel's coordinator: what a message is, and who deals with it.
@@ -136,7 +134,7 @@ export class ChatService {
     private readonly agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
     private readonly log: (message: string) => void
   ) {
-    this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
+    this.workspace = new WorkspaceFactsReader(context, tracker, recentFiles, patterns);
     this.transcript = new Transcript(context, panel, log);
     this.busy = new Busy(panel, agentBusy);
     this.runs = new RunSession(
@@ -169,7 +167,7 @@ export class ChatService {
       (text, state) => this.say(text, state),
       (text) => this.note(text),
       log,
-      context.extensionUri
+      context
     );
 
     this.panel.onDidAsk((question) => void this.ask(question));

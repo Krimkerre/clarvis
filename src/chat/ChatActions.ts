@@ -8,6 +8,7 @@ import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { MODES, ChatMode, modeSpec } from './modes';
 import { ACTION_QUESTIONS, worthInferring } from './actionIntent';
 import { classifyAction } from './intentModel';
+import { FAILURE_KEY, parseRecord } from '../briefing/lastFailure';
 
 /**
  * Doing the things chat can do, as opposed to answering.
@@ -31,7 +32,7 @@ export class ChatActions {
     /** Records a line without speaking it — for things that are their own announcement. */
     private readonly note: (text: string) => Promise<void>,
     private readonly log: (message: string) => void,
-    private readonly extensionUri: vscode.Uri
+    private readonly context: vscode.ExtensionContext
   ) {}
 
   /** What Clarvis is currently allowed to do, from settings. */
@@ -171,6 +172,8 @@ export class ChatActions {
       ).then(() => vscode.commands.executeCommand('clarvis.configureModels')).then(() => undefined);
     }
 
+    if (action === 'forgetFailure') return this.forgetFailure();
+
     if (action === 'toggleMute') {
       const muted = !this.voice.isMuted;
       this.voice.setMuted(muted);
@@ -183,6 +186,30 @@ export class ChatActions {
   }
 
   /**
+   * Stops him bringing up a job that failed.
+   *
+   * The record clears itself only when *that same job* succeeds, which is right for a
+   * test you mean to fix and wrong for one that fails on purpose — a probe, a known-bad
+   * example, a suite someone is deliberately leaving red. Those get mentioned every
+   * morning until the fortnight TTL runs out.
+   *
+   * Deleting the record rather than muting the line: there is nothing to remember, and
+   * a suppression list would be a second thing to explain and to forget about.
+   */
+  private async forgetFailure(): Promise<void> {
+    const stored = parseRecord(this.context.workspaceState.get(FAILURE_KEY));
+
+    if (!stored) {
+      await this.say('There is no failure on my mind. This is as clear as I get.', 'neutral');
+      return;
+    }
+
+    await this.context.workspaceState.update(FAILURE_KEY, undefined);
+    this.log(`chat: forgot the failure "${stored.label}"`);
+    await this.say(`Forgotten. \`${stored.label}\` is your business now, not mine.`, 'neutral');
+  }
+
+  /**
    * Shows the manual as a rendered Markdown preview.
    *
    * A preview tab rather than a custom webview: it scrolls, searches, prints and closes
@@ -190,7 +217,7 @@ export class ChatActions {
    * to maintain. Falls back to the raw file if the preview command is unavailable.
    */
   async openManual(): Promise<void> {
-    const manual = vscode.Uri.joinPath(this.extensionUri, 'media', 'MANUAL.md');
+    const manual = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'MANUAL.md');
 
     try {
       await vscode.commands.executeCommand('markdown.showPreview', manual);

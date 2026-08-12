@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
-import { activeFailure, parseRecord, FailureRecord } from '../briefing/lastFailure';
+import { activeFailure, parseRecord, FailureRecord, FAILURE_KEY } from '../briefing/lastFailure';
 import { readGitSummary } from '../briefing/gitSummary';
 import { WorkspaceFacts } from './localAnswer';
 
@@ -30,8 +30,6 @@ export class WorkspaceFactsReader {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly tracker: BusyTracker,
-    /** Where M4 stored the failure record, re-read rather than duplicated. */
-    private readonly failureKey: string,
     // Suppliers rather than the owning services: two facts are needed, and taking
     // BriefingService and PatternMemory wholesale would couple this to everything else
     // those two happen to do.
@@ -54,7 +52,7 @@ export class WorkspaceFactsReader {
 
   async read(): Promise<WorkspaceFacts> {
     const now = Date.now();
-    const stored = parseRecord(this.context.workspaceState.get<FailureRecord>(this.failureKey));
+    const stored = parseRecord(this.context.workspaceState.get<FailureRecord>(FAILURE_KEY));
 
     return {
       now,

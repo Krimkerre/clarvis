@@ -68,6 +68,10 @@
         "title": "Clarvis: Forget Branch Flow Answers"
       },
       {
+        "command": "clarvis.forgetFailure",
+        "title": "Clarvis: Forget the Failing Job"
+      },
+      {
         "command": "clarvis.reviewRun",
         "title": "Clarvis: Review Agent Run"
       },

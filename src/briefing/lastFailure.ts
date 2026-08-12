@@ -1,6 +1,14 @@
 import type { Outcome } from '../watch/BusyTracker';
 
 /**
+ * Where the record is kept.
+ *
+ * Defined here rather than in each reader: the briefing writes it, the chat reads it,
+ * and dismissing it deletes it — three copies of a string is two chances to typo one.
+ */
+export const FAILURE_KEY = 'clarvis.lastFailure';
+
+/**
  * The failing job worth mentioning at next launch — "the thread you dropped".
  *
  * Persisted across sessions (M3's outcomes are live-only), so this is the piece that

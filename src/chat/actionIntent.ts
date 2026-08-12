@@ -39,6 +39,7 @@ export const ACTION_QUESTIONS: Record<ChatAction, string> = {
   chooseModel: 'Open the model settings?',
   switchBranch: 'Switch branch?',
   explainGit: 'Explain the repository state?',
+  forgetFailure: 'Stop mentioning that failing job?',
 };
 
 /** The allow-list, derived from the questions so the two cannot drift apart. */

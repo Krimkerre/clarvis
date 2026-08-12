@@ -36,7 +36,8 @@ export type ChatAction =
   | 'openSettings'
   | 'chooseModel'
   | 'switchBranch'
-  | 'explainGit';
+  | 'explainGit'
+  | 'forgetFailure';
 
 interface Intent {
   action: ChatAction;
@@ -109,6 +110,17 @@ const INTENTS: Intent[] = [
     action: 'showHistory',
     slash: ['/history'],
     phrases: [/\b(earlier|previous|past|old).{0,20}\b(chat|conversation)s?\b/],
+  },
+  {
+    action: 'forgetFailure',
+    slash: ['/forget'],
+    // A job that fails *by design* — a probe, a known-broken example, a test someone is
+    // leaving red on purpose — never clears itself, because the record only clears when
+    // that same job succeeds. Without this it is mentioned every morning for a fortnight.
+    phrases: [
+      /\b(forget|drop|ignore|stop mentioning|stop going on about|let go of)\b.{0,30}\b(fail|failing|failure|build|test|it)\b/,
+      /\bi know about the (build|test|failure)\b/,
+    ],
   },
   {
     action: 'explainGit',
@@ -242,7 +254,7 @@ function isRequest(text: string): boolean {
   if (/^(what|which|why|when|who|is|are|does|did|can you tell)\b/.test(text)) return false;
 
   const verbs =
-    /\b(change|set|pick|choose|switch|select|open|show|configure|update|edit|swap|add|enter|remove|delete|forget|clear|wipe|reset|test|try|preview|check ?out|go to|use a different)\b/;
+    /\b(change|set|pick|choose|switch|select|open|show|configure|update|edit|swap|add|enter|remove|delete|forget|drop|ignore|clear|wipe|reset|test|try|preview|check ?out|go to|use a different)\b/;
 
   return verbs.test(text) || /\b(mute|unmute|be quiet|shut up|silence|stop talking)\b/.test(text);
 }

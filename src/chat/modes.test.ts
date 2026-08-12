@@ -51,3 +51,23 @@ test('"instructions" in a request is not a request for the manual', () => {
   assert.equal(chatAction('open the manual'), 'help');
   assert.equal(chatAction('do you have a help page?'), 'help');
 });
+
+test('asking him to drop a failing job is recognised', () => {
+  // A job that fails by design never clears its own record — that only happens when the
+  // same job succeeds — so without a way to say "let it go" it is mentioned every
+  // morning until the fortnight TTL expires.
+  for (const said of [
+    'forget about the failing build',
+    'stop mentioning the failing test',
+    'ignore that failure',
+    '/forget',
+  ]) {
+    assert.equal(chatAction(said), 'forgetFailure', said);
+  }
+});
+
+test('asking about the failure is still a question', () => {
+  // "Why is the build failing" wants an answer, not amnesia.
+  assert.equal(chatAction('why is the build failing?'), null);
+  assert.equal(chatAction('what failed'), null);
+});

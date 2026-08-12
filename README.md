@@ -325,3 +325,10 @@ deviation: comments are used liberally rather than treated as a last resort, bec
 this codebase doubles as a worked example. Pure logic is kept in modules that import
 nothing from `vscode`, which is what makes it unit-testable without an extension host —
 `npm test` runs those against Node's built-in runner, no test framework required.
+
+## Special thanks
+
+**[Alexander](https://github.com/alexander-keisse)** — for feedback, guidance and tips
+throughout the build. A second pair of eyes on a project like this is worth more than it
+sounds: most of what went wrong here went wrong in the gaps between working parts, and
+those are exactly the places you stop seeing once you have stared at them long enough.

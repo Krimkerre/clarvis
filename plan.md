@@ -2799,6 +2799,27 @@ are worth carrying into M9 as design rules rather than anecdotes:
   "fixes" shipped on the strength of tests that asserted on prompt text. `Clarvis: Debug
   — Voice Check` exists so the fourth did not.
 
+**Final status, honestly.** All code is built and installed; the refactor and personality
+work are done to a green suite and a clean linter (436 tests, 0 complexity findings).
+Of the exit checklist, the load-bearing safety items were walked live and each found and
+fixed a real defect: the gate on all three categories, path escape, prompt injection
+(twice — the second finding a routing bug, not a security one), undo, branch isolation
+on a fresh repository, the `git init` offer and its decline persistence, provider
+switching, and an invalid key. That is not the whole checklist.
+
+**45 items remain genuinely unwalked**, not ticked and not assumed. Mute mid-sentence,
+avatar strobing under fast tool calls, the token-budget gate between steps, the step
+cap, transcript persistence across a reload/crash/50-turn cap, VSCodium's git behaviour,
+Ollama (not installed on this machine), and renaming the `git` binary (skipped —
+touching PATH risks breaking the shell for everything else on it, for one checklist
+item). Most of these are not scripted-test shaped; they are the kind of thing a day of
+ordinary use would exercise without anyone deciding to test them on purpose, which is
+the argument for doing the outstanding M6 full-day dogfood pass before M9 rather than
+scripting each one by hand.
+
+**M8 is built and load-bearing-safe. It is not exhaustively verified.** Those are
+different claims, and this file should not say the stronger one until it is true.
+
 **Build.**
 - **M8a — Local answers.** `src/chat/ChatService.ts` (specced as `ChatViewProvider.ts`) extends the M2 panel with an
   input box + transcript below the avatar (same webview, not a second one — §3).

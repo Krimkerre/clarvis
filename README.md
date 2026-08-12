@@ -286,9 +286,12 @@ the full per-milestone build notes and exit criteria.
       goes through the OS's headless player rather than the webview, because Chromium
       blocks audio until the panel is clicked — which the launch briefing can never
       satisfy. Rendered speech is cached on disk, so repeats cost nothing.
-- [x] **M8 — Chat & Agent.** *Built. Most of the exit checklist has now been walked
-      live; what remains is the environment matrix — no repo, missing `git`, VSCodium,
-      the provider list.* The chat panel answers from local state with no key or
+- [x] **M8 — Chat & Agent.** *Built and safety-verified live: gates, path escape,
+      prompt injection, undo, branch isolation, the `git init` offer. Not exhaustively
+      verified — ~45 finer-grained checklist items (mute mid-sentence, avatar strobing,
+      transcript persistence, Ollama, and others) are still open, most of them better
+      suited to the outstanding M6 dogfood pass than to being scripted one at a time. See
+      `plan.md`'s M8 section for the honest breakdown.* The chat panel answers from local state with no key or
       network, then from a model when one is configured — five providers, separate
       models for chat and for coding so the cheap one handles talking. A tool layer, a
       deny-list gate, checkpoints and per-run branch isolation were built and tested

@@ -3444,6 +3444,14 @@ Clarvis works when a user:
 8. Explains the privacy model to a friend in one sentence, correctly.
 9. Never once finds that Clarvis changed something they didn't ask him to change.
 
+
+## Special thanks
+
+**[Alexander](https://github.com/alexander-keisse)** — for feedback, guidance and tips
+throughout. Nearly every defect recorded in this document was found by someone using the
+thing rather than by a passing test suite, which is an argument for outside eyes as much
+as for dogfooding.
+
 ---
 
 *Files: `avatar.html` — the butler, animated and ready. `plan.md` — this.*

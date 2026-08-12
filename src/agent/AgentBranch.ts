@@ -141,7 +141,10 @@ export class AgentBranch {
   private noteTheirWork(repository: GitRepository): void {
     this.theirsAtStart = workingTreePaths(repository);
     if (this.theirsAtStart.length > 0) {
-      this.log(`branch: ${this.theirsAtStart.length} file(s) already modified — those stay the user's`);
+      // "already modified" was wrong: the list includes untracked files, which the user
+      // created rather than edited. Both are theirs and both are held back — the wording
+      // was the only thing claiming otherwise.
+      this.log(`branch: ${this.theirsAtStart.length} file(s) already in flight — those stay the user's`);
     }
   }
 
@@ -322,6 +325,8 @@ interface GitRepository {
     /** Modified-but-uncommitted files, as the Git extension reports them. */
     workingTreeChanges?: { uri: { fsPath: string } }[];
     indexChanges?: { uri: { fsPath: string } }[];
+    /** Present only on newer versions; older ones fold these into the working tree. */
+    untrackedChanges?: { uri: { fsPath: string } }[];
   };
   rootUri?: { fsPath: string };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
@@ -336,15 +341,23 @@ interface GitRepository {
 /**
  * What the user already had in flight, as workspace-relative paths.
  *
- * Both lists, because a staged-but-uncommitted change is just as much theirs as an
- * unstaged one — and `git commit` would take it along without being asked.
+ * Every list, because a staged change is as much theirs as an unstaged one, and a file
+ * git has never seen is theirs too — `git commit` would take the first along without
+ * being asked, and the run has no business committing the others either.
  *
  * Relative rather than absolute so it compares directly against the paths the run
  * records, which `canonicalRelative` has already normalised for case.
  */
 function workingTreePaths(repository: GitRepository): string[] {
   const root = repository.rootUri?.fsPath;
-  const changes = [...(repository.state.workingTreeChanges ?? []), ...(repository.state.indexChanges ?? [])];
+  // All three lists. Newer Git-extension versions report untracked files in their own
+  // array rather than inside `workingTreeChanges`, and missing them would mean a run
+  // could commit a file the user had just created.
+  const changes = [
+    ...(repository.state.workingTreeChanges ?? []),
+    ...(repository.state.indexChanges ?? []),
+    ...(repository.state.untrackedChanges ?? []),
+  ];
 
   return changes.map((change) =>
     root ? vscode.workspace.asRelativePath(change.uri.fsPath, false) : change.uri.fsPath

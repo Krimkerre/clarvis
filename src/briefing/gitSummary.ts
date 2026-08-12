@@ -8,7 +8,35 @@ import * as vscode from 'vscode';
  * it comes from another extension's exports. Any of that failing means "no git facts",
  * which the briefing simply omits rather than treating as an error.
  */
-export async function readGitSummary(): Promise<{ branch: string; dirtyCount: number } | undefined> {
+/**
+ * Untracked files are not "uncommitted changes".
+ *
+ * The Git extension reports them inside `workingTreeChanges`, so a stray `.DS_Store` or
+ * a scratch note made Clarvis open with "one file uncommitted" about a file the user had
+ * never edited — sounding wrong about their own repository, which is worse than saying
+ * nothing. Newer API versions expose `untrackedChanges` separately; older ones only tag
+ * each change with a status, where `7` is UNTRACKED. Probed rather than assumed (§4.0),
+ * because this shape comes from another extension's exports and is not in `@types/vscode`.
+ */
+const UNTRACKED = 7;
+
+function splitChanges(state: {
+  workingTreeChanges?: { status?: number }[];
+  untrackedChanges?: unknown[];
+}): { tracked: number; untracked: number } {
+  const working = state.workingTreeChanges ?? [];
+
+  if (Array.isArray(state.untrackedChanges)) {
+    return { tracked: working.length, untracked: state.untrackedChanges.length };
+  }
+
+  const untracked = working.filter((change) => change.status === UNTRACKED).length;
+  return { tracked: working.length - untracked, untracked };
+}
+
+export async function readGitSummary(): Promise<
+  { branch: string; dirtyCount: number; untrackedCount: number } | undefined
+> {
   try {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) return undefined;
@@ -25,8 +53,8 @@ export async function readGitSummary(): Promise<{ branch: string; dirtyCount: nu
     const branch: unknown = repository.state?.HEAD?.name;
     if (typeof branch !== 'string') return undefined; // detached HEAD, or mid-scan
 
-    const dirtyCount: number = repository.state?.workingTreeChanges?.length ?? 0;
-    return { branch, dirtyCount };
+    const { tracked, untracked } = splitChanges(repository.state ?? {});
+    return { branch, dirtyCount: tracked, untrackedCount: untracked };
   } catch {
     // A briefing is a nicety. It never breaks activation.
     return undefined;

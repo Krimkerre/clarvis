@@ -3,7 +3,7 @@ import type { FailureRecord } from './lastFailure';
 /** Everything the briefing can draw on. Any part may be missing. */
 export interface BriefingFacts {
   /** Absent when there's no Git extension, or the folder isn't a repository. */
-  git?: { branch: string; dirtyCount: number };
+  git?: { branch: string; dirtyCount: number; untrackedCount?: number };
   failure?: FailureRecord;
   recentFiles: string[];
   /** M5 fills this in; until then the briefing is simply shorter. */
@@ -68,12 +68,19 @@ function openerLine(facts: BriefingFacts, choose: Choose): string {
 }
 
 function gitLine(git: NonNullable<BriefingFacts['git']>, choose: Choose): string {
+  // New files git has never seen are worth a mention, but they are not "uncommitted
+  // changes" — saying so about a stray scratch file made him sound wrong about a
+  // repository the user knows better than he does.
+  const newFiles = git.untrackedCount
+    ? ` ${git.untrackedCount} new ${git.untrackedCount === 1 ? 'file' : 'files'} git has not been told about.`
+    : '';
+
   if (git.dirtyCount === 0) {
     return pick(
       [
-        `You’re on ${git.branch}, and the tree is clean.`,
-        `${git.branch}, nothing uncommitted. Suspiciously tidy.`,
-        `Branch ${git.branch} — clean, for now.`,
+        `You’re on ${git.branch}, and the tree is clean.${newFiles}`,
+        `${git.branch}, nothing uncommitted. Suspiciously tidy.${newFiles}`,
+        `Branch ${git.branch} — clean, for now.${newFiles}`,
       ],
       choose
     );
@@ -82,9 +89,9 @@ function gitLine(git: NonNullable<BriefingFacts['git']>, choose: Choose): string
   const files = git.dirtyCount === 1 ? 'file' : 'files';
   return pick(
     [
-      `You’re on ${git.branch} with ${git.dirtyCount} ${files} uncommitted.`,
-      `${git.branch}, ${git.dirtyCount} ${files} still unsaved to history.`,
-      `${git.branch} — ${git.dirtyCount} ${files} dirty, in case that matters to you.`,
+      `You’re on ${git.branch} with ${git.dirtyCount} ${files} uncommitted.${newFiles}`,
+      `${git.branch}, ${git.dirtyCount} ${files} still unsaved to history.${newFiles}`,
+      `${git.branch} — ${git.dirtyCount} ${files} dirty, in case that matters to you.${newFiles}`,
     ],
     choose
   );

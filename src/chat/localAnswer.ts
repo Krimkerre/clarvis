@@ -17,7 +17,7 @@ export interface WorkspaceFacts {
   lastFailure?: { label: string; exitCode: number | undefined; at: number };
   /** Files touched recently, newest first (M4). */
   recentFiles: string[];
-  git?: { branch: string; dirtyCount: number };
+  git?: { branch: string; dirtyCount: number; untrackedCount?: number };
   /** Repeat errors seen at least twice (M5). */
   patterns: Pattern[];
   /**
@@ -114,13 +114,19 @@ function branchAnswer(facts: WorkspaceFacts): LocalReply {
     };
   }
 
-  const { branch, dirtyCount } = facts.git;
+  const { branch, dirtyCount, untrackedCount } = facts.git;
+  // Counted separately, because a file git has never seen is a different situation from
+  // an edit that has not been committed — and only one of them is at risk of being lost.
+  const newFiles = untrackedCount
+    ? ` ${untrackedCount} new ${plural(untrackedCount, 'file', 'files')} git isn't tracking.`
+    : '';
+
   if (dirtyCount === 0) {
-    return { text: `\`${branch}\`, clean.`, state: 'neutral' };
+    return { text: `\`${branch}\`, clean.${newFiles}`, state: 'neutral' };
   }
 
   return {
-    text: `\`${branch}\`, with ${dirtyCount} uncommitted ${plural(dirtyCount, 'change', 'changes')}.`,
+    text: `\`${branch}\`, with ${dirtyCount} uncommitted ${plural(dirtyCount, 'change', 'changes')}.${newFiles}`,
     state: 'neutral',
   };
 }
@@ -231,7 +237,8 @@ export function factsBlock(facts: WorkspaceFacts): string {
   if (facts.git) {
     lines.push(
       `Current branch: ${facts.git.branch}` +
-        (facts.git.dirtyCount > 0 ? `, ${facts.git.dirtyCount} uncommitted change(s)` : ', working tree clean')
+        (facts.git.dirtyCount > 0 ? `, ${facts.git.dirtyCount} uncommitted change(s)` : ', working tree clean') +
+        (facts.git.untrackedCount ? `, plus ${facts.git.untrackedCount} untracked file(s)` : '')
     );
   }
 

@@ -27,7 +27,7 @@ test('the examples cover more than one beat', () => {
   // nothing for pushback or an opinion to imitate and the model wrote "done" four ways.
   const bank = EXAMPLES.join('\n');
 
-  assert.match(bank, /failed the same way/); // a failure that keeps happening
+  assert.match(bank, /stopped treating it as an accident/); // a failure that keeps happening
   assert.match(bank, /four nested callbacks/); // an opinion about the code
   assert.match(bank, /asked me to undo it twice/); // pushback
 });

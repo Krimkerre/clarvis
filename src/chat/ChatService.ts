@@ -7,6 +7,7 @@ import { VoiceService } from '../voice/VoiceService';
 import { Transcript } from './Transcript';
 import { Busy } from './Busy';
 import { Replier } from './Replier';
+import { RunSession } from './RunSession';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { chatAction, isStopRequest } from './chatCommands';
@@ -14,13 +15,9 @@ import { ChatActions } from './ChatActions';
 import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
-import { canEdit, PLAN_ADDENDUM } from './modes';
-import { AgentRunner } from '../agent/AgentRunner';
-import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
-import { detectTestCommand } from '../agent/testCommand';
+import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
 import { QuipPicker } from '../personality/QuipPicker';
 import { Voice } from '../personality/Voice';
-import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
 /** Where M4 stored the failure record, re-read here rather than duplicated. */
@@ -97,6 +94,7 @@ export class ChatService {
   /** Supplied by the composition root, so this class stays free of provider details. */
   setLiveLines(live: NonNullable<ChatService['live']>): void {
     this.live = live;
+    this.runs.setLiveLines(live);
   }
 
   /**
@@ -115,6 +113,9 @@ export class ChatService {
 
   /** The two paths a question takes once a model is involved. */
   private readonly replier: Replier;
+
+  /** A task, from "on it" to "what would you like done with it". */
+  private readonly runs: RunSession;
 
   /** The things chat can *do*, as opposed to answer. */
   private readonly actions: ChatActions;
@@ -142,6 +143,17 @@ export class ChatService {
     this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
     this.transcript = new Transcript(context, panel, log);
     this.busy = new Busy(panel, agentBusy);
+    this.runs = new RunSession(
+      context,
+      avatar,
+      models,
+      terminal,
+      this.busy,
+      (text) => this.note(text),
+      (text) => this.remark(text),
+      (purpose, fallback, keep) => this.phrase(purpose, fallback, keep),
+      log
+    );
     this.replier = new Replier(
       panel,
       avatar,
@@ -207,6 +219,54 @@ export class ChatService {
   }
 
   /** Answers a question, records both halves of the exchange, and shows the reply. */
+  /**
+   * Whether this message is work, and what to call it if so.
+   *
+   * Three ways in, in the order they can be trusted. "Do it" refers to the thing just
+   * described, and is the four-character recovery for a verb list that will always be
+   * missing the word someone used. The keyword router decides when it can. The model is
+   * asked only when the router fell through — a question with a question mark needs no
+   * second opinion, and paying for one on every message would be absurd.
+   *
+   * **Routing comes before the local answer**, which it did not always: the local
+   * matcher swallowed jobs, because "make a new branch called testing3" contains the
+   * word "branch" and was answered with the current branch name. A keyword match for a
+   * question is not evidence that a request is one.
+   */
+  private async jobIn(
+    question: string,
+    mode: ChatMode,
+    decision: ReturnType<typeof routeFor>
+  ): Promise<{ task: string; because: string } | undefined> {
+    if (!canEdit(mode)) return undefined;
+
+    if (this.lastAnswered && isDoItNow(question)) {
+      const task = this.lastAnswered;
+      this.lastAnswered = undefined;
+      this.log(`chat: escalating the previous message to the agent — "${task.slice(0, 60)}"`);
+      return { task, because: 'Right — doing it properly this time.' };
+    }
+
+    if (decision.route === 'agent') {
+      this.log(`chat: routed to agent — ${decision.because}`);
+      return {
+        task: question,
+        because: mode === 'agent' ? 'Agent mode — treating that as a job.' : decision.because,
+      };
+    }
+
+    if (mode !== 'plan' && needsClassification(question)) {
+      const classified = await classifyIntent(this.models, question, this.log);
+
+      if (classified === 'agent') {
+        this.log('chat: routed to agent by the model, after the verb list missed it');
+        return { task: question, because: 'That reads as a job, so I picked up the tools.' };
+      }
+    }
+
+    return undefined;
+  }
+
   async ask(question: string): Promise<void> {
     await this.transcript.add({ speaker: 'user', text: question, at: Date.now() });
 
@@ -230,44 +290,24 @@ export class ChatService {
     if (await this.actions.offerInferred(question)) return;
 
     const mode = this.actions.mode();
-
-    // "Do it" means the thing just described. A verb list will always be missing the
-    // word someone used — this is the four-character recovery rather than a rephrase.
-    if (this.lastAnswered && isDoItNow(question) && canEdit(mode)) {
-      const task = this.lastAnswered;
-      this.lastAnswered = undefined;
-      this.log(`chat: escalating the previous message to the agent — "${task.slice(0, 60)}"`);
-      await this.runAgent(task, 'Right — doing it properly this time.');
-      return;
-    }
-
     const decision = routeFor(question);
 
-    // The keyword router fell through rather than deciding, so ask the model what the
-    // message actually is. Only in that case: a question with a question mark needs no
-    // second opinion, and paying for one on every message would be absurd.
-    if (
-      decision.route === 'answer' &&
-      canEdit(mode) &&
-      mode !== 'plan' &&
-      needsClassification(question)
-    ) {
-      const classified = await classifyIntent(this.models, question, this.log);
-      if (classified === 'agent') {
-        this.log('chat: routed to agent by the model, after the verb list missed it');
-        await this.runAgent(question, 'That reads as a job, so I picked up the tools.');
-        return;
-      }
+    const job = await this.jobIn(question, mode, decision);
+    if (job) {
+      await this.runs.run(job.task, job.because);
+      return;
     }
 
-    // **Routing comes before the local answer.** It used to come after, and the local
-    // matcher swallowed jobs: "make a new branch called testing3" contains the word
-    // "branch", so it was answered with the current branch name and never reached the
-    // agent. A keyword match for a question is not evidence that a request is one.
-    if (decision.route === 'agent' && canEdit(mode)) {
-      this.log(`chat: routed to agent — ${decision.because}`);
-      await this.runAgent(question, mode === 'agent' ? 'Agent mode — treating that as a job.' : decision.because);
-      return;
+    // **A job the mode will not let him do is worth saying so.** Without this the log
+    // read "routed to answer — that reads as a job", the reply explained that it could
+    // not edit anything, and the user was left to work out for themselves that a mode
+    // was the reason. Said before the answer rather than instead of it: the answer is
+    // still useful, and the note is what makes the refusal make sense.
+    if (decision.route === 'agent' && !canEdit(mode)) {
+      this.log(`chat: job blocked by ${mode} mode`);
+      await this.note(
+        `That's a job, and ${modeSpec(mode).label} won't let me change files. Switch to Agent or Auto and ask again.`
+      );
     }
 
     // **The model phrases it; local state supplies the facts.** Canned answers are
@@ -300,161 +340,7 @@ export class ChatService {
     );
   }
 
-  /**
-   * Hands a task to the agent, streaming its steps into the transcript.
-   *
-   * The route is **announced before anything starts**, because a misrouted question
-   * would otherwise begin editing files with no warning — and the announcement is what
-   * makes Stop a real option rather than a theoretical one.
-   */
-  private async runAgent(task: string, because: string): Promise<void> {
-    // Written for this job rather than the same sentence every time. It is the first
-    // thing said in every run, which makes it the most repeated line in the product.
-    const opening = (await this.live?.acknowledge(task)) ?? because;
-
-    // Written, not spoken. The user asked for one line of a run to be read aloud, and
-    // that line is the result — "right, on it" is not news.
-    await this.note(opening);
-    this.avatar.setState('thinking', 'chat');
-
-    const controller = this.busy.start('reply');
-
-    const runner = new AgentRunner(
-      this.context,
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-      this.models,
-      this.terminal,
-      this.log
-    );
-
-
-    // Held for the whole run, so a build finishing three seconds in cannot wipe the
-    // expression of work the user is watching happen (M8e2).
-    const holdingFace = this.avatar.claim('agent');
-    this.avatar.setState('thinking', 'agent');
-
-    // A single line while it works. Without it the panel sits silent for a minute and
-    // the only signal is the avatar — but it is one line, not a running commentary.
-    await this.note(await this.phrase('report', 'Working on it…'));
-
-    // **Nothing technical reaches the transcript.** Tool calls, commands and the
-    // model's own working-out all go to the Clarvis terminal, where a build log
-    // belongs. The chat gets what a person would say: the result, and an aside.
-    this.terminal.announce(`clarvis: ${task}`);
-
-    try {
-      for await (const event of runner.run(task, controller.signal)) {
-        if (!event.text) continue;
-
-        // Everything, verbatim, in the place that is meant to be read line by line.
-        this.terminal.write(
-          event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : event.text
-        );
-      }
-    } finally {
-      this.busy.finish();
-      this.avatar.setState('neutral', 'agent');
-      holdingFace();
-    }
-
-    // A run can create branches — "make a branch called testing3" is a perfectly
-    // ordinary request — and one the user just asked for should be placed in the flow
-    // now, not a minute later when the connection to what they did has faded.
-    await vscode.commands.executeCommand('clarvis.checkBranchFlow');
-
-    // The close of a run is a decision, not an announcement: what changed, what the
-    // options are, and the user chooses. Offered rather than forced — a modal after
-    // every run would be its own nuisance.
-    // Only when there is something to review. A run that changed nothing has nothing
-    // to merge, keep or throw away, and offering anyway is a dialog about an absence.
-    const { commits, files } = runner.result;
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-
-    if (files.length > 0) {
-      // The likely answer first, and the *useful* one first of all: a change nobody
-      // has run is a change nobody knows about. Offering to check it before offering
-      // to keep it is the order a careful person would work in.
-      const testCommand = await detectTestCommand(root);
-
-      const answer = await vscode.window.showInformationMessage(
-        await this.phrase(
-          'report',
-          `${files.length} file${files.length === 1 ? '' : 's'} changed, on a temp branch.`,
-          [String(files.length)]
-        ),
-        ...(testCommand ? ['Check it works'] : []),
-        'Keep it',
-        'Show me first'
-      );
-
-      const base = this.context.workspaceState.get<string>('clarvis.agent.baseBranch');
-
-      if (answer === 'Check it works' && testCommand) {
-        const passed = await this.checkItWorks(testCommand);
-
-        // Pass or fail, the next offer follows from the result rather than repeating
-        // the same menu — that is the whole point of having run it.
-        const next = passed
-          ? await vscode.window.showInformationMessage(
-              await this.phrase('report', 'The tests pass.'),
-              'Keep it',
-              'Show me first'
-            )
-          : await vscode.window.showWarningMessage(
-              "Clarvis: tests fail. That may be my doing, or it may have been failing already.",
-              'Show me first',
-              'Bin it'
-            );
-
-        if (next === 'Keep it') {
-          await mergeRunBack(commits, files, this.log, base, (text) => void this.remark(text));
-          return;
-        }
-        if (next === 'Bin it' || next === 'Show me first') {
-          await reviewRun(commits, files, this.log, base, (text) => void this.remark(text));
-        }
-        return;
-      }
-
-      if (answer === 'Keep it') {
-        await mergeRunBack(commits, files, this.log, base, (text) => void this.remark(text));
-        return;
-      }
-
-      if (answer === 'Show me first') {
-        await reviewRun(commits, files, this.log, base, (text) => void this.remark(text));
-      }
-    }
-  }
-
   /** The read-only tool loop, for questions that need to see the code. */
-  /**
-   * Runs the project's own tests and says how it went.
-   *
-   * In the same terminal the agent uses, so it reads as one continuous session rather
-   * than a second thing happening somewhere else. The result is reported in the
-   * transcript either way — a check whose outcome you have to go looking for is not
-   * much of a check.
-   */
-  private async checkItWorks(command: string): Promise<boolean> {
-    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-    await this.remark(`Running ${command} to see if it still works.`);
-
-    this.terminal.announce(command);
-    const result = await runCommand(root, command, (chunk) => this.terminal.write(chunk));
-
-    const passed = result.exitCode === 0;
-    this.log(`check: "${command}" exited ${result.exitCode}`);
-
-    await this.note(
-      passed
-        ? `\`${command}\` passed.`
-        : `\`${command}\` failed — exit ${result.exitCode ?? 'killed'}. The output is in the Clarvis terminal.`
-    );
-
-    return passed;
-  }
-
   /** Cancels the answer in flight, if there is one. */
   stop(): void {
     this.busy.stop();

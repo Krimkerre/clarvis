@@ -8,6 +8,7 @@ import { AgentTerminal } from '../agent/tools/commandTools';
 import { characterWith } from '../personality/character';
 import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { Transcript } from './Transcript';
+import { Turn } from './thread';
 import { Busy } from './Busy';
 
 /**
@@ -131,6 +132,29 @@ export class Replier {
     }
   }
 
+  /**
+   * Shows one piece of a streamed reply, and remembers it.
+   *
+   * The three things that must happen together, in one place: the transcript's live turn
+   * grows, the panel receives the same text, and the face is taken from the tag the
+   * model opened with — on the *first* visible fragment, so the expression matches the
+   * tone while the reply is being read rather than arriving after it.
+   *
+   * Returns the reply so far, because the caller needs it for the voice and cannot read
+   * it back off the turn without knowing that is where it lives.
+   */
+  private emit(reader: ReplyStateReader, visible: string, spoken: string, turn: Turn): string {
+    if (!visible) return spoken;
+
+    if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
+
+    const grown = spoken + visible;
+    turn.text = grown;
+    this.panel.post({ type: 'chat-stream', text: visible });
+
+    return grown;
+  }
+
   async withTools(question: string, addendum = ''): Promise<void> {
     const controller = this.busy.start('reply');
 
@@ -162,27 +186,19 @@ export class Replier {
 
         // Only prose carries the tag. Tool lines are ours, not the model's.
         if (event.kind !== 'text') {
-          this.panel.post({ type: 'chat-stream', text: `\n${event.step}. ${event.text}\n` });
+          // Numbered only when there is a number. Tool calls carry a step; a `done` or a
+          // gate does not, and the template printed "undefined. Stopped." into the chat
+          // whenever a question was cancelled mid-look.
+          const step = event.step ? `${event.step}. ` : '';
+          this.panel.post({ type: 'chat-stream', text: `\n${step}${event.text}\n` });
           if (event.kind === 'error') spoken += event.text;
           continue;
         }
 
-        const visible = reader.push(event.text);
-        if (!visible) continue;
-
-        if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
-        spoken += visible;
-        turn.text = spoken;
-        this.panel.post({ type: 'chat-stream', text: visible });
+        spoken = this.emit(reader, reader.push(event.text), spoken, turn);
       }
 
-      const remainder = reader.flush();
-      if (remainder) {
-        if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
-        spoken += remainder;
-        turn.text = spoken;
-        this.panel.post({ type: 'chat-stream', text: remainder });
-      }
+      spoken = this.emit(reader, reader.flush(), spoken, turn);
     } finally {
       this.busy.finish();
       this.panel.post({ type: 'chat-stream-end' });

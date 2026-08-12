@@ -42,6 +42,7 @@ export async function runInterview(
     if (!topic || readyToDraft(state)) break;
 
     const question = await phraseQuestion(models, topic, state, log);
+    log(`planning: "${topic}" asked — ${question}`);
 
     const raw = await vscode.window.showInputBox({
       prompt: question,
@@ -57,7 +58,9 @@ export async function runInterview(
       return { state, seed: seed.trim() };
     }
 
-    state.answers.push(toAnswer(topic, raw));
+    const answer = toAnswer(topic, raw);
+    log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
+    state.answers.push(answer);
   }
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);

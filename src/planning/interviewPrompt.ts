@@ -1,5 +1,5 @@
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from '../personality/character';
-import { InterviewState, TopicId } from './interviewTopics';
+import { InterviewState, TopicId, knownFacts } from './interviewTopics';
 
 /**
  * Turning a topic into an actual question, in his voice.
@@ -42,10 +42,7 @@ export function interviewQuestionPrompt(topic: TopicId, state: InterviewState): 
   // §4.9 wants a menu, not a question, and a generic template cannot say that.
   if (topic === 'language') return languageShortlistPrompt(state);
 
-  const known = state.answers
-    .filter((answer) => answer.text)
-    .map((answer) => `${answer.topic}: ${answer.text}`)
-    .join('\n');
+  const known = knownFacts(state);
 
   return [
     'You are interviewing someone about a project they want built, to turn a rough idea',
@@ -75,10 +72,7 @@ export function interviewQuestionPrompt(topic: TopicId, state: InterviewState): 
  * "you pick" has to be honoured as a real answer, not treated as a non-answer.
  */
 function languageShortlistPrompt(state: InterviewState): string {
-  const known = state.answers
-    .filter((answer) => answer.text)
-    .map((answer) => `${answer.topic}: ${answer.text}`)
-    .join('\n');
+  const known = knownFacts(state);
 
   return [
     'Propose a shortlist of 2 to 4 programming languages for this project, based only',

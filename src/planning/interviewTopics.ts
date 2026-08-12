@@ -38,6 +38,23 @@ export interface InterviewState {
   languageDetected?: string;
   /** The project's name — given in the seed, suggested, or picked by the user. */
   projectName?: string;
+  /** What was actually found in the workspace, one sentence, gathered once up front. */
+  workspaceContext?: string;
+  /** Free-form additions from a "keep refining" round on the drafted plan. */
+  notes?: string[];
+}
+
+/**
+ * Everything known so far, as one block of text for a prompt: the workspace facts
+ * first, then every settled answer. Shared by every prompt in M9 that needs "what do
+ * we already know" so the workspace signal doesn't get built three different ways.
+ */
+export function knownFacts(state: InterviewState): string {
+  const answers = state.answers
+    .filter((answer) => answer.text)
+    .map((answer) => `${answer.topic}: ${answer.text}`)
+    .join('\n');
+  return [state.workspaceContext, answers].filter(Boolean).join('\n');
 }
 
 /**

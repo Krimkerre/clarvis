@@ -3432,6 +3432,33 @@ states for language, now applied to every topic. Declining the follow-up keeps t
 original answer; answering it appends the follow-up Q&A onto the same answer text
 rather than replacing it, so nothing already said is lost.
 
+**Claude-Code-shaped plan mode (13 Aug).** Three changes, asked for by name against
+how Claude Code's own plan mode works:
+- **Research before asking.** `workspaceResearch.ts` reads the workspace root once,
+  up front — existing manifest file, git, an existing `plan.md`, a README's first
+  line — and `workspaceSignals.ts` (pure, tested) turns it into one honest sentence,
+  only real observed facts. Folded into every prompt's "known so far" via
+  `knownFacts()` (`interviewTopics.ts`), which also replaced three duplicated copies
+  of the same known-facts-joining code in `interviewPrompt.ts` and
+  `challengePrompt.ts`.
+- **Draft, then iterate.** `extension.ts`'s `draftAndApprovePlan()` shows the
+  rendered plan as a draft rather than writing it immediately. "Keep Refining" adds
+  a free-text note (`InterviewState.notes`, rendered as `## Notes` in the plan) and
+  redraws — no re-interrogation, no re-running analysis, just a note and a redraw,
+  so refining never becomes the batched-questions interrogation M9a was built to
+  avoid.
+- **Explicit approval gate.** The draft is never written until "Approve" is chosen
+  in a modal — separate from and in addition to the per-answer challenge already
+  built; that challenge is about individual answers, this gate is about the whole
+  document.
+
+**Scoped, not built: coding-mode questions.** Asked whether the agent (M8) should
+gain a mid-run clarifying-question mechanic now — deferred to M9e (sign-off →
+agent-task handoff, not built), since that milestone already owns the boundary
+between "planning got it wrong" and "the agent hit something planning couldn't have
+known." Retrofitting M8's existing runner (used by chat and the terminal commands,
+not just planning) was explicitly not chosen.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent
@@ -3473,7 +3500,10 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 - **M9e — Sign-off and handoff.** The Approve gate, then conversion of milestone one into
   an agent task (§4.6). The handoff prompt is assembled from the plan, **shown to the
   user and editable before it runs** — not a hidden prompt. Checklist items are ticked in
-  `plan.md` as the agent completes them.
+  `plan.md` as the agent completes them. **Also owns coding-mode clarifying questions**
+  (requested 13 Aug, scoped here rather than retrofitted into M8's existing runner): the
+  agent should be able to pause mid-build and ask, the same way Claude Code does, rather
+  than guessing past a real ambiguity planning didn't catch.
 
 **Exit checklist:**
 - [ ] The generated `plan.md` contains a **Branch flow** section, and the review wizard

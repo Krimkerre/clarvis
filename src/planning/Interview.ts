@@ -5,6 +5,8 @@ import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } fro
 import { namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
+import { researchWorkspace } from './workspaceResearch';
+import { describeWorkspaceSignals } from './workspaceSignals';
 
 /**
  * Runs one project-planning interview (M9a — §4.9), start to "enough to draft".
@@ -49,6 +51,16 @@ export async function runInterview(
   const state: InterviewState = {
     answers: [{ topic: 'what-it-does', text: seed.trim(), question: 'What are you building?' }],
   };
+
+  // Grounds every question that follows in what's actually here, rather than only
+  // in what was just typed — an existing package.json or README is worth more than
+  // asking from a blank slate.
+  const signals = await researchWorkspace();
+  if (signals) {
+    state.workspaceContext = describeWorkspaceSignals(signals);
+    log(`planning: workspace — ${state.workspaceContext}`);
+  }
+
   state.projectName = await resolveProjectName(models, seed.trim(), log);
 
   for (;;) {

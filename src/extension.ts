@@ -694,10 +694,10 @@ function registerPlanningCommand(
         }
       }
 
-      // M9d — write plan.md once there's enough to draft and it isn't the
+      // M9d — draft, refine, approve, then write plan.md — unless it's the
       // "doesn't need a plan" outcome.
       if (readyToDraft(state) && !noPlanNeeded) {
-        await writeGeneratedPlan(state, seed, verdicts, logger);
+        await draftAndApprovePlan(state, seed, verdicts, logger, liveLines);
       }
 
       // Logged, not just shown. An untitled document exists only until the tab closes
@@ -720,18 +720,25 @@ function registerPlanningCommand(
 }
 
 /**
- * Writes `plan.md` from a finished interview (M9d), unless one already exists.
+ * Drafts `plan.md`, shows it, and lets the user refine or approve before it's
+ * written (M9d) — Claude Code's own plan-mode shape, asked for by name: present a
+ * draft, iterate on it, gate the actual write behind an explicit approval rather
+ * than writing the moment there's enough to draft.
  *
- * Never overwrites: an existing `plan.md` means someone is already using this
- * project's own Plan Mode, and clobbering it to write a fresh one would be the
- * opposite of the point. Split out of `registerPlanningCommand` to keep that
- * function's own complexity down — this is a self-contained step, not a fork in it.
+ * **Refining adds a note and redraws, nothing more.** No re-interrogation, no
+ * re-running analysis — a "keep refining" loop that reopened the whole Q&A would be
+ * exactly the interrogation this interview has avoided since M9a. The note becomes
+ * a `## Notes` line in the redrawn plan, and the loop shows it again.
+ *
+ * Never overwrites an existing `plan.md` — that means someone is already using this
+ * project's own Plan Mode, and clobbering it would be the opposite of the point.
  */
-async function writeGeneratedPlan(
+async function draftAndApprovePlan(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
-  logger: ClarvisLog
+  logger: ClarvisLog,
+  liveLines: LiveQuips
 ): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) return;
@@ -747,12 +754,46 @@ async function writeGeneratedPlan(
     return;
   }
 
-  const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });
-  await vscode.workspace.fs.writeFile(planUri, Buffer.from(planText, 'utf8'));
-  logger.write(`planning: wrote plan.md\n${planText}`);
+  let firstDraft = true;
+  for (;;) {
+    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });
+    const draftDocument = await vscode.workspace.openTextDocument({ content: planText, language: 'markdown' });
+    await vscode.window.showTextDocument(draftDocument, { preview: false });
 
-  const planDocument = await vscode.workspace.openTextDocument(planUri);
-  await vscode.window.showTextDocument(planDocument, { preview: false });
+    if (firstDraft) {
+      firstDraft = false;
+      const draftLine = await liveLines.acknowledge('look over a plan draft');
+      if (draftLine) void vscode.window.showInformationMessage(draftLine);
+    }
+
+    const choice = await vscode.window.showInformationMessage(
+      'Draft plan ready.',
+      { modal: true, detail: 'Approve writes plan.md. Keep refining lets you add anything missing first.' },
+      'Approve',
+      'Keep Refining'
+    );
+
+    if (choice !== 'Keep Refining') {
+      if (choice === 'Approve') {
+        await vscode.workspace.fs.writeFile(planUri, Buffer.from(planText, 'utf8'));
+        logger.write(`planning: wrote plan.md\n${planText}`);
+        const written = await vscode.workspace.openTextDocument(planUri);
+        await vscode.window.showTextDocument(written, { preview: false });
+      } else {
+        logger.write('planning: draft not approved, plan.md not written');
+      }
+      return;
+    }
+
+    const note = await vscode.window.showInputBox({
+      prompt: 'What should be added or changed?',
+      ignoreFocusOut: true,
+    });
+    if (note?.trim()) {
+      state.notes = [...(state.notes ?? []), note.trim()];
+      logger.write(`planning: refinement note — ${note.trim()}`);
+    }
+  }
 }
 
 /**

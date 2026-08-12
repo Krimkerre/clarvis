@@ -86,6 +86,7 @@ export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): s
   return [
     `# ${title}`,
     ...(projectName ? [`*${seed}*`] : []),
+    ...(state.workspaceContext ? [`*${state.workspaceContext}*`] : []),
     '',
     '---',
     '',
@@ -110,6 +111,7 @@ export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): s
     '',
     section('## 6. Linter', findAnswer(state, 'linter')),
     '',
+    ...(state.notes && state.notes.length > 0 ? ['## Notes', '', ...state.notes.map((note) => `- ${note}`), ''] : []),
     '## 7. Milestone 1 — v1',
     '',
     '**Exit checklist:**',

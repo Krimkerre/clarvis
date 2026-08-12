@@ -1,5 +1,5 @@
 import { TOPIC_BRIEF } from './interviewPrompt';
-import { InterviewState, TopicId } from './interviewTopics';
+import { InterviewState, TopicId, knownFacts } from './interviewTopics';
 
 /**
  * Whether an answer is specific enough to plan against, or needs one follow-up.
@@ -14,10 +14,7 @@ import { InterviewState, TopicId } from './interviewTopics';
 export type ChallengeResult = { fine: true } | { fine: false; followUp: string };
 
 export function challengePrompt(topic: TopicId, answerText: string, state: InterviewState): string {
-  const known = state.answers
-    .filter((answer) => answer.text)
-    .map((answer) => `${answer.topic}: ${answer.text}`)
-    .join('\n');
+  const known = knownFacts(state);
 
   return [
     `Topic: ${TOPIC_BRIEF[topic]}`,

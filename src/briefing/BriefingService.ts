@@ -20,10 +20,13 @@ const STARTUP_DELAY_MS = 1500;
 /**
  * How long the model gets before the canned briefing wins.
  *
- * Generous enough for a small model on a slow link, short enough that the briefing
- * still belongs to the moment the window opened.
+ * Short enough that the briefing still belongs to the moment the window opened, long
+ * enough for the providers people actually use. **Raised from 8s** after two briefings
+ * in three fell back to the bank on an OpenRouter routing model — the written lines are
+ * correct and audibly flatter, and losing the voice two mornings out of three is a worse
+ * trade than four extra seconds.
  */
-const PHRASE_TIMEOUT_MS = 8000;
+const PHRASE_TIMEOUT_MS = 12_000;
 
 /**
  * Assembles and delivers the "where you left off" briefing (§4.3), and owns the
@@ -146,13 +149,30 @@ export class BriefingService {
     const prompt = briefingPrompt(facts);
     if (!prompt || !this.phraser) return undefined;
 
+    // Distinguishable outcomes. "From the bank" was logged for all of them — no model,
+    // too slow, and nothing returned read identically, so a briefing losing its voice
+    // two mornings in three looked the same as one on a machine with no key at all.
+    const TIMED_OUT = Symbol('timed out');
+
     try {
+      const started = Date.now();
       const text = await Promise.race([
         this.phraser(prompt),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), PHRASE_TIMEOUT_MS)),
+        new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), PHRASE_TIMEOUT_MS)),
       ]);
 
-      return text?.trim() || undefined;
+      if (text === TIMED_OUT) {
+        this.log(`briefing: model did not answer within ${PHRASE_TIMEOUT_MS}ms — using the written lines`);
+        return undefined;
+      }
+
+      const phrased = text?.trim();
+      if (!phrased) {
+        this.log(`briefing: model returned nothing after ${Date.now() - started}ms`);
+        return undefined;
+      }
+
+      return phrased;
     } catch (error) {
       this.log(`briefing: model phrasing failed (${String(error)})`);
       return undefined;

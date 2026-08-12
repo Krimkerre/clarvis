@@ -5,11 +5,17 @@ import { FindingVerdict } from './verdictSummary';
 /**
  * Collects accept / reject / modify for each analysis finding (M9c — §4.9).
  *
- * Same temporary front end as M9a/M9b: a chained QuickPick per finding rather than
- * the eventual panel, real and usable today without waiting on that separate piece
- * of work. Cancelling any prompt (Escape) counts as accepting that finding as-is —
+ * Same temporary front end as M9a/M9b: chained dialogs per finding rather than the
+ * eventual panel, real and usable today without waiting on that separate piece of
+ * work. Cancelling any prompt (Escape) counts as accepting that finding as-is —
  * silently dropping a finding the user didn't actively reject would be worse than
  * keeping it.
+ *
+ * **A modal message, not a QuickPick.** Found live: a QuickPick's `placeHolder` is a
+ * single line, and a finding's `what` alone routinely ran past it — unreadable,
+ * truncated by VS Code itself before this project's own 400-char bug ever entered
+ * into it. A modal's `detail` wraps and shows the full finding — what, why it
+ * matters, and the suggested fix — before asking for a decision.
  */
 export async function collectVerdicts(
   findings: Finding[],
@@ -18,22 +24,24 @@ export async function collectVerdicts(
   const verdicts: FindingVerdict[] = [];
 
   for (const finding of findings) {
-    const choice = await vscode.window.showQuickPick(
-      [
-        { label: 'Accept', description: 'Keep this finding as-is' },
-        { label: 'Reject', description: 'Say why — it gets recorded, not just dropped' },
-        { label: 'Modify', description: 'Rewrite it in your own words' },
-      ],
-      { placeHolder: `[${finding.class}] ${finding.what}`, ignoreFocusOut: true }
+    const pick = await vscode.window.showInformationMessage(
+      `[${finding.class}] ${finding.what}`,
+      {
+        modal: true,
+        detail: `Why it matters: ${finding.whyItMatters}\n\nSuggested fix: ${finding.suggestedResolution}`,
+      },
+      'Accept',
+      'Reject',
+      'Modify'
     );
 
-    if (!choice || choice.label === 'Accept') {
+    if (!pick || pick === 'Accept') {
       log(`planning: verdict [${finding.class}] accepted`);
       verdicts.push({ finding, status: 'accepted' });
       continue;
     }
 
-    if (choice.label === 'Reject') {
+    if (pick === 'Reject') {
       const reasoning = await vscode.window.showInputBox({
         prompt: 'Why reject this?',
         ignoreFocusOut: true,

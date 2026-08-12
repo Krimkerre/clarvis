@@ -19,6 +19,55 @@ import { SseParser, decodeStream } from './sse';
  * whether a key is required — both of which are data (`ProviderSpec`), not behaviour.
  * Writing four near-identical classes would mean fixing every streaming bug four times.
  */
+/** The shape of a streamed chunk, as far as this file cares about it. */
+interface OpenAiChunk {
+  choices?: {
+    delta?: {
+      content?: string;
+      tool_calls?: {
+        index?: number;
+        id?: string;
+        function?: { name?: string; arguments?: string };
+      }[];
+    };
+    finish_reason?: string;
+  }[];
+}
+
+/** A tool call being assembled across frames. */
+interface PartialCall {
+  id: string;
+  name: string;
+  args: string;
+}
+
+/**
+ * Folds streamed tool-call fragments into the calls they belong to.
+ *
+ * **Keyed by index, which is the whole difficulty.** OpenAI splits one call across many
+ * frames and identifies them only by position: the name arrives once, the id sometimes,
+ * and the arguments a few characters at a time. Anything already known has to survive a
+ * frame that omits it, which is why every field falls back to what was there before.
+ *
+ * Pure and separate from the stream so it can be reasoned about without a network call —
+ * this is the part that silently produces a malformed tool call when it is wrong.
+ */
+export function absorbToolDeltas(
+  pending: Map<number, PartialCall>,
+  deltas: NonNullable<NonNullable<OpenAiChunk['choices']>[number]['delta']>['tool_calls']
+): void {
+  for (const delta of deltas ?? []) {
+    const index = delta.index ?? 0;
+    const existing = pending.get(index) ?? { id: '', name: '', args: '' };
+
+    pending.set(index, {
+      id: delta.id ?? existing.id,
+      name: delta.function?.name ?? existing.name,
+      args: existing.args + (delta.function?.arguments ?? ''),
+    });
+  }
+}
+
 export class OpenAiCompatibleProvider implements ModelProvider {
   readonly id: string;
 
@@ -138,46 +187,17 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   async *streamWithTools(request: CompletionRequest): AsyncIterable<StreamEvent> {
     const response = await this.post(request, openAiTools(request.tools));
     const parser = new SseParser();
-    const pending = new Map<number, { id: string; name: string; args: string }>();
+    const pending = new Map<number, PartialCall>();
 
     for await (const chunk of decodeStream(response.body!)) {
       for (const payload of parser.push(chunk)) {
         if (payload === '[DONE]') break;
 
-        let event: {
-          choices?: {
-            delta?: {
-              content?: string;
-              tool_calls?: {
-                index?: number;
-                id?: string;
-                function?: { name?: string; arguments?: string };
-              }[];
-            };
-            finish_reason?: string;
-          }[];
-        };
+        const choice = this.readFrame(payload)?.choices?.[0];
+        if (!choice) continue;
 
-        try {
-          event = JSON.parse(payload);
-        } catch {
-          this.log(`model: skipped an unparseable ${this.id} frame`);
-          continue;
-        }
-
-        const choice = event.choices?.[0];
-        if (choice?.delta?.content) yield { type: 'text', text: choice.delta.content };
-
-        for (const delta of choice?.delta?.tool_calls ?? []) {
-          const index = delta.index ?? 0;
-          const existing = pending.get(index) ?? { id: '', name: '', args: '' };
-
-          pending.set(index, {
-            id: delta.id ?? existing.id,
-            name: delta.function?.name ?? existing.name,
-            args: existing.args + (delta.function?.arguments ?? ''),
-          });
-        }
+        if (choice.delta?.content) yield { type: 'text', text: choice.delta.content };
+        absorbToolDeltas(pending, choice.delta?.tool_calls);
       }
     }
 
@@ -189,6 +209,22 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     }
 
     yield { type: 'stop', reason: pending.size > 0 ? 'tools' : 'end' };
+  }
+
+  /**
+   * One SSE frame, or nothing.
+   *
+   * A frame that will not parse is skipped rather than thrown: providers emit keep-alive
+   * and comment frames of their own devising, and killing a working stream over one of
+   * them would be a bug about politeness.
+   */
+  private readFrame(payload: string): OpenAiChunk | undefined {
+    try {
+      return JSON.parse(payload) as OpenAiChunk;
+    } catch {
+      this.log(`model: skipped an unparseable ${this.id} frame`);
+      return undefined;
+    }
   }
 
   /** Shared request setup, so the two streams cannot drift apart. */

@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { fingerprint } from './fingerprint';
 import { PatternStore } from './PatternStore';
-import { recordOccurrence, recordResolution, topPattern, THRESHOLD, Pattern } from './patterns';
+import { forgetMatching, recordOccurrence, recordResolution, topPattern, THRESHOLD, Pattern } from './patterns';
 import { PendingFix, beginPending, noteOutcome } from './resolution';
 
 /**
@@ -50,6 +50,21 @@ export class PatternMemory {
   }
 
   /** The briefing's fourth line (§4.3), or nothing if no pattern has recurred. */
+  /**
+   * Forgets everything remembered about a job.
+   *
+   * Paired with clearing the failure record: the two stores answer different questions —
+   * "what broke last" and "what keeps breaking" — and a user asking him to let something
+   * go means both.
+   */
+  async forget(needle: string): Promise<number> {
+    const { state, removed } = forgetMatching(this.store.current, needle);
+    if (removed > 0) await this.store.save(state);
+
+    this.log(`memory: forgot ${removed} pattern(s) matching "${needle}"`);
+    return removed;
+  }
+
   briefingLine(now = Date.now()): string | undefined {
     const top = topPattern(this.store.current, now);
     if (!top) return undefined;

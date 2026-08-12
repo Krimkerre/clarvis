@@ -124,6 +124,8 @@ export class ChatService {
     // else those two happen to do.
     private readonly recentFiles: () => string[],
     private readonly patterns: () => Pattern[],
+    /** Drops what M5 remembers about a job, for when the user asks him to let it go. */
+    private readonly forgetPattern: (needle: string) => Promise<number>,
     private readonly voice: VoiceService,
     private readonly models: ModelService,
     private readonly terminal: AgentTerminal,
@@ -167,7 +169,8 @@ export class ChatService {
       (text, state) => this.say(text, state),
       (text) => this.note(text),
       log,
-      context
+      context,
+      (needle) => this.forgetPattern(needle)
     );
 
     this.panel.onDidAsk((question) => void this.ask(question));

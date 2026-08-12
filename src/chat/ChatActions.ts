@@ -32,7 +32,9 @@ export class ChatActions {
     /** Records a line without speaking it — for things that are their own announcement. */
     private readonly note: (text: string) => Promise<void>,
     private readonly log: (message: string) => void,
-    private readonly context: vscode.ExtensionContext
+    private readonly context: vscode.ExtensionContext,
+    /** Drops what pattern memory remembers about a job. Separate store, same request. */
+    private readonly forgetPattern: (needle: string) => Promise<number>
   ) {}
 
   /** What Clarvis is currently allowed to do, from settings. */
@@ -205,6 +207,10 @@ export class ChatActions {
     }
 
     await this.context.workspaceState.update(FAILURE_KEY, undefined);
+    // The other store. "Seen it 4× this week" is the same subject raised again, and to
+    // the person who just asked him to drop it, indistinguishable from being ignored.
+    await this.forgetPattern(stored.label);
+
     this.log(`chat: forgot the failure "${stored.label}"`);
     await this.say(`Forgotten. \`${stored.label}\` is your business now, not mine.`, 'neutral');
   }

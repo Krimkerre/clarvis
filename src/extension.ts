@@ -327,6 +327,7 @@ function startChat(
     tracker,
     () => briefing.recent,
     () => memory.known,
+    (needle) => memory.forget(needle),
     voice,
     models,
     terminal,
@@ -335,6 +336,24 @@ function startChat(
   );
 
   context.subscriptions.push(
+    // The palette route to the same thing chat does. A job that fails on purpose — a
+    // probe, a deliberately red suite — never clears its own record, because that only
+    // happens when the same job succeeds.
+    vscode.commands.registerCommand('clarvis.forgetFailure', async () => {
+      const stored = parseRecord(context.workspaceState.get(FAILURE_KEY));
+      if (!stored) {
+        void vscode.window.showInformationMessage(await phrase('report', 'There is no failure on my mind.'));
+        return;
+      }
+
+      await context.workspaceState.update(FAILURE_KEY, undefined);
+      await memory.forget(stored.label);
+      log.write(`chat: forgot the failure "${stored.label}"`);
+      void vscode.window.showInformationMessage(
+        await phrase('report', `Forgotten. ${stored.label} is your business now.`, [stored.label])
+      );
+    }),
+
     // Through the confirming path, not the raw one. M8f2 rule: a destructive action
     // asks for itself whatever route reached it — a typed "/clear", a chat phrasing, or
     // a model's guess that the user already said yes to. Two prompts is correct here;
@@ -561,22 +580,6 @@ function startBranchFlow(
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow()),
 
-    // The palette route to the same thing chat does. A job that fails on purpose — a
-    // probe, a deliberately red suite — never clears its own record, because that only
-    // happens when the same job succeeds.
-    vscode.commands.registerCommand('clarvis.forgetFailure', async () => {
-      const stored = parseRecord(context.workspaceState.get(FAILURE_KEY));
-      if (!stored) {
-        void vscode.window.showInformationMessage(await phrase('report', 'There is no failure on my mind.'));
-        return;
-      }
-
-      await context.workspaceState.update(FAILURE_KEY, undefined);
-      logger.write(`chat: forgot the failure "${stored.label}"`);
-      void vscode.window.showInformationMessage(
-        await phrase('report', `Forgotten. ${stored.label} is your business now.`, [stored.label])
-      );
-    }),
 
     // "Asked once" is right until someone changes their mind, or is testing. Without
     // this the only way to be asked again about a branch is a new workspace.

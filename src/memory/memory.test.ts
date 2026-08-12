@@ -6,6 +6,7 @@ import {
   WINDOW_MS, THRESHOLD,
 } from './patterns';
 import { beginPending, noteOutcome } from './resolution';
+import { forgetMatching } from './patterns';
 
 // ---------------------------------------------------------------- fingerprint
 
@@ -166,4 +167,30 @@ test('passing with nothing in between credits nothing', () => {
   const result = noteOutcome(pending, 'npm test', true);
 
   assert.equal(result.resolvedBy, undefined);
+});
+
+test('forgetting a job drops what was remembered about it', () => {
+  // Two stores answer different questions — "what broke last" and "what keeps breaking"
+  // — and clearing only the first left him still opening with "seen probe-build-fail 4x
+  // this week", which to the person who just asked him to drop it is the same subject
+  // raised again.
+  const state = {
+    version: 1 as const,
+    patterns: {
+      a: { key: 'a', sample: 'probe-build-fail exited 1', occurrences: [1, 2], resolvedBy: undefined },
+      b: { key: 'b', sample: 'TypeError: undefined is not a function', occurrences: [3], resolvedBy: undefined },
+    },
+  };
+
+  const { state: next, removed } = forgetMatching(state, 'probe-build-fail');
+
+  assert.equal(removed, 1);
+  assert.deepEqual(Object.keys(next.patterns), ['b']);
+});
+
+test('forgetting nothing in particular changes nothing', () => {
+  const state = { version: 1 as const, patterns: { a: { key: 'a', sample: 'x', occurrences: [1], resolvedBy: undefined } } };
+
+  assert.equal(forgetMatching(state, '   ').removed, 0);
+  assert.equal(forgetMatching(state, 'unrelated').removed, 0);
 });

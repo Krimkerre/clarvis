@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { existsSync } from 'fs';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { RecentFiles } from './recentFiles';
 import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLines';
@@ -172,7 +173,11 @@ export class BriefingService {
     return {
       git: await readGitSummary(),
       failure,
-      recentFiles: this.recentFiles.list(),
+      // Only files that still exist. The list is persisted across sessions, so a file
+      // deleted since is still in it — and naming a file the user has thrown away is the
+      // same class of wrongness as calling an untracked file uncommitted: small, but it
+      // is his own account of their project being wrong to their face.
+      recentFiles: this.recentFiles.list().filter((file) => existsSync(file)),
       patternHint: this.patternHint?.(),
     };
   }

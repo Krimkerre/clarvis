@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { existsSync } from 'fs';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
 import { activeFailure, parseRecord, FailureRecord, FAILURE_KEY } from '../briefing/lastFailure';
@@ -59,7 +60,9 @@ export class WorkspaceFactsReader {
       running: this.tracker.running,
       lastOutcome: this.lastOutcome,
       lastFailure: activeFailure(stored, now),
-      recentFiles: this.recentFiles(),
+      // Same filter as the briefing: a file deleted since it was recorded is not a
+      // fact about the project any more.
+      recentFiles: this.recentFiles().filter((file) => existsSync(file)),
       git: await readGitSummary(),
       patterns: this.patterns(),
       problems: countProblems(),

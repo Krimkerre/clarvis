@@ -82,22 +82,6 @@ export class AgentBranch {
     // first — stacking unrelated work and making a bad first run poison the second.
     // Observed in a live session: run two branched off run one.
     const base = head && !isAgentBranch(head) ? head : this.rememberedBase(existing);
-    // Where the run will actually start from, which is not always where it wanted to.
-    let startedFrom = head;
-
-    if (base && head && base !== head) {
-      try {
-        await repository.checkout(base);
-        startedFrom = base;
-        this.log(`branch: returned to ${base} before starting a new run`);
-      } catch (error) {
-        // A dirty tree blocks the checkout. Better to branch from here than to refuse
-        // the run outright — but the log used to claim "(was master)" afterwards
-        // regardless, which made a stacked branch look like a clean one in the one
-        // record anybody would check.
-        this.log(`branch: could not return to ${base} (${String(error)}), branching from ${head}`);
-      }
-    }
 
     if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
 
@@ -109,13 +93,49 @@ export class AgentBranch {
     }
 
     const name = branchNameFor(task, existing);
-    this.previousBranch = startedFrom;
+
+    // **Created *at* the base, rather than checked out and then branched.** The previous
+    // version switched to `master` first, and a dirty working tree makes that switch
+    // fail — at which point it branched from wherever it happened to be, which was the
+    // last run's branch. Three runs in one session produced three branches stacked on
+    // each other, each carrying the one before it.
+    //
+    // `createBranch(name, checkout, ref)` needs no intermediate switch, so the ordinary
+    // dirty-tree case now starts from the right place instead of the nearest place.
+    if (base && head && base !== head) {
+      try {
+        await repository.createBranch(name, true, base);
+        this.created = name;
+        this.previousBranch = base;
+        this.log(`branch: working on ${name}, started from ${base}`);
+        return { isolated: true, branch: name };
+      } catch (error) {
+        // Still possible: the switch would overwrite a modified file that differs
+        // between here and the base. Falling through builds on the current branch,
+        // which is the old behaviour — but it is now *said*, because a run stacked on
+        // an earlier run's work is a materially different promise from a clean one.
+        this.log(`branch: could not start from ${base} (${String(error)})`);
+      }
+    }
+
+    this.previousBranch = head;
 
     try {
       await repository.createBranch(name, true);
       this.created = name;
-      this.log(`branch: working on ${name} (was ${this.previousBranch ?? 'detached'})`);
-      return { isolated: true, branch: name };
+
+      // Stacked, and the user is told. Only when it actually is: branching from an
+      // ordinary branch is the normal case and needs no sentence.
+      const stacked = head && isAgentBranch(head) ? head : undefined;
+      this.log(`branch: working on ${name}, started from ${head ?? 'detached'}${stacked ? ' (stacked)' : ''}`);
+
+      return {
+        isolated: true,
+        branch: name,
+        advice: stacked
+          ? `I couldn't start from \`${base ?? 'your branch'}\`: you have unsaved changes to a file that differs between the two, and switching would have overwritten them. So this run sits on top of \`${stacked}\` and carries that run's changes as well as its own. Commit or stash those changes and the next run will start clean.`
+          : undefined,
+      };
     } catch (error) {
       // Dirty tree, detached HEAD, a hook refusing the checkout. None of these are
       // worth failing the run over — checkpoints still cover undo.
@@ -270,7 +290,7 @@ interface GitRepository {
   };
   rootUri?: { fsPath: string };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
-  createBranch(name: string, checkout: boolean): Promise<void>;
+  createBranch(name: string, checkout: boolean, ref?: string): Promise<void>;
   checkout(name: string): Promise<void>;
   add(paths: string[]): Promise<void>;
   commit(message: string, options?: { all: boolean }): Promise<void>;

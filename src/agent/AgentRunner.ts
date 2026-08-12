@@ -175,6 +175,11 @@ export class AgentRunner {
           kind: 'text',
           text: `${isolation.advice ?? "I couldn't work on a copy this time."} I've snapshotted your files, so the run can still be undone.`,
         });
+      } else if (isolation.advice) {
+        // Isolated, but not from where it meant to be — a run stacked on an earlier
+        // run's branch. Said before any work happens, since it changes what accepting
+        // the result would actually merge.
+        yield this.record({ kind: 'text', text: isolation.advice });
       }
     }
 

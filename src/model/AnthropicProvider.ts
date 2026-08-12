@@ -25,6 +25,51 @@ const API_VERSION = '2023-06-01';
  * subscription credentials without prior Anthropic approval, so there is no login path
  * here by design, not by omission.
  */
+/** A tool-use block being assembled across frames. */
+interface PartialBlock {
+  id: string;
+  name: string;
+  json: string;
+}
+
+/** The frame that opens a tool call, as opposed to the one that opens prose. */
+export function startsToolBlock(event: {
+  type?: string;
+  index?: number;
+  content_block?: { type?: string; id?: string; name?: string };
+}): boolean {
+  return (
+    event.type === 'content_block_start' &&
+    event.content_block?.type === 'tool_use' &&
+    event.index !== undefined
+  );
+}
+
+/**
+ * Routes one delta: into a tool call being built, or out as text.
+ *
+ * **The same frame type carries both**, which is the trap. `content_block_delta` is
+ * prose when it holds `text` and tool arguments when it holds `partial_json`, and the
+ * only way to tell which block it belongs to is the index — so a delta for an open tool
+ * block must never be yielded as something to say aloud.
+ *
+ * Returns the text to emit, or undefined when the delta was swallowed into a call.
+ */
+export function absorbDelta(
+  pending: Map<number, PartialBlock>,
+  index: number,
+  delta: { text?: string; partial_json?: string } | undefined
+): string | undefined {
+  const block = pending.get(index);
+
+  if (block && delta?.partial_json !== undefined) {
+    block.json += delta.partial_json;
+    return undefined;
+  }
+
+  return delta?.text;
+}
+
 export class AnthropicProvider implements ModelProvider {
   readonly id = 'anthropic';
 
@@ -105,7 +150,7 @@ export class AnthropicProvider implements ModelProvider {
     const parser = new SseParser();
 
     // Assembled per content block, keyed by the index Anthropic assigns.
-    const pending = new Map<number, { id: string; name: string; json: string }>();
+    const pending = new Map<number, PartialBlock>();
     let sawToolCall = false;
 
     for await (const chunk of decodeStream(response.body!)) {
@@ -113,23 +158,18 @@ export class AnthropicProvider implements ModelProvider {
         const event = this.parseEvent(payload);
         if (!event) continue;
 
-        if (event.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
+        if (startsToolBlock(event)) {
           pending.set(event.index!, {
-            id: event.content_block.id!,
-            name: event.content_block.name!,
+            id: event.content_block!.id!,
+            name: event.content_block!.name!,
             json: '',
           });
           continue;
         }
 
         if (event.type === 'content_block_delta' && event.index !== undefined) {
-          const block = pending.get(event.index);
-
-          if (block && event.delta?.partial_json !== undefined) {
-            block.json += event.delta.partial_json;
-            continue;
-          }
-          if (event.delta?.text) yield { type: 'text', text: event.delta.text };
+          const text = absorbDelta(pending, event.index, event.delta);
+          if (text) yield { type: 'text', text };
           continue;
         }
 

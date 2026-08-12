@@ -2,6 +2,8 @@
 export type QuipTrigger =
   /** A branch appeared that the project's declared flow doesn't account for. */
   | 'newBranch'
+  /** A task finished. The remark that follows the result, never replaces it. */
+  | 'taskDone'
   | 'buildSlow'
   | 'repeatFailure'
   | 'suiteWentGreen'
@@ -93,5 +95,24 @@ export const QUIPS: Quip[] = [
     trigger: 'newBranch',
     tone: 'earned',
     text: "Branches are appearing faster than I write them down. Partly my job, admittedly.",
+  },
+
+  // Said after the summary, never instead of it. The result is information; this is
+  // the exhale — and it is about the work or about him, never about the user.
+  { id: 'done-1', trigger: 'taskDone', tone: 'polite', text: "There. Don't say I never do anything." },
+  { id: 'done-2', trigger: 'taskDone', tone: 'polite', text: 'Filed under things that now work.' },
+  { id: 'done-3', trigger: 'taskDone', tone: 'polite', text: 'That should hold, barring enthusiasm.' },
+  {
+    id: 'done-4',
+    trigger: 'taskDone',
+    tone: 'earned',
+    text: "I'd suggest testing it, but we both know how that conversation goes.",
+  },
+  { id: 'done-5', trigger: 'taskDone', tone: 'earned', text: 'Another triumph, of sorts. Do try to keep it.' },
+  {
+    id: 'done-6',
+    trigger: 'taskDone',
+    tone: 'earned',
+    text: 'Working, as of this precise moment. I make no promises about the next one.',
   },
 ];

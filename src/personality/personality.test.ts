@@ -138,3 +138,11 @@ test('important surfaces are cheaper, not exempt', () => {
   assert.equal(mayInterrupt(0, IMPORTANT_WINDOW_MS - 1, 'important'), false);
   assert.equal(mayInterrupt(0, IMPORTANT_WINDOW_MS, 'important'), true);
 });
+
+test('the bank has a closing aside for when no model is available', () => {
+  // The fallback matters most here: a run that ends flat because the model was slow
+  // is the common case on a bad connection.
+  const picker = new QuipPicker();
+
+  assert.ok(picker.pick('taskDone'));
+});

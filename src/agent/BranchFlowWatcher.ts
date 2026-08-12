@@ -10,6 +10,7 @@ import {
 } from './branchFlow';
 import { isAgentBranch } from './branchNames';
 import { QuipPicker } from '../personality/QuipPicker';
+import { phrase } from '../personality/Voice';
 
 /**
  * Noticing a new branch, and asking where it belongs.
@@ -252,7 +253,11 @@ export class BranchFlowWatcher {
     this.log(`branch flow: "${branch}" is in the flow but exists nowhere`);
 
     const picked = await vscode.window.showInformationMessage(
-      `Clarvis: \`${branch}\` is in plan.md's flow but doesn't exist locally or on the remote. Drop it?`,
+      await phrase(
+        'ask',
+        `\`${branch}\` is in plan.md's flow but doesn't exist locally or on the remote. Drop it?`,
+        [branch]
+      ),
       'Drop it',
       'Keep it'
     );
@@ -287,9 +292,11 @@ export class BranchFlowWatcher {
     // the user had already made by typing "make a branch". Committing plan.md is part
     // of recording the answer, not a separate deliberation.
     const picked = await vscode.window.showInformationMessage(
-      remark
-        ? `Clarvis: where does \`${branch}\` fit in the flow?`
-        : `Clarvis: done — \`${branch}\` exists. Add it to the flow?`,
+      await phrase(
+        'ask',
+        remark ? `Where does \`${branch}\` fit in the flow?` : `Done — \`${branch}\` exists. Add it to the flow?`,
+        [branch]
+      ),
       'Work passes through it',
       "It's the trunk",
       'Leave it out'

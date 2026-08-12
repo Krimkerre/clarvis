@@ -10,6 +10,7 @@ import {
   RunSummary,
 } from './runReview';
 import { isAgentBranch } from './branchNames';
+import { phrase } from '../personality/Voice';
 import { parseBranchFlow, BranchFlow } from './branchFlow';
 
 /**
@@ -22,6 +23,38 @@ import { parseBranchFlow, BranchFlow } from './branchFlow';
  * Nothing here decides anything. It gathers state, states consequences, and does what
  * it is told.
  */
+/**
+ * Merges the run straight back where it came from, without the menu.
+ *
+ * The common case by a distance: the change is fine and belongs on the branch the user
+ * was on. Making them open a list of six options to say yes is the friction this
+ * exists to remove — the list is still one click away for everything else.
+ */
+export async function mergeRunBack(
+  runCommits: string[],
+  files: string[],
+  log: (message: string) => void,
+  origin?: string,
+  say: (text: string) => void = () => {}
+): Promise<void> {
+  const summary = await gather(runCommits, files, origin);
+  if (!summary?.branch) return;
+
+  // Still warned about: a merge that would carry someone else's commits is not made
+  // safe by being quick.
+  const warnings = reviewWarnings(summary);
+  if (warnings.length > 0) {
+    const proceed = await vscode.window.showWarningMessage(
+      `Merge \`${summary.branch}\` into \`${summary.origin ?? summary.base}\`?`,
+      { modal: true, detail: warnings.join('\n\n') },
+      'Merge it'
+    );
+    if (proceed !== 'Merge it') return;
+  }
+
+  await act('merge-origin', summary, log, say);
+}
+
 export async function reviewRun(
   runCommits: string[],
   files: string[],
@@ -33,7 +66,9 @@ export async function reviewRun(
 ): Promise<void> {
   const summary = await gather(runCommits, files, origin);
   if (!summary) {
-    void vscode.window.showInformationMessage('Clarvis: no git repository here, so there is nothing to review.');
+    void vscode.window.showInformationMessage(
+      await phrase('report', 'There is no git repository here, so there is nothing to review.')
+    );
     return;
   }
 
@@ -69,6 +104,13 @@ export async function reviewRun(
   await act(picked.action, summary, log, say);
 }
 
+/**
+ * Carries out the option the user picked.
+ *
+ * Split by action rather than one chain, because the four outcomes have nothing in
+ * common beyond needing a repository: showing a diff, staying put, merging somewhere,
+ * and throwing the branch away are four different promises to the person who chose them.
+ */
 async function act(
   action: ReviewAction,
   summary: RunSummary,
@@ -78,29 +120,14 @@ async function act(
   const repository = gitRepository();
   if (!repository) return;
 
-  if (action === 'diff') {
-    // The editor's own diff, not a text dump: it is navigable, and it is the view the
-    // user already knows how to read.
-    await vscode.commands.executeCommand('workbench.view.scm');
-    if (summary.base && summary.branch) {
-      await vscode.commands.executeCommand(
-        'git.viewChanges',
-        undefined,
-        `${summary.base}...${summary.branch}`
-      );
-    }
-    log('review: showed the diff');
-    say(narrateReview('diff', summary));
-    return;
-  }
+  const home = summary.origin ?? summary.base;
 
+  if (action === 'diff') return showDiff(summary, log, say);
   if (action === 'stay') {
     log(`review: staying on ${summary.branch}`);
     say(narrateReview('stay', summary));
     return;
   }
-
-  const home = summary.origin ?? summary.base;
 
   if (action === 'return' && home) {
     await repository.checkout(home);
@@ -110,43 +137,97 @@ async function act(
   }
 
   if (action.startsWith('merge') && summary.branch) {
-    const target =
-      action === 'merge-origin'
-        ? summary.origin
-        : action === 'merge-integration'
-          ? summary.integration
-          : summary.base;
-    if (!target) return;
-
-    try {
-      await repository.checkout(target);
-      await repository.merge(summary.branch);
-      log(`review: merged ${summary.branch} into ${target}`);
-      say(narrateReview(action, summary, { target, ok: true }));
-    } catch (error) {
-      // A conflict is a normal outcome, not a failure — and the user is now on the
-      // target branch with the merge in progress, which is exactly where they can fix it.
-      log(`review: merge into ${target} failed (${String(error)})`);
-      say(narrateReview(action, summary, { target, ok: false }));
-      // A conflict still warrants a notification: it needs doing something about now,
-      // and the transcript is not where someone is looking mid-merge.
-      void vscode.window.showWarningMessage(
-        `Clarvis: the merge into ${target} didn't apply cleanly — the conflicts are in Source Control.`
-      );
-    }
+    await mergeInto(repository, action, summary, log, say);
     return;
   }
 
   if (action === 'discard' && summary.branch) {
-    if (home) await repository.checkout(home);
-    try {
-      await repository.deleteBranch(summary.branch, true);
-      log(`review: discarded ${summary.branch}`);
-      say(narrateReview('discard', summary, { ok: true }));
-    } catch (error) {
-      log(`review: could not delete ${summary.branch} (${String(error)})`);
-      say(narrateReview('discard', summary, { ok: false }));
-    }
+    await discardBranch(repository, summary, home, log, say);
+  }
+}
+
+/**
+ * The editor's own diff, not a text dump.
+ *
+ * It is navigable, and it is the view the user already knows how to read.
+ */
+async function showDiff(
+  summary: RunSummary,
+  log: (message: string) => void,
+  say: (text: string) => void
+): Promise<void> {
+  await vscode.commands.executeCommand('workbench.view.scm');
+
+  if (summary.base && summary.branch) {
+    await vscode.commands.executeCommand(
+      'git.viewChanges',
+      undefined,
+      `${summary.base}...${summary.branch}`
+    );
+  }
+
+  log('review: showed the diff');
+  say(narrateReview('diff', summary));
+}
+
+/** Where each merge option lands. */
+function mergeTarget(action: ReviewAction, summary: RunSummary): string | undefined {
+  if (action === 'merge-origin') return summary.origin;
+  if (action === 'merge-integration') return summary.integration;
+  return summary.base;
+}
+
+async function mergeInto(
+  repository: NonNullable<ReturnType<typeof gitRepository>>,
+  action: ReviewAction,
+  summary: RunSummary,
+  log: (message: string) => void,
+  say: (text: string) => void
+): Promise<void> {
+  const target = mergeTarget(action, summary);
+  if (!target || !summary.branch) return;
+
+  try {
+    await repository.checkout(target);
+    await repository.merge(summary.branch);
+    log(`review: merged ${summary.branch} into ${target}`);
+    say(narrateReview(action, summary, { target, ok: true }));
+  } catch (error) {
+    // A conflict is a normal outcome, not a failure — and the user is now on the target
+    // branch with the merge in progress, which is exactly where they can fix it.
+    log(`review: merge into ${target} failed (${String(error)})`);
+    say(narrateReview(action, summary, { target, ok: false }));
+
+    // A conflict still warrants a notification: it needs doing something about now, and
+    // the transcript is not where someone is looking mid-merge.
+    void vscode.window.showWarningMessage(
+      await phrase(
+        'warn',
+        `The merge into ${target} didn't apply cleanly — the conflicts are in Source Control.`,
+        [target]
+      )
+    );
+  }
+}
+
+async function discardBranch(
+  repository: NonNullable<ReturnType<typeof gitRepository>>,
+  summary: RunSummary,
+  home: string | undefined,
+  log: (message: string) => void,
+  say: (text: string) => void
+): Promise<void> {
+  if (!summary.branch) return;
+  // Off it first: git will not delete the branch you are standing on.
+  if (home) await repository.checkout(home);
+
+  try {
+    await repository.deleteBranch(summary.branch, true);
+    log(`review: discarded ${summary.branch}`);
+    say(narrateReview('discard', summary, { ok: true }));
+  } catch (error) {
+    log(`review: could not delete ${summary.branch} (${String(error)})`);
+    say(narrateReview('discard', summary, { ok: false }));
   }
 }
 

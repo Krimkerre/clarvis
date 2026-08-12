@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { returnToBranch } from './AgentBranch';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -29,6 +30,14 @@ interface CheckpointRecord {
   task: string;
   startedAt: number;
   entries: CheckpointEntry[];
+  /**
+   * The branch the user was on when the run began.
+   *
+   * Undo restored the files and left you standing on the run's branch, which is only
+   * half an undo: the working tree said the run never happened while the editor still
+   * said you were inside it.
+   */
+  startedOn?: string;
 }
 
 const RECORD_KEY = 'clarvis.agent.checkpoint';
@@ -66,6 +75,19 @@ export class Checkpoint {
     this.record = { task, startedAt: Date.now(), entries: [] };
     await this.context.globalState.update(RECORD_KEY, this.record);
     this.log(`checkpoint: started for "${task}"`);
+  }
+
+  /**
+   * Remembers where the user was, once the branch layer has worked out where that is.
+   *
+   * Separate from `begin()` because the checkpoint is deliberately created *before* any
+   * branching happens — undo has to work even when isolation failed — so the branch is
+   * not known yet at that point.
+   */
+  async noteBranch(name: string | undefined): Promise<void> {
+    if (!this.record || !name) return;
+    this.record.startedOn = name;
+    await this.context.globalState.update(RECORD_KEY, this.record);
   }
 
   /**
@@ -116,9 +138,19 @@ export class Checkpoint {
     context: vscode.ExtensionContext,
     root: string | undefined,
     log: (message: string) => void
-  ): Promise<{ restored: number; deleted: number; failed: string[] }> {
+  ): Promise<{ restored: number; deleted: number; failed: string[]; stuckOn?: string }> {
     const record = Checkpoint.stored(context);
     if (!record || !root) return { restored: 0, deleted: 0, failed: [] };
+
+    // **Branch first, then files.** Proven the other way round: with the pre-run content
+    // already written back, git refuses the switch — the file is modified relative to
+    // the run's own commit, and that it happens to match the target's content is not
+    // something git will take on trust. Moving first leaves a clean tree to switch from.
+    let stuckOn: string | undefined;
+    if (record.startedOn) {
+      const back = await returnToBranch(record.startedOn, log);
+      if (!back.moved) stuckOn = record.startedOn;
+    }
 
     let restored = 0;
     let deleted = 0;
@@ -144,7 +176,19 @@ export class Checkpoint {
     }
 
     log(`checkpoint: undo restored ${restored}, deleted ${deleted}, failed ${failed.length}`);
-    return { restored, deleted, failed };
+
+    // **Spent once.** The record used to survive the undo, so a second `Undo Last Agent
+    // Run` — an hour later, or next week — would cheerfully restore the same copies over
+    // whatever the user had done since. Seen in a live log: undo ran twice, and the
+    // second one reported restoring a file that had already been put back.
+    //
+    // Kept when something failed, because then it is the only way to try the rest again.
+    if (failed.length === 0) {
+      await context.globalState.update(RECORD_KEY, undefined);
+      log('checkpoint: undone, and the record is spent');
+    }
+
+    return { restored, deleted, failed, stuckOn };
   }
 
   private async clearStore(): Promise<void> {

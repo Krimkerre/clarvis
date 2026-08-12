@@ -1,15 +1,20 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
-import { classifyCommand, explainGate } from './Gate';
+import { isLookingAround, narrateTool } from './toolNarration';
+import { commitSubject } from './commitSubject';
+import { phrase } from '../personality/Voice';
+import { approveLabel, classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
+import { explainHeldBack } from './dirtyAtStart';
+import { ANSWER_SHAPE, characterWith } from '../personality/character';
+import { STATE_TAG_INSTRUCTION } from '../chat/replyState';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -24,7 +29,33 @@ import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 /** Reported as the run goes, so the panel can show work rather than a spinner. */
 export interface AgentEvent {
   kind: 'text' | 'tool' | 'gate' | 'done' | 'error';
+  /**
+   * True when this step is Clarvis reading rather than changing something.
+   *
+   * The transcript collapses a run of these into one line; the log keeps every one.
+   */
+  quiet?: boolean;
+  /**
+   * True for a `text` event that belongs in the chat, not only the terminal.
+   *
+   * Most `text` events are the model narrating its own steps mid-loop — deliberately
+   * unlogged and terminal-only, per §the "no machine talk" rule. The isolation advice
+   * from `protect()` is the opposite: it is the one thing standing between the user and
+   * a `git init` offer that never appeared, because the chat path forwarded nothing but
+   * `done` events and everything else silently went to the terminal alone. Observed
+   * live — a non-repo folder produced no offer, no message, nothing.
+   */
+  toChat?: boolean;
+  /** For the transcript: what a person would say. */
   text: string;
+  /**
+   * For the log: the tool name and its arguments.
+   *
+   * Two forms rather than one, because they have different readers. "Editing app.js"
+   * is what someone watching wants; `applyEdit: app.js` is what someone debugging
+   * wants, and neither is much use to the other.
+   */
+  detail?: string;
   /** Files touched so far, for the commit and the summary. */
   files?: string[];
   step?: number;
@@ -69,7 +100,11 @@ export class AgentRunner {
   private record(event: AgentEvent): AgentEvent {
     if (event.kind !== 'text') {
       const step = event.step ? `${event.step}. ` : '';
-      this.log(`agent [${event.kind}] ${step}${event.text.split('\n')[0]}`);
+      // Trimmed before taking the first line: the closing note starts with a blank
+      // line so it reads as a paragraph in the transcript, which made every finished
+      // run log as `agent [done]` with nothing after it — the one event whose text you
+      // most want in the record.
+      this.log(`agent [${event.kind}] ${step}${(event.detail ?? event.text).trim().split('\n')[0]}`);
     }
     return event;
   }
@@ -107,24 +142,175 @@ export class AgentRunner {
     yield* this.loop(task, signal, { readOnly: false, addendum: '' });
   }
 
+  /**
+   * Undo and isolation, before the model is asked for anything.
+   *
+   * Established first so there is no window in which an edit could land unprotected.
+   * Only for a run: a read-only answer has nothing to undo and nothing to isolate, and
+   * creating a branch to read a file would be absurd.
+   *
+   * **Silent when it works.** The isolation branch is machinery — the user asked for a
+   * change, not for a report on how it is being kept safe — and the closing line already
+   * says their own work is untouched. Both failure modes are said, because each changes
+   * what the result means: no isolation changes what undo covers, and isolation from the
+   * wrong place changes what accepting the result would merge.
+   */
+  private async *protect(
+    checkpoint: Checkpoint,
+    branch: AgentBranch,
+    task: string
+  ): AsyncGenerator<AgentEvent> {
+    await checkpoint.begin(task);
+    const isolation = await branch.begin(task);
+
+    // Where to put the user back if they undo. Recorded after branching, because that is
+    // when it is known — and recorded even when isolation failed, since the branch they
+    // are on is still the branch they should end up on.
+    await checkpoint.noteBranch(branch.previous);
+
+    if (!isolation.isolated) {
+      yield this.record({
+        kind: 'text',
+        toChat: true,
+        text: `${isolation.advice ?? "I couldn't work on a copy this time."} I've snapshotted your files, so the run can still be undone.`,
+      });
+      return;
+    }
+
+    if (isolation.advice) yield this.record({ kind: 'text', toChat: true, text: isolation.advice });
+  }
+
+  /**
+   * The brief for one turn.
+   *
+   * The answer shape goes *after* the addendum, so it is the last thing read before the
+   * reply is written. Put anywhere earlier — including inside the character block — it
+   * lost to the summarise-the-document prior a model falls into the moment tool results
+   * arrive.
+   */
+  private systemFor(options: { readOnly: boolean; addendum: string }): string {
+    const base = this.systemPrompt(options.readOnly) + options.addendum;
+    if (!options.readOnly) return base;
+
+    return `${base}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`;
+  }
+
+  /**
+   * The model has stopped asking for tools, so the work is over.
+   *
+   * A read-only answer has nothing to commit and no branch to tidy; a run has both, and
+   * the closing text carries only what the stream could not — where it left you. **Not
+   * the narration**, which has already been streamed as text events and printed every
+   * answer twice when it was repeated here.
+   */
+  private async completed(
+    branch: AgentBranch,
+    task: string,
+    narration: string,
+    readOnly: boolean
+  ): Promise<AgentEvent> {
+    if (!readOnly) {
+      await this.finish(branch, task, narration);
+      // Nothing was kept, so the isolation branch is clutter. Tidied here rather than
+      // left for the review wizard, which would otherwise offer five options about an
+      // empty branch.
+      this.tidied = await branch.discardIfEmpty();
+    }
+
+    return {
+      kind: 'done',
+      text: readOnly ? '' : this.closingNote(branch),
+      files: [...this.touched],
+    };
+  }
+
+  /**
+   * The three reasons a run never starts, in the order they can be checked.
+   *
+   * Together rather than scattered through `loop`: they share a shape — decide, say why,
+   * stop — and interleaving them with the setup is what let a cancelled run create a
+   * checkpoint and a branch before noticing it had been cancelled.
+   */
+  private async refuseToStart(role: 'chat' | 'agent', signal: AbortSignal): Promise<AgentEvent | undefined> {
+    if (!this.root) {
+      return {
+        kind: 'error',
+        text: await phrase('report', 'There is no folder open, so there is nothing to work on.'),
+      };
+    }
+
+    if (!(await this.models.isReady(role))) {
+      const provider = this.models.spec(role);
+      return {
+        kind: 'error',
+        text: `The coding model isn't configured — ${provider.label} has no key. The bowtie by the prompt sorts that out.`,
+      };
+    }
+
+    // Stop pressed while the opening line was still being written used to leave the run
+    // to start anyway: checkpoint, branch, checkout, and only then the first look at the
+    // signal. The user was left standing on an empty branch they had just asked not to
+    // exist.
+    if (signal.aborted) {
+      this.log('agent: cancelled before any setup');
+      return { kind: 'done', text: 'Stopped.', files: [] };
+    }
+
+    return undefined;
+  }
+
+  /** Leaving cleanly: the branch is tidied, because stopping is not a reason to litter. */
+  private async stopped(branch: AgentBranch): Promise<AgentEvent> {
+    this.tidied = await branch.discardIfEmpty();
+    return { kind: 'done', text: 'Stopped.', files: [...this.touched] };
+  }
+
+  /**
+   * Runs the tools the model asked for, reporting each as it goes.
+   *
+   * A generator that *returns* its results as well as yielding events, so the caller
+   * gets both without a shared array to fill in — `const results = yield* this.runCalls(…)`.
+   */
+  private async *runCalls(
+    calls: ToolCall[],
+    checkpoint: Checkpoint,
+    signal: AbortSignal
+  ): AsyncGenerator<AgentEvent, ToolResult[]> {
+    const results: ToolResult[] = [];
+
+    for (const call of calls) {
+      if (signal.aborted) break;
+
+      this.steps++;
+      const args = (call.args ?? {}) as Record<string, unknown>;
+
+      yield this.record({
+        kind: 'tool',
+        text: isToolName(call.name) ? narrateTool(call.name, args) : `Asking for ${call.name}`,
+        detail: describe(call),
+        quiet: isToolName(call.name) && isLookingAround(call.name, args),
+        step: this.steps,
+      });
+
+      const result = await this.dispatch(call, checkpoint, signal);
+      results.push(result);
+
+      if (result.isError) yield this.record({ kind: 'gate', text: result.content });
+    }
+
+    return results;
+  }
+
   private async *loop(
     task: string,
     signal: AbortSignal,
     options: { readOnly: boolean; addendum: string }
   ): AsyncGenerator<AgentEvent> {
-    if (!this.root) {
-      yield this.record({ kind: 'error', text: 'There is no folder open, so there is nothing to work on.' });
-      return;
-    }
-
     const role = options.readOnly ? 'chat' : 'agent';
-    const provider = this.models.spec(role);
 
-    if (!(await this.models.isReady(role))) {
-      yield this.record({
-        kind: 'error',
-        text: `The coding model isn't configured — ${provider.label} has no key. The bowtie by the prompt sorts that out.`,
-      });
+    const refusal = await this.refuseToStart(role, signal);
+    if (refusal) {
+      yield this.record(refusal);
       return;
     }
 
@@ -134,19 +320,7 @@ export class AgentRunner {
     const checkpoint = new Checkpoint(this.context, this.root, this.log);
     const branch = new AgentBranch(this.log, this.context.workspaceState);
 
-    if (!options.readOnly) {
-      await checkpoint.begin(task);
-      const isolation = await branch.begin(task);
-
-      // **Held back, not announced yet.** A task like "make a branch called testing3"
-      // touches no files, so the isolation branch is machinery the user never needed
-      // to hear about — it gets created, does nothing, and is tidied away. Telling
-      // them about it at the start means explaining a thing that turns out not to
-      // matter. Said at the moment it first *does* matter instead: the first edit.
-      this.pendingIsolation = isolation.isolated
-        ? `Working on \`${isolation.branch}\`. Your branch is untouched.`
-        : `${isolation.advice ?? "I couldn't isolate this run."} Undo is still available.`;
-    }
+    if (!options.readOnly) yield* this.protect(checkpoint, branch, task);
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
 
@@ -156,7 +330,7 @@ export class AgentRunner {
 
     while (this.steps < cap) {
       if (signal.aborted) {
-        yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
+        yield this.record(await this.stopped(branch));
         return;
       }
 
@@ -166,7 +340,7 @@ export class AgentRunner {
       try {
         for await (const event of this.models.streamWithTools(
           {
-            system: this.systemPrompt(options.readOnly) + options.addendum,
+            system: this.systemFor(options),
             messages,
             signal,
             tools: options.readOnly ? readOnlyTools() : undefined,
@@ -181,7 +355,7 @@ export class AgentRunner {
         }
       } catch (error) {
         if (signal.aborted) {
-          yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
+          yield this.record(await this.stopped(branch));
           return;
         }
         yield this.record({ kind: 'error', text: `The model gave up: ${String(error)}` });
@@ -190,46 +364,12 @@ export class AgentRunner {
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
-        if (!options.readOnly) {
-          await this.finish(branch, task, narration);
-          // Nothing was kept, so the isolation branch is clutter. Tidied here rather
-          // than left for the review wizard, which would otherwise offer five options
-          // about an empty branch.
-          this.tidied = await branch.discardIfEmpty();
-        }
-        // **Not the narration.** It has already been streamed as `text` events, and
-        // repeating it here printed every answer twice. The closing event carries only
-        // what the stream could not: where the run left you.
-        yield this.record({
-          kind: 'done',
-          text: options.readOnly ? '' : this.closingNote(branch),
-          files: [...this.touched],
-        });
+        yield this.record(await this.completed(branch, task, narration, options.readOnly));
         return;
       }
 
       messages.push({ role: 'assistant', content: narration, toolCalls: calls });
-      const results: ToolResult[] = [];
-
-      for (const call of calls) {
-        if (signal.aborted) break;
-
-        this.steps++;
-
-        // The first change to the workspace is when isolation stops being trivia.
-        if (this.pendingIsolation && isToolName(call.name) && mutates(call.name)) {
-          yield this.record({ kind: 'text', text: this.pendingIsolation });
-          this.pendingIsolation = undefined;
-        }
-
-        yield this.record({ kind: 'tool', text: describe(call), step: this.steps });
-
-        const result = await this.dispatch(call, checkpoint, signal);
-        results.push(result);
-
-        if (result.isError) yield this.record({ kind: 'gate', text: result.content });
-      }
-
+      const results = yield* this.runCalls(calls, checkpoint, signal);
       messages.push({ role: 'user', content: '', toolResults: results });
     }
 
@@ -295,45 +435,47 @@ export class AgentRunner {
     args: Record<string, string & boolean>,
     signal: AbortSignal
   ): Promise<string> {
-    if (name === 'readFile') {
-      const result = await readFile(this.root, args.path);
-      return result.truncated ? `${result.text}\n\n[truncated at 512KB]` : result.text;
-    }
+    // A table rather than a chain of nine `if`s. Each entry is the whole of what that
+    // tool does, so a new tool is one line here plus its entry in the registry — and
+    // there is no order to get wrong.
+    const tools: Record<ToolName, () => Promise<string> | string> = {
+      readFile: async () => {
+        const result = await readFile(this.root, args.path);
+        return result.truncated ? `${result.text}\n\n[truncated at 512KB]` : result.text;
+      },
 
-    if (name === 'listFiles') {
-      const files = await listFiles(this.root, {
-        directory: args.directory,
-        recursive: args.recursive !== false,
-      });
-      return files.join('\n') || '(no files)';
-    }
+      listFiles: async () => {
+        const files = await listFiles(this.root, {
+          directory: args.directory,
+          recursive: args.recursive !== false,
+        });
+        return files.join('\n') || '(no files)';
+      },
 
-    if (name === 'search') {
-      const hits = await search(this.root, new RegExp(args.pattern), { directory: args.directory });
-      return hits.map((hit) => `${hit.file}:${hit.line}  ${hit.text}`).join('\n') || '(no matches)';
-    }
+      search: async () => {
+        const hits = await search(this.root, new RegExp(args.pattern), { directory: args.directory });
+        return hits.map((hit) => `${hit.file}:${hit.line}  ${hit.text}`).join('\n') || '(no matches)';
+      },
 
-    if (name === 'applyEdit') {
-      const outcome = await applyEdit(this.root, args.path, args.find, args.replace);
-      return `Edited ${outcome.file}, ${outcome.changedLines} line(s) changed.`;
-    }
+      applyEdit: async () => {
+        const outcome = await applyEdit(this.root, args.path, args.find, args.replace);
+        return `Edited ${outcome.file}, ${outcome.changedLines} line(s) changed.`;
+      },
 
-    if (name === 'writeFile') {
-      const outcome = await writeFile(this.root, args.path, args.contents);
-      return `${outcome.created ? 'Created' : 'Rewrote'} ${outcome.file}.`;
-    }
+      writeFile: async () => {
+        const outcome = await writeFile(this.root, args.path, args.contents);
+        return `${outcome.created ? 'Created' : 'Rewrote'} ${outcome.file}.`;
+      },
 
-    if (name === 'runCommand') return this.runGated(args.command, signal);
+      runCommand: () => this.runGated(args.command, signal),
 
-    if (name === 'readDiagnostics') {
-      const problems = readDiagnostics(this.root, args.file);
-      return problems.join('\n') || '(no problems reported)';
-    }
+      readDiagnostics: () => readDiagnostics(this.root, args.file).join('\n') || '(no problems reported)',
 
-    if (name === 'gitStatus') return gitStatus();
-    if (name === 'gitDiff') return (await gitDiff(args.staged === true)) || '(no changes)';
+      gitStatus: () => gitStatus(),
+      gitDiff: async () => (await gitDiff(args.staged === true)) || '(no changes)',
+    };
 
-    return 'Nothing happened.';
+    return tools[name]?.() ?? 'Nothing happened.';
   }
 
   /**
@@ -348,13 +490,14 @@ export class AgentRunner {
     const verdict = classifyCommand(command);
 
     if (verdict) {
+      const label = approveLabel(verdict);
       const approved = await vscode.window.showWarningMessage(
         explainGate(command, verdict),
         { modal: true },
-        'Run it'
+        label
       );
 
-      if (approved !== 'Run it') {
+      if (approved !== label) {
         this.log(`gate: refused "${command}" (${verdict.category})`);
         return `The user declined that command. Don't retry it — find another way, or ask.`;
       }
@@ -378,23 +521,36 @@ export class AgentRunner {
    * commits their next hour of work onto an agent's branch without noticing.
    */
   private closingNote(branch: AgentBranch): string {
-    // Never mentioned the branch, so there is nothing to explain away. A run that
-    // created a branch, used it for nothing and removed it again is bookkeeping, and
-    // narrating bookkeeping is how a tool sounds busy rather than useful.
-    if (this.tidied || this.pendingIsolation) return '';
-    if (!branch.current) return '';
+    // A run that created a branch, used it for nothing and removed it again is
+    // bookkeeping, and narrating bookkeeping is how a tool sounds busy rather than
+    // useful.
+    if (this.tidied || !branch.current) return '';
 
-    return `\n\nYou're now on \`${branch.current}\` (was \`${branch.previous ?? 'unknown'}\`). Review the diff, then merge it or throw it away.`;
+    // Plain, and short. The previous version — "you're now on X (was Y), review the
+    // diff, then merge it or throw it away" — is three git instructions to someone who
+    // may not know what a diff is, and the decision is offered by a button anyway.
+    //
+    // A file the user was already editing is the exception worth a second sentence:
+    // it is the one case where their work and mine are tangled together in the same
+    // file, and staying quiet about that is how someone loses track of which is which.
+    const tangled = explainHeldBack(branch.heldBack);
+
+    return (
+      `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a temp branch.` +
+      (tangled ? `\n\n${tangled}` : '')
+    );
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */
   private async finish(branch: AgentBranch, task: string, narration: string): Promise<void> {
     if (this.touched.size === 0 || !branch.current) return;
 
-    const files = [...this.touched].map((file) => path.join(this.root!, file));
-    const summary = narration.trim().split('\n')[0]?.slice(0, 72) || task.slice(0, 72);
+    // Workspace-relative, deliberately: this is the form the run records and the form
+    // the "already modified before we started" check compares against. AgentBranch
+    // makes them absolute for git at the last moment.
+    const summary = commitSubject(narration, task);
 
-    const hash = await branch.commit(`${summary}\n\nTask: ${task}`, files);
+    const hash = await branch.commit(`${summary}\n\nTask: ${task}`, [...this.touched]);
     if (hash) this.ownCommits.push(hash);
   }
 
@@ -411,26 +567,37 @@ export class AgentRunner {
    * discovering otherwise. It is not where the constraints live.
    */
   private systemPrompt(readOnly = false): string {
+    return agentSystemPrompt(readOnly);
+  }
+}
+
+/**
+ * The agent's brief, outside the class so the voice check can send the real one.
+ *
+ * A harness that reconstructs the prompt it is testing tests nothing: the copy drifts,
+ * and the version that drifted is the one nobody read. So there is one definition and
+ * both callers use it.
+ */
+export function agentSystemPrompt(readOnly = false): string {
+    // Note what is *absent* from both: any instruction about tone. That comes from
+    // character() and nowhere else, because the last version repeated "be terse and dry"
+    // here and that one clause outweighed everything the character was supposed to be.
     if (readOnly) {
-      return [
-        "You are Clarvis, a butler-like assistant living in the user's editor.",
+      return characterWith(
         'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
-        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
-        'Be terse and dry. Never invent what you did not read.',
-      ].join(' ');
+        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.'
+      );
     }
 
-    return [
-      "You are Clarvis, a butler-like coding agent working inside the user's editor.",
+    return characterWith(
       'Work in small steps. Read before you edit. Verify with tests or diagnostics when you can.',
       'You can only touch files inside the workspace; anything outside it is refused.',
       'Destructive, outward-facing and install commands stop and ask the user — expect that, and do not try to work around it.',
       'applyEdit needs text that appears exactly once. Include surrounding lines to make it unique.',
-      'When the task is done, stop calling tools and say briefly what you changed.',
-      'Be terse and dry. Never pretend something worked when the tool said otherwise.',
-    ].join(' ');
-  }
+      'When the task is done, stop calling tools and say what you changed — one line, in your own voice. Not a restatement of what you were asked to do: they know what they asked for, and "added a comment to the top of app.js" is the request read back to them.',
+      'Never pretend something worked when the tool said otherwise.'
+    );
 }
 
 /** One readable line per tool call, for the panel. */

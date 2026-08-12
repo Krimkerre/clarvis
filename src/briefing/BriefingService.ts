@@ -1,12 +1,12 @@
 import * as vscode from 'vscode';
+import { existsSync } from 'fs';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { RecentFiles } from './recentFiles';
 import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLines';
 import { readGitSummary } from './gitSummary';
-import { activeFailure, foldOutcome, parseRecord, FailureRecord } from './lastFailure';
+import { activeFailure, foldOutcome, parseRecord, FailureRecord, FAILURE_KEY } from './lastFailure';
 
 /** Key under which the last failing job is persisted for the next session. */
-const FAILURE_KEY = 'clarvis.lastFailure';
 
 /** Recently-saved files, persisted so the briefing has something to report at launch. */
 const RECENT_FILES_KEY = 'clarvis.recentFiles';
@@ -20,10 +20,13 @@ const STARTUP_DELAY_MS = 1500;
 /**
  * How long the model gets before the canned briefing wins.
  *
- * Generous enough for a small model on a slow link, short enough that the briefing
- * still belongs to the moment the window opened.
+ * Short enough that the briefing still belongs to the moment the window opened, long
+ * enough for the providers people actually use. **Raised from 8s** after two briefings
+ * in three fell back to the bank on an OpenRouter routing model — the written lines are
+ * correct and audibly flatter, and losing the voice two mornings out of three is a worse
+ * trade than four extra seconds.
  */
-const PHRASE_TIMEOUT_MS = 8000;
+const PHRASE_TIMEOUT_MS = 12_000;
 
 /**
  * Assembles and delivers the "where you left off" briefing (§4.3), and owns the
@@ -96,7 +99,9 @@ export class BriefingService {
 
     tracker.onOutcome((outcome) => this.recordOutcome(outcome));
 
-    this.startupTimer = setTimeout(async () => {
+    // Wrapped rather than passed as an async callback: setTimeout drops the promise,
+    // so a rejection inside would be unhandled and silent.
+    this.startupTimer = setTimeout(() => void (async () => {
       const facts = await this.facts();
       const spoken = await this.phrase(facts);
 
@@ -109,7 +114,7 @@ export class BriefingService {
       const lines = buildBriefingLines(facts);
       if (lines.length > 0) deliver(lines);
       this.log(`briefing: ${lines.length} line(s), from the bank`);
-    }, STARTUP_DELAY_MS);
+    })(), STARTUP_DELAY_MS);
   }
 
   /** Cancels a pending briefing so a fast window close can't fire one into the void. */
@@ -144,13 +149,30 @@ export class BriefingService {
     const prompt = briefingPrompt(facts);
     if (!prompt || !this.phraser) return undefined;
 
+    // Distinguishable outcomes. "From the bank" was logged for all of them — no model,
+    // too slow, and nothing returned read identically, so a briefing losing its voice
+    // two mornings in three looked the same as one on a machine with no key at all.
+    const TIMED_OUT = Symbol('timed out');
+
     try {
+      const started = Date.now();
       const text = await Promise.race([
         this.phraser(prompt),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), PHRASE_TIMEOUT_MS)),
+        new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), PHRASE_TIMEOUT_MS)),
       ]);
 
-      return text?.trim() || undefined;
+      if (text === TIMED_OUT) {
+        this.log(`briefing: model did not answer within ${PHRASE_TIMEOUT_MS}ms — using the written lines`);
+        return undefined;
+      }
+
+      const phrased = text?.trim();
+      if (!phrased) {
+        this.log(`briefing: model returned nothing after ${Date.now() - started}ms`);
+        return undefined;
+      }
+
+      return phrased;
     } catch (error) {
       this.log(`briefing: model phrasing failed (${String(error)})`);
       return undefined;
@@ -171,7 +193,11 @@ export class BriefingService {
     return {
       git: await readGitSummary(),
       failure,
-      recentFiles: this.recentFiles.list(),
+      // Only files that still exist. The list is persisted across sessions, so a file
+      // deleted since is still in it — and naming a file the user has thrown away is the
+      // same class of wrongness as calling an untracked file uncommitted: small, but it
+      // is his own account of their project being wrong to their face.
+      recentFiles: this.recentFiles.list().filter((file) => existsSync(file)),
       patternHint: this.patternHint?.(),
     };
   }

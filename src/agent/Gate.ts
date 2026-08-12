@@ -29,6 +29,16 @@ export interface GateVerdict {
   why: string;
   /** The realistic worst case, stated without melodrama. */
   worstCase: string;
+  /**
+   * Whether the thing can be taken back afterwards.
+   *
+   * Added when the M8 exit checklist asked for irreversible actions to be visually
+   * distinct from reversible ones and found nothing distinguishing them. `npm install`
+   * and `rm -rf` were being asked about in exactly the same words, which trains a user
+   * to click through both at the same speed — and the whole value of a gate is that the
+   * dangerous one reads differently from the routine one.
+   */
+  reversible: boolean;
 }
 
 interface Rule {
@@ -37,6 +47,8 @@ interface Rule {
   what: string;
   why: string;
   worstCase: string;
+  /** Default is irreversible; a rule has to claim otherwise. */
+  reversible?: boolean;
 }
 
 /**
@@ -123,6 +135,8 @@ const RULES: Rule[] = [
     what: 'installs a package and its dependencies',
     why: 'A package runs install scripts on your machine, and pulls in code you did not choose directly.',
     worstCase: 'A compromised or typo-squatted package executes as you during install.',
+    // Uninstalling is a real remedy, which is not true of anything else on this list.
+    reversible: true,
   },
 ];
 
@@ -172,6 +186,7 @@ function toVerdict(rule: Rule, matched: string): GateVerdict {
     what: rule.what,
     why: rule.why,
     worstCase: rule.worstCase,
+    reversible: rule.reversible ?? false,
   };
 }
 
@@ -183,10 +198,25 @@ function toVerdict(rule: Rule, matched: string): GateVerdict {
  */
 export function explainGate(command: string, verdict: GateVerdict): string {
   return [
-    `Clarvis wants to run:  ${command}`,
+    verdict.reversible ? 'Clarvis wants to run:' : 'CANNOT BE UNDONE — Clarvis wants to run:',
+    `  ${command}`,
     '',
     `What it does:  ${verdict.what}`,
     `Why I'm asking:  ${verdict.why}`,
     `Worst case:  ${verdict.worstCase}`,
+    // Said twice for the irreversible ones, at the top and at the bottom, because the
+    // top line is what someone reads and the button is what they look at last.
+    verdict.reversible ? 'This one can be undone afterwards.' : 'There is no undo for this.',
   ].join('\n');
+}
+
+/**
+ * What the approve button says.
+ *
+ * The button is the last thing read before clicking, and "Run it" reads identically
+ * whether the command installs a package or erases the working tree. Naming the
+ * consequence there is the cheapest possible distinction.
+ */
+export function approveLabel(verdict: GateVerdict): string {
+  return verdict.reversible ? 'Run it' : 'Run it anyway';
 }

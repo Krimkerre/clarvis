@@ -569,6 +569,13 @@ export class ChatService {
     let spoken = '';
     const reader = new ReplyStateReader();
 
+    // **The transcript gets it too.** This path streamed straight to the webview and
+    // never appended a turn, so an answer that used tools lived only in the live panel:
+    // move the panel, collapse it, or open the archive, and it was gone. The other reply
+    // path had always done this; this one was written later and did not.
+    const turn: Turn = { speaker: 'clarvis', text: '', at: Date.now() };
+    this.thread = appendTurn(this.thread, turn);
+
     try {
       for await (const event of runner.answer(question, controller.signal, addendum)) {
         if (!event.text) continue;
@@ -585,6 +592,7 @@ export class ChatService {
 
         if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
         spoken += visible;
+        turn.text = spoken;
         this.panel.post({ type: 'chat-stream', text: visible });
       }
 
@@ -592,6 +600,7 @@ export class ChatService {
       if (remainder) {
         if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
         spoken += remainder;
+        turn.text = spoken;
         this.panel.post({ type: 'chat-stream', text: remainder });
       }
     } finally {
@@ -615,8 +624,9 @@ export class ChatService {
    * while the character is being tuned. The briefing has logged its own line since M4
    * for the same reason; this is the surface that needed it more.
    */
-  private logReply(text: string): void {
-    this.log(`chat | ${text.replace(/\s+/g, ' ').trim()}`);
+  private logReply(text: string, speaker: Turn['speaker'] = 'clarvis'): void {
+    if (!text.trim()) return;
+    this.log(`${speaker === 'user' ? 'you' : 'chat'} | ${text.replace(/\s+/g, ' ').trim()}`);
   }
 
   /**
@@ -884,6 +894,12 @@ export class ChatService {
   private async record(turn: Turn): Promise<void> {
     this.thread = appendTurn(this.thread, turn);
     this.panel.post({ type: 'chat-turn', speaker: turn.speaker, text: turn.text });
+    // **Every line, not just the streamed ones.** `chat |` logging was added for model
+    // replies and covered only those; say(), note() and remark() wrote to the transcript
+    // and left no record at all. A user then asked where a particular sentence had come
+    // from and the answer was unfindable — the surface that said it could not be
+    // identified from the log, which is the one question a log exists to answer.
+    this.logReply(turn.text, turn.speaker);
     await this.persist();
   }
 

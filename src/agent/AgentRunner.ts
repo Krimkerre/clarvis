@@ -89,7 +89,11 @@ export class AgentRunner {
   private record(event: AgentEvent): AgentEvent {
     if (event.kind !== 'text') {
       const step = event.step ? `${event.step}. ` : '';
-      this.log(`agent [${event.kind}] ${step}${(event.detail ?? event.text).split('\n')[0]}`);
+      // Trimmed before taking the first line: the closing note starts with a blank
+      // line so it reads as a paragraph in the transcript, which made every finished
+      // run log as `agent [done]` with nothing after it — the one event whose text you
+      // most want in the record.
+      this.log(`agent [${event.kind}] ${step}${(event.detail ?? event.text).trim().split('\n')[0]}`);
     }
     return event;
   }

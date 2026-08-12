@@ -152,6 +152,17 @@ export class AgentRunner {
       return;
     }
 
+    // **Already cancelled before it began.** Stop pressed while the opening line was
+    // still being written left the run to start anyway: it created a checkpoint, made an
+    // isolation branch, switched onto it, and only then noticed. The user was left
+    // standing on an empty `clarvis/` branch they had just asked not to exist. Four of
+    // them accumulated in one session.
+    if (signal.aborted) {
+      this.log('agent: cancelled before any setup');
+      yield this.record({ kind: 'done', text: 'Stopped.', files: [] });
+      return;
+    }
+
     // Isolation and undo are established *before* the model is asked for anything, so
     // there is no window in which an edit could land unprotected. Neither is set up for
     // a read-only answer: there is nothing to undo and nothing to isolate.
@@ -195,6 +206,9 @@ export class AgentRunner {
 
     while (this.steps < cap) {
       if (signal.aborted) {
+        // Stopping is not a reason to leave a branch behind. Nothing was kept, so the
+        // isolation branch is clutter — the same tidy a finished run does.
+        this.tidied = await branch.discardIfEmpty();
         yield this.record({
           kind: 'done',
           text: 'Stopped.',
@@ -231,6 +245,7 @@ export class AgentRunner {
         }
       } catch (error) {
         if (signal.aborted) {
+          this.tidied = await branch.discardIfEmpty();
           yield this.record({ kind: 'done', text: 'Stopped.', files: [...this.touched] });
           return;
         }

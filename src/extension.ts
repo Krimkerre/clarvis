@@ -125,164 +125,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
-  // Keeps plan.md's branch flow in step with the repository: a declared flow that has
-  // gone stale is worse than none, since the wizard keeps offering branches it knows
-  // while ignoring the one work now passes through.
-  const branchFlow = new BranchFlowWatcher(
-    context,
-    (message) => logger.write(message),
-    toTranscriptSpoken,
-    toTranscript
-  );
-  context.subscriptions.push(branchFlow.start());
+  startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
-  // Called by the agent path the moment a run finishes: a branch the user just asked
-  // for should be sorted out while they are still looking at it.
-  context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow()),
-
-    // "Asked once" is right until someone changes their mind, or is testing. Without
-    // this the only way to be asked again about a branch is a new workspace.
-    vscode.commands.registerCommand('clarvis.forgetBranchAnswers', async () => {
-      await context.workspaceState.update('clarvis.branchFlow.seen', undefined);
-      await context.workspaceState.update('clarvis.branchFlow.kept', undefined);
-      logger.write('branch flow: forgot which branches had been asked about');
-      void vscode.window.showInformationMessage(
-        await phrase('report', 'I have forgotten which branches I asked about.')
-      );
-      await branchFlow.checkNow();
-    })
-  );
-
-
-  // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
-  // shared so a probe run reads as one transcript rather than one window per command.
-  const agentTerminal = new AgentTerminal();
-  context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
-  context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.openLog', async () => {
-      if (!logger.filePath) {
-        void vscode.window.showWarningMessage('Clarvis: no log file — writing to it failed at startup.');
-        return;
-      }
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
-      await vscode.window.showTextDocument(document);
-    }),
-    // The agent (M8e). A command for now; M8f routes chat requests into it.
-    vscode.commands.registerCommand('clarvis.runTask', async () => {
-      const task = await vscode.window.showInputBox({
-        prompt: 'What should I do?',
-        placeHolder: 'e.g. fix the failing test in src/watch',
-        ignoreFocusOut: true,
-      });
-      if (!task?.trim()) return;
-
-      const controller = new AbortController();
-      const runner = new AgentRunner(
-        context,
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        models,
-        agentTerminal,
-        (message) => logger.write(message)
-      );
-
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
-        async (progress, token) => {
-          // Cancel must reach the run itself, not merely close the notification.
-          token.onCancellationRequested(() => controller.abort());
-
-          for await (const event of runner.run(task.trim(), controller.signal)) {
-            // No logging here: AgentRunner records every event itself, so both callers
-            // produce the same trail rather than each rolling their own.
-            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
-
-            if (event.kind === 'done' || event.kind === 'error') {
-              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
-              // The closing event no longer repeats the narration, so it can be empty.
-              const text = event.text.trim() || 'Finished.';
-              void vscode.window.showInformationMessage(await phrase('report', `${text}${files}`));
-            }
-          }
-        }
-      );
-    }),
-
-    // Available any time, not only after a run — the question "what is this branch and
-    // what do I do with it" outlives the run that created it.
-    vscode.commands.registerCommand('clarvis.reviewRun', () =>
-      reviewRun(
-        [],
-        [],
-        (message) => logger.write(message),
-        context.workspaceState.get('clarvis.agent.baseBranch'),
-        toTranscriptSpoken
-      )
-    ),
-
-    // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
-    // the escape hatch exists before the thing it rescues you from.
-    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const record = Checkpoint.stored(context);
-
-      if (!record || record.entries.length === 0) {
-        void vscode.window.showInformationMessage(await phrase('report', 'There is nothing to undo.'));
-        return;
-      }
-
-      const confirmed = await vscode.window.showWarningMessage(
-        `Undo the last run — "${record.task}"?`,
-        {
-          modal: true,
-          detail:
-            `${record.entries.length} file(s) go back to how they were before it started. ` +
-            'Anything you changed since then in those files goes too.' +
-            (record.startedOn ? ` You will be put back on \`${record.startedOn}\`.` : ''),
-        },
-        'Undo it'
-      );
-      if (confirmed !== 'Undo it') return;
-
-      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
-      const summary = await phrase(
-        result.failed.length > 0 ? 'warn' : 'report',
-        `Restored ${result.restored} file(s), removed ${result.deleted}` +
-          (result.failed.length > 0 ? `, and failed on ${result.failed.join(', ')}.` : '.'),
-        [String(result.restored), String(result.deleted)]
-      ) +
-        // Said plainly rather than phrased: being left somewhere you did not expect is
-        // the kind of thing a joke would bury.
-        (result.stuckOn
-          ? ` You are still on the run's branch — I could not switch back to \`${result.stuckOn}\` with unsaved changes in the way.`
-          : '');
-
-      // A partial restore is reported as a warning, not an information message: half
-      // undone is a state someone needs to look at rather than be reassured about.
-      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
-      else void vscode.window.showInformationMessage(summary);
-    }),
-
-    // Reads his lines back before they reach anyone. Opened as a document rather than
-    // logged, because the whole point is that a person sits and reads them.
-    vscode.commands.registerCommand('clarvis.debug.voiceCheck', async () => {
-      const report = await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Clarvis: saying a few things…' },
-        () => runVoiceCheck(models, (message) => logger.write(message))
-      );
-
-      const document = await vscode.workspace.openTextDocument({ content: report, language: 'markdown' });
-      await vscode.window.showTextDocument(document, { preview: false });
-    }),
-
-    vscode.commands.registerCommand('clarvis.debug.tools', () =>
-      probeTools(
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        (message) => logger.write(message),
-        agentTerminal
-      )
-    )
-  );
+  const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
@@ -684,4 +529,191 @@ function startPersonality(
  */
 export function deactivate(): void {
   log?.write('Clarvis deactivated.');
+}
+
+/**
+ * The branch-flow watcher, and the two commands that only make sense beside it.
+ *
+ * Kept together because they share one object and nothing else does: `checkBranchFlow`
+ * is called by the agent path the moment a run finishes, and `forgetBranchAnswers`
+ * exists because "asked once" is right until somebody changes their mind or is testing.
+ */
+function startBranchFlow(
+  context: vscode.ExtensionContext,
+  logger: ClarvisLog,
+  toTranscriptSpoken: (message: string) => void,
+  toTranscript: (message: string) => void
+): void {
+  // Keeps plan.md's branch flow in step with the repository: a declared flow that has
+  // gone stale is worse than none, since the wizard keeps offering branches it knows
+  // while ignoring the one work now passes through.
+  const branchFlow = new BranchFlowWatcher(
+    context,
+    (message) => logger.write(message),
+    toTranscriptSpoken,
+    toTranscript
+  );
+  context.subscriptions.push(branchFlow.start());
+
+  // Called by the agent path the moment a run finishes: a branch the user just asked
+  // for should be sorted out while they are still looking at it.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow()),
+
+    // "Asked once" is right until someone changes their mind, or is testing. Without
+    // this the only way to be asked again about a branch is a new workspace.
+    vscode.commands.registerCommand('clarvis.forgetBranchAnswers', async () => {
+      await context.workspaceState.update('clarvis.branchFlow.seen', undefined);
+      await context.workspaceState.update('clarvis.branchFlow.kept', undefined);
+      logger.write('branch flow: forgot which branches had been asked about');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'I have forgotten which branches I asked about.')
+      );
+      await branchFlow.checkNow();
+    })
+  );
+}
+
+/**
+ * Everything driveable by hand: the log, a run, the review, undo, and the two probes.
+ *
+ * Returns the shared terminal, because the chat path needs the same one — a probe run
+ * and an agent run in separate windows would read as two unrelated things happening.
+ */
+function registerAgentCommands(
+  context: vscode.ExtensionContext,
+  logger: ClarvisLog,
+  models: ModelService,
+  toTranscriptSpoken: (message: string) => void
+): AgentTerminal {
+  // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
+  // shared so a probe run reads as one transcript rather than one window per command.
+  const agentTerminal = new AgentTerminal();
+  context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.openLog', async () => {
+      if (!logger.filePath) {
+        void vscode.window.showWarningMessage('Clarvis: no log file — writing to it failed at startup.');
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
+      await vscode.window.showTextDocument(document);
+    }),
+    // The agent (M8e). A command for now; M8f routes chat requests into it.
+    vscode.commands.registerCommand('clarvis.runTask', async () => {
+      const task = await vscode.window.showInputBox({
+        prompt: 'What should I do?',
+        placeHolder: 'e.g. fix the failing test in src/watch',
+        ignoreFocusOut: true,
+      });
+      if (!task?.trim()) return;
+
+      const controller = new AbortController();
+      const runner = new AgentRunner(
+        context,
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        models,
+        agentTerminal,
+        (message) => logger.write(message)
+      );
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
+        async (progress, token) => {
+          // Cancel must reach the run itself, not merely close the notification.
+          token.onCancellationRequested(() => controller.abort());
+
+          for await (const event of runner.run(task.trim(), controller.signal)) {
+            // No logging here: AgentRunner records every event itself, so both callers
+            // produce the same trail rather than each rolling their own.
+            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
+
+            if (event.kind === 'done' || event.kind === 'error') {
+              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
+              // The closing event no longer repeats the narration, so it can be empty.
+              const text = event.text.trim() || 'Finished.';
+              void vscode.window.showInformationMessage(await phrase('report', `${text}${files}`));
+            }
+          }
+        }
+      );
+    }),
+
+    // Available any time, not only after a run — the question "what is this branch and
+    // what do I do with it" outlives the run that created it.
+    vscode.commands.registerCommand('clarvis.reviewRun', () =>
+      reviewRun(
+        [],
+        [],
+        (message) => logger.write(message),
+        context.workspaceState.get('clarvis.agent.baseBranch'),
+        toTranscriptSpoken
+      )
+    ),
+
+    // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
+    // the escape hatch exists before the thing it rescues you from.
+    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const record = Checkpoint.stored(context);
+
+      if (!record || record.entries.length === 0) {
+        void vscode.window.showInformationMessage(await phrase('report', 'There is nothing to undo.'));
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(
+        `Undo the last run — "${record.task}"?`,
+        {
+          modal: true,
+          detail:
+            `${record.entries.length} file(s) go back to how they were before it started. ` +
+            'Anything you changed since then in those files goes too.' +
+            (record.startedOn ? ` You will be put back on \`${record.startedOn}\`.` : ''),
+        },
+        'Undo it'
+      );
+      if (confirmed !== 'Undo it') return;
+
+      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
+      const summary = await phrase(
+        result.failed.length > 0 ? 'warn' : 'report',
+        `Restored ${result.restored} file(s), removed ${result.deleted}` +
+          (result.failed.length > 0 ? `, and failed on ${result.failed.join(', ')}.` : '.'),
+        [String(result.restored), String(result.deleted)]
+      ) +
+        // Said plainly rather than phrased: being left somewhere you did not expect is
+        // the kind of thing a joke would bury.
+        (result.stuckOn
+          ? ` You are still on the run's branch — I could not switch back to \`${result.stuckOn}\` with unsaved changes in the way.`
+          : '');
+
+      // A partial restore is reported as a warning, not an information message: half
+      // undone is a state someone needs to look at rather than be reassured about.
+      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
+      else void vscode.window.showInformationMessage(summary);
+    }),
+
+    // Reads his lines back before they reach anyone. Opened as a document rather than
+    // logged, because the whole point is that a person sits and reads them.
+    vscode.commands.registerCommand('clarvis.debug.voiceCheck', async () => {
+      const report = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis: saying a few things…' },
+        () => runVoiceCheck(models, (message) => logger.write(message))
+      );
+
+      const document = await vscode.workspace.openTextDocument({ content: report, language: 'markdown' });
+      await vscode.window.showTextDocument(document, { preview: false });
+    }),
+
+    vscode.commands.registerCommand('clarvis.debug.tools', () =>
+      probeTools(
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        (message) => logger.write(message),
+        agentTerminal
+      )
+    )
+  );
+
+  return agentTerminal;
 }

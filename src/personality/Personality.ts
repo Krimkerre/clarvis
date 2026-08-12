@@ -130,30 +130,56 @@ export class Personality {
     const repo = await currentRepository();
     if (!repo) return;
 
-    const head: string | undefined = repo.state?.HEAD?.commit;
-    const dirty: number = repo.state?.workingTreeChanges?.length ?? 0;
-    const now = Date.now();
+    await this.noticeCommit(repo, repo.state?.HEAD?.commit);
+    this.noticeBigDiff(repo.state?.workingTreeChanges?.length ?? 0);
+  }
 
-    if (head && this.lastKnownHead && head !== this.lastKnownHead) {
+  /**
+   * A commit that appeared since the last poll.
+   *
+   * Only remarked on after a stretch of silence — a commit is not news, and a remark on
+   * every one of them would be the wallpaper §5 exists to avoid. The silence is measured
+   * from git rather than from this object, because this object starts empty every time
+   * the window opens and a gap it cannot measure is a gap the model would invent.
+   */
+  private async noticeCommit(repo: any, head: string | undefined): Promise<void> {
+    if (!head) return;
+
+    if (this.lastKnownHead && head !== this.lastKnownHead) {
+      const now = Date.now();
       const quiet = this.lastCommitSeenAt === undefined || now - this.lastCommitSeenAt > COMMIT_SILENCE_MS;
 
-      // A commit Clarvis made is still a commit — it resets the silence — but it is
-      // not something to congratulate anyone for.
+      // A commit Clarvis made is still a commit — it resets the silence — but by the
+      // original rule it was not something to congratulate anyone for. That rule is
+      // waived at the user's request (§5, amended): him being pleased with his own work
+      // is in character.
       if (quiet && !this.ownCommits.has(head)) {
         this.say('firstCommitAfterSilence', 'impressed', await describeSilence(repo));
       }
+
       this.lastCommitSeenAt = now;
     }
-    if (head) this.lastKnownHead = head;
 
-    // Announced once per crossing, not once per poll — otherwise it repeats every 5s
-    // for as long as the tree stays large.
-    if (dirty >= BIG_DIFF_FILES && !this.bigDiffAnnounced) {
-      this.bigDiffAnnounced = true;
-      this.say('bigDiff', 'surprised', `${dirty} files changed at once`);
-    } else if (dirty < BIG_DIFF_FILES) {
+    this.lastKnownHead = head;
+  }
+
+  /**
+   * A working tree that has grown enormous.
+   *
+   * Announced once per crossing rather than once per poll — otherwise it repeats every
+   * five seconds for as long as the tree stays large, which is precisely how long
+   * somebody is least able to do anything about it.
+   */
+  private noticeBigDiff(dirty: number): void {
+    if (dirty < BIG_DIFF_FILES) {
       this.bigDiffAnnounced = false;
+      return;
     }
+
+    if (this.bigDiffAnnounced) return;
+
+    this.bigDiffAnnounced = true;
+    this.say('bigDiff', 'surprised', `${dirty} files changed at once`);
   }
 
   private say(

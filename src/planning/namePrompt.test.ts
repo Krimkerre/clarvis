@@ -12,6 +12,12 @@ test('the prompt asks for the NAMED: shape and the shortlist shape', () => {
   assert.match(prompt, /Name \| one clause/);
 });
 
+test('the prompt asks for five suggestions, two with his own humour', () => {
+  const prompt = namePrompt('a lore generator');
+  assert.match(prompt, /5 short candidate names/);
+  assert.match(prompt, /dry sense of humour/i);
+});
+
 test('parses an already-named response', () => {
   const result = parseNameResult('NAMED: LoreGen');
   assert.deepEqual(result, { named: 'LoreGen' });

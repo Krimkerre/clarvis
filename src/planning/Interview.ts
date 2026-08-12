@@ -3,6 +3,7 @@ import { ModelService } from '../model/ModelService';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
 import { namePrompt, parseNameResult } from './namePrompt';
+import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 
 /**
  * Runs one project-planning interview (M9a — §4.9), start to "enough to draft".
@@ -23,16 +24,24 @@ import { namePrompt, parseNameResult } from './namePrompt';
 /** How long the model gets to phrase a question before the written fallback wins. */
 const PHRASE_TIMEOUT_MS = 6000;
 
+/** Same "I don't know"-family answers the rest of the interview recognises. */
+const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
+
 export async function runInterview(
   models: ModelService,
   log: (message: string) => void
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
-  const seed = await vscode.window.showInputBox({
+  let seed = await vscode.window.showInputBox({
     prompt: 'What are you building? One sentence is plenty.',
-    placeHolder: 'e.g. a CLI that renames photos by their EXIF date',
+    placeHolder: "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas",
     ignoreFocusOut: true,
   });
-  if (!seed?.trim()) return undefined;
+  if (seed === undefined) return undefined;
+
+  if (!seed.trim() || UNKNOWN_ANSWER.test(seed.trim())) {
+    seed = await offerIdeas(models, log);
+    if (!seed) return undefined;
+  }
 
   log(`planning: interview started — "${seed.trim()}"`);
 
@@ -80,6 +89,65 @@ export async function runInterview(
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
   return { state, seed: seed.trim() };
+}
+
+/**
+ * A few project ideas, for when the seed question comes back "I don't know".
+ *
+ * Not asked for automatically — only once the user has actually said they don't
+ * know, same as everywhere else in this interview "I don't know" is a real, welcome
+ * answer rather than something to route around. No model, no ideas: there is no
+ * honest written fallback for "make something up that's funny".
+ */
+async function offerIdeas(models: ModelService, log: (message: string) => void): Promise<string | undefined> {
+  if (!(await models.isReady('chat'))) {
+    log('planning: seed — no model configured, could not suggest ideas');
+    return undefined;
+  }
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: ideaPrompt() }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 800) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const ideas = parseIdeaResult(text);
+    if (ideas.length === 0) {
+      log('planning: seed — idea response did not parse');
+      return undefined;
+    }
+
+    const SOMETHING_ELSE = 'Something else…';
+    const picked = await vscode.window.showQuickPick(
+      [...ideas.map((idea) => ({ label: idea.name, detail: idea.description })), { label: SOMETHING_ELSE }],
+      { placeHolder: "Didn't know what to build? Pick one, or describe your own", ignoreFocusOut: true }
+    );
+    if (!picked) {
+      log('planning: seed — idea picker cancelled');
+      return undefined;
+    }
+    if (picked.label === SOMETHING_ELSE) {
+      const typed = await vscode.window.showInputBox({
+        prompt: 'What are you building? One sentence is plenty.',
+        ignoreFocusOut: true,
+      });
+      return typed?.trim() || undefined;
+    }
+
+    const idea = ideas.find((candidate) => candidate.name === picked.label);
+    log(`planning: seed — chose idea: ${picked.label}`);
+    return idea ? `${idea.name}, ${idea.description}` : picked.label;
+  } catch (error) {
+    log(`planning: seed — idea generation failed (${String(error)})`);
+    return undefined;
+  }
 }
 
 /**
@@ -287,8 +355,7 @@ async function pickLanguageForUser(
 /** Whatever was typed, as a settled answer or a recorded unknown. */
 function toAnswer(topic: TopicId, raw: string): Answer {
   const text = raw.trim();
-  const unknown = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i.test(text);
-  return { topic, text: unknown || !text ? undefined : text };
+  return { topic, text: UNKNOWN_ANSWER.test(text) || !text ? undefined : text };
 }
 
 async function phraseQuestion(

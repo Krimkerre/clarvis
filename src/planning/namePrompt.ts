@@ -23,8 +23,11 @@ export function namePrompt(seed: string): string {
     'itself, not just a description of what it does?',
     '',
     'If yes, output exactly one line: NAMED: <the name>',
-    'If no, suggest 3 short candidate names that fit what is described, one per line,',
+    'If no, suggest 5 short candidate names that fit what is described, one per line,',
     'in exactly this format: Name | one clause on why it fits',
+    'Two of the five should carry your own dry sense of humour — a name that is',
+    'genuinely funny about what this project is, not just a pun on the topic. The',
+    'other three are straightforward good fits, no joke required.',
     'Output nothing else — no intro, no numbering, no markdown.',
   ].join('\n');
 }

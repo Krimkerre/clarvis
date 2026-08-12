@@ -3398,6 +3398,15 @@ quips (`LiveQuips`) chat and the agent already use, surfaced via
 into. M9d (generation, including Branch flow and conventions) is not built — this
 still ends at a summary document, not a written `plan.md`.
 
+**Personality pass (13 Aug).** Project-name suggestions widened from 3 to 5, two of
+which are explicitly asked to carry Clarvis's own dry humour rather than reading as a
+neutral list (`namePrompt.ts`). The seed question ("What are you building?") now
+recognises "I don't know" the same way every other topic already does — `Interview.ts`
+`offerIdeas()` asks for 4 small, genuinely buildable ideas, at least 2 of them funny,
+via the same `Name | description` structured format the rest of M9 uses
+(`ideaPrompt.ts`, pure and tested). Picking one seeds the interview exactly as if the
+user had typed it themselves.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
+import { namePrompt, parseNameResult } from './namePrompt';
 
 /**
  * Runs one project-planning interview (M9a — §4.9), start to "enough to draft".
@@ -36,6 +37,7 @@ export async function runInterview(
   log(`planning: interview started — "${seed.trim()}"`);
 
   const state: InterviewState = { answers: [{ topic: 'what-it-does', text: seed.trim() }] };
+  state.projectName = await resolveProjectName(models, seed.trim(), log);
 
   for (;;) {
     const topic = nextTopic(state);
@@ -78,6 +80,72 @@ export async function runInterview(
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
   return { state, seed: seed.trim() };
+}
+
+/**
+ * Detects a name already in the seed, or offers a shortlist if there isn't one.
+ *
+ * A missing name isn't blocking — cancelling the picker just leaves it unresolved and
+ * the interview carries on, same as "you pick" cancelling would not stall the rest of
+ * the interview over a preference nobody has strong feelings about yet.
+ */
+async function resolveProjectName(
+  models: ModelService,
+  seed: string,
+  log: (message: string) => void
+): Promise<string | undefined> {
+  if (!(await models.isReady('chat'))) {
+    log('planning: name — no model configured, skipped');
+    return undefined;
+  }
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: namePrompt(seed) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 400) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const result = parseNameResult(text);
+    if ('named' in result) {
+      log(`planning: name — already named in the seed: ${result.named}`);
+      return result.named;
+    }
+    if (result.suggestions.length === 0) {
+      log('planning: name — response did not parse, skipped');
+      return undefined;
+    }
+
+    const SOMETHING_ELSE = 'Something else…';
+    const picked = await vscode.window.showQuickPick(
+      [
+        ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
+        { label: SOMETHING_ELSE },
+      ],
+      { placeHolder: 'No name given yet — pick one, or name it yourself', ignoreFocusOut: true }
+    );
+    if (!picked) {
+      log('planning: name — suggestion picker cancelled, left unresolved');
+      return undefined;
+    }
+    if (picked.label === SOMETHING_ELSE) {
+      const typed = await vscode.window.showInputBox({ prompt: 'What should it be called?', ignoreFocusOut: true });
+      log(`planning: name — ${typed ? `set to ${typed.trim()}` : 'left unresolved'}`);
+      return typed?.trim() || undefined;
+    }
+
+    log(`planning: name — chose suggestion: ${picked.label}`);
+    return picked.label;
+  } catch (error) {
+    log(`planning: name — resolution failed (${String(error)}), skipped`);
+    return undefined;
+  }
 }
 
 /** One parsed `Name | advantage | cost` line from the model's shortlist. */

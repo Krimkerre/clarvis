@@ -34,6 +34,8 @@ export interface InterviewState {
   answers: Answer[];
   /** Whether the model detected the language from files on disk rather than asking. */
   languageDetected?: string;
+  /** The project's name — given in the seed, suggested, or picked by the user. */
+  projectName?: string;
 }
 
 /**

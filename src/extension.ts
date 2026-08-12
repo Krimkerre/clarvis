@@ -658,7 +658,8 @@ function registerPlanningCommand(
       const open = openQuestions(state);
 
       const lines = [
-        `# Interview — ${seed}`,
+        state.projectName ? `# ${state.projectName}` : `# Interview — ${seed}`,
+        ...(state.projectName ? [`*${seed}*`] : []),
         '',
         readyToDraft(state)
           ? 'Enough to draft. (Generating `plan.md` from this is M9d, not built yet.)'

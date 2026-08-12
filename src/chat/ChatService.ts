@@ -4,8 +4,7 @@ import { AvatarController } from '../AvatarController';
 import { BusyTracker } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
 import { VoiceService } from '../voice/VoiceService';
-import { appendTurn, Turn } from './thread';
-import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
+import { Transcript } from './Transcript';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { branchFromRequest, chatAction, ChatAction, isStopRequest } from './chatCommands';
@@ -25,18 +24,6 @@ import { characterWith } from '../personality/character';
 import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
-
-/**
- * The live session, written as it happens.
- *
- * Persisted continuously rather than saved at shutdown: `deactivate` is not
- * guaranteed to run — a crash, a force quit, or a killed extension host all skip it —
- * and a transcript that survives only clean exits is one you cannot rely on.
- */
-const CURRENT_KEY = 'clarvis.chat.current';
-
-/** Past sessions, newest first. */
-const HISTORY_KEY = 'clarvis.chat.history';
 
 /** Where M4 stored the failure record, re-read here rather than duplicated. */
 const FAILURE_KEY = 'clarvis.lastFailure';
@@ -60,10 +47,7 @@ export class ChatService {
    * Nothing is lost by starting clean. The previous session is filed into the archive
    * at startup and stays one button away.
    */
-  private thread: Turn[] = [];
 
-  /** When this session began — the archive is ordered by it. */
-  private readonly startedAt = Date.now();
 
   /** The answer currently streaming, so `Clarvis: Stop` has something to abort. */
   private streaming?: AbortController;
@@ -84,6 +68,23 @@ export class ChatService {
 
   setVoiceWriter(voice: Voice): void {
     this.voiceOf = voice;
+  }
+
+  /**
+   * Earlier conversations, and clearing this one.
+   *
+   * Kept on ChatService because the panel and the command palette both call them, and
+   * because the empty-archive line is phrased in character — which is a chat concern
+   * rather than a storage one.
+   */
+  async showHistory(): Promise<void> {
+    await this.transcript.showHistory(
+      await this.phrase('report', 'There are no earlier conversations. This is all there has ever been.')
+    );
+  }
+
+  async clear(): Promise<void> {
+    await this.transcript.clear();
   }
 
   /** Shorthand: in character where possible, verbatim where not. */
@@ -111,6 +112,9 @@ export class ChatService {
   /** Everything he knows about the project, gathered on demand. */
   private readonly workspace: WorkspaceFactsReader;
 
+  /** What was said, where it is kept, and what becomes of it. */
+  private readonly transcript: Transcript;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,
@@ -132,6 +136,7 @@ export class ChatService {
     private readonly log: (message: string) => void
   ) {
     this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
+    this.transcript = new Transcript(context, panel, log);
 
     this.panel.onDidAsk((question) => void this.ask(question));
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
@@ -158,12 +163,12 @@ export class ChatService {
     // Roll the previous session into the archive before anything is written to it.
     // Done at *startup* rather than shutdown, because shutdown is not guaranteed to
     // happen — this way a crashed window's conversation is filed on next launch.
-    void this.rollOver();
+    void this.transcript.rollOver();
 
     // A newly resolved webview knows nothing. Replaying keeps a panel move or a
     // reload from looking like the conversation was thrown away.
     this.panel.onDidBecomeReady(() => {
-      this.panel.post({ type: 'chat-thread', turns: this.thread });
+      this.transcript.replay();
       // A panel moved mid-run comes back blank, and a run with no Stop button is a run
       // you cannot call off.
       this.setBusy(Boolean(this.streaming) || this.agentBusy.running);
@@ -177,7 +182,7 @@ export class ChatService {
 
   /** Answers a question, records both halves of the exchange, and shows the reply. */
   async ask(question: string): Promise<void> {
-    await this.record({ speaker: 'user', text: question, at: Date.now() });
+    await this.transcript.add({ speaker: 'user', text: question, at: Date.now() });
 
     // Before anything that costs a request: someone typing "stop" wants the thing to
     // stop, and asking a model about it first is both slow and beside the point.
@@ -345,8 +350,7 @@ export class ChatService {
     this.streaming = controller;
 
     this.avatar.setState('thinking', 'chat');
-    const turn: Turn = { speaker: 'clarvis', text: '', at: Date.now() };
-    this.thread = appendTurn(this.thread, turn);
+    const turn = this.transcript.begin('clarvis');
     this.panel.post({ type: 'chat-stream-start' });
     this.setBusy(true);
 
@@ -357,7 +361,7 @@ export class ChatService {
     try {
       for await (const fragment of this.models.stream({
         system: `${this.systemPrompt() + addendum}\n\n${STATE_TAG_INSTRUCTION}`,
-        messages: this.modelMessages(),
+        messages: this.transcript.forModel(),
         signal: controller.signal,
       })) {
         const visible = reader.push(fragment);
@@ -394,13 +398,13 @@ export class ChatService {
       this.panel.post({ type: 'chat-stream-end' });
       this.setBusy(false);
       this.avatar.setState('neutral', 'chat');
-      await this.persist();
+      await this.transcript.persist();
     }
 
     // Spoken only once complete — speaking fragment by fragment would produce a
     // stutter, and the queue exists to serialise utterances, not syllables.
     if (text) {
-      this.logReply(text);
+      this.transcript.note(text);
       this.voice.say(text, 'chatReply');
     }
   }
@@ -579,8 +583,7 @@ export class ChatService {
     // never appended a turn, so an answer that used tools lived only in the live panel:
     // move the panel, collapse it, or open the archive, and it was gone. The other reply
     // path had always done this; this one was written later and did not.
-    const turn: Turn = { speaker: 'clarvis', text: '', at: Date.now() };
-    this.thread = appendTurn(this.thread, turn);
+    const turn = this.transcript.begin('clarvis');
 
     try {
       for await (const event of runner.answer(question, controller.signal, addendum)) {
@@ -614,26 +617,13 @@ export class ChatService {
       this.panel.post({ type: 'chat-stream-end' });
       this.setBusy(false);
       this.avatar.setState('neutral', 'chat');
-      await this.persist();
+      await this.transcript.persist();
     }
 
     if (spoken.trim()) {
-      this.logReply(spoken);
+      this.transcript.note(spoken);
       this.voice.say(spoken, 'chatReply');
     }
-  }
-
-  /**
-   * The reply itself, in the log.
-   *
-   * The steps were logged and the answer was not, so the log could show that a reply
-   * happened and never what it said — which is exactly the question being asked of it
-   * while the character is being tuned. The briefing has logged its own line since M4
-   * for the same reason; this is the surface that needed it more.
-   */
-  private logReply(text: string, speaker: Turn['speaker'] = 'clarvis'): void {
-    if (!text.trim()) return;
-    this.log(`${speaker === 'user' ? 'you' : 'chat'} | ${text.replace(/\s+/g, ' ').trim()}`);
   }
 
   /**
@@ -727,22 +717,6 @@ export class ChatService {
   }
 
   /**
-   * The conversation as the model sees it.
-   *
-   * Empty turns are dropped — a stream that failed on its first fragment would
-   * otherwise be sent back as a blank assistant message, which some providers reject
-   * outright and others treat as the model having nothing to say.
-   */
-  private modelMessages(): { role: 'user' | 'assistant'; content: string }[] {
-    return this.thread
-      .filter((entry) => entry.text.trim().length > 0)
-      .map((entry) => ({
-        role: entry.speaker === 'user' ? ('user' as const) : ('assistant' as const),
-        content: entry.text,
-      }));
-  }
-
-  /**
    * The personality block (§2.1), trimmed to what an answering turn needs.
    *
    * The full agent and planning addenda arrive with M8g; sending them now would be
@@ -767,7 +741,7 @@ export class ChatService {
   async note(text: string): Promise<void> {
     // No setState here on purpose: the caller already chose a face and owns the hold
     // timer that returns it to rest. Setting it again from here would fight them.
-    await this.record({ speaker: 'clarvis', text, at: Date.now() });
+    await this.transcript.add({ speaker: 'clarvis', text, at: Date.now() });
   }
 
   /**
@@ -778,7 +752,7 @@ export class ChatService {
    * thread is already empty, since confirming a no-op is just noise.
    */
   async confirmAndClear(): Promise<void> {
-    if (this.thread.length === 0) return;
+    if (this.transcript.isEmpty) return;
 
     const confirmed = await vscode.window.showWarningMessage(
       'Clear the conversation? This cannot be undone.',
@@ -865,7 +839,7 @@ export class ChatService {
     if (action === 'toggleMute') {
       const muted = !this.voice.isMuted;
       this.voice.setMuted(muted);
-      await this.record({
+      await this.transcript.add({
         speaker: 'clarvis',
         text: muted ? 'Silenced. I remain, in spirit.' : 'Speaking again.',
         at: Date.now(),
@@ -933,19 +907,9 @@ export class ChatService {
     this.voice.say(text, 'chatReply');
   }
 
-  /** Clears the transcript and the stored copy behind it. */
-  async clear(): Promise<void> {
-    this.thread = [];
-    // Clearing means *delete*, so this is not filed into the archive — otherwise the
-    // button labelled "there is no undo" would quietly keep a copy.
-    await this.context.workspaceState.update(CURRENT_KEY, undefined);
-    this.panel.post({ type: 'chat-thread', turns: [] });
-    this.log('chat: conversation cleared');
-  }
-
   /** Posts a reply, sets the face to match it, and returns the face to rest after. */
   private async say(text: string, state: Parameters<AvatarController['setState']>[0]): Promise<void> {
-    await this.record({ speaker: 'clarvis', text, at: Date.now() });
+    await this.transcript.add({ speaker: 'clarvis', text, at: Date.now() });
     this.avatar.setState(state, 'chat');
 
     // Spoken as well as written. The reply is on screen either way — voice is never
@@ -955,61 +919,4 @@ export class ChatService {
     this.voice.say(text, 'chatReply');
   }
 
-  /** Appends to the thread, persists it, and shows it. */
-  private async record(turn: Turn): Promise<void> {
-    this.thread = appendTurn(this.thread, turn);
-    this.panel.post({ type: 'chat-turn', speaker: turn.speaker, text: turn.text });
-    // **Every line, not just the streamed ones.** `chat |` logging was added for model
-    // replies and covered only those; say(), note() and remark() wrote to the transcript
-    // and left no record at all. A user then asked where a particular sentence had come
-    // from and the answer was unfindable — the surface that said it could not be
-    // identified from the log, which is the one question a log exists to answer.
-    this.logReply(turn.text, turn.speaker);
-    await this.persist();
-  }
-
-  /** Writes the live session to storage. Shared by recorded turns and streamed ones. */
-  private async persist(): Promise<void> {
-    const session: Session = { startedAt: this.startedAt, turns: this.thread };
-    await this.context.workspaceState.update(CURRENT_KEY, session);
-  }
-
-  /** Files whatever the last window left behind, then starts this one clean. */
-  private async rollOver(): Promise<void> {
-    const leftover = parseHistory([this.context.workspaceState.get(CURRENT_KEY)])[0];
-    if (!leftover || leftover.turns.length === 0) return;
-
-    const history = parseHistory(this.context.workspaceState.get(HISTORY_KEY));
-    await this.context.workspaceState.update(HISTORY_KEY, archiveSession(history, leftover));
-    await this.context.workspaceState.update(CURRENT_KEY, undefined);
-    this.log(`chat: filed previous session (${leftover.turns.length} turns)`);
-  }
-
-  /** Lets the user pick a past session and read it in a normal editor tab. */
-  async showHistory(): Promise<void> {
-    const history = parseHistory(this.context.workspaceState.get(HISTORY_KEY));
-
-    if (history.length === 0) {
-      void vscode.window.showInformationMessage(
-        await this.phrase('report', 'There are no earlier conversations. This is all there has ever been.')
-      );
-      return;
-    }
-
-    const picked = await vscode.window.showQuickPick(
-      history.map((session) => ({ ...describeSession(session), session })),
-      { placeHolder: 'Earlier conversations, newest first' }
-    );
-    if (!picked) return;
-
-    // An editor tab rather than a second webview: it scrolls, searches, copies and
-    // closes exactly the way every other document does, and costs no UI to maintain.
-    const document = await vscode.workspace.openTextDocument({
-      content: formatSession(picked.session),
-      language: 'markdown',
-    });
-    await vscode.window.showTextDocument(document, { preview: true });
-  }
-
-  /** Snapshots everything the answering logic is allowed to look at. */
 }

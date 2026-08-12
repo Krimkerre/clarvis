@@ -33,6 +33,15 @@ const TOPIC_BRIEF: Record<TopicId, string> = {
  * as tiring as five separate messages.
  */
 export function interviewQuestionPrompt(topic: TopicId, state: InterviewState): string {
+  // **Language needs a different shape entirely, not one more "ask a question" topic.**
+  // Found live: given the generic template, the model asked a Windows-vs-macOS
+  // scoping question instead of a shortlist, and "preferrably multi-platform" — an OS
+  // constraint, not a language — was recorded under `language`, with the interview
+  // reporting zero open questions. It looked finished. No language had actually been
+  // chosen. The instruction to "ask ONE question" is exactly what steered it there:
+  // §4.9 wants a menu, not a question, and a generic template cannot say that.
+  if (topic === 'language') return languageShortlistPrompt(state);
+
   const known = state.answers
     .filter((answer) => answer.text)
     .map((answer) => `${answer.topic}: ${answer.text}`)
@@ -54,6 +63,39 @@ export function interviewQuestionPrompt(topic: TopicId, state: InterviewState): 
   ]
     .filter(Boolean)
     .join('\n');
+}
+
+/**
+ * The language shortlist itself (§4.9), not a question that leads up to one.
+ *
+ * Mirrors the plan's own worked example closely on purpose — a vague instruction to
+ * "suggest some languages" is exactly what produced a scoping question instead of a
+ * menu the first time this ran. Every rule here maps to a specific §4.9 sentence:
+ * options must come from what was actually said, every option needs a real cost, and
+ * "you pick" has to be honoured as a real answer, not treated as a non-answer.
+ */
+function languageShortlistPrompt(state: InterviewState): string {
+  const known = state.answers
+    .filter((answer) => answer.text)
+    .map((answer) => `${answer.topic}: ${answer.text}`)
+    .join('\n');
+
+  return [
+    'Propose a shortlist of 2 to 4 programming languages for this project, based only',
+    'on what is described below — not a generic list, one that follows from what this',
+    'project actually is.',
+    '',
+    `What is known so far:\n${known}`,
+    '',
+    'For each language: its name, one real advantage for *this* project, and one real',
+    'cost. An option with no honest downside is not a real option — leave it out rather',
+    'than pad the list with one.',
+    'End by saying they can also just say "you pick" — that is a first-class answer, not',
+    'a fallback for someone who does not know.',
+    'Do not ask a preliminary question first (platform, OS, anything else) — answer with',
+    'the shortlist itself, using what is already known above.',
+    'Plain text, no markdown headers. Short: a line or two per option.',
+  ].join('\n');
 }
 
 /**

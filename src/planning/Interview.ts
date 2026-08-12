@@ -103,7 +103,11 @@ async function phraseQuestion(
 
     await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
 
-    const phrased = text.trim().split('\n')[0];
+    // Every topic but language is genuinely one sentence, and truncating to the first
+    // line has caught a stray blank line from the model harmlessly. Language is not:
+    // it is a shortlist of 2-4 options, inherently multi-line, and the same truncation
+    // would have silently thrown away every option after the first one.
+    const phrased = (topic === 'language' ? text.trim() : text.trim().split('\n')[0]);
     if (!phrased) {
       log(`planning: "${topic}" — model returned nothing, used the written question`);
       return FALLBACK_QUESTION[topic];

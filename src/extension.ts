@@ -22,6 +22,8 @@ import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
+import { runInterview } from './planning/Interview';
+import { openQuestions, readyToDraft } from './planning/interviewTopics';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -130,6 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
   startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
   const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
+  registerPlanningCommand(context, models, logger);
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
@@ -613,6 +616,46 @@ function startBranchFlow(
       await forgetGitOfferAnswer(context);
       logger.write('git offer: forgot the answer, will ask again next run');
       void vscode.window.showInformationMessage(await phrase('report', 'Asking again, next time it comes up.'));
+    })
+  );
+}
+
+/**
+ * M9a — the project-planning interview, as its own command.
+ *
+ * Deliberately separate from the chat panel rather than routed through ChatService:
+ * this is the first slice of a large milestone, and the eventual "questions arrive in
+ * the chat panel" experience is a later piece of work, not something this needed to
+ * wait for. Ends by reporting what was gathered — M9b/c/d (analysis, verdicts, writing
+ * `plan.md`) are not built yet.
+ */
+function registerPlanningCommand(context: vscode.ExtensionContext, models: ModelService, logger: ClarvisLog): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.planProject', async () => {
+      const result = await runInterview(models, (message) => logger.write(message));
+      if (!result) return;
+
+      const { state, seed } = result;
+      const settled = state.answers.filter((answer) => answer.text);
+      const open = openQuestions(state);
+
+      const lines = [
+        `# Interview — ${seed}`,
+        '',
+        readyToDraft(state)
+          ? 'Enough to draft. (Generating `plan.md` from this is M9d, not built yet.)'
+          : 'Paused — reopen `Clarvis: Plan This Project` to continue where this left off. (Nothing is saved between sessions yet; that is also still to come.)',
+        '',
+        '## Established',
+        ...settled.map((answer) => `- **${answer.topic}**: ${answer.text}`),
+      ];
+
+      if (open.length > 0) {
+        lines.push('', '## Open questions', ...open.map((answer) => `- ${answer.topic} — not yet known`));
+      }
+
+      const document = await vscode.workspace.openTextDocument({ content: lines.join('\n'), language: 'markdown' });
+      await vscode.window.showTextDocument(document, { preview: false });
     })
   );
 }

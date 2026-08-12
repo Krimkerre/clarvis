@@ -60,6 +60,10 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.planProject",
+        "title": "Clarvis: Plan This Project"
+      },
+      {
         "command": "clarvis.runTask",
         "title": "Clarvis: Run a Task"
       },

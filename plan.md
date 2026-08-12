@@ -3358,6 +3358,26 @@ it. Both restored. Neither was in any test, and neither had been noticed in use.
 
 ### M9 — Project Planning *(the front door)*
 
+**M9a started (12 Aug).** `src/planning/interviewTopics.ts` is the pure state machine —
+topic ordering, the language-timing rule, the linter-asked-once-last rule, "enough to
+draft" as a condition rather than a question count, "I don't know yet" recorded as an
+open question. Fully tested (9 tests), including a real bug the tests caught before
+anything ran: `nextTopic()` first appended language *after* every core topic instead of
+inserting it right after `who-and-where`, which would have asked it too late to make
+the rest of the interview language-aware — exactly the failure §4.9 calls out by name.
+
+`src/planning/Interview.ts` drives it end to end via `Clarvis: Plan This Project` —
+chained input boxes, not the chat panel. That is a deliberate, temporary front end: the
+state machine and the model-phrased questions are real and usable today; the panel
+integration described in §4.9 is separate work this did not need to wait for. Ends by
+opening a document with what was established and what is still open — **not** a
+generated `plan.md`. M9b (analysis), M9c (verdicts) and M9d (generation, including the
+Branch flow and conventions sections) are not built. Nothing persists between sessions
+yet either — a paused interview cannot be resumed after a reload, which §4.9's design
+calls for and this slice does not yet provide.
+
+
+
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent
 (M8) — it's the thing that *feeds* the agent, so it can't land earlier. Placed before
 voice because voice is explicitly a cut-without-guilt stretch and this is not.

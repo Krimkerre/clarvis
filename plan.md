@@ -2780,6 +2780,25 @@ only *capture* is blocked.
 The largest milestone by a distance. Sub-stages ship in order and each is useful
 alone, so the milestone can stop early without leaving a half-built thing behind.
 
+**Closed out.** Every sub-stage below is built: M8a, M8b0 (a finding, not code), M8b,
+M8c, M8d, M8e, M8e2, M8e3, M8f, M8f2 and M8g. What remains is the exit checklist at the
+end of this section, which is deliberately *live* verification — a hostile file, a
+symlink escape, a missing `git` binary, a local model too small for a tool loop. None of
+those can be closed by a passing suite, and this milestone is the clearest evidence why:
+almost every defect found here was found by using the thing, not by testing it. Three
+are worth carrying into M9 as design rules rather than anecdotes:
+
+- **Components can each be correct and the composition still wrong.** The gate, the
+  branch isolation and the cleanup all behaved exactly as written, and together they left
+  the user on the wrong branch.
+- **Fix the reporting before diagnosing.** Most of the long hunts here — the branch-flow
+  watcher never running, the chat replies that never rendered, the personality that
+  sounded flat — were short once the log said what was actually happening. The chat
+  reply text was not logged at all until the personality work needed it.
+- **A prompt is a hypothesis until someone reads the output.** Three personality
+  "fixes" shipped on the strength of tests that asserted on prompt text. `Clarvis: Debug
+  — Voice Check` exists so the fourth did not.
+
 **Build.**
 - **M8a — Local answers.** `src/chat/ChatViewProvider.ts` extends the M2 panel with an
   input box + transcript below the avatar (same webview, not a second one — §3).
@@ -2950,11 +2969,24 @@ alone, so the milestone can stop early without leaving a half-built thing behind
   the panel before starting, and resolves ambiguity toward answering. An unsolicited
   surface (§4.2 pattern hit, §5 quip) can be escalated by the user replying to it, and
   that reply is what makes it a request.
-- **M8g — Butler in the loop.** `src/personality/systemPrompt.ts` — the §2.1 base block
-  plus the mode addendum for the turn (answering / agent / planning), assembled per
-  request so a planning turn doesn't carry agent instructions. Quips are suppressed
-  while a task runs (§4.6 *Personality under load*); §5 material returns when it
-  finishes.
+- **M8g — Butler in the loop. ✅ Built, under a different filename.**
+  `src/personality/character.ts` is the §2.1 base block, and `characterWith(...rules)`
+  is the per-turn assembly: each surface passes the rules for *its* turn and says nothing
+  about tone, so an answering turn carries no agent instructions and a planning turn gets
+  `PLAN_ADDENDUM` and no editing tools. Quip suppression during a run already existed via
+  the shared `agentBusy` flag.
+  It was built out of order and for a different reason — the character had drifted into
+  five hand-written descriptions and the chat sounded like a status page — which is why
+  it is not called `systemPrompt.ts`. Two things learned in the doing, both recorded in
+  §2.2 and worth more than the file name:
+  - **Rules first, voice last.** A brief placed above a tool loop loses to the
+    summarise-the-document prior; recency is the only lever that reaches past it.
+  - **A licence, not a ban list, and a required slot for the aside.** A brief that is
+    mostly prohibitions produces the safest possible sentence, which is the one any tool
+    could have written.
+  `Clarvis: Debug — Voice Check` says seven lines through the real prompts and the
+  configured model, so a change to any of this is read before it ships rather than
+  discovered in use.
 - **M8g2 — Live quips.** Once a model is wired in, reactive remarks are *generated*
   for the situation rather than drawn from `quipBank.ts` — the bank has five triggers
   and two registers, which is a fixed number of jokes and therefore a countdown to

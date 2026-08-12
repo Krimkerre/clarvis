@@ -192,7 +192,7 @@ export function activate(context: vscode.ExtensionContext): void {
               const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
               // The closing event no longer repeats the narration, so it can be empty.
               const text = event.text.trim() || 'Finished.';
-              void vscode.window.showInformationMessage(`Clarvis: ${text}${files}`);
+              void vscode.window.showInformationMessage(await phrase('report', `${text}${files}`));
             }
           }
         }
@@ -556,7 +556,9 @@ function registerVoiceCommands(
       if (!key) return;
 
       await context.secrets.store(FISH_KEY_SECRET, key.trim());
-      void vscode.window.showInformationMessage('Clarvis: key stored in the system keychain.');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'Key stored, in the system keychain where it belongs.')
+      );
       // Setting a key is an unambiguous request for the feature it unlocks.
       await enableVoiceAfterKey(log);
     }),
@@ -592,7 +594,9 @@ function registerVoiceCommands(
       const file = vscode.Uri.joinPath(context.globalStorageUri, 'mic-probe.wav');
       await vscode.workspace.fs.createDirectory(context.globalStorageUri);
 
-      void vscode.window.showInformationMessage('Clarvis: recording 3 seconds — say something.');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'Recording for three seconds. Say something.')
+      );
 
       try {
         const used = await recordClip(file.fsPath, 3, process.platform, log);

@@ -286,13 +286,22 @@ the full per-milestone build notes and exit criteria.
       goes through the OS's headless player rather than the webview, because Chromium
       blocks audio until the panel is clicked — which the launch briefing can never
       satisfy. Rendered speech is cached on disk, so repeats cost nothing.
-- [~] **M8 — Chat & Agent.** *In progress.* **M8a is done**: the chat panel, answers
-      from local state with no key or network, the transcript that keeps what he says,
-      per-session history, the mute button, and a built-in manual on `/help` with slash
-      commands and plain-English equivalents. Still to come: the model layer, the tool
-      layer, the gates, and the agent loop itself. *(The big one: local answers, then the
-      Answer path, then a real agentic harness — tool layer and gates built and tested
-      before the model can reach them.)*
+- [x] **M8 — Chat & Agent.** *Built; the end-to-end exit checklist in `plan.md` is
+      still to be walked.* The chat panel answers from local state with no key or
+      network, then from a model when one is configured — five providers, separate
+      models for chat and for coding so the cheap one handles talking. A tool layer, a
+      deny-list gate, checkpoints and per-run branch isolation were built and tested
+      *before* the model could reach them, which is why the gate caught a real `rm` the
+      day it shipped. Then the agent loop, routing between answering and acting, and a
+      git wizard aimed at people who have never used git.
+      Two things were rebuilt mid-milestone after being wrong in use rather than in
+      test. **Nothing technical reaches the chat any more** — tool calls and command
+      output go to a terminal, and the transcript gets what a person would say.
+      And the **personality was rebuilt from the prompt outwards** after it drifted into
+      five separate hand-written descriptions and started sounding like a status page;
+      `Clarvis: Debug — Voice Check` now reads his lines back through the real prompts
+      before a change ships. *(Full notes, including the deviations from spec and why,
+      are in `plan.md`.)*
 - [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
       `plan.md` → sign-off → hand milestone one to the agent.)*
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*

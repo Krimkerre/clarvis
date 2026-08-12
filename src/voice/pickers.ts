@@ -248,7 +248,11 @@ export async function chooseEngine(): Promise<void> {
 
   await writeSetting('voice.fishAudio.engine', picked.id);
   void vscode.window.showInformationMessage(
-    `Clarvis: engine set to ${picked.id}. Cached lines keep their old engine until re-rendered.`
+    await phrase(
+      'report',
+      `Engine set to ${picked.id}. Anything already cached keeps the old one until it is said again.`,
+      [picked.id]
+    )
   );
 }
 

@@ -909,7 +909,9 @@ export class ChatService {
     const history = parseHistory(this.context.workspaceState.get(HISTORY_KEY));
 
     if (history.length === 0) {
-      void vscode.window.showInformationMessage('Clarvis: no earlier conversations to show.');
+      void vscode.window.showInformationMessage(
+        await this.phrase('report', 'There are no earlier conversations. This is all there has ever been.')
+      );
       return;
     }
 

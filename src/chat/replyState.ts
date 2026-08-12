@@ -32,9 +32,16 @@ const ANY_TAG = /\[\[[a-z]+\]\]/gi;
  */
 const HEAD_CHARS = 20;
 
-/** Removes any marker that escaped the reader. Cheap, and the reply is the deliverable. */
+/**
+ * Removes any marker that escaped the reader. Cheap, and the reply is the deliverable.
+ *
+ * **Does not trim.** It used to, and it was applied to every streamed fragment — so any
+ * fragment that began with a space lost it and the words either side were glued
+ * together. Seen live as "the probe-build-fail test has beenfailing". Leading whitespace
+ * is only ever wrong at the very start of a reply, which is the one place that trims.
+ */
 export function stripTags(text: string): string {
-  return text.replace(ANY_TAG, '').trimStart();
+  return text.replace(ANY_TAG, '');
 }
 
 /**
@@ -62,7 +69,7 @@ export class ReplyStateReader {
       // Validated, never trusted: a model inventing `smug` simply gets no expression.
       if (isButlerState(match[1].toLowerCase())) this.state = match[1].toLowerCase() as ButlerState;
       this.decided = true;
-      return stripTags(this.head.slice(match[0].length));
+      return stripTags(this.head.slice(match[0].length)).trimStart();
     }
 
     // A tag that has not arrived by now is a tag that was never coming — but a partial
@@ -71,14 +78,14 @@ export class ReplyStateReader {
     if (this.head.length < HEAD_CHARS || /\[\[[a-z]*$/i.test(this.head)) return '';
 
     this.decided = true;
-    return stripTags(this.head);
+    return stripTags(this.head).trimStart();
   }
 
   /** Whatever is still buffered when the stream ends without ever resolving. */
   flush(): string {
     if (this.decided) return '';
     this.decided = true;
-    return stripTags(this.head);
+    return stripTags(this.head).trimStart();
   }
 }
 

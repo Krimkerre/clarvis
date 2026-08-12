@@ -311,7 +311,6 @@ test('questions containing work keywords still reach the local answer', () => {
   }
 });
 
-import { factsBlock } from './localAnswer';
 
 test('the facts block carries what Clarvis watched, for the model to phrase', () => {
   // The division of labour: local state knows the truth about this project, the model
@@ -416,6 +415,7 @@ test('"do it" does not fire on ordinary conversation', () => {
 });
 
 import { needsClassification, parseIntent, intentPrompt } from './routing';
+import { factsBlock } from './localAnswer';
 
 test('only a fall-through is worth asking the model about', () => {
   // A question with a question mark needs no second opinion, and paying for one on
@@ -471,4 +471,28 @@ test('changing a setting is still not a branch switch', () => {
   // "change to a different voice" must never reach git.
   assert.equal(chatAction('change to a different voice'), 'chooseVoice');
   assert.equal(chatAction('change the model'), 'chooseModel');
+});
+
+test('an old failure is not reported in thousands of minutes', () => {
+  // "failing for 4186 minutes" is true, useless, and reads as a broken tool. The facts
+  // are the one part of what he says that must never sound wrong.
+  const base = {
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+  };
+
+  const recent = factsBlock({
+    ...base,
+    lastFailure: { label: 'build', exitCode: 1, at: base.now - 12 * 60_000 },
+  } as never);
+  const old = factsBlock({
+    ...base,
+    lastFailure: { label: 'build', exitCode: 1, at: base.now - 70 * 60 * 60_000 },
+  } as never);
+
+  assert.match(recent, /12m ago/);
+  assert.match(old, /3d ago/);
+  assert.doesNotMatch(old, /\d{4}m ago/);
 });

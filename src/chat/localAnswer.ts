@@ -196,7 +196,14 @@ function runningAnswer(facts: WorkspaceFacts): LocalReply {
   };
 }
 
-/** "4m ago" / "2h ago" — approximate on purpose; nobody asks this wanting milliseconds. */
+/**
+ * "4m ago" / "2h ago" / "3d ago" — approximate on purpose; nobody asks this wanting
+ * milliseconds.
+ *
+ * Used by the facts block too, which used to format its own elapsed time and always in
+ * minutes: he told a user a build had been failing "for 4186 minutes", which is true,
+ * useless, and reads as something being broken.
+ */
 function ago(ms: number): string {
   const minutes = Math.round(ms / 60_000);
   if (minutes < 1) return 'just now';
@@ -267,7 +274,7 @@ const FACT_LINES: ((facts: WorkspaceFacts) => string | undefined)[] = [
     !lastFailure
       ? undefined
       : `Still failing: "${lastFailure.label}" (exit ${lastFailure.exitCode ?? 'unknown'}), ` +
-      `${Math.round((now - lastFailure.at) / 60000)} minutes ago`,
+        `last seen ${ago(now - lastFailure.at)}`,
 
   ({ problems }) => {
     if (!problems || problems.errors + problems.warnings === 0) return undefined;

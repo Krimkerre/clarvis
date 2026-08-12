@@ -57,3 +57,20 @@ test('the instruction says most replies are ordinary', () => {
   // A face that changes on every answer is wallpaper. §2 rule 2, applied to the face.
   assert.match(STATE_TAG_INSTRUCTION, /Most replies are \[\[talking\]\]/);
 });
+
+test('a fragment that begins with a space keeps it', () => {
+  // Seen live as "the probe-build-fail test has beenfailing": stripTags trimmed every
+  // fragment, so a stream that split between a word and its following space silently
+  // welded the two words together.
+  const { text } = read(['[[talking]] The test has', ' been failing', ' since Tuesday.']);
+
+  assert.equal(text, 'The test has been failing since Tuesday.');
+});
+
+test('leading space is still removed at the very start', () => {
+  // The one place trimming is right: a tag followed by whitespace, or a reply that
+  // opens with one.
+  const { text } = read(['   Done.']);
+
+  assert.equal(text, 'Done.');
+});

@@ -30,10 +30,13 @@ test('every option must carry a real cost', () => {
   assert.match(prompt, /real\s+cost/i);
 });
 
-test('"you pick" is named as a first-class answer, not a fallback', () => {
+test('the model is told to output a strict parseable format, not prose', () => {
+  // "You pick" and the free-text fallback are now added by code as QuickPick items
+  // (Interview.ts's askLanguage) rather than asked for in the model's own text — a
+  // wall of text in an input box's prompt field was the exact UX complaint this
+  // format change fixes, and code can only build a menu from something parseable.
   const prompt = interviewQuestionPrompt('language', state);
-  assert.match(prompt, /you pick/i);
-  assert.match(prompt, /first-class answer/i);
+  assert.match(prompt, /Name \| advantage \| cost/);
 });
 
 test('the model is told not to ask a scoping question first', () => {

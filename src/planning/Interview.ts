@@ -44,11 +44,12 @@ export async function runInterview(
     const question = await phraseQuestion(models, topic, state, log);
     log(`planning: "${topic}" asked — ${question}`);
 
-    const raw = await vscode.window.showInputBox({
-      prompt: question,
-      placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
-      ignoreFocusOut: true,
-    });
+    const raw =
+      topic === 'language' ? await askLanguage(question, log) : await vscode.window.showInputBox({
+        prompt: question,
+        placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
+        ignoreFocusOut: true,
+      });
 
     // Cancelling the box (Escape) pauses the interview rather than answering "I don't
     // know" on the user's behalf — those are different things, and only one of them
@@ -65,6 +66,60 @@ export async function runInterview(
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
   return { state, seed: seed.trim() };
+}
+
+/** One parsed `Name | advantage | cost` line from the model's shortlist. */
+interface LanguageOption {
+  name: string;
+  advantage: string;
+  cost: string;
+}
+
+/** Parses the model's pipe-delimited shortlist. Lines that don't fit the shape are skipped. */
+function parseLanguageOptions(text: string): LanguageOption[] {
+  return text
+    .split('\n')
+    .map((line) => line.split('|').map((part) => part.trim()))
+    .filter((parts): parts is [string, string, string] => parts.length === 3 && parts.every(Boolean))
+    .map(([name, advantage, cost]) => ({ name, advantage, cost }));
+}
+
+/**
+ * The language step as a QuickPick menu instead of a free-text prompt.
+ *
+ * Found live: a wall of text in an input box's single-line prompt field is a bad fit
+ * for comparing options, regardless of whether the text is complete. "You pick" and
+ * "something else" are added by code, not the model, so they always exist even if
+ * parsing finds nothing.
+ */
+async function askLanguage(question: string, log: (message: string) => void): Promise<string | undefined> {
+  const options = parseLanguageOptions(question);
+  if (options.length === 0) {
+    log('planning: "language" — shortlist did not parse, fell back to free text');
+    return vscode.window.showInputBox({
+      prompt: question,
+      placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
+      ignoreFocusOut: true,
+    });
+  }
+
+  const YOU_PICK = 'You pick';
+  const SOMETHING_ELSE = 'Something else…';
+  const items: vscode.QuickPickItem[] = [
+    ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
+    { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },
+    { label: SOMETHING_ELSE },
+  ];
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Pick a language, or "You pick" to leave it to him',
+    ignoreFocusOut: true,
+  });
+  if (!picked) return undefined;
+  if (picked.label === SOMETHING_ELSE) {
+    return vscode.window.showInputBox({ prompt: 'What language?', ignoreFocusOut: true });
+  }
+  return picked.label;
 }
 
 /** Whatever was typed, as a settled answer or a recorded unknown. */
@@ -97,7 +152,10 @@ async function phraseQuestion(
         'chat'
       )) {
         text += fragment;
-        if (text.length > 400) break;
+        // Every topic but language is one sentence; language is a 2-4 option shortlist
+        // and this cap was cutting it off mid-option before it reached "you pick" — the
+        // exact truncation seen live. Give it real headroom instead of none.
+        if (text.length > (topic === 'language' ? 2000 : 400)) break;
       }
     })();
 

@@ -90,11 +90,12 @@ function languageShortlistPrompt(state: InterviewState): string {
     'For each language: its name, one real advantage for *this* project, and one real',
     'cost. An option with no honest downside is not a real option — leave it out rather',
     'than pad the list with one.',
-    'End by saying they can also just say "you pick" — that is a first-class answer, not',
-    'a fallback for someone who does not know.',
     'Do not ask a preliminary question first (platform, OS, anything else) — answer with',
     'the shortlist itself, using what is already known above.',
-    'Plain text, no markdown headers. Short: a line or two per option.',
+    '',
+    'Output ONLY the options, one per line, in exactly this format and nothing else —',
+    'no intro, no closing line, no numbering, no markdown:',
+    'Name | advantage | cost',
   ].join('\n');
 }
 

@@ -197,7 +197,7 @@ export class AgentRunner {
       if (signal.aborted) {
         yield this.record({
           kind: 'done',
-          text: await phrase('report', 'Stopped.'),
+          text: 'Stopped.',
           files: [...this.touched],
         });
         return;

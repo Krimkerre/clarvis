@@ -724,8 +724,18 @@ export class ChatService {
 
     this.log('chat: stopped by typed request');
     this.stopAnnounced = true;
+    const runWillSayIt = this.agentBusy.running;
     this.stop();
-    await this.say(await this.phrase('report', 'Stopped.'), 'neutral');
+
+    // **One "Stopped." per stop.** A run reports its own ending, so saying it here too
+    // produced two lines — and because each was independently rewritten, they did not
+    // even agree with each other.
+    if (runWillSayIt) return;
+
+    // Verbatim, not phrased. It is two words of status at a moment the user is anxious,
+    // there is nothing in it to be funny about, and every rewrite of it so far has
+    // either invented a project or complained about not having been given one.
+    await this.say('Stopped.', 'neutral');
   }
 
   /**

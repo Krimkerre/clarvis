@@ -223,4 +223,9 @@ export const ONLY_WHAT_YOU_WERE_GIVEN = [
   'You have been given no facts about this project beyond what appears above.',
   'Do not mention branches, builds, tests, commits, files, counts or timings that are not written there — not as detail, not as colour, not as a guess.',
   'Being funny about the situation in front of you is the job; inventing a situation is not.',
+  // Added immediately after the first version worked: told it had no facts, the model
+  // stopped inventing and started *commenting on that* — "that will require you to
+  // explain what you are stopping, since you have given me no context whatsoever",
+  // which is the prompt talking about itself in front of the user.
+  'Never mention what you were or were not told. Say the line; the missing context is not part of it.',
 ].join('\n');

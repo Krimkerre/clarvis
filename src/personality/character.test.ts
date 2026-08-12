@@ -95,3 +95,10 @@ test('the fact-free surfaces are told they have no facts', () => {
   assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /no facts about this project/);
   assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /not as detail, not as colour, not as a guess/);
 });
+
+test('a prompt with no facts must not talk about having no facts', () => {
+  // The first version of this instruction worked and immediately produced a new
+  // failure: told it had nothing to go on, the model said so — "you have given me no
+  // context whatsoever" — which is the prompt speaking to the user in its own voice.
+  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /Never mention what you were or were not told/);
+});

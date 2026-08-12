@@ -2987,6 +2987,13 @@ are worth carrying into M9 as design rules rather than anecdotes:
   `Clarvis: Debug — Voice Check` says seven lines through the real prompts and the
   configured model, so a change to any of this is read before it ships rather than
   discovered in use.
+- **Clarvis remarking on his own commits — allowed, on request.** The original rule said
+  a commit Clarvis made must never trigger the "first commit in a while" quip: being
+  congratulated for a machine's work is hollow. `Personality.noteOwnCommit()` exists for
+  it and `ChatService` never calls it, so in practice the quip has always fired on agent
+  commits. Found while walking the M8 checklist, and the user asked to keep it — it
+  reads as him being pleased with himself, which is in character and funnier than the
+  rule it breaks. The hook stays wired so the decision is reversible.
 - **M8g2 — Live quips.** Once a model is wired in, reactive remarks are *generated*
   for the situation rather than drawn from `quipBank.ts` — the bank has five triggers
   and two registers, which is a fixed number of jokes and therefore a countdown to

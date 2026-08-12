@@ -109,6 +109,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
 
   const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
+  // **Wired, and deliberately never called.** ChatService has no call site for this: the
+  // agent's commits are never registered as its own, so the "first commit in a while"
+  // quip fires on them and Clarvis ends up remarking on his own work. That was a bug
+  // when it was found and the user has since asked to keep it — it is funnier than the
+  // rule it breaks (§5, amended). Left connected rather than deleted because the hook is
+  // the only way back if that ever stops being true.
   agentBusy.noteCommit = (hash) => personality.noteOwnCommit(hash);
 
   // The same writer the quips use, for the line that opens a run.

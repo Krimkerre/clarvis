@@ -140,7 +140,7 @@ export class Personality {
       // A commit Clarvis made is still a commit — it resets the silence — but it is
       // not something to congratulate anyone for.
       if (quiet && !this.ownCommits.has(head)) {
-        this.say('firstCommitAfterSilence', 'impressed', 'the first commit in a while');
+        this.say('firstCommitAfterSilence', 'impressed', await describeSilence(repo));
       }
       this.lastCommitSeenAt = now;
     }
@@ -195,5 +195,35 @@ async function currentRepository(): Promise<any | undefined> {
     return exports?.getAPI?.(1)?.repositories?.[0];
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * How long it had actually been since the last commit.
+ *
+ * **Read from git rather than from memory.** The gap was tracked in a field that starts
+ * undefined every time the window opens, so on a fresh session there was no number at
+ * all — and given no number while being asked for a specific remark, the model supplied
+ * one: "radio silence for a fortnight", about a gap nothing had measured.
+ *
+ * The two most recent commit dates are the truth, and they survive a reload. When even
+ * that is unavailable the detail says the gap is unknown, which is worth a sentence:
+ * absent facts are exactly where invented ones grow.
+ */
+async function describeSilence(repo: any): Promise<string> {
+  try {
+    const commits = await repo.log({ maxEntries: 2 });
+    const [latest, previous] = commits ?? [];
+    const newer = latest?.authorDate ?? latest?.commitDate;
+    const older = previous?.authorDate ?? previous?.commitDate;
+
+    if (!newer || !older) return 'the first commit after a quiet stretch — you do not know how long';
+
+    const days = Math.floor((new Date(newer).getTime() - new Date(older).getTime()) / (24 * 60 * 60 * 1000));
+    if (days < 1) return 'the first commit after a quiet stretch, though less than a day of it';
+
+    return `the first commit in ${days} day${days === 1 ? '' : 's'}`;
+  } catch {
+    return 'the first commit after a quiet stretch — you do not know how long';
   }
 }

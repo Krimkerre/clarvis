@@ -7,14 +7,12 @@ import { VoiceService } from '../voice/VoiceService';
 import { Transcript } from './Transcript';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
-import { branchFromRequest, chatAction, ChatAction, isStopRequest } from './chatCommands';
-import { switchBranch } from '../agent/switchBranch';
-import { describeGitPlainly } from '../agent/gitStatusPlain';
+import { chatAction, isStopRequest } from './chatCommands';
+import { ChatActions } from './ChatActions';
 import { ModelService, explain } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
-import { classifyAction, classifyIntent } from './intentModel';
-import { ACTION_QUESTIONS, worthInferring } from './actionIntent';
-import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
+import { classifyIntent } from './intentModel';
+import { canEdit, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
@@ -115,6 +113,9 @@ export class ChatService {
   /** What was said, where it is kept, and what becomes of it. */
   private readonly transcript: Transcript;
 
+  /** The things chat can *do*, as opposed to answer. */
+  private readonly actions: ChatActions;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,
@@ -137,6 +138,15 @@ export class ChatService {
   ) {
     this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
     this.transcript = new Transcript(context, panel, log);
+    this.actions = new ChatActions(
+      panel,
+      voice,
+      models,
+      (text, state) => this.say(text, state),
+      (text) => this.note(text),
+      log,
+      context.extensionUri
+    );
 
     this.panel.onDidAsk((question) => void this.ask(question));
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
@@ -147,15 +157,15 @@ export class ChatService {
     // read as the button being broken.
     this.panel.onDidRequestStop(() => void this.stopFromChat());
     this.panel.onDidRequestModels(() => void vscode.commands.executeCommand('clarvis.configureModels'));
-    this.panel.onDidRequestMode(() => void this.chooseMode());
+    this.panel.onDidRequestMode(() => void this.actions.chooseMode());
 
     // Keep the bowtie's tooltip honest when the settings change underneath it —
     // including from the picker it opens, so it never describes the previous choice.
     this.context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
         if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
-          this.postModelInfo();
-          this.postMode();
+          this.actions.postModelInfo();
+          this.actions.postMode();
         }
       })
     );
@@ -173,8 +183,8 @@ export class ChatService {
       // you cannot call off.
       this.setBusy(Boolean(this.streaming) || this.agentBusy.running);
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
-      this.postModelInfo();
-      this.postMode();
+      this.actions.postModelInfo();
+      this.actions.postMode();
     });
 
     this.voice.onMuteChange((muted) => this.panel.post({ type: 'mute', muted }));
@@ -195,15 +205,15 @@ export class ChatService {
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);
     if (action) {
-      await this.runAction(action, question);
+      await this.actions.run(action, question);
       return;
     }
 
     // The matcher missed. A model may recognise it anyway — but only as a suggestion,
     // and a declined suggestion falls through to a normal answer (M8f2).
-    if (await this.offerInferredAction(question)) return;
+    if (await this.actions.offerInferred(question)) return;
 
-    const mode = this.mode();
+    const mode = this.actions.mode();
 
     // "Do it" means the thing just described. A verb list will always be missing the
     // word someone used — this is the four-character recovery rather than a rephrase.
@@ -272,56 +282,6 @@ export class ChatService {
       "That's beyond what I've watched happen here, and there's no model wired up to think about it. The bowtie by the prompt sorts that out.",
       'neutral'
     );
-  }
-
-  /**
-   * Answers with the configured model, streaming as it arrives.
-   *
-   * Streamed rather than awaited whole: a ten-second silence reads as a hang, and the
-   * avatar's `thinking` → `talking` transition is meant to track the real stream
-   * instead of a timer (§4.6).
-   */
-  /** The mode in force, defaulting to auto when the setting says something unknown. */
-  private mode(): ChatMode {
-    return modeSpec(
-      vscode.workspace.getConfiguration('clarvis').get<string>('chat.mode', 'auto')
-    ).id;
-  }
-
-  /** Lets the user pick how much Clarvis may do, and says what each choice means. */
-  private async chooseMode(): Promise<void> {
-    const current = this.mode();
-
-    const picked = await vscode.window.showQuickPick(
-      MODES.map((mode) => ({
-        label: `${mode.id === current ? '$(check) ' : ''}${mode.label}`,
-        description: mode.canEdit ? 'can change files' : 'read-only',
-        detail: mode.detail,
-        id: mode.id,
-      })),
-      { placeHolder: 'What should I be allowed to do?', matchOnDetail: true }
-    );
-    if (!picked) return;
-
-    const config = vscode.workspace.getConfiguration('clarvis');
-    const scope =
-      config.inspect('chat.mode')?.workspaceValue !== undefined
-        ? vscode.ConfigurationTarget.Workspace
-        : vscode.ConfigurationTarget.Global;
-
-    await config.update('chat.mode', picked.id, scope);
-    this.log(`chat: mode set to ${picked.id}`);
-    this.postMode();
-  }
-
-  private postMode(): void {
-    const spec = modeSpec(this.mode());
-    this.panel.post({
-      type: 'mode',
-      short: spec.short,
-      safe: !spec.canEdit,
-      detail: `${spec.label} — ${spec.detail}`,
-    });
   }
 
   private async answerWithModel(question: string, addendum = ''): Promise<void> {
@@ -407,21 +367,6 @@ export class ChatService {
       this.transcript.note(text);
       this.voice.say(text, 'chatReply');
     }
-  }
-
-  /**
-   * Tells the panel what is configured, for the bowtie's tooltip.
-   *
-   * Which model is answering is the thing people forget and then misjudge cost by, so
-   * it lives one hover from the prompt rather than three menus deep.
-   */
-  private postModelInfo(): void {
-    const chat = `${this.models.spec('chat').label} · ${this.models.model('chat')}`;
-    const coding = this.models.agentIsSeparate()
-      ? `${this.models.spec('agent').label} · ${this.models.model('agent')}`
-      : 'same as chat';
-
-    this.panel.post({ type: 'model-info', text: `Chat: ${chat}\nCoding: ${coding}\n\nClick to change` });
   }
 
   /**
@@ -764,133 +709,9 @@ export class ChatService {
     await this.clear();
   }
 
-  /**
-   * Opens whatever was asked for, and says so in the transcript.
-   *
-   * The line in the transcript matters: a dialog appearing with no explanation looks
-   * like a glitch, and if the user dismisses it there is otherwise no trace of what
-   * they asked for.
-   */
-  /**
-   * Offers to do the thing a model thinks was meant, and does it only if told to.
-   *
-   * Returns whether the message has been dealt with. `false` covers three different
-   * outcomes deliberately — nothing was inferred, the guess was declined, the model was
-   * unavailable — because all three mean the same thing to the caller: answer normally.
-   * A declined suggestion left hanging would be the worst of both, having interrupted
-   * *and* not answered.
-   */
-  private async offerInferredAction(question: string): Promise<boolean> {
-    if (!worthInferring(question)) return false;
-
-    const guess = await classifyAction(this.models, question, this.log);
-    if (!guess) return false;
-
-    // Modal, because it interrupts something the user is waiting on and a toast that
-    // times out unanswered would leave the question unanswered too.
-    const answer = await vscode.window.showInformationMessage(
-      ACTION_QUESTIONS[guess],
-      { modal: true, detail: 'I may have misread that — say no and I will just answer.' },
-      'Yes'
-    );
-
-    if (answer !== 'Yes') {
-      this.log(`action intent: declined ${guess}, answering instead`);
-      return false;
-    }
-
-    await this.runAction(guess, question);
-    return true;
-  }
-
-  private async runAction(action: ChatAction, question = ''): Promise<void> {
-    // Handled here rather than by the agent: a checkout is one deterministic command,
-    // and routing it through a run would create an isolation branch, switch away from
-    // it, and then try to tidy that branch up by switching back — undoing the thing
-    // that was asked for.
-    if (action === 'explainGit') {
-      const lines = await describeGitPlainly();
-      await this.say(lines.join(' '), 'neutral');
-      return;
-    }
-
-    if (action === 'switchBranch') {
-      const said = await switchBranch(branchFromRequest(question), this.log);
-      if (said) await this.say(said, 'neutral');
-      return;
-    }
-
-    // Actions that are not simply "run a command" — each needs a word first.
-    if (action === 'help') {
-      await this.say('The manual, then. Try not to look surprised.', 'neutral');
-      await this.openManual();
-      return;
-    }
-
-    if (action === 'chooseModel') {
-      await this.say(
-        'Models. Chat and coding can be different ones — cheap for talking, capable for code.',
-        'neutral'
-      );
-      await vscode.commands.executeCommand('clarvis.configureModels');
-      return;
-    }
-
-    if (action === 'toggleMute') {
-      const muted = !this.voice.isMuted;
-      this.voice.setMuted(muted);
-      await this.transcript.add({
-        speaker: 'clarvis',
-        text: muted ? 'Silenced. I remain, in spirit.' : 'Speaking again.',
-        at: Date.now(),
-      });
-      return;
-    }
-
-    const commands: Record<string, { id: string; line: string }> = {
-      chooseVoice: { id: 'clarvis.chooseVoice', line: 'Voices. Highlight one to hear it.' },
-      chooseEngine: { id: 'clarvis.chooseEngine', line: 'Engines — quality against speed and cost.' },
-      setKey: { id: 'clarvis.manageModelKeys', line: 'Keys, one per provider, all kept. Yours go in the keychain, never a settings file.' },
-      clearKey: { id: 'clarvis.clearFishKey', line: 'Forgetting the key.' },
-      testVoice: { id: 'clarvis.testVoice', line: 'Listen.' },
-      openCache: { id: 'clarvis.openVoiceCache', line: 'The saved audio. Delete anything in there freely.' },
-      clearConversation: { id: 'clarvis.clearConversation', line: 'Clearing this conversation.' },
-      showHistory: { id: 'clarvis.showHistory', line: 'Earlier conversations.' },
-      openSettings: { id: 'workbench.action.openSettings', line: 'Every setting I have.' },
-    };
-
-    const command = commands[action];
-    if (!command) return;
-
-    await this.say(command.line, 'neutral');
-    await vscode.commands.executeCommand(
-      command.id,
-      command.id === 'workbench.action.openSettings' ? 'clarvis' : undefined
-    );
-  }
-
-  /**
-   * Shows the manual as a rendered Markdown preview.
-   *
-   * A preview tab rather than a custom webview: it scrolls, searches, prints and
-   * closes like every other document in the editor, follows the user's theme, and
-   * costs no UI to maintain. Falls back to the raw file if the preview command is
-   * unavailable on this host.
-   */
-  private async openManual(): Promise<void> {
-    const manual = vscode.Uri.joinPath(this.context.extensionUri, 'media', 'MANUAL.md');
-
-    try {
-      await vscode.commands.executeCommand('markdown.showPreview', manual);
-    } catch (error) {
-      this.log(`chat: markdown preview unavailable (${String(error)}), opening the source`);
-      await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(manual));
-    }
-  }
-
   /** Opens the manual, for the command-palette route as well as `/help`. */
   async openHelp(): Promise<void> {
-    await this.openManual();
+    await this.actions.openManual();
   }
 
   /**

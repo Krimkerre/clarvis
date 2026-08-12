@@ -6,11 +6,12 @@ import type { Pattern } from '../memory/patterns';
 import { VoiceService } from '../voice/VoiceService';
 import { Transcript } from './Transcript';
 import { Busy } from './Busy';
+import { Replier } from './Replier';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { chatAction, isStopRequest } from './chatCommands';
 import { ChatActions } from './ChatActions';
-import { ModelService, explain } from '../model/ModelService';
+import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { canEdit, PLAN_ADDENDUM } from './modes';
@@ -19,8 +20,6 @@ import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
 import { QuipPicker } from '../personality/QuipPicker';
 import { Voice } from '../personality/Voice';
-import { characterWith } from '../personality/character';
-import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { runCommand } from '../agent/tools/commandTools';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -114,6 +113,9 @@ export class ChatService {
   /** What was said, where it is kept, and what becomes of it. */
   private readonly transcript: Transcript;
 
+  /** The two paths a question takes once a model is involved. */
+  private readonly replier: Replier;
+
   /** The things chat can *do*, as opposed to answer. */
   private readonly actions: ChatActions;
 
@@ -140,6 +142,18 @@ export class ChatService {
     this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
     this.transcript = new Transcript(context, panel, log);
     this.busy = new Busy(panel, agentBusy);
+    this.replier = new Replier(
+      panel,
+      avatar,
+      voice,
+      models,
+      terminal,
+      this.transcript,
+      this.busy,
+      context,
+      (text, state) => this.say(text, state),
+      log
+    );
     this.actions = new ChatActions(
       panel,
       voice,
@@ -266,7 +280,7 @@ export class ChatService {
 
     if (await this.models.isReady('chat')) {
       const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${factsBlock(facts)}`;
-      await this.answerWithModel(question, addendum);
+      await this.replier.withModel(question, addendum);
       return;
     }
 
@@ -284,87 +298,6 @@ export class ChatService {
       "That's beyond what I've watched happen here, and there's no model wired up to think about it. The bowtie by the prompt sorts that out.",
       'neutral'
     );
-  }
-
-  private async answerWithModel(question: string, addendum = ''): Promise<void> {
-    if (!(await this.models.isReady())) {
-      const spec = this.models.spec('chat');
-      this.log(`chat: no local answer, and ${spec.id} is not configured`);
-      await this.say(
-        spec.needsKey
-          ? `That one's beyond what I've watched happen here — I'd need a model for it, and ${spec.label} has no key yet. \`/key\` sorts it, or \`/model\` picks a different provider.`
-          : `That's beyond what I've watched here, and ${spec.label} isn't answering on ${'`'}${spec.baseUrl}${'`'}. Is it running?`,
-        'neutral'
-      );
-      return;
-    }
-
-    // With a tool-capable chat model, questions get to *look* at the project rather
-    // than guess — reading a file to answer a question needs no branch and no commit.
-    if (await this.models.supportsTools('chat')) {
-      await this.answerWithTools(question, addendum);
-      return;
-    }
-
-    // A fresh controller per question: Stop must abort this turn, not every future one.
-    const controller = this.busy.start('reply');
-
-    this.avatar.setState('thinking', 'chat');
-    const turn = this.transcript.begin('clarvis');
-    this.panel.post({ type: 'chat-stream-start' });
-
-    let text = '';
-    // The face the model asked for, read off the front of its own reply (M8e3).
-    const reader = new ReplyStateReader();
-
-    try {
-      for await (const fragment of this.models.stream({
-        system: `${this.systemPrompt() + addendum}\n\n${STATE_TAG_INSTRUCTION}`,
-        messages: this.transcript.forModel(),
-        signal: controller.signal,
-      })) {
-        const visible = reader.push(fragment);
-        if (!visible) continue; // still buffering the opening, deciding on a tag
-
-        // The expression applies at the *start* of the stream, so the face matches the
-        // tone while the reply is being read rather than arriving after it.
-        if (text === '') this.avatar.setState(reader.state ?? 'talking', 'chat');
-        text += visible;
-        turn.text = text;
-        this.panel.post({ type: 'chat-stream', text: visible });
-      }
-
-      const remainder = reader.flush();
-      if (remainder) {
-        if (text === '') this.avatar.setState(reader.state ?? 'talking', 'chat');
-        text += remainder;
-        turn.text = text;
-        this.panel.post({ type: 'chat-stream', text: remainder });
-      }
-    } catch (error) {
-      // Stopping is not failing: the user asked for silence and gets it.
-      if (controller.signal.aborted) {
-        this.log('chat: stream aborted by the user');
-      } else {
-        const { text: friendly, detail } = explain(error);
-        this.log(`chat: model failed — ${detail}`);
-        text = text ? `${text}\n\n${friendly}` : friendly;
-        turn.text = text;
-        this.panel.post({ type: 'chat-stream', text: `\n\n${friendly}` });
-      }
-    } finally {
-      this.busy.finish();
-      this.panel.post({ type: 'chat-stream-end' });
-      this.avatar.setState('neutral', 'chat');
-      await this.transcript.persist();
-    }
-
-    // Spoken only once complete — speaking fragment by fragment would produce a
-    // stutter, and the queue exists to serialise utterances, not syllables.
-    if (text) {
-      this.transcript.note(text);
-      this.voice.say(text, 'chatReply');
-    }
   }
 
   /**
@@ -495,71 +428,6 @@ export class ChatService {
   }
 
   /** The read-only tool loop, for questions that need to see the code. */
-  private async answerWithTools(question: string, addendum = ''): Promise<void> {
-    const controller = this.busy.start('reply');
-
-    const runner = new AgentRunner(
-      this.context,
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-      this.models,
-      this.terminal,
-      this.log
-    );
-
-    this.avatar.setState('thinking', 'chat');
-    this.panel.post({ type: 'chat-stream-start' });
-
-    // What was actually said, for the voice — accumulated from the stream rather than
-    // taken from the closing event, which no longer repeats it.
-    let spoken = '';
-    const reader = new ReplyStateReader();
-
-    // **The transcript gets it too.** This path streamed straight to the webview and
-    // never appended a turn, so an answer that used tools lived only in the live panel:
-    // move the panel, collapse it, or open the archive, and it was gone. The other reply
-    // path had always done this; this one was written later and did not.
-    const turn = this.transcript.begin('clarvis');
-
-    try {
-      for await (const event of runner.answer(question, controller.signal, addendum)) {
-        if (!event.text) continue;
-
-        // Only prose carries the tag. Tool lines are ours, not the model's.
-        if (event.kind !== 'text') {
-          this.panel.post({ type: 'chat-stream', text: `\n${event.step}. ${event.text}\n` });
-          if (event.kind === 'error') spoken += event.text;
-          continue;
-        }
-
-        const visible = reader.push(event.text);
-        if (!visible) continue;
-
-        if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
-        spoken += visible;
-        turn.text = spoken;
-        this.panel.post({ type: 'chat-stream', text: visible });
-      }
-
-      const remainder = reader.flush();
-      if (remainder) {
-        if (!spoken) this.avatar.setState(reader.state ?? 'talking', 'chat');
-        spoken += remainder;
-        turn.text = spoken;
-        this.panel.post({ type: 'chat-stream', text: remainder });
-      }
-    } finally {
-      this.busy.finish();
-      this.panel.post({ type: 'chat-stream-end' });
-      this.avatar.setState('neutral', 'chat');
-      await this.transcript.persist();
-    }
-
-    if (spoken.trim()) {
-      this.transcript.note(spoken);
-      this.voice.say(spoken, 'chatReply');
-    }
-  }
-
   /**
    * Runs the project's own tests and says how it went.
    *
@@ -640,19 +508,6 @@ export class ChatService {
     // there is nothing in it to be funny about, and every rewrite of it so far has
     // either invented a project or complained about not having been given one.
     await this.say('Stopped.', 'neutral');
-  }
-
-  /**
-   * The personality block (§2.1), trimmed to what an answering turn needs.
-   *
-   * The full agent and planning addenda arrive with M8g; sending them now would be
-   * instructing the model about tools it does not have.
-   */
-  private systemPrompt(): string {
-    return characterWith(
-      'You are looking at their project: you watch builds, tests and errors as they happen.',
-      'Answer in a few sentences unless asked for more. Prefer specifics over hedging.'
-    );
   }
 
   /**

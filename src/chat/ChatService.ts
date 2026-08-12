@@ -169,6 +169,9 @@ export class ChatService {
     // reload from looking like the conversation was thrown away.
     this.panel.onDidBecomeReady(() => {
       this.panel.post({ type: 'chat-thread', turns: this.thread });
+      // A panel moved mid-run comes back blank, and a run with no Stop button is a run
+      // you cannot call off.
+      this.setBusy(Boolean(this.streaming) || this.agentBusy.running);
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
       this.postModelInfo();
       this.postMode();
@@ -350,6 +353,7 @@ export class ChatService {
     const turn: Turn = { speaker: 'clarvis', text: '', at: Date.now() };
     this.thread = appendTurn(this.thread, turn);
     this.panel.post({ type: 'chat-stream-start' });
+    this.setBusy(true);
 
     let text = '';
     // The face the model asked for, read off the front of its own reply (M8e3).
@@ -393,6 +397,7 @@ export class ChatService {
     } finally {
       this.streaming = undefined;
       this.panel.post({ type: 'chat-stream-end' });
+      this.setBusy(false);
       this.avatar.setState('neutral', 'chat');
       await this.persist();
     }
@@ -450,6 +455,7 @@ export class ChatService {
     );
 
     this.agentBusy.running = true;
+    this.setBusy(true);
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
     // expression of work the user is watching happen (M8e2).
     const holdingFace = this.avatar.claim('agent');
@@ -479,6 +485,7 @@ export class ChatService {
       }
     } finally {
       this.agentBusy.running = false;
+      this.setBusy(false);
       this.streaming = undefined;
       this.avatar.setState('neutral', 'agent');
       holdingFace();
@@ -570,6 +577,7 @@ export class ChatService {
 
     this.avatar.setState('thinking', 'chat');
     this.panel.post({ type: 'chat-stream-start' });
+    this.setBusy(true);
 
     // What was actually said, for the voice — accumulated from the stream rather than
     // taken from the closing event, which no longer repeats it.
@@ -613,6 +621,7 @@ export class ChatService {
     } finally {
       this.streaming = undefined;
       this.panel.post({ type: 'chat-stream-end' });
+      this.setBusy(false);
       this.avatar.setState('neutral', 'chat');
       await this.persist();
     }
@@ -666,6 +675,19 @@ export class ChatService {
   /** Cancels the answer in flight, if there is one. */
   stop(): void {
     this.streaming?.abort();
+  }
+
+  /**
+   * Tells the panel whether there is something to stop.
+   *
+   * **Not inferred from the text stream, which is how it broke.** Stop was shown on
+   * `chat-stream-start` and hidden on `chat-stream-end` — frames only the two *answer*
+   * paths post. An agent run posts neither, so the button was hidden for the whole of a
+   * run: invisible in the one situation it exists for, and visible only while a reply
+   * was already finishing.
+   */
+  private setBusy(busy: boolean): void {
+    this.panel.post({ type: 'busy', busy });
   }
 
   /**

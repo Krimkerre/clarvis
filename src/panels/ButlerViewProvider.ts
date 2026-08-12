@@ -455,10 +455,16 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         // A streamed reply is one turn that grows, not many turns. Appending to the
         // same node keeps inline code spans working across fragment boundaries, which
         // rendering each fragment separately would break.
+        // Whether there is something to stop is its own signal, not a side effect of
+        // text arriving — an agent run produces no text frames at all.
+        if (msg.type === 'busy') {
+          showStop(msg.busy);
+          return;
+        }
+
         if (msg.type === 'chat-stream-start') {
           streaming = addTurn('clarvis', '');
           streamed = '';
-          showStop(true);
           return;
         }
 
@@ -471,7 +477,6 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
           if (!streaming) {
             streaming = addTurn('clarvis', '');
             streamed = '';
-            showStop(true);
           }
 
           streamed += msg.text;
@@ -482,7 +487,6 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
 
         if (msg.type === 'chat-stream-end') {
           streaming = null;
-          showStop(false);
           return;
         }
 

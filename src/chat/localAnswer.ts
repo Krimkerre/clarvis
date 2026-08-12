@@ -20,6 +20,20 @@ export interface WorkspaceFacts {
   git?: { branch: string; dirtyCount: number };
   /** Repeat errors seen at least twice (M5). */
   patterns: Pattern[];
+  /**
+   * What the linter and compiler are complaining about right now.
+   *
+   * Added because he invented it. Asked about an error, he said "your linter has been
+   * informing me of this for the past six minutes" — the *capability* is real, since
+   * M5 watches diagnostics, but nothing had ever put a number in front of him, so he
+   * supplied one. Giving him the real count is the fix; telling him not to guess is
+   * only the half that stops the symptom.
+   *
+   * Note what is deliberately absent: how long a problem has been there. VS Code does
+   * not report when a diagnostic first appeared, so that number cannot be made true and
+   * is therefore one he must never use.
+   */
+  problems?: { errors: number; warnings: number; worstFile?: string };
 }
 
 /** A local reply, plus the face to wear while giving it. */
@@ -243,6 +257,15 @@ export function factsBlock(facts: WorkspaceFacts): string {
       `Still failing: "${facts.lastFailure.label}" (exit ${facts.lastFailure.exitCode ?? 'unknown'}), ${Math.round(
         (facts.now - facts.lastFailure.at) / 60000
       )} minutes ago`
+    );
+  }
+
+  if (facts.problems && facts.problems.errors + facts.problems.warnings > 0) {
+    const { errors, warnings, worstFile } = facts.problems;
+    lines.push(
+      `Problems open right now: ${errors} error(s), ${warnings} warning(s)` +
+        (worstFile ? `, most of them in ${worstFile}` : '') +
+        ' — you have no information about how long any of them have been there'
     );
   }
 

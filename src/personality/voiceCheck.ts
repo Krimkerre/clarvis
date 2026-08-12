@@ -77,6 +77,13 @@ function scenes(): Scene[] {
       messages: [{ role: 'user', content: 'why does that build keep failing?' }],
     },
     {
+      name: 'a question about something he was given no numbers for',
+      looksFor:
+        'No invented duration, count or frequency. He may say a linter is complaining — he cannot say for how long, because nothing measures that.',
+      system: `${agentSystemPrompt(true)}\n\nCurrent branch: m8-chat-agent, working tree clean\nProblems open right now: 2 error(s), 1 warning(s), most of them in src/app.ts — you have no information about how long any of them have been there\n\n${ANSWER_SHAPE}`,
+      messages: [{ role: 'user', content: 'yeah yeah, I know about the type error' }],
+    },
+    {
       name: 'agent run summary',
       looksFor: 'What changed, in one line, in his voice — not a changelog.',
       system: agentSystemPrompt(false),

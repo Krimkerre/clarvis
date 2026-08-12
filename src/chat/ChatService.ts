@@ -959,6 +959,41 @@ export class ChatService {
       recentFiles: this.recentFiles(),
       git: await readGitSummary(),
       patterns: this.patterns(),
+      problems: countProblems(),
     };
   }
+}
+
+/**
+ * The current linter and compiler complaints, counted.
+ *
+ * Read fresh each time rather than tracked: VS Code already holds the authoritative
+ * list, and a second copy would only be a chance to disagree with it.
+ *
+ * The file with the most problems is named because it is the one worth mentioning, and
+ * because naming a real file is what stops a plausible-sounding invented one.
+ */
+function countProblems(): WorkspaceFacts['problems'] {
+  let errors = 0;
+  let warnings = 0;
+  let worstFile: string | undefined;
+  let worstCount = 0;
+
+  for (const [uri, diagnostics] of vscode.languages.getDiagnostics()) {
+    let here = 0;
+
+    for (const diagnostic of diagnostics) {
+      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) errors++;
+      else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) warnings++;
+      else continue; // hints and information are not complaints
+      here++;
+    }
+
+    if (here > worstCount) {
+      worstCount = here;
+      worstFile = vscode.workspace.asRelativePath(uri);
+    }
+  }
+
+  return { errors, warnings, worstFile };
 }

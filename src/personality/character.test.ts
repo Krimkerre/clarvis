@@ -27,7 +27,7 @@ test('the examples cover more than one beat', () => {
   // nothing for pushback or an opinion to imitate and the model wrote "done" four ways.
   const bank = EXAMPLES.join('\n');
 
-  assert.match(bank, /fourth time this week/); // a failure that keeps happening
+  assert.match(bank, /failed the same way/); // a failure that keeps happening
   assert.match(bank, /four nested callbacks/); // an opinion about the code
   assert.match(bank, /asked me to undo it twice/); // pushback
 });
@@ -68,4 +68,22 @@ test('the examples are marked as a register rather than a script', () => {
   // some point it stops being bad luck", word for word. A model reaches for the example
   // whose situation matches, which is exactly when the user would notice the repeat.
   assert.match(character(), /Never reuse a line from that list/);
+});
+
+test('no example invents a number the model would not have been given', () => {
+  // The examples are imitated, so an invented specific in one of them teaches the habit
+  // rather than the discipline. "The fourth time this week" produced a linter that had
+  // been complaining "for the past six minutes" — a duration nothing here can measure.
+  for (const example of EXAMPLES) {
+    assert.doesNotMatch(
+      example,
+      /\b(fourth|fifth|sixth|last tuesday|this week|minutes|hours)\b/i,
+      example
+    );
+  }
+});
+
+test('the brief says where a number has to come from', () => {
+  assert.match(character(), /must come from what you were actually given/);
+  assert.match(character(), /for the past six minutes" is not/);
 });

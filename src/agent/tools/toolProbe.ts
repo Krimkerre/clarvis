@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { readFile, listFiles, search } from './fileTools';
 import { readDiagnostics, gitStatus, gitDiff, runCommand, AgentTerminal } from './commandTools';
 import { PathRefused } from './workspacePaths';
-import { classifyCommand, explainGate } from '../Gate';
+import { approveLabel, classifyCommand, explainGate } from '../Gate';
 import { buildStamp } from '../../buildStamp';
 
 /**
@@ -103,13 +103,14 @@ async function invoke(
     // command, and "don't test destructive things" is not a safety mechanism.
     const verdict = classifyCommand(command);
     if (verdict) {
+      const label = approveLabel(verdict);
       const approved = await vscode.window.showWarningMessage(
         explainGate(command, verdict),
         { modal: true },
-        'Run it'
+        label
       );
 
-      if (approved !== 'Run it') {
+      if (approved !== label) {
         log(`gate: refused "${command}" (${verdict.category}, matched "${verdict.matched}")`);
         return `REFUSED\n\n${explainGate(command, verdict)}\n\nNot run.`;
       }

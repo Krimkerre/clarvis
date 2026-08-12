@@ -59,11 +59,28 @@ const KNOWN = Object.keys(ACTION_QUESTIONS) as ChatAction[];
  */
 const MAX_WORDS = 12;
 
+/**
+ * Interrogatives, which are asking rather than requesting.
+ *
+ * **Found by the M8 exit checklist, not by testing.** The list demands that ordinary
+ * questions never spend a classification request — "invisible until the bill arrives" —
+ * and length alone did not deliver that: most plain questions are short, so nearly every
+ * one of them was buying a request to be told `none`.
+ *
+ * The cost of this is *"where do I put my key"*, which the plan lists as a phrasing
+ * worth catching and which is now simply answered instead. That is a fair outcome: the
+ * manual answers it, and an answer to a question is never the wrong shape of reply.
+ */
+const INTERROGATIVE = /^(what|which|why|when|who|where|how|is|are|was|were|do|does|did|can|could|should|would|will)\b/;
+
 export function worthInferring(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed || trimmed.startsWith('/')) return false; // a slash form already matched or failed
 
-  return trimmed.split(/\s+/).length <= MAX_WORDS;
+  if (trimmed.split(/\s+/).length > MAX_WORDS) return false;
+
+  const lower = trimmed.toLowerCase();
+  return !lower.endsWith('?') && !INTERROGATIVE.test(lower);
 }
 
 /** The classification request. One word back, or the word `none`. */

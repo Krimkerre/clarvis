@@ -24,13 +24,32 @@ test('a model that explains itself is still understood', () => {
 });
 
 test('the phrasings this exists for are the ones the matcher misses', () => {
-  // Each of these is in the plan as an example. If the deterministic matcher ever
-  // starts catching one, the inference for it stops being needed — and if this test
-  // fails that way, that is the news.
-  for (const missed of ["i can't stand this voice", "you're too loud", 'where do i put my key']) {
+  // Both are in the plan as examples. If the deterministic matcher ever starts catching
+  // one, the inference for it stops being needed — and if this test fails that way,
+  // that is the news.
+  for (const missed of ["i can't stand this voice", "you're too loud"]) {
     assert.equal(chatAction(missed), null, missed);
     assert.equal(worthInferring(missed), true, missed);
   }
+});
+
+test('a plain question never buys a classification request', () => {
+  // The M8 exit checklist calls this out as a cost bug that is invisible until the
+  // bill arrives. Most questions are short, so length alone did not catch them.
+  for (const question of [
+    'why is the build failing?',
+    'what branch am I on',
+    'how do I change the voice',
+    'is the test suite green?',
+  ]) {
+    assert.equal(worthInferring(question), false, question);
+  }
+});
+
+test('the price of that is one plan example, knowingly', () => {
+  // "where do I put my key" is a question, and gets answered rather than offered. An
+  // answer to a question is never the wrong shape of reply.
+  assert.equal(worthInferring('where do i put my key'), false);
 });
 
 test('long messages are not worth a request', () => {

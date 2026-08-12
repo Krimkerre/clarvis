@@ -6,7 +6,7 @@ import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './to
 import { isLookingAround, narrateTool } from './toolNarration';
 import { commitSubject } from './commitSubject';
 import { phrase } from '../personality/Voice';
-import { classifyCommand, explainGate } from './Gate';
+import { approveLabel, classifyCommand, explainGate } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
@@ -390,13 +390,14 @@ export class AgentRunner {
     const verdict = classifyCommand(command);
 
     if (verdict) {
+      const label = approveLabel(verdict);
       const approved = await vscode.window.showWarningMessage(
         explainGate(command, verdict),
         { modal: true },
-        'Run it'
+        label
       );
 
-      if (approved !== 'Run it') {
+      if (approved !== label) {
         this.log(`gate: refused "${command}" (${verdict.category})`);
         return `The user declined that command. Don't retry it — find another way, or ask.`;
       }

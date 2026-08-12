@@ -16,7 +16,6 @@ import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
-import { QuipPicker } from '../personality/QuipPicker';
 import { Voice } from '../personality/Voice';
 import { AgentTerminal } from '../agent/tools/commandTools';
 
@@ -24,26 +23,26 @@ import { AgentTerminal } from '../agent/tools/commandTools';
 const FAILURE_KEY = 'clarvis.lastFailure';
 
 /**
- * The chat, minus any model.
+ * The chat panel's coordinator: what a message is, and who deals with it.
  *
- * M8a's whole claim is that a useful share of what you ask a coding assistant is
- * already known locally — what's failing, what branch, how long that took, have we
- * seen this before. Those are answered from M3–M5 state with no key, no network and
- * no token spend. Anything else returns null here and waits for M8b's model path.
+ * Almost nothing happens here. A message is a stop, an action, a job, or a question, and
+ * each of those has an owner — `ChatActions`, `RunSession`, `Replier` — with `Transcript`
+ * holding what was said, `Busy` holding whether he is working, and
+ * `WorkspaceFactsReader` holding what he knows. This file decides which, and wires them
+ * together.
+ *
+ * **It was 1,071 lines and owned all of it.** The split came from a complexity report,
+ * but the number was the symptom: routing, modes, runs, history, facts, voice and panel
+ * wiring in one class meant every one of those had the same reason to change, and the
+ * bugs lived in the seams between them — Stop wired to the wrong signal, a reply that
+ * never reached the archive, two owners of "is he busy".
+ *
+ * **Local answers remain the floor.** A useful share of what you ask a coding assistant
+ * is already known — what's failing, what branch, how long that took, have we seen this
+ * before — and M3–M5 answer those with no key, no network and no token spend. The model
+ * is what phrases them; it is not what knows them.
  */
 export class ChatService {
-  /**
-   * The conversation, for this window's lifetime.
-   *
-   * Always starts empty: yesterday's questions are about yesterday's failures, and a
-   * panel that opens mid-conversation reads as clutter rather than continuity. It
-   * survives a panel move or collapse — the webview is destroyed, this isn't.
-   *
-   * Nothing is lost by starting clean. The previous session is filed into the archive
-   * at startup and stays one button away.
-   */
-
-
   /** Whether he is doing something, and how to make him stop. */
   private readonly busy: Busy;
 
@@ -54,9 +53,6 @@ export class ChatService {
         afterTask(task: string, summary: string): Promise<string | undefined>;
       }
     | undefined;
-
-  /** The bank, for the closing aside when no model is available. */
-  private readonly closers = new QuipPicker();
 
   /** Puts a line in character. Every user-facing sentence here goes through it. */
   private voiceOf: Voice | undefined;

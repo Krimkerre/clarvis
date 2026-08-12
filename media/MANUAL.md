@@ -48,12 +48,13 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 using?" — gets you an answer instead of a dialog, which is usually what you wanted.
 
 **The buttons above the prompt** do the most common things: **History**, **Clear**,
-**Mute** — and **Stop**, which appears only while he is actually doing something.
+**Mute**, and the mode toggle.
 
-**Stopping him.** Click **Stop** — there is one beside Mute and a small square one in
-the prompt itself — or just type `stop` and press enter. All three do the same thing:
-he finishes the step he is on and puts the tools down. Typing "stop the dev server" is
-a job, not an interruption, so that still gets treated as work.
+**Stopping him.** Click the small square **Stop** in the prompt row, or type `stop` and
+press enter. Both do the same thing: he finishes the step he is on and puts the tools
+down, and says so once however many times you press it. The button is always there —
+greyed out when there is nothing to stop, red when there is. Typing "stop the dev
+server" is a job, not an interruption, so that still gets treated as work.
 
 ---
 
@@ -154,6 +155,47 @@ costs nothing. `/cache` opens the folder; delete anything in there freely.
 sardonic asides. How *often* he talks is governed by the once-a-minute budget above —
 splitting it would mean the voice carried the dull half of the character and the text
 carried the funny half.
+
+---
+
+## What he's allowed to do
+
+The toggle above the prompt sets how far Clarvis may go. It is a hard stop, not a
+suggestion — a mode that cannot edit has no editing tools at all, so nothing he decides
+can get around it.
+
+| Mode | He can | Use it when |
+|---|---|---|
+| **Plan** | Read, and describe what he *would* change | You want the plan before the work |
+| **Chat** | Read and answer | You are asking, not asking for |
+| **Agent** | Read, edit, run commands | You want the work done |
+| **Auto** | Decides per message | Most of the time |
+
+**Ask for work in a read-only mode and he says so**, naming the mode and what to switch
+to, then answers the question anyway. Before, he would answer and mention in passing
+that he could not edit anything, which left you guessing why.
+
+---
+
+## After he changes something
+
+Every run happens on its own temp branch, so your own branch is untouched whatever
+happens. When it finishes you get the choice — never a silent merge:
+
+- **Check it works** — runs your project's tests first, if he can find them. Offered
+  first because a change nobody has run is a change nobody knows about.
+- **Keep it** — merges the temp branch into the branch you were on.
+- **Show me first** — opens the diff and the full set of options.
+
+**Nothing is pushed, ever.** Merging is local, and publishing stays your decision.
+
+**`Clarvis: Undo Last Agent Run`** puts every file back as it was *and* returns you to
+the branch you started on. It works once per run — once undone, the snapshot is spent,
+so a second press cannot quietly revert work you have done since.
+
+**Files you were already editing are left alone.** If you had unsaved changes in a file
+the run also touched, he leaves it out of his commit and tells you, because your edit
+and his are now in the same file and only you can untangle them.
 
 ---
 
@@ -277,7 +319,7 @@ outright.
 
 ## Not built yet
 
-Clarvis is under construction, and this manual describes what exists today. Still to
-come: the **agent** that does the work, **project planning** from a one-sentence idea,
-**voice input**, and **Tutor Mode** for people learning to program. See the README for
-progress.
+Clarvis is under construction, and this manual describes what exists today. The agent
+that does the work is built — that list used to say otherwise. Still to come: **project
+planning** from a one-sentence idea, **voice input**, and **Tutor Mode** for people
+learning to program. See the README for progress.

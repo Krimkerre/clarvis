@@ -286,8 +286,9 @@ the full per-milestone build notes and exit criteria.
       goes through the OS's headless player rather than the webview, because Chromium
       blocks audio until the panel is clicked — which the launch briefing can never
       satisfy. Rendered speech is cached on disk, so repeats cost nothing.
-- [x] **M8 — Chat & Agent.** *Built; the end-to-end exit checklist in `plan.md` is
-      still to be walked.* The chat panel answers from local state with no key or
+- [x] **M8 — Chat & Agent.** *Built. Most of the exit checklist has now been walked
+      live; what remains is the environment matrix — no repo, missing `git`, VSCodium,
+      the provider list.* The chat panel answers from local state with no key or
       network, then from a model when one is configured — five providers, separate
       models for chat and for coding so the cheap one handles talking. A tool layer, a
       deny-list gate, checkpoints and per-run branch isolation were built and tested
@@ -325,6 +326,14 @@ deviation: comments are used liberally rather than treated as a last resort, bec
 this codebase doubles as a worked example. Pure logic is kept in modules that import
 nothing from `vscode`, which is what makes it unit-testable without an extension host —
 `npm test` runs those against Node's built-in runner, no test framework required.
+
+`npm run lint` enforces a complexity ceiling rather than a style. It was added after a
+report that the project had "too much cyclomatic complexity" with no number attached;
+measuring found five functions at or near the limit in ~8,700 lines, and the useful
+outcome was making that a number the build checks rather than an opinion to relitigate.
+The threshold is 15 — below ESLint's default of 20, which the two worst functions would
+have passed unchanged. Extracting those produced the first tests the provider streaming
+code ever had, which is a better argument for the rule than the number is.
 
 ## Special thanks
 

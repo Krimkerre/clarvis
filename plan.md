@@ -2800,7 +2800,7 @@ are worth carrying into M9 as design rules rather than anecdotes:
   — Voice Check` exists so the fourth did not.
 
 **Build.**
-- **M8a — Local answers.** `src/chat/ChatViewProvider.ts` extends the M2 panel with an
+- **M8a — Local answers.** `src/chat/ChatService.ts` (specced as `ChatViewProvider.ts`) extends the M2 panel with an
   input box + transcript below the avatar (same webview, not a second one — §3).
   **Each window starts with an empty transcript**, and the previous session is filed
   into an archive (`clarvis.chat.history`, newest first, 20 sessions) reachable from a
@@ -3230,6 +3230,51 @@ end-to-end ones:
   result or undoes it in one command. A user asks a question and gets an answer with
   nothing touched. With no key set, M8a alone still answers what it can and says
   plainly why it can't do the rest.
+
+### M8 aftermath — the linter, and the split
+
+Added after M8 closed, on a report that the project had "too much cyclomatic complexity"
+with no number attached. Measuring it first mattered: 92 files, ~8,700 lines of
+production source, and **five** functions at or near the limit. Not a sick codebase — a
+handful of outliers, and a claim nobody could answer, which was the real problem.
+
+`npm run lint` sets the ceiling at **15**, below ESLint's default of 20, because the two
+worst functions sat at exactly 20 and the default would have declared the work done
+without changing anything. Deliberately not a style linter: no formatting, naming or
+import-order rules. The first run proved why — 433 errors, nearly all of them `test()`
+from `node:test` returning a promise nobody awaits, which is the wall of noise that
+teaches a team to stop reading lint output.
+
+**What the refactor was actually for.** `ChatService` was 1,071 lines owning routing,
+modes, runs, history, facts, voice and panel wiring. The complexity number was the
+symptom; the disease was that all of those had the same reason to change, and every bug
+lived in the seams — Stop wired to a signal agent runs never post, a reply that never
+reached the archive, two owners of "is he busy". It is 453 lines of coordination now,
+beside `Replier`, `RunSession`, `ChatActions`, `Transcript`, `Busy` and
+`WorkspaceFactsReader`.
+
+Three things worth carrying forward:
+
+- **Extraction produced tests, not just shorter functions.** The providers' tool-call
+  assembly — the place a malformed tool call comes from — lived inside a `for await` over
+  a network stream and could not be tested at all. Pulling it out to satisfy the linter
+  gave it its first six.
+- **The refactor introduced a real bug, caught by re-reading rather than by the suite.**
+  `AgentBranch.startAt()` read the previous branch back from `HEAD` *after* creating the
+  new one, by which point HEAD is the new branch — undo would have offered to return you
+  to the branch you were undoing. 411 tests passed throughout.
+- **Optionality has a price at every call site.** Passing the run session in as optional
+  pushed `ask()` from 18 to 21, purely from `?.`. Constructing it eagerly removed three
+  branches.
+
+**And it found two features that had been quietly lost.** The closing line of a run — where
+it left you, and that your own branch is untouched — went to the terminal only, while the
+comment above the loop claimed the chat received it. The aside after a summary
+disappeared inside the commit that stripped machine talk from the transcript: it depended
+on a variable that rework removed, so a thing asked for two messages earlier went with
+it. Both restored. Neither was in any test, and neither had been noticed in use.
+
+---
 
 ### M9 — Project Planning *(the front door)*
 

@@ -6,6 +6,13 @@ import { AgentTerminal, runCommand } from '../agent/tools/commandTools';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
 import { Busy } from './Busy';
+import { QuipPicker } from '../personality/QuipPicker';
+
+/** The lines a model writes for a run: one to open with, one to close on. */
+interface LiveLines {
+  acknowledge(task: string): Promise<string | undefined>;
+  afterTask(task: string, summary: string): Promise<string | undefined>;
+}
 
 /**
  * A task, from "on it" to "what would you like done with it".
@@ -32,6 +39,9 @@ export class RunSession {
     private readonly log: (message: string) => void
   ) {}
 
+  /** The written bank, for the closing aside when no model is available. */
+  private readonly closers = new QuipPicker();
+
   /**
    * The writer for the opening line, once a model exists.
    *
@@ -39,9 +49,9 @@ export class RunSession {
    * rather than making the whole session optional, which pushed `?.` into every caller
    * and cost the routing method three branches for nothing.
    */
-  private live: { acknowledge(task: string): Promise<string | undefined> } | undefined;
+  private live: LiveLines | undefined;
 
-  setLiveLines(live: { acknowledge(task: string): Promise<string | undefined> }): void {
+  setLiveLines(live: LiveLines): void {
     this.live = live;
   }
 
@@ -87,9 +97,13 @@ export class RunSession {
     // belongs. The chat gets what a person would say: the result, and an aside.
     this.terminal.announce(`clarvis: ${task}`);
 
+    // What the run ended up saying, which is the only part the chat gets.
+    let summary = '';
+
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
+        if (event.kind === 'done') summary = event.text.trim();
 
         // Everything, verbatim, in the place that is meant to be read line by line.
         this.terminal.write(
@@ -102,10 +116,34 @@ export class RunSession {
       holdingFace();
     }
 
+    await this.close(task, summary);
+
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
     const { commits, files } = runner.result;
     if (files.length > 0) await this.offerReview(commits, files);
+  }
+
+  /**
+   * The result, and then the exhale.
+   *
+   * **Both of these were lost and neither was noticed.** The closing line — where the
+   * run left you, and that your own branch is untouched — went to the terminal only,
+   * while the comment above this loop claimed the chat got it. The aside disappeared in
+   * the commit that stripped machine talk from the transcript: it depended on a variable
+   * that rework removed, so a feature asked for two messages earlier went with it.
+   *
+   * They stay separate, which is the point of having both. The summary is information
+   * and has to be trustworthy; the aside is comic relief after it. A summary trying to
+   * be funny is a summary nobody can rely on.
+   */
+  private async close(task: string, summary: string): Promise<void> {
+    if (!summary) return;
+
+    await this.note(summary);
+
+    const aside = (await this.live?.afterTask(task, summary)) ?? this.closers.pick('taskDone')?.text;
+    if (aside) await this.note(aside);
   }
 
   /**

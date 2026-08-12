@@ -21,6 +21,7 @@ import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
+import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -592,6 +593,14 @@ function startBranchFlow(
         await phrase('report', 'I have forgotten which branches I asked about.')
       );
       await branchFlow.checkNow();
+    }),
+
+    // Same shape as forgetBranchAnswers, for the same reason: "asked once" is right
+    // until someone changes their mind or is testing.
+    vscode.commands.registerCommand('clarvis.forgetGitOfferAnswer', async () => {
+      await forgetGitOfferAnswer(context);
+      logger.write('git offer: forgot the answer, will ask again next run');
+      void vscode.window.showInformationMessage(await phrase('report', 'Asking again, next time it comes up.'));
     })
   );
 }

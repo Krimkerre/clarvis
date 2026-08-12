@@ -89,7 +89,7 @@ export class AgentBranch {
     const repository = this.repository();
 
     if (!repository) {
-      const problem = await this.diagnoseGit();
+      const problem = await diagnoseGit();
       this.log(`branch: not isolating — ${problem}`);
       return { isolated: false, advice: adviseOnGit(problem).message };
     }
@@ -122,19 +122,6 @@ export class AgentBranch {
       isolated: false,
       advice: "I couldn't create a branch to work on, so I'll snapshot files instead and you can undo the run.",
     };
-  }
-
-  /**
-   * Why there is no repository to work in.
-   *
-   * Three causes that look the same through the API and need three different sentences:
-   * the extension is off, git is not installed, or this is simply not a repository. The
-   * binary is only checked once the first two have been ruled out, because it costs a
-   * process spawn and is the least likely of them.
-   */
-  private async diagnoseGit(): Promise<GitProblem> {
-    if (!gitExtension()) return 'no-extension';
-    return (await hasGitBinary()) ? 'no-repository' : 'no-binary';
   }
 
   /**
@@ -326,6 +313,34 @@ export class AgentBranch {
 function gitExtension(): vscode.Extension<GitExports> | undefined {
   const extension = vscode.extensions.getExtension<GitExports>('vscode.git');
   return extension?.isActive ? extension : undefined;
+}
+
+/**
+ * Why there is no repository to work in, once one is confirmed absent.
+ *
+ * Three causes that look the same through the API and need three different sentences:
+ * the extension is off, git is not installed, or this is simply not a repository. The
+ * binary is only checked once the first two are ruled out — it costs a process spawn
+ * and is the least likely of them.
+ */
+async function diagnoseGit(): Promise<GitProblem> {
+  if (!gitExtension()) return 'no-extension';
+  return (await hasGitBinary()) ? 'no-repository' : 'no-binary';
+}
+
+/**
+ * Whether a run could isolate on a branch right now, probed fresh (§4.0).
+ *
+ * Exported so the offer to fix it can run *before* a task starts — asking "shall I run
+ * `git init`?" only after the run has already failed to isolate is a worse experience
+ * than asking up front, and it is also how the offer went missing entirely: nothing
+ * outside `begin()` ever looked.
+ */
+export async function probeGitProblem(): Promise<GitProblem | undefined> {
+  const api = gitExtension()?.exports?.getAPI?.(1);
+  if ((api?.repositories?.length ?? 0) > 0) return undefined;
+
+  return diagnoseGit();
 }
 
 /** The slice of the Git extension's API this file uses. */

@@ -118,3 +118,11 @@ test('an ordinary folder still gets the git init offer', () => {
 
   assert.equal(advice.action, 'Run git init');
 });
+
+test('an accepted offer has a button, and a binary problem never gets one', () => {
+  // Nothing turned adviseOnGit()'s `action` label into an actual button before now —
+  // the offer never fired at all, on a folder with no .git and nothing else wrong.
+  assert.equal(adviseOnGit('no-repository').action, 'Run git init');
+  assert.equal(adviseOnGit('no-extension').action, 'Show me the extension');
+  assert.equal(adviseOnGit('no-binary').action, undefined);
+});

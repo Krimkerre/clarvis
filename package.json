@@ -68,6 +68,10 @@
         "title": "Clarvis: Forget Branch Flow Answers"
       },
       {
+        "command": "clarvis.forgetGitOfferAnswer",
+        "title": "Clarvis: Ask About Git Setup Again"
+      },
+      {
         "command": "clarvis.forgetFailure",
         "title": "Clarvis: Forget the Failing Job"
       },

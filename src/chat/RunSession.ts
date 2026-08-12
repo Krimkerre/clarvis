@@ -6,6 +6,7 @@ import { AgentTerminal, runCommand } from '../agent/tools/commandTools';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
 import { Busy } from './Busy';
+import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
@@ -63,6 +64,14 @@ export class RunSession {
    * makes Stop a real option rather than a theoretical one.
    */
   async run(task: string, because: string): Promise<void> {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+    // **Before anything else.** Asking "shall I run `git init`?" only after a run has
+    // already failed to isolate is a worse offer than asking up front — and it is the
+    // reason the offer never fired at all: nothing outside `begin()` ever checked, and
+    // `begin()` only runs once a task is already under way.
+    await offerGitFix(this.context, root, this.log);
+
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
     const opening = (await this.live?.acknowledge(task)) ?? because;
@@ -74,13 +83,7 @@ export class RunSession {
 
     const controller = this.busy.start('reply');
 
-    const runner = new AgentRunner(
-      this.context,
-      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-      this.models,
-      this.terminal,
-      this.log
-    );
+    const runner = new AgentRunner(this.context, root, this.models, this.terminal, this.log);
 
 
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
@@ -109,6 +112,13 @@ export class RunSession {
         this.terminal.write(
           event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : event.text
         );
+
+        // The one exception to "nothing technical reaches the chat": isolation could
+        // not be set up, and the reason — a folder that is not a repository, git
+        // missing, the extension disabled — is not machine noise, it is the thing the
+        // user needs told. This was going to the terminal alone and nowhere else, so a
+        // non-repo folder produced no message and no offer at all.
+        if (event.toChat) await this.note(event.text);
       }
     } finally {
       this.busy.finish();

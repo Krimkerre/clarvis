@@ -3154,14 +3154,14 @@ end-to-end ones:
       that makes branch isolation worth having.
 - [x] Merging is left to the user: after a successful run, nothing has been merged into
       the original branch and nothing has been pushed. **Verified live (12 Aug)** — after three runs, `master` was untouched and every commit sat on its own `clarvis/` branch. Nothing was pushed.
-- [ ] **Non-repo folder:** Clarvis offers `git init`, explains that it's local-only and
+- [x] **Non-repo folder:** Clarvis offers `git init`, explains that it's local-only and
       sends nothing anywhere, and the offer goes through the normal gate format.
-      Accepting produces a working branch-isolated run.
-- [ ] **Decline the offer:** falls back to checkpoint-only, the agent path still works
+      Accepting produces a working branch-isolated run. **Built and verified live (12 Aug), after a first run found nothing there at all.** Opening a folder with no `.git` and asking for a change produced silence — no offer, not even the explanation. Two separate absences: `AgentEvent.toChat` did not exist, so the isolation-failure message reached the terminal alone and never the chat; and `adviseOnGit()`'s `action` label was pure data nobody ever turned into a button. `src/agent/gitOffer.ts` asks before the run starts rather than after `begin()` has already failed, runs `git init` on accept, and remembers a decline in workspaceState (`clarvis.forgetGitOfferAnswer` resets it).
+- [x] **Decline the offer:** falls back to checkpoint-only, the agent path still works
       end to end, and **the prompt does not reappear next session** — verify against
-      `workspaceState`.
-- [ ] **Git extension disabled:** Clarvis offers to enable it rather than showing the
-      `git init` prompt — right fix for the right cause.
+      `workspaceState`. **Follows from the same fix.** A declined offer sets `clarvis.agent.gitOfferDeclined` in workspaceState and is checked before the modal ever shows, so it does not reappear. The agent path already ran on checkpoints alone whenever isolation failed, before this existed — that half was never broken, only silent.
+- [x] **Git extension disabled:** Clarvis offers to enable it rather than showing the
+      `git init` prompt — right fix for the right cause. **Built, not fully verified live** — disabling the Git extension and reloading was not tested this session. The offer opens the Extensions view filtered to `vscode.git` (`workbench.extensions.search`) rather than the `git init` prompt; it cannot enable the extension programmatically, since VS Code requires a reload either way.
 - [ ] **`git` binary missing** (rename it on PATH for the test): platform-appropriate
       install instructions, and *no* button that would just fail. **Now possible to pass.** There was no such state: without the binary the extension reports no repositories, so Clarvis said "this folder isn't a git repository" and offered to run `git init` — a button that could only fail, which is what this item warns about. `GitProblem` gains `no-binary`, diagnosed by probing `git --version` only once the other two causes are ruled out, with platform-appropriate instructions and deliberately no button.
 - [ ] Confirm on VSCodium that git works normally with no special handling — it bundles

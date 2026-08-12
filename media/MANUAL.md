@@ -208,6 +208,10 @@ and his are now in the same file and only you can untangle them.
 
 ---
 
+A folder with no git in it gets the same offer, the first time you ask for a change:
+`git init`, explained in one sentence, or "not now" — declined once means not asked
+again. Without git installed at all there is no button, just what to install and where.
+
 ## Git, without needing to know git
 
 Clarvis uses git to keep your work safe, and tries not to make you learn it.

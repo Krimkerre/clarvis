@@ -35,6 +35,17 @@ export interface AgentEvent {
    * The transcript collapses a run of these into one line; the log keeps every one.
    */
   quiet?: boolean;
+  /**
+   * True for a `text` event that belongs in the chat, not only the terminal.
+   *
+   * Most `text` events are the model narrating its own steps mid-loop — deliberately
+   * unlogged and terminal-only, per §the "no machine talk" rule. The isolation advice
+   * from `protect()` is the opposite: it is the one thing standing between the user and
+   * a `git init` offer that never appeared, because the chat path forwarded nothing but
+   * `done` events and everything else silently went to the terminal alone. Observed
+   * live — a non-repo folder produced no offer, no message, nothing.
+   */
+  toChat?: boolean;
   /** For the transcript: what a person would say. */
   text: string;
   /**
@@ -160,12 +171,13 @@ export class AgentRunner {
     if (!isolation.isolated) {
       yield this.record({
         kind: 'text',
+        toChat: true,
         text: `${isolation.advice ?? "I couldn't work on a copy this time."} I've snapshotted your files, so the run can still be undone.`,
       });
       return;
     }
 
-    if (isolation.advice) yield this.record({ kind: 'text', text: isolation.advice });
+    if (isolation.advice) yield this.record({ kind: 'text', toChat: true, text: isolation.advice });
   }
 
   /**

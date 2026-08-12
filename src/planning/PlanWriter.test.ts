@@ -59,6 +59,24 @@ test('accepted findings become exit-checklist items, rejected findings become de
   assert.match(plan, /## 8\. Decisions\n- \*\*\[scope\]\*\* assumes JPEG only — rejected\. JPEG-only is fine for v1/);
 });
 
+test('a modified finding\'s checklist item is the user\'s rewrite, not the original fix', () => {
+  // Found live: modifying a finding to "ESLint" still put the original "name a
+  // linter" suggestion in the checklist, contradicting the edit sitting right above it.
+  const modified: FindingVerdict = {
+    finding: {
+      class: 'improvement',
+      what: 'no linter was named',
+      whyItMatters: 'CI cannot enforce anything without a named tool',
+      suggestedResolution: 'Name the linter in the definition of done',
+    },
+    status: 'modified',
+    reasoning: 'ESLint',
+  };
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [modified] });
+  assert.match(plan, /- \[ \] ESLint/);
+  assert.doesNotMatch(plan, /Name the linter in the definition of done/);
+});
+
 test('includes the working-process section and a branch flow section', () => {
   const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
   assert.match(plan, /## 0\. Working Process/);

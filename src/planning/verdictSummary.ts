@@ -37,11 +37,11 @@ export function formatVerdict(verdict: FindingVerdict): string[] {
   }
 
   if (status === 'modified') {
-    return [
-      `- **[${finding.class}]** ${reasoning ?? finding.what}`,
-      `  Why it matters: ${finding.whyItMatters}`,
-      `  Suggested fix: ${finding.suggestedResolution}`,
-    ];
+    // Why-it-matters and suggested-fix are Clarvis's take on the *original* wording —
+    // stale the moment the user rewrites it, and confusing rather than useful once
+    // they no longer describe the same finding. Found live: a finding modified to
+    // "ESLint" still showed the original "name a linter" fix underneath it.
+    return [`- **[${finding.class}]** ${reasoning ?? finding.what}`];
   }
 
   return [

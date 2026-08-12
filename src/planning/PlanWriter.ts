@@ -99,7 +99,10 @@ export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): s
     '',
     '**Exit checklist:**',
     ...(answerText(state, 'definition-of-done') ? [`- [ ] ${answerText(state, 'definition-of-done')}`] : []),
-    ...accepted.map((verdict) => `- [ ] ${verdict.finding.suggestedResolution}`),
+    // A modified finding's checklist item is the user's own rewrite, not Clarvis's
+    // original suggested fix — same rule as the summary display, and for the same
+    // reason: the original fix describes a finding the user has already replaced.
+    ...accepted.map((verdict) => `- [ ] ${verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution}`),
     ...(answerText(state, 'definition-of-done') || accepted.length > 0 ? [] : ['_Not yet determined._']),
     '',
     '## 8. Decisions',

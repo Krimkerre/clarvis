@@ -33,3 +33,12 @@ test('a modified finding shows the user\'s version, not the original', () => {
   assert.match(lines[0], /Passwords are hashed but with no salt/);
   assert.doesNotMatch(lines[0], /Passwords are stored in plaintext/);
 });
+
+test('a modified finding drops the original why-it-matters and suggested fix', () => {
+  // Found live: a finding modified to "ESLint" still showed the original "name a
+  // linter" fix underneath it — stale advice about a description the user replaced.
+  const lines = formatVerdict({ finding, status: 'modified', reasoning: 'ESLint' });
+  assert.equal(lines.length, 1);
+  assert.doesNotMatch(lines.join('\n'), /A leak exposes every password/);
+  assert.doesNotMatch(lines.join('\n'), /Hash and salt before storing/);
+});

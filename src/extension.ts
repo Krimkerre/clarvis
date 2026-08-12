@@ -654,6 +654,12 @@ function registerPlanningCommand(context: vscode.ExtensionContext, models: Model
         lines.push('', '## Open questions', ...open.map((answer) => `- ${answer.topic} — not yet known`));
       }
 
+      // Logged, not just shown. An untitled document exists only until the tab closes
+      // or VS Code restarts — a two-minute interview producing an artifact neither the
+      // user nor a later "check the log" request could recover was found the first
+      // time this ran live.
+      logger.write(`planning summary:\n${lines.join('\n')}`);
+
       const document = await vscode.workspace.openTextDocument({ content: lines.join('\n'), language: 'markdown' });
       await vscode.window.showTextDocument(document, { preview: false });
     })

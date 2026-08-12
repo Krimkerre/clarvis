@@ -77,7 +77,14 @@ async function phraseQuestion(
   state: InterviewState,
   log: (message: string) => void
 ): Promise<string> {
-  if (!(await models.isReady('chat'))) return FALLBACK_QUESTION[topic];
+  // **Every path here is distinguishable in the log.** The briefing spent several
+  // rounds today logging "from the bank" for three different reasons before anyone
+  // could tell which one had actually happened; this does not get to make the same
+  // mistake on its first day.
+  if (!(await models.isReady('chat'))) {
+    log(`planning: "${topic}" — no model configured, used the written question`);
+    return FALLBACK_QUESTION[topic];
+  }
 
   try {
     let text = '';
@@ -94,9 +101,15 @@ async function phraseQuestion(
     await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
 
     const phrased = text.trim().split('\n')[0];
-    return phrased || FALLBACK_QUESTION[topic];
+    if (!phrased) {
+      log(`planning: "${topic}" — model returned nothing, used the written question`);
+      return FALLBACK_QUESTION[topic];
+    }
+
+    log(`planning: "${topic}" — phrased by the model`);
+    return phrased;
   } catch (error) {
-    log(`planning: question phrasing failed (${String(error)})`);
+    log(`planning: "${topic}" — phrasing failed (${String(error)}), used the written question`);
     return FALLBACK_QUESTION[topic];
   }
 }

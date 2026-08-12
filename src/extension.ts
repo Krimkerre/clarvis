@@ -649,7 +649,9 @@ function registerPlanningCommand(context: vscode.ExtensionContext, models: Model
           : 'Paused — reopen `Clarvis: Plan This Project` to continue where this left off. (Nothing is saved between sessions yet; that is also still to come.)',
         '',
         '## Established',
-        ...settled.map((answer) => `- **${answer.topic}**: ${answer.text}`),
+        ...settled.map(
+          (answer) => `- **${answer.topic}**: ${answer.text}${answer.reasoning ? ` (${answer.reasoning})` : ''}`
+        ),
       ];
 
       if (open.length > 0) {

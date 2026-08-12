@@ -44,12 +44,24 @@ export async function runInterview(
     const question = await phraseQuestion(models, topic, state, log);
     log(`planning: "${topic}" asked — ${question}`);
 
-    const raw =
-      topic === 'language' ? await askLanguage(question, log) : await vscode.window.showInputBox({
-        prompt: question,
-        placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
-        ignoreFocusOut: true,
-      });
+    if (topic === 'language') {
+      const answer = await askLanguage(models, question, state, log);
+      // Cancelling (Escape) pauses the interview rather than answering "I don't know"
+      // on the user's behalf — same rule as the free-text path below.
+      if (!answer) {
+        log(`planning: interview paused at "${topic}"`);
+        return { state, seed: seed.trim() };
+      }
+      log(`planning: "${topic}" answered — ${answer.text}${answer.reasoning ? ` (${answer.reasoning})` : ''}`);
+      state.answers.push(answer);
+      continue;
+    }
+
+    const raw = await vscode.window.showInputBox({
+      prompt: question,
+      placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
+      ignoreFocusOut: true,
+    });
 
     // Cancelling the box (Escape) pauses the interview rather than answering "I don't
     // know" on the user's behalf — those are different things, and only one of them
@@ -91,16 +103,27 @@ function parseLanguageOptions(text: string): LanguageOption[] {
  * for comparing options, regardless of whether the text is complete. "You pick" and
  * "something else" are added by code, not the model, so they always exist even if
  * parsing finds nothing.
+ *
+ * **"You pick" resolves to an actual language, not the literal words "You pick".**
+ * Found live: the answer got recorded as `language: You pick`, which is not a
+ * language and directly contradicts §4.9 — "you pick" is supposed to produce a real
+ * choice with a one-line reason, not sit in the plan as an unresolved placeholder.
  */
-async function askLanguage(question: string, log: (message: string) => void): Promise<string | undefined> {
+async function askLanguage(
+  models: ModelService,
+  question: string,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<Answer | undefined> {
   const options = parseLanguageOptions(question);
   if (options.length === 0) {
     log('planning: "language" — shortlist did not parse, fell back to free text');
-    return vscode.window.showInputBox({
+    const raw = await vscode.window.showInputBox({
       prompt: question,
       placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
       ignoreFocusOut: true,
     });
+    return raw === undefined ? undefined : toAnswer('language', raw);
   }
 
   const YOU_PICK = 'You pick';
@@ -116,10 +139,81 @@ async function askLanguage(question: string, log: (message: string) => void): Pr
     ignoreFocusOut: true,
   });
   if (!picked) return undefined;
+
   if (picked.label === SOMETHING_ELSE) {
-    return vscode.window.showInputBox({ prompt: 'What language?', ignoreFocusOut: true });
+    const raw = await vscode.window.showInputBox({ prompt: 'What language?', ignoreFocusOut: true });
+    return raw === undefined ? undefined : toAnswer('language', raw);
   }
-  return picked.label;
+
+  if (picked.label === YOU_PICK) {
+    const { name, reasoning } = await pickLanguageForUser(models, options, state, log);
+    return { topic: 'language', text: name, reasoning };
+  }
+
+  return { topic: 'language', text: picked.label };
+}
+
+/**
+ * Resolves "you pick" into one option plus a one-line reason.
+ *
+ * Falls back to the first option with an honest, generic reason if no model is
+ * configured or the call fails — never a fabricated justification, same rule as
+ * everywhere else this project talks about a project it wasn't told about.
+ */
+async function pickLanguageForUser(
+  models: ModelService,
+  options: LanguageOption[],
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<{ name: string; reasoning: string }> {
+  const fallback = {
+    name: options[0].name,
+    reasoning: 'left to me to pick, and no model was available to weigh in — took the first of the shortlist.',
+  };
+  if (!(await models.isReady('chat'))) {
+    log('planning: "language" — "you pick" — no model configured, used the first option');
+    return fallback;
+  }
+
+  try {
+    const known = state.answers
+      .filter((answer) => answer.text)
+      .map((answer) => `${answer.topic}: ${answer.text}`)
+      .join('\n');
+    const shortlist = options.map((option) => `${option.name} | ${option.advantage} | ${option.cost}`).join('\n');
+    const prompt = [
+      'They said "you pick" for the language. Choose exactly one from this shortlist and',
+      'give one honest sentence why, grounded in what is known below.',
+      '',
+      `What is known:\n${known}`,
+      '',
+      `Shortlist:\n${shortlist}`,
+      '',
+      'Output exactly one line, nothing else: Name | one-sentence reason',
+    ].join('\n');
+
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream({ system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }] }, 'chat')) {
+        text += fragment;
+        if (text.length > 400) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const [name, ...rest] = text.trim().split('|').map((part) => part.trim());
+    const chosen = options.find((option) => option.name.toLowerCase() === name?.toLowerCase());
+    if (!chosen || rest.length === 0 || !rest[0]) {
+      log('planning: "language" — "you pick" response did not parse, used the first option');
+      return fallback;
+    }
+
+    log(`planning: "language" — "you pick" resolved to ${chosen.name}`);
+    return { name: chosen.name, reasoning: rest[0] };
+  } catch (error) {
+    log(`planning: "language" — "you pick" failed (${String(error)}), used the first option`);
+    return fallback;
+  }
 }
 
 /** Whatever was typed, as a settled answer or a recorded unknown. */

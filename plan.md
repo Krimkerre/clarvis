@@ -3407,6 +3407,21 @@ via the same `Name | description` structured format the rest of M9 uses
 (`ideaPrompt.ts`, pure and tested). Picking one seeds the interview exactly as if the
 user had typed it themselves.
 
+**M9d started (13 Aug).** `src/planning/PlanWriter.ts` (pure, tested) renders a
+finished interview and its verdicts into an actual `plan.md`: concept, where it runs,
+language with its reasoning, scope, data, linter, a milestone-1 exit checklist built
+from definition-of-done plus every accepted/modified finding's suggested fix,
+rejected findings recorded as decisions with their reasoning, open questions, and the
+Branch flow section via the existing `branchFlowSection()` (M9d3, built at M8f).
+Includes an inherited **§0 Working Process** section — Plan Mode / Code Mode, the
+same discipline this project's own `plan.md` runs under. **Never overwrites** an
+existing `plan.md` — logs and tells the user rather than touching it; extend/revise
+is not built. M9d2 (language-adapted clean-code conventions) is not built, so the
+inherited section stops at Plan/Code Mode and does not yet include clean-code rules.
+`clarvis.planProject` writes the file once the interview reaches "enough to draft"
+and analysis didn't conclude no plan is needed, then opens it. M9e (sign-off gate,
+handoff into an agent task) is not built.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

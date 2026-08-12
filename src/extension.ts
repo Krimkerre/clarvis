@@ -25,8 +25,9 @@ import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { runInterview } from './planning/Interview';
 import { runAnalysis } from './planning/Analysis';
 import { collectVerdicts } from './planning/Verdicts';
-import { formatVerdict } from './planning/verdictSummary';
-import { openQuestions, readyToDraft } from './planning/interviewTopics';
+import { formatVerdict, FindingVerdict } from './planning/verdictSummary';
+import { renderPlan } from './planning/PlanWriter';
+import { InterviewState, openQuestions, readyToDraft } from './planning/interviewTopics';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -630,8 +631,9 @@ function startBranchFlow(
  * this is the first slice of a large milestone, and the eventual "questions arrive in
  * the chat panel" experience is a later piece of work, not something this needed to
  * wait for. Runs M9b (analysis) once the interview reaches "enough to draft", then
- * M9c (accept/reject/modify per finding) over whatever it found. M9d (writing
- * `plan.md` itself) is not built yet — this still ends at a summary document.
+ * M9c (accept/reject/modify per finding) over whatever it found, then writes
+ * `plan.md` itself (M9d) — unless one already exists in the workspace, which it
+ * never overwrites. M9e (sign-off/handoff into an agent task) is not built yet.
  *
  * **Carries the same personality quips as chat and the agent** — the acknowledgement
  * on the way in, the aside after the summary on the way out. Chained input boxes are
@@ -677,15 +679,25 @@ function registerPlanningCommand(
         lines.push('', '## Open questions', ...open.map((answer) => `- ${answer.topic} — not yet known`));
       }
 
+      let verdicts: FindingVerdict[] = [];
+      let noPlanNeeded: string | undefined;
+
       if (readyToDraft(state)) {
         const analysis = await runAnalysis(models, state, (message) => logger.write(message));
-        if (analysis.noPlanNeeded) {
-          lines.push('', '## Analysis', `This may not need a plan: ${analysis.noPlanNeeded}`);
+        noPlanNeeded = analysis.noPlanNeeded;
+        if (noPlanNeeded) {
+          lines.push('', '## Analysis', `This may not need a plan: ${noPlanNeeded}`);
         } else if (analysis.findings.length > 0) {
-          const verdicts = await collectVerdicts(analysis.findings, (message) => logger.write(message));
+          verdicts = await collectVerdicts(analysis.findings, (message) => logger.write(message));
           lines.push('', '## Analysis');
           for (const verdict of verdicts) lines.push(...formatVerdict(verdict));
         }
+      }
+
+      // M9d — write plan.md once there's enough to draft and it isn't the
+      // "doesn't need a plan" outcome.
+      if (readyToDraft(state) && !noPlanNeeded) {
+        await writeGeneratedPlan(state, seed, verdicts, logger);
       }
 
       // Logged, not just shown. An untitled document exists only until the tab closes
@@ -705,6 +717,42 @@ function registerPlanningCommand(
       if (aside) void vscode.window.showInformationMessage(aside);
     })
   );
+}
+
+/**
+ * Writes `plan.md` from a finished interview (M9d), unless one already exists.
+ *
+ * Never overwrites: an existing `plan.md` means someone is already using this
+ * project's own Plan Mode, and clobbering it to write a fresh one would be the
+ * opposite of the point. Split out of `registerPlanningCommand` to keep that
+ * function's own complexity down — this is a self-contained step, not a fork in it.
+ */
+async function writeGeneratedPlan(
+  state: InterviewState,
+  seed: string,
+  verdicts: FindingVerdict[],
+  logger: ClarvisLog
+): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return;
+
+  const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
+  const exists = await vscode.workspace.fs.stat(planUri).then(
+    () => true,
+    () => false
+  );
+  if (exists) {
+    logger.write('planning: plan.md already exists here, not overwritten');
+    void vscode.window.showInformationMessage('plan.md already exists in this workspace — leaving it alone.');
+    return;
+  }
+
+  const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });
+  await vscode.workspace.fs.writeFile(planUri, Buffer.from(planText, 'utf8'));
+  logger.write(`planning: wrote plan.md\n${planText}`);
+
+  const planDocument = await vscode.workspace.openTextDocument(planUri);
+  await vscode.window.showTextDocument(planDocument, { preview: false });
 }
 
 /**

@@ -50,87 +50,105 @@ export async function probeTools(
   }
 }
 
+/**
+ * One probe, by id.
+ *
+ * A table rather than a chain of `if (id === …)`. Same shape as the agent's own tool
+ * dispatch, and for the same reason: every entry is the whole of what that probe does,
+ * so adding one is a line rather than another branch in a sequence with an order.
+ */
 async function invoke(
   id: string,
   root: string | undefined,
   terminal: AgentTerminal,
   log: (message: string) => void
 ): Promise<string> {
-  if (id === 'read') {
-    const requested = await ask('Path to read', 'package.json');
-    if (!requested) return 'cancelled';
+  const probes: Record<string, () => Promise<string> | string> = {
+    read: async () => {
+      const requested = await ask('Path to read', 'package.json');
+      if (!requested) return 'cancelled';
 
-    const result = await readFile(root, requested);
-    return [
-      `${requested} — ${result.bytes} bytes${result.truncated ? ' (truncated)' : ''}`,
-      '',
-      result.text,
-    ].join('\n');
-  }
+      const result = await readFile(root, requested);
+      return [
+        `${requested} — ${result.bytes} bytes${result.truncated ? ' (truncated)' : ''}`,
+        '',
+        result.text,
+      ].join('\n');
+    },
 
-  if (id === 'list') {
-    const directory = (await ask('Directory to list', '.')) ?? '.';
-    const files = await listFiles(root, { directory, recursive: true, limit: 500 });
-    return [`${files.length} files under ${directory}`, '', ...files].join('\n');
-  }
+    list: async () => {
+      const directory = (await ask('Directory to list', '.')) ?? '.';
+      const files = await listFiles(root, { directory, recursive: true, limit: 500 });
+      return [`${files.length} files under ${directory}`, '', ...files].join('\n');
+    },
 
-  if (id === 'search') {
-    const pattern = await ask('Pattern (regular expression)', 'TODO');
-    if (!pattern) return 'cancelled';
+    search: async () => {
+      const pattern = await ask('Pattern (regular expression)', 'TODO');
+      if (!pattern) return 'cancelled';
 
-    const hits = await search(root, new RegExp(pattern));
-    return [
-      `${hits.length} matches for /${pattern}/`,
-      '',
-      ...hits.map((hit) => `${hit.file}:${hit.line}  ${hit.text}`),
-    ].join('\n');
-  }
+      const hits = await search(root, new RegExp(pattern));
+      return [
+        `${hits.length} matches for /${pattern}/`,
+        '',
+        ...hits.map((hit) => `${hit.file}:${hit.line}  ${hit.text}`),
+      ].join('\n');
+    },
 
-  if (id === 'diagnostics') {
-    const problems = readDiagnostics(root);
-    return [`${problems.length} problems`, '', ...problems].join('\n');
-  }
+    diagnostics: () => {
+      const problems = readDiagnostics(root);
+      return [`${problems.length} problems`, '', ...problems].join('\n');
+    },
 
-  if (id === 'status') return gitStatus();
-  if (id === 'diff') return (await gitDiff()) || 'No unstaged changes.';
+    status: () => gitStatus(),
+    diff: async () => (await gitDiff()) || 'No unstaged changes.',
+    run: () => runProbeCommand(root, terminal, log),
+  };
 
-  if (id === 'run') {
-    const command = await ask('Command to run', 'npm test');
-    if (!command) return 'cancelled';
+  return probes[id]?.() ?? 'nothing to do';
+}
 
-    // Gated (§4.6). This was ungated when the probe first shipped, and a plain `rm`
-    // ran from the command palette in a live session — a debug command is still a
-    // command, and "don't test destructive things" is not a safety mechanism.
-    const verdict = classifyCommand(command);
-    if (verdict) {
-      const label = approveLabel(verdict);
-      const approved = await vscode.window.showWarningMessage(
-        explainGate(command, verdict),
-        { modal: true },
-        label
-      );
+/**
+ * The one probe that can do damage, and therefore the one that gates.
+ *
+ * §4.6. This was ungated when the probe first shipped, and a plain `rm` ran from the
+ * command palette in a live session — a debug command is still a command, and "don't
+ * test destructive things" is not a safety mechanism.
+ */
+async function runProbeCommand(
+  root: string | undefined,
+  terminal: AgentTerminal,
+  log: (message: string) => void
+): Promise<string> {
+  const command = await ask('Command to run', 'npm test');
+  if (!command) return 'cancelled';
 
-      if (approved !== label) {
-        log(`gate: refused "${command}" (${verdict.category}, matched "${verdict.matched}")`);
-        return `REFUSED\n\n${explainGate(command, verdict)}\n\nNot run.`;
-      }
-      log(`gate: approved "${command}" (${verdict.category})`);
+  const verdict = classifyCommand(command);
+  if (verdict) {
+    const label = approveLabel(verdict);
+    const approved = await vscode.window.showWarningMessage(
+      explainGate(command, verdict),
+      { modal: true },
+      label
+    );
+
+    if (approved !== label) {
+      log(`gate: refused "${command}" (${verdict.category}, matched "${verdict.matched}")`);
+      return `REFUSED\n\n${explainGate(command, verdict)}\n\nNot run.`;
     }
-
-    terminal.announce(command);
-    const result = await runCommand(root, command, (chunk) => terminal.write(chunk), undefined);
-    log(`tool probe: "${command}" exited ${result.exitCode} in ${result.durationMs}ms`);
-
-    return [
-      `${command}`,
-      `exit ${result.exitCode ?? 'killed'} after ${Math.round(result.durationMs / 1000)}s` +
-        `${result.timedOut ? ' (timed out)' : ''}${result.truncated ? ' — output truncated' : ''}`,
-      '',
-      result.output,
-    ].join('\n');
+    log(`gate: approved "${command}" (${verdict.category})`);
   }
 
-  return 'nothing to do';
+  terminal.announce(command);
+  const result = await runCommand(root, command, (chunk) => terminal.write(chunk), undefined);
+  log(`tool probe: "${command}" exited ${result.exitCode} in ${result.durationMs}ms`);
+
+  return [
+    `${command}`,
+    `exit ${result.exitCode ?? 'killed'} after ${Math.round(result.durationMs / 1000)}s` +
+      `${result.timedOut ? ' (timed out)' : ''}${result.truncated ? ' — output truncated' : ''}`,
+    '',
+    result.output,
+  ].join('\n');
 }
 
 function ask(prompt: string, value: string): Thenable<string | undefined> {

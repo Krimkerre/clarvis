@@ -10,34 +10,45 @@ import { ToolName } from './toolRegistry';
  *
  * Pure, because the wording is the feature and there is nothing else here.
  */
-export function narrateTool(name: ToolName, args: Record<string, unknown>): string {
-  const path = typeof args.path === 'string' ? args.path : undefined;
-  const command = typeof args.command === 'string' ? args.command : undefined;
-  const pattern = typeof args.pattern === 'string' ? args.pattern : undefined;
-  const directory = typeof args.directory === 'string' ? args.directory : undefined;
+/**
+ * How each tool reads in a transcript.
+ *
+ * A table rather than a switch: every arm was one expression, and the arms had nothing
+ * to say to each other. A new tool is a line here, and the compiler insists it gets one,
+ * because the key type is `ToolName` rather than `string`.
+ */
+const NARRATION: Record<ToolName, (parts: Parts) => string> = {
+  readFile: ({ path }) => `Reading ${path ?? 'a file'}`,
+  listFiles: ({ directory }) =>
+    directory && directory !== '.' ? `Looking through ${directory}` : 'Looking through the project',
+  search: ({ pattern }) => (pattern ? `Searching for ${pattern}` : 'Searching the project'),
+  applyEdit: ({ path }) => `Editing ${path ?? 'a file'}`,
+  writeFile: ({ path }) => `Writing ${path ?? 'a file'}`,
+  runCommand: ({ command }) => narrateCommand(command),
+  readDiagnostics: () => 'Checking what the editor is complaining about',
+  gitStatus: () => 'Checking where things stand in git',
+  gitDiff: () => 'Reading the current diff',
+};
 
-  switch (name) {
-    case 'readFile':
-      return `Reading ${path ?? 'a file'}`;
-    case 'listFiles':
-      return directory && directory !== '.' ? `Looking through ${directory}` : 'Looking through the project';
-    case 'search':
-      return pattern ? `Searching for ${pattern}` : 'Searching the project';
-    case 'applyEdit':
-      return `Editing ${path ?? 'a file'}`;
-    case 'writeFile':
-      return `Writing ${path ?? 'a file'}`;
-    case 'runCommand':
-      return narrateCommand(command);
-    case 'readDiagnostics':
-      return 'Checking what the editor is complaining about';
-    case 'gitStatus':
-      return 'Checking where things stand in git';
-    case 'gitDiff':
-      return 'Reading the current diff';
-    default:
-      return name;
-  }
+/** The arguments worth naming, already narrowed to strings. */
+interface Parts {
+  path?: string;
+  command?: string;
+  pattern?: string;
+  directory?: string;
+}
+
+export function narrateTool(name: ToolName, args: Record<string, unknown>): string {
+  const text = (value: unknown) => (typeof value === 'string' ? value : undefined);
+  const parts: Parts = {
+    path: text(args.path),
+    command: text(args.command),
+    pattern: text(args.pattern),
+    directory: text(args.directory),
+  };
+
+  // The name itself, for a tool that somehow has no entry — better than an empty line.
+  return NARRATION[name]?.(parts) ?? name;
 }
 
 /**

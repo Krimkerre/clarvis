@@ -3121,30 +3121,39 @@ are worth carrying into M9 as design rules rather than anecdotes:
       provider's key into the next request.
 - [x] Claude subscription path: M8b0 concluded **not permitted**, so nothing ships —
       no login flow, no credential reuse, no CLI wrapping. Anthropic API is key-only.
-- [ ] Confirm no user-facing text presents Clarvis as "Claude Code" or mimics its
+- [x] Confirm no user-facing text presents Clarvis as "Claude Code" or mimics its
       visual identity (SDK branding guidelines) — the goal is feeling as good, not
-      appearing to be it.
-- [ ] Superseded by the above: Claude subscription path: whatever M8b0 concluded is what ships. If it concluded
+      appearing to be it. **Settled** — nothing in `src/` or `MANUAL.md` mentions it at all. The two mentions in README are a stated comparison of goals and an explicit disclaimer of the login path, neither of which presents Clarvis as the thing.
+- [x] Superseded by the above: Claude subscription path: whatever M8b0 concluded is what ships. If it concluded
       "not permitted", confirm there is no such option in the UI at all.
 
 **Agent-path checks (M8c–M8g).** The tool and gate layers are unit-tested standalone —
 that's the point of building them before the model can reach them — so these are the
 end-to-end ones:
-
-- [ ] Ask for a real change ("fix the failing test"). Clarvis announces it's taking the
-      agent path, edits, re-runs, and stops when green. Panel lists every file touched
-      and every command run, live.
+ **Closed** — there is no such option anywhere in the UI, because none was ever built.
+- [x] Ask for a real change ("fix the failing test"). Clarvis announces it's taking the
+      agent path, edits, re-runs, and stops when green. ~~Panel lists every file touched
+      and every command run, live.~~
+      **Verified live (12 Aug)**, except the struck-through half, which a later decision
+      reversed: the user asked for *no machine talk in the chat window*, so tool calls and
+      command output go to the Clarvis terminal and the transcript gets what a person
+      would say. The listing still exists — it moved.
 - [ ] `Clarvis: Undo Last Agent Run` after that task restores every file it changed
       *and* returns you to the branch you started on. Verify against `git diff` that
       nothing is left behind.
-- [ ] The run happens on `clarvis/<task-slug>`, announced before any edit, with one
-      commit per step and a readable `git log`.
+- [x] The run happens on `clarvis/<task-slug>`, ~~announced before any edit, with one
+      commit per step~~ and a readable `git log`.
+      **Verified live (12 Aug)** for the branch and the log. Both struck-through parts
+      were changed deliberately after this was written: a successful isolation is *not*
+      announced (it is machinery, and saying it twice was the narration M8e removed), and
+      a run makes **one commit**, not one per step — per-step commits made `git log`
+      unreadable, which is the thing this item was actually asking for.
 - [ ] **Start a task with uncommitted work in the tree, including in a file the agent
       will also edit.** Your changes must remain uncommitted and intact — confirm the
       agent committed only its own paths and never ran `git add -A`. This is the case
       that makes branch isolation worth having.
-- [ ] Merging is left to the user: after a successful run, nothing has been merged into
-      the original branch and nothing has been pushed.
+- [x] Merging is left to the user: after a successful run, nothing has been merged into
+      the original branch and nothing has been pushed. **Verified live (12 Aug)** — after three runs, `master` was untouched and every commit sat on its own `clarvis/` branch. Nothing was pushed.
 - [ ] **Non-repo folder:** Clarvis offers `git init`, explains that it's local-only and
       sends nothing anywhere, and the offer goes through the normal gate format.
       Accepting produces a working branch-isolated run.
@@ -3182,10 +3191,10 @@ end-to-end ones:
       silently stopping.
 - [ ] Token budget trips as a gate *between* steps — confirm a task never dies
       half-applied with files in an inconsistent state.
-- [ ] Routing: ask "why is this test failing?" (a question) and confirm it answers
+- [x] Routing: ask "why is this test failing?" (a question) and confirm it answers
       without editing anything. Then "fix it" and confirm it acts. Ambiguous phrasing
-      resolves toward answering.
-- [ ] No quips during a running task; §5 material returns after it finishes.
+      resolves toward answering. **Verified live (12 Aug)** — "check git diff" was answered without editing; "fix the failing test" took the agent path. Both announced the choice first.
+- [x] No quips during a running task; §5 material returns after it finishes. **Verified live (12 Aug)** — nothing fired between the run starting and `agent [done]`; the `firstCommitAfterSilence` quip arrived five seconds after it ended.
 - [ ] **Voice holds under pressure.** Ask a plain factual question (short, no preamble,
       no "Great question"), something vague ("make it faster" — he should refuse the
       non-answer), and something alarming ("I force-pushed to main" — help first, and

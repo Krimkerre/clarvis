@@ -32,7 +32,7 @@ import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
-import { characterWith } from './personality/character';
+import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
 
 // Held at module scope only because deactivate() has no way to receive anything
@@ -274,7 +274,19 @@ function startBriefing(
 
     let text = '';
     for await (const fragment of models.stream(
-      { system: characterWith('This is the first thing the user hears today. Do not greet them.'), messages: [{ role: 'user', content: prompt }] },
+      {
+        // **Found live, in a folder with no git at all.** The briefing's system prompt
+        // never carried this rule — only the rewrite and quip prompts did — and with
+        // `facts.git` genuinely absent, the model invented one: "last commit was on
+        // `main` three days ago", none of which exists anywhere. The briefing gets real
+        // facts on an ordinary project, which is exactly why the gaps are more
+        // convincing here than on the fully fact-free surfaces this rule first targeted.
+        system: characterWith(
+          'This is the first thing the user hears today. Do not greet them.',
+          ONLY_WHAT_YOU_WERE_GIVEN
+        ),
+        messages: [{ role: 'user', content: prompt }],
+      },
       'chat'
     )) {
       text += fragment;

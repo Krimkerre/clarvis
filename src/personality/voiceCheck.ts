@@ -1,6 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { agentSystemPrompt } from '../agent/AgentRunner';
-import { ANSWER_SHAPE, EXAMPLES, characterWith } from './character';
+import { ANSWER_SHAPE, EXAMPLES, ONLY_WHAT_YOU_WERE_GIVEN, characterWith } from './character';
 import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
 import { rewritePrompt } from './say';
@@ -105,8 +105,26 @@ function scenes(): Scene[] {
     {
       name: 'morning briefing',
       looksFor: 'The surface that already sounded right. If this regresses, the change hurt more than it helped.',
-      system: characterWith('This is the first thing the user hears today. Do not greet them.'),
+      system: characterWith(
+        'This is the first thing the user hears today. Do not greet them.',
+        ONLY_WHAT_YOU_WERE_GIVEN
+      ),
       messages: [{ role: 'user', content: briefingPrompt(BRIEFING_FACTS as never) ?? '' }],
+    },
+    {
+      name: 'briefing with no git facts at all',
+      looksFor:
+        'No invented branch, commit or timing. A folder with no repository should be described as having no repository — not filled in with a plausible history.',
+      system: characterWith(
+        'This is the first thing the user hears today. Do not greet them.',
+        ONLY_WHAT_YOU_WERE_GIVEN
+      ),
+      messages: [
+        {
+          role: 'user',
+          content: briefingPrompt({ ...BRIEFING_FACTS, git: undefined } as never) ?? '(nothing to report)',
+        },
+      ],
     },
     {
       name: 'quip — same failure again',

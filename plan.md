@@ -3231,6 +3231,33 @@ end-to-end ones:
   nothing touched. With no key set, M8a alone still answers what it can and says
   plainly why it can't do the rest.
 
+### Personality amendment — the briefing invents too, when facts run out
+
+Found live: a folder with no git in it (the `no-repo` fixture, built for the M8 exit
+checklist) produced *"Last commit was on `main` three days ago"* — a branch name,
+a timeframe and a commit history, none of which exist anywhere, because there is no
+repository at all.
+
+The no-invention rule (`ONLY_WHAT_YOU_WERE_GIVEN`, §2.2) had been added to the rewrite
+prompt and the quip prompts — every surface that is handed a line and nothing else. It
+was never added to the briefing's own system prompt, because the briefing normally *does*
+carry real facts and the gap only shows up when one of them is genuinely absent. That
+made it the more convincing kind of invention: on an ordinary project the model has
+enough real material that a fabricated detail blends in.
+
+Fixed in both places that assemble that prompt — `extension.ts`'s live phraser and the
+matching scene in the voice check — plus a second voice-check scene that hands the
+briefing prompt no git facts at all, so the case that was actually observed is now the
+one that gets checked before every future change to this prompt.
+
+Deliberately not extended to `agentSystemPrompt()` or `Replier.systemPrompt()`. Both back
+onto a live tool loop — the model can `readFile` or `gitStatus` rather than guess — which
+is a materially different situation from a one-shot prompt with a fixed facts block, and
+today's evidence from the agent-run paths showed grounded, tool-backed remarks rather
+than invented ones. Worth revisiting only if that stops being true.
+
+---
+
 ### M5 amendment — an error has to survive to count
 
 Diagnostics were counted the moment they appeared. There was already a twelve-second

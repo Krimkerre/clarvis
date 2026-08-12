@@ -315,3 +315,32 @@ function workingTreePaths(repository: GitRepository): string[] {
     root ? vscode.workspace.asRelativePath(change.uri.fsPath, false) : change.uri.fsPath
   );
 }
+
+/**
+ * Puts the editor back on a branch, for undo.
+ *
+ * A free function rather than a method: undo runs from a command long after the
+ * `AgentBranch` that made the run has gone, and reconstructing one to call `checkout`
+ * would be pretending the object survived when it did not.
+ *
+ * Returns why it could not, rather than throwing — a failed switch is a thing the user
+ * needs told, not an error that abandons the restore that follows it.
+ */
+export async function returnToBranch(
+  name: string,
+  log: (message: string) => void
+): Promise<{ moved: boolean; reason?: string }> {
+  const repository = gitExtension()?.exports.getAPI(1).repositories[0];
+  if (!repository) return { moved: false, reason: 'no repository' };
+
+  if (repository.state.HEAD?.name === name) return { moved: true };
+
+  try {
+    await repository.checkout(name);
+    log(`branch: undo returned to ${name}`);
+    return { moved: true };
+  } catch (error) {
+    log(`branch: undo could not return to ${name} (${String(error)})`);
+    return { moved: false, reason: String(error) };
+  }
+}

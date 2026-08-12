@@ -228,7 +228,8 @@ export function activate(context: vscode.ExtensionContext): void {
           modal: true,
           detail:
             `${record.entries.length} file(s) go back to how they were before it started. ` +
-            'Anything you changed since then in those files goes too.',
+            'Anything you changed since then in those files goes too.' +
+            (record.startedOn ? ` You will be put back on \`${record.startedOn}\`.` : ''),
         },
         'Undo it'
       );
@@ -240,7 +241,12 @@ export function activate(context: vscode.ExtensionContext): void {
         `Restored ${result.restored} file(s), removed ${result.deleted}` +
           (result.failed.length > 0 ? `, and failed on ${result.failed.join(', ')}.` : '.'),
         [String(result.restored), String(result.deleted)]
-      );
+      ) +
+        // Said plainly rather than phrased: being left somewhere you did not expect is
+        // the kind of thing a joke would bury.
+        (result.stuckOn
+          ? ` You are still on the run's branch — I could not switch back to \`${result.stuckOn}\` with unsaved changes in the way.`
+          : '');
 
       // A partial restore is reported as a warning, not an information message: half
       // undone is a state someone needs to look at rather than be reassured about.

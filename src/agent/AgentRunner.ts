@@ -161,6 +161,10 @@ export class AgentRunner {
     if (!options.readOnly) {
       await checkpoint.begin(task);
       const isolation = await branch.begin(task);
+      // Where to put the user back if they undo. Recorded after branching, because that
+      // is when it is known — and recorded even when isolation failed, since the branch
+      // they are on is still the branch they should end up on.
+      await checkpoint.noteBranch(branch.previous);
 
       // **Not announced at all when it works.** The isolation branch is machinery:
       // the user asked for a change, not for a report on how it is being kept safe,

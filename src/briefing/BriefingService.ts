@@ -96,7 +96,9 @@ export class BriefingService {
 
     tracker.onOutcome((outcome) => this.recordOutcome(outcome));
 
-    this.startupTimer = setTimeout(async () => {
+    // Wrapped rather than passed as an async callback: setTimeout drops the promise,
+    // so a rejection inside would be unhandled and silent.
+    this.startupTimer = setTimeout(() => void (async () => {
       const facts = await this.facts();
       const spoken = await this.phrase(facts);
 
@@ -109,7 +111,7 @@ export class BriefingService {
       const lines = buildBriefingLines(facts);
       if (lines.length > 0) deliver(lines);
       this.log(`briefing: ${lines.length} line(s), from the bank`);
-    }, STARTUP_DELAY_MS);
+    })(), STARTUP_DELAY_MS);
   }
 
   /** Cancels a pending briefing so a fast window close can't fire one into the void. */

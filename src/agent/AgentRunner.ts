@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';

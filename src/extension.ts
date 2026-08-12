@@ -85,6 +85,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Chat is built last (it reads what the watchers own), but the briefing needs to
   // write into it. A late-bound reference keeps the construction order honest rather
   // than shuffling the wiring to suit one call.
+  // Assigned below, but the closures underneath capture it first — a const declared
+  // later would leave them referencing it before it exists.
+  // eslint-disable-next-line prefer-const
   let chat: ChatService | undefined;
   const toTranscript = (message: string) => void chat?.note(message);
 

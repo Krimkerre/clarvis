@@ -20,7 +20,6 @@ import { MODES, ChatMode, canEdit, modeSpec, PLAN_ADDENDUM } from './modes';
 import { AgentRunner } from '../agent/AgentRunner';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
-import { headline } from '../agent/headline';
 import { QuipPicker } from '../personality/QuipPicker';
 import { Voice } from '../personality/Voice';
 import { characterWith } from '../personality/character';
@@ -473,13 +472,9 @@ export class ChatService {
     // belongs. The chat gets what a person would say: the result, and an aside.
     this.terminal.announce(`clarvis: ${task}`);
 
-    let narration = '';
-
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
-
-        if (event.kind === 'text') narration += event.text;
 
         // Everything, verbatim, in the place that is meant to be read line by line.
         this.terminal.write(

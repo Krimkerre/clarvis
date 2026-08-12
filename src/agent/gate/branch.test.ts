@@ -93,3 +93,28 @@ test('a file that does not exist yet keeps the requested spelling', async () => 
 
   assert.equal(await canonicalRelative(root, path.join(root, 'src', 'New.ts')), path.join('src', 'New.ts'));
 });
+
+test('a machine with no git is told how to get it, and offered no button', () => {
+  // Without the binary the extension reports no repositories, which is indistinguishable
+  // from an ordinary folder — so Clarvis offered to run `git init`, a button that could
+  // only fail. The M8 checklist names this exact case.
+  const mac = adviseOnGit('no-binary', 'darwin');
+  const win = adviseOnGit('no-binary', 'win32');
+  const linux = adviseOnGit('no-binary', 'linux');
+
+  assert.equal(mac.action, undefined);
+  assert.match(mac.message, /xcode-select --install/);
+  assert.match(win.message, /git-scm\.com/);
+  assert.match(linux.message, /apt install git|dnf install git/);
+
+  // Whatever the platform, it says what still works — the run is not simply refused.
+  for (const advice of [mac, win, linux]) {
+    assert.match(advice.message, /snapshot/);
+  }
+});
+
+test('an ordinary folder still gets the git init offer', () => {
+  const advice = adviseOnGit('no-repository');
+
+  assert.equal(advice.action, 'Run git init');
+});

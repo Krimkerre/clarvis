@@ -19,6 +19,16 @@ import { SseParser, decodeStream } from './sse';
  * whether a key is required — both of which are data (`ProviderSpec`), not behaviour.
  * Writing four near-identical classes would mean fixing every streaming bug four times.
  */
+/**
+ * Statuses that say nothing about the model.
+ *
+ * Auth, quota and rate limits are facts about the account. Treating them as capability
+ * answers means one bad minute decides what Clarvis can do for the rest of the session.
+ */
+function isAboutAccess(status: number): boolean {
+  return status === 401 || status === 403 || status === 429;
+}
+
 /** The shape of a streamed chunk, as far as this file cares about it. */
 interface OpenAiChunk {
   choices?: {
@@ -164,12 +174,28 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       });
 
       // A provider that rejects the request because of `tools` is telling us it can't.
+      //
+      // **Except when it is telling us something else entirely.** A 401 or 429 is about
+      // the key or the quota, not the model — and reading it as "no tool support" was
+      // observed live: a bad upstream credential produced `tool support = false`, which
+      // is cached for the session, so the agent path would have stayed disabled for a
+      // model that supports tools perfectly well even after the key was fixed.
+      if (isAboutAccess(response.status)) {
+        this.log(`model: tool probe for ${this.id}/${model} hit ${response.status} — asking again later`);
+        throw new ModelError(
+          `${this.spec.label} would not answer a tool probe.`,
+          `tool probe: HTTP ${response.status}`,
+          true
+        );
+      }
+
       if (!response.ok) {
         this.log(`model: ${this.id}/${model} refused a tool probe (${response.status})`);
         return false;
       }
       return true;
     } catch (error) {
+      if (error instanceof ModelError) throw error;
       this.log(`model: tool probe failed for ${this.id}/${model} (${String(error)})`);
       return false;
     }

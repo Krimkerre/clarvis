@@ -3096,10 +3096,10 @@ are worth carrying into M9 as design rules rather than anecdotes:
 - [ ] Trip `clarvis.chat.dailyRequestCap` — one-time notice fires, further requests in
       the same session are refused (or downgraded — confirm which) without repeating
       the notice.
-- [ ] Invalid/revoked API key — clear in-character error, not a raw HTTP error dumped
+- [x] Invalid/revoked API key — clear in-character error, not a raw HTTP error dumped
       into the transcript; local answers keep working regardless. *(Implemented and unit
       tested per status code, including that the response body never reaches the
-      transcript; not yet exercised against a real revoked key.)*
+      transcript; not yet exercised against a real revoked key.)* **Verified live (12 Aug), unplanned** — a Gemma model behind OpenRouter returned 401 from its upstream. The chat said "OpenRouter won't have me — the key is missing, wrong, or out of date"; the raw JSON went to the log alone, and the briefing fell back to its written lines rather than failing.
 - [ ] Ask a follow-up to a M5 pattern hit or M6 quip via the "why?" affordance —
       correct context is prefilled, referencing the actual event, not a generic prompt.
 - [ ] Chat activity never trips the M6 rate limiter — fire several questions inside a
@@ -3114,11 +3114,11 @@ are worth carrying into M9 as design rules rather than anecdotes:
       OpenRouter, and a local model via Ollama or LM Studio.
 - [ ] **Fully local run:** Ollama with no key set, network disconnected. Local and
       Answer paths work; nothing attempts to leave the machine.
-- [ ] `supportsTools()` probe is honest — point it at a small local model that can't
+- [x] `supportsTools()` probe is honest — point it at a small local model that can't
       hold a tool loop. Clarvis must say the agent path needs a more capable model
-      rather than starting a run that flails.
-- [ ] Switching provider mid-session doesn't corrupt the thread or leak the previous
-      provider's key into the next request.
+      rather than starting a run that flails. **Half verified (12 Aug), and it found a bug.** `google/gemma-4-31b-it:free` was correctly reported as `tool support = false` and the answer path handled it. But the probe reached that verdict from a **401**, and cached it — so an access problem disabled the agent path for a model that supports tools, for the rest of the session and past fixing the key. Access statuses (401/403/429) are no longer capability answers, and an unsettled probe is no longer remembered. The Ollama half is still untested: none installed.
+- [x] Switching provider mid-session doesn't corrupt the thread or leak the previous
+      provider's key into the next request. **Verified live (12 Aug)** — chat and agent were moved between Anthropic, OpenAI and OpenRouter repeatedly in one session, including onto a free Gemma model and back. The thread survived each change and each request used the newly selected provider.
 - [x] Claude subscription path: M8b0 concluded **not permitted**, so nothing ships —
       no login flow, no credential reuse, no CLI wrapping. Anthropic API is key-only.
 - [x] Confirm no user-facing text presents Clarvis as "Claude Code" or mimics its
@@ -3163,7 +3163,7 @@ end-to-end ones:
 - [ ] **Git extension disabled:** Clarvis offers to enable it rather than showing the
       `git init` prompt — right fix for the right cause.
 - [ ] **`git` binary missing** (rename it on PATH for the test): platform-appropriate
-      install instructions, and *no* button that would just fail.
+      install instructions, and *no* button that would just fail. **Now possible to pass.** There was no such state: without the binary the extension reports no repositories, so Clarvis said "this folder isn't a git repository" and offered to run `git init` — a button that could only fail, which is what this item warns about. `GitProblem` gains `no-binary`, diagnosed by probing `git --version` only once the other two causes are ruled out, with platform-appropriate instructions and deliberately no button.
 - [ ] Confirm on VSCodium that git works normally with no special handling — it bundles
       the Git extension like VS Code (M1 finding #5, retracted).
 - [ ] Per-file VS Code undo (`Cmd+Z`) works normally on an agent edit — confirms edits

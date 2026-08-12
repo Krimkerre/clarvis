@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { join } from 'path';
 import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
+import { hasGitBinary } from './gitBinary';
 
 /** What `begin()` managed, and what the user needs told about it. */
 export interface Isolation {
@@ -88,7 +89,7 @@ export class AgentBranch {
     const repository = this.repository();
 
     if (!repository) {
-      const problem: GitProblem = gitExtension() ? 'no-repository' : 'no-extension';
+      const problem = await this.diagnoseGit();
       this.log(`branch: not isolating — ${problem}`);
       return { isolated: false, advice: adviseOnGit(problem).message };
     }
@@ -121,6 +122,19 @@ export class AgentBranch {
       isolated: false,
       advice: "I couldn't create a branch to work on, so I'll snapshot files instead and you can undo the run.",
     };
+  }
+
+  /**
+   * Why there is no repository to work in.
+   *
+   * Three causes that look the same through the API and need three different sentences:
+   * the extension is off, git is not installed, or this is simply not a repository. The
+   * binary is only checked once the first two have been ruled out, because it costs a
+   * process spawn and is the least likely of them.
+   */
+  private async diagnoseGit(): Promise<GitProblem> {
+    if (!gitExtension()) return 'no-extension';
+    return (await hasGitBinary()) ? 'no-repository' : 'no-binary';
   }
 
   /**

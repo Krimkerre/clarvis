@@ -3138,9 +3138,9 @@ end-to-end ones:
       reversed: the user asked for *no machine talk in the chat window*, so tool calls and
       command output go to the Clarvis terminal and the transcript gets what a person
       would say. The listing still exists — it moved.
-- [ ] `Clarvis: Undo Last Agent Run` after that task restores every file it changed
+- [x] `Clarvis: Undo Last Agent Run` after that task restores every file it changed
       *and* returns you to the branch you started on. Verify against `git diff` that
-      nothing is left behind.
+      nothing is left behind. **Verified live (12 Aug)** — `branch: undo returned to master` then `restored 1`, and checked against the repository rather than the log: HEAD on `master`, `sum.js` back to its broken form, the fixture failing again, working tree clean. Order matters and is the reverse of the obvious one: the branch switch happens *first*, because git refuses a checkout once the pre-run content has been written back. The run's own branch is left in place — disposing of it is the review wizard's job, not undo's.
 - [x] The run happens on `clarvis/<task-slug>`, ~~announced before any edit, with one
       commit per step~~ and a readable `git log`.
       **Verified live (12 Aug)** for the branch and the log. Both struck-through parts

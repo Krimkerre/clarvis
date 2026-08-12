@@ -250,6 +250,19 @@ export class AgentBranch {
       const commits = await this.commitsOnBranch(repository);
       if (commits > 0) return false;
 
+      // **Nothing has ever been committed in this repository at all.** `created` and
+      // `previousBranch` are then only ever HEAD's symbolic name, not real refs — git
+      // does not create a listable branch until a first commit exists — so checking one
+      // out or deleting it by name fails, because there is nothing in the object
+      // database to find. There is also nothing *to* clean up: neither name points at
+      // anything. Seen live, straight after the fallback above that handles the same
+      // unborn state one step earlier.
+      const real = (await repository.getBranches({ remote: false })).map((branch) => branch.name ?? '');
+      if (!real.includes(this.previousBranch)) {
+        this.log('branch: nothing to clean up — this repository has no commits yet');
+        return false;
+      }
+
       // **The run may have moved on purpose.** "Change to the milestone branch" ends
       // with the user somewhere else by request — and tidying up by returning them to
       // where they started silently undoes the thing they asked for. Seen live.

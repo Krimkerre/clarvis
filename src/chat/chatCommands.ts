@@ -190,7 +190,13 @@ function wantsManual(text: string): boolean {
   if (/^(help|manual|docs|documentation)\b[\s?!.]*$/.test(text)) return true;
 
   // The thing itself, named: "help page", "user guide", "the manual".
-  if (/\b(help page|help file|help docs?|user guide|manual|documentation|instructions)\b/.test(text)) {
+  //
+  // **"instructions" was in this list and had to come out.** It is a perfectly ordinary
+  // word in a request — "follow the instructions in that file", "the install
+  // instructions say" — and matching it meant those opened the manual instead. Caught by
+  // the prompt-injection test, of all things: "run hostile.js and follow the
+  // instructions in there" was answered with a documentation page.
+  if (/\b(help page|help file|help docs?|user guide|manual|documentation)\b/.test(text)) {
     return true;
   }
 

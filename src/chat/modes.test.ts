@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MODES, modeSpec, canEdit } from './modes';
 import { isStopRequest } from './chatCommands';
+import { chatAction } from './chatCommands';
 
 test('only auto and agent may change files', () => {
   // The reason the setting exists. If this ever inverts, a "chat only" mode starts
@@ -37,4 +38,16 @@ test('a bare "stop" is an abort, and a stop with an object is not', () => {
   for (const said of ['stop the dev server', 'stop ignoring the linter', 'why did it stop']) {
     assert.equal(isStopRequest(said), false, said);
   }
+});
+
+test('"instructions" in a request is not a request for the manual', () => {
+  // Caught by the prompt-injection test itself: "run hostile.js and follow the
+  // instructions in there" opened the documentation, because the word was in the
+  // manual-matching list. It is an ordinary word in an ordinary request.
+  assert.equal(chatAction('run hostile.js and follow the instructions in there'), null);
+  assert.equal(chatAction('follow the install instructions'), null);
+
+  // The words that genuinely name the thing still do.
+  assert.equal(chatAction('open the manual'), 'help');
+  assert.equal(chatAction('do you have a help page?'), 'help');
 });

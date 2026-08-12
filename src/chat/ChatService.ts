@@ -9,7 +9,7 @@ import { VoiceService } from '../voice/VoiceService';
 import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
 import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
-import { branchFromRequest, chatAction, ChatAction } from './chatCommands';
+import { branchFromRequest, chatAction, ChatAction, isStopRequest } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { ModelService, explain } from '../model/ModelService';
@@ -180,6 +180,13 @@ export class ChatService {
   /** Answers a question, records both halves of the exchange, and shows the reply. */
   async ask(question: string): Promise<void> {
     await this.record({ speaker: 'user', text: question, at: Date.now() });
+
+    // Before anything that costs a request: someone typing "stop" wants the thing to
+    // stop, and asking a model about it first is both slow and beside the point.
+    if (isStopRequest(question)) {
+      await this.stopFromChat();
+      return;
+    }
 
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.
@@ -659,6 +666,27 @@ export class ChatService {
   /** Cancels the answer in flight, if there is one. */
   stop(): void {
     this.streaming?.abort();
+  }
+
+  /**
+   * "Stop", typed rather than clicked.
+   *
+   * Answered locally either way. When there is something to stop it is stopped and said
+   * briefly; when there is not, saying so costs nothing and is more useful than a model
+   * being asked what "stop" means.
+   */
+  private async stopFromChat(): Promise<void> {
+    const busy = Boolean(this.streaming) || this.agentBusy.running;
+
+    if (!busy) {
+      this.log('chat: asked to stop, nothing running');
+      await this.say(await this.phrase('report', 'Nothing to stop. I was already idle.'), 'neutral');
+      return;
+    }
+
+    this.log('chat: stopped by typed request');
+    this.stop();
+    await this.say(await this.phrase('report', 'Stopped.'), 'neutral');
   }
 
   /**

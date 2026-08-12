@@ -47,8 +47,13 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 "open the settings" all do the obvious thing. Asking a *question* — "what voice are you
 using?" — gets you an answer instead of a dialog, which is usually what you wanted.
 
-**The buttons above the prompt** do the three most common things: **History**,
-**Clear**, **Mute**.
+**The buttons above the prompt** do the most common things: **History**, **Clear**,
+**Mute** — and **Stop**, which appears only while he is actually doing something.
+
+**Stopping him.** Click **Stop** — there is one beside Mute and a small square one in
+the prompt itself — or just type `stop` and press enter. All three do the same thing:
+he finishes the step he is on and puts the tools down. Typing "stop the dev server" is
+a job, not an interruption, so that still gets treated as work.
 
 ---
 

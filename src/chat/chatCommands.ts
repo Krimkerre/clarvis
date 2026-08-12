@@ -240,3 +240,22 @@ function isRequest(text: string): boolean {
 
   return verbs.test(text) || /\b(mute|unmute|be quiet|shut up|silence|stop talking)\b/.test(text);
 }
+
+/**
+ * Whether the message is asking for whatever is happening to stop.
+ *
+ * There is a Stop button, and a user watching a run go wrong types "stop" — because
+ * that is what you do when you want something to stop. It routed to the model instead
+ * and came back with "I'm waiting. What would you like me to look at." while the run
+ * carried on.
+ *
+ * **The whole message, or nothing.** "Stop the dev server" is a job, and "stop
+ * ignoring the linter" is a complaint; treating either as an abort would cancel work
+ * the user was asking for. So this matches a bare stop and nothing else, the same rule
+ * slash commands follow.
+ */
+export function isStopRequest(text: string): boolean {
+  return /^(stop|stop it|stop that|stop please|please stop|cancel|abort|halt|wait|nevermind|never mind)[\s!.,]*$/i.test(
+    text.trim()
+  );
+}

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MODES, modeSpec, canEdit } from './modes';
+import { isStopRequest } from './chatCommands';
 
 test('only auto and agent may change files', () => {
   // The reason the setting exists. If this ever inverts, a "chat only" mode starts
@@ -21,5 +22,19 @@ test('every mode says plainly what it will and will not do', () => {
   for (const mode of MODES) {
     assert.ok(mode.short.length > 0 && mode.short.length <= 6, mode.id);
     assert.ok(mode.detail.length > 20, mode.id);
+  }
+});
+
+test('a bare "stop" is an abort, and a stop with an object is not', () => {
+  // Typed while watching a run go wrong, "stop" reached the model and came back with
+  // "I'm waiting. What would you like me to look at" while the run carried on.
+  for (const said of ['stop', 'Stop!', 'stop it', 'cancel', 'abort', 'never mind', '  halt  ']) {
+    assert.equal(isStopRequest(said), true, said);
+  }
+
+  // These are jobs and complaints. Aborting on them would cancel work that was asked
+  // for — the same whole-message rule slash commands follow.
+  for (const said of ['stop the dev server', 'stop ignoring the linter', 'why did it stop']) {
+    assert.equal(isStopRequest(said), false, said);
   }
 });

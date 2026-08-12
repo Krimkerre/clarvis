@@ -300,6 +300,12 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
                 title="Delete the conversation. There is no undo.">Clear</button>
         <button id="clarvis-mute" class="clarvis-mute" data-muted="false"
                 title="Silence him. Resets when the window reloads.">Mute</button>
+        <!-- The second Stop. The one by the prompt is where your hand is while typing;
+             this one is where your eye is while *watching* a run, which is the moment
+             you actually want it. Both hidden until there is something to stop, so the
+             row does not carry a dead control. -->
+        <button id="clarvis-stop-top" class="clarvis-mute clarvis-stop" hidden
+                title="Stop what Clarvis is doing">Stop</button>
       </div>
       <div class="clarvis-prompt">
         <!-- Inline SVG rather than a file: the CSP is default-src 'none' with no
@@ -426,8 +432,16 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       const modeButton = document.getElementById('clarvis-mode');
       modeButton.addEventListener('click', () => vscode.postMessage({ type: 'choose-mode' }));
 
-      const stopButton = document.getElementById('clarvis-stop');
-      stopButton.addEventListener('click', () => vscode.postMessage({ type: 'stop' }));
+      // Two buttons, one behaviour. Kept as a list rather than two variables so a third
+      // could not be added and quietly left out of the show/hide below.
+      const stopButtons = [
+        document.getElementById('clarvis-stop'),
+        document.getElementById('clarvis-stop-top'),
+      ];
+      const showStop = (visible) => stopButtons.forEach((button) => { button.hidden = !visible; });
+      stopButtons.forEach((button) =>
+        button.addEventListener('click', () => vscode.postMessage({ type: 'stop' }))
+      );
 
       window.addEventListener('message', (event) => {
         const msg = event.data;
@@ -444,7 +458,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
         if (msg.type === 'chat-stream-start') {
           streaming = addTurn('clarvis', '');
           streamed = '';
-          stopButton.hidden = false;
+          showStop(true);
           return;
         }
 
@@ -457,7 +471,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
           if (!streaming) {
             streaming = addTurn('clarvis', '');
             streamed = '';
-            stopButton.hidden = false;
+            showStop(true);
           }
 
           streamed += msg.text;
@@ -468,7 +482,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
 
         if (msg.type === 'chat-stream-end') {
           streaming = null;
-          stopButton.hidden = true;
+          showStop(false);
           return;
         }
 

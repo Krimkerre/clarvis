@@ -231,55 +231,65 @@ function plural(count: number, one: string, many: string): string {
  * "none", because a model handed `lastFailure: none` will cheerfully write a sentence
  * about there being no failures, which is noise nobody asked for.
  */
+/**
+ * Each fact, as the one line the model sees.
+ *
+ * A list of small functions rather than one long body: every entry is independent, they
+ * are read far more often than they are run, and the whole point of this block is that
+ * a reader can check it against what the editor actually says.
+ *
+ * Each returns undefined when it has nothing to report, so an absent fact is absent
+ * rather than empty — a blank line here reads to the model as a fact it has been given.
+ */
+const FACT_LINES: ((facts: WorkspaceFacts) => string | undefined)[] = [
+  ({ git }) =>
+    !git
+      ? undefined
+      : `Current branch: ${git.branch}` +
+      (git.dirtyCount > 0 ? `, ${git.dirtyCount} uncommitted change(s)` : ', working tree clean') +
+        (git.untrackedCount ? `, plus ${git.untrackedCount} untracked file(s)` : ''),
+
+  ({ running, now }) => {
+    if (running.length === 0) return undefined;
+
+    const oldest = [...running].sort((a, b) => a.startedAt - b.startedAt)[0];
+    const seconds = Math.round((now - oldest.startedAt) / 1000);
+    return `Running now: ${running.length} job(s), oldest is "${oldest.label}", started ${seconds}s ago`;
+  },
+
+  ({ lastOutcome }) =>
+    !lastOutcome
+      ? undefined
+      : `Last finished: "${lastOutcome.label}" exited ${lastOutcome.exitCode ?? 'without a code'} after ` +
+      `${Math.round(lastOutcome.durationMs / 1000)}s`,
+
+  ({ lastFailure, now }) =>
+    !lastFailure
+      ? undefined
+      : `Still failing: "${lastFailure.label}" (exit ${lastFailure.exitCode ?? 'unknown'}), ` +
+      `${Math.round((now - lastFailure.at) / 60000)} minutes ago`,
+
+  ({ problems }) => {
+    if (!problems || problems.errors + problems.warnings === 0) return undefined;
+
+    // The last clause is doing real work: the absent fact is the one he reached for when
+    // he claimed a linter had been complaining "for the past six minutes".
+    return (
+      `Problems open right now: ${problems.errors} error(s), ${problems.warnings} warning(s)` +
+      (problems.worstFile ? `, most of them in ${problems.worstFile}` : '') +
+      ' — you have no information about how long any of them have been there'
+    );
+  },
+
+  ({ recentFiles }) =>
+    recentFiles.length > 0 ? `Recently edited: ${recentFiles.slice(0, 5).join(', ')}` : undefined,
+];
+
 export function factsBlock(facts: WorkspaceFacts): string {
-  const lines: string[] = [];
+  const lines = FACT_LINES.map((line) => line(facts)).filter((line): line is string => Boolean(line));
 
-  if (facts.git) {
-    lines.push(
-      `Current branch: ${facts.git.branch}` +
-        (facts.git.dirtyCount > 0 ? `, ${facts.git.dirtyCount} uncommitted change(s)` : ', working tree clean') +
-        (facts.git.untrackedCount ? `, plus ${facts.git.untrackedCount} untracked file(s)` : '')
-    );
-  }
-
-  if (facts.running.length > 0) {
-    const oldest = [...facts.running].sort((a, b) => a.startedAt - b.startedAt)[0];
-    lines.push(
-      `Running now: ${facts.running.length} job(s), oldest is "${oldest.label}", started ${Math.round(
-        (facts.now - oldest.startedAt) / 1000
-      )}s ago`
-    );
-  }
-
-  if (facts.lastOutcome) {
-    lines.push(
-      `Last finished: "${facts.lastOutcome.label}" exited ${facts.lastOutcome.exitCode ?? 'without a code'} after ${Math.round(
-        facts.lastOutcome.durationMs / 1000
-      )}s`
-    );
-  }
-
-  if (facts.lastFailure) {
-    lines.push(
-      `Still failing: "${facts.lastFailure.label}" (exit ${facts.lastFailure.exitCode ?? 'unknown'}), ${Math.round(
-        (facts.now - facts.lastFailure.at) / 60000
-      )} minutes ago`
-    );
-  }
-
-  if (facts.problems && facts.problems.errors + facts.problems.warnings > 0) {
-    const { errors, warnings, worstFile } = facts.problems;
-    lines.push(
-      `Problems open right now: ${errors} error(s), ${warnings} warning(s)` +
-        (worstFile ? `, most of them in ${worstFile}` : '') +
-        ' — you have no information about how long any of them have been there'
-    );
-  }
-
-  if (facts.recentFiles.length > 0) {
-    lines.push(`Recently edited: ${facts.recentFiles.slice(0, 5).join(', ')}`);
-  }
-
+  // Patterns are a list rather than a single line, so they are appended rather than
+  // being one more entry above.
   for (const pattern of facts.patterns.slice(0, 3)) {
     lines.push(
       `Recurring error seen ${pattern.occurrences.length}x: ${pattern.sample}` +

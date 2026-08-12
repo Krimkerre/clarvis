@@ -1,14 +1,13 @@
 import * as vscode from 'vscode';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { AvatarController } from '../AvatarController';
-import { BusyTracker, Outcome } from '../watch/BusyTracker';
+import { BusyTracker } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
-import { activeFailure, parseRecord, FailureRecord } from '../briefing/lastFailure';
-import { readGitSummary } from '../briefing/gitSummary';
 import { VoiceService } from '../voice/VoiceService';
 import { appendTurn, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
-import { factsBlock, localAnswer, WorkspaceFacts } from './localAnswer';
+import { factsBlock, localAnswer } from './localAnswer';
+import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { branchFromRequest, chatAction, ChatAction, isStopRequest } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
@@ -108,7 +107,9 @@ export class ChatService {
    * "do it" after work has already happened would repeat the work.
    */
   private lastAnswered?: string;
-  private lastOutcome?: { label: string; exitCode: number | undefined; durationMs: number };
+
+  /** Everything he knows about the project, gathered on demand. */
+  private readonly workspace: WorkspaceFactsReader;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -130,15 +131,7 @@ export class ChatService {
     private readonly agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
     private readonly log: (message: string) => void
   ) {
-    // Duration isn't stored anywhere persistent — M4 keeps the failure, not the
-    // timing — so "how long did that take" is answered from the live session only.
-    this.tracker.onOutcome((outcome: Outcome) => {
-      this.lastOutcome = {
-        label: outcome.label,
-        exitCode: outcome.exitCode,
-        durationMs: outcome.durationMs,
-      };
-    });
+    this.workspace = new WorkspaceFactsReader(context, tracker, FAILURE_KEY, recentFiles, patterns);
 
     this.panel.onDidAsk((question) => void this.ask(question));
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
@@ -252,7 +245,7 @@ export class ChatService {
     // and gets an answer in Clarvis's voice that can also reason about them.
     this.log(`chat: routed to answer — ${decision.because}`);
     this.lastAnswered = question;
-    const facts = await this.facts();
+    const facts = await this.workspace.read();
 
     if (await this.models.isReady('chat')) {
       const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${factsBlock(facts)}`;
@@ -1019,53 +1012,4 @@ export class ChatService {
   }
 
   /** Snapshots everything the answering logic is allowed to look at. */
-  private async facts(): Promise<WorkspaceFacts> {
-    const now = Date.now();
-    const stored = parseRecord(this.context.workspaceState.get<FailureRecord>(FAILURE_KEY));
-
-    return {
-      now,
-      running: this.tracker.running,
-      lastOutcome: this.lastOutcome,
-      lastFailure: activeFailure(stored, now),
-      recentFiles: this.recentFiles(),
-      git: await readGitSummary(),
-      patterns: this.patterns(),
-      problems: countProblems(),
-    };
-  }
-}
-
-/**
- * The current linter and compiler complaints, counted.
- *
- * Read fresh each time rather than tracked: VS Code already holds the authoritative
- * list, and a second copy would only be a chance to disagree with it.
- *
- * The file with the most problems is named because it is the one worth mentioning, and
- * because naming a real file is what stops a plausible-sounding invented one.
- */
-function countProblems(): WorkspaceFacts['problems'] {
-  let errors = 0;
-  let warnings = 0;
-  let worstFile: string | undefined;
-  let worstCount = 0;
-
-  for (const [uri, diagnostics] of vscode.languages.getDiagnostics()) {
-    let here = 0;
-
-    for (const diagnostic of diagnostics) {
-      if (diagnostic.severity === vscode.DiagnosticSeverity.Error) errors++;
-      else if (diagnostic.severity === vscode.DiagnosticSeverity.Warning) warnings++;
-      else continue; // hints and information are not complaints
-      here++;
-    }
-
-    if (here > worstCount) {
-      worstCount = here;
-      worstFile = vscode.workspace.asRelativePath(uri);
-    }
-  }
-
-  return { errors, warnings, worstFile };
 }

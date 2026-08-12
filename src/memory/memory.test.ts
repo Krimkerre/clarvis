@@ -194,3 +194,25 @@ test('forgetting nothing in particular changes nothing', () => {
   assert.equal(forgetMatching(state, '   ').removed, 0);
   assert.equal(forgetMatching(state, 'unrelated').removed, 0);
 });
+
+test('a pattern seen twice is not yet worth a briefing line', () => {
+  // It used to surface at two, and a briefing opened with a TypeScript error recorded
+  // twice while the editor was still loading its types — a phantom pattern presented as
+  // the most notable thing about the project. §4.2 is three times in seven days.
+  const now = Date.now();
+  const twice = {
+    version: 1 as const,
+    patterns: { a: { key: 'a', sample: 'Type error', occurrences: [now - 1000, now], resolvedBy: undefined } },
+  };
+
+  assert.equal(topPattern(twice, now), undefined);
+
+  const thrice = {
+    version: 1 as const,
+    patterns: {
+      a: { key: 'a', sample: 'Type error', occurrences: [now - 2000, now - 1000, now], resolvedBy: undefined },
+    },
+  };
+
+  assert.equal(topPattern(thrice, now)?.count, 3);
+});

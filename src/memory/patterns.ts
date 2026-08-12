@@ -82,7 +82,13 @@ export function topPattern(
 
   for (const [key, pattern] of Object.entries(state.patterns)) {
     const count = prune(pattern.occurrences, now).length;
-    if (count < 2) continue;
+
+    // **The same bar as an unsolicited remark.** This used to surface at two, and a
+    // briefing opened with a TypeScript error seen twice while the editor was still
+    // loading its types — a phantom pattern, reported as the most notable thing about
+    // the project that morning. §4.2 says three times in seven days; a briefing is
+    // solicited, but being wrong in it costs the same.
+    if (count < THRESHOLD) continue;
     if (!best || count > best.count) best = { key, pattern, count };
   }
 

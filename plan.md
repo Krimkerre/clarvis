@@ -3371,10 +3371,23 @@ chained input boxes, not the chat panel. That is a deliberate, temporary front e
 state machine and the model-phrased questions are real and usable today; the panel
 integration described in §4.9 is separate work this did not need to wait for. Ends by
 opening a document with what was established and what is still open — **not** a
-generated `plan.md`. M9b (analysis), M9c (verdicts) and M9d (generation, including the
-Branch flow and conventions sections) are not built. Nothing persists between sessions
-yet either — a paused interview cannot be resumed after a reload, which §4.9's design
-calls for and this slice does not yet provide.
+generated `plan.md`. Nothing persists between sessions yet either — a paused interview
+cannot be resumed after a reload, which §4.9's design calls for and this slice does
+not yet provide.
+
+**M9b started (13 Aug).** `src/planning/analysisPrompt.ts` — the safety / logic /
+scope / improvement passes over a finished interview, structured output
+(`class: / what: / why: / fix:` blocks) so findings are parseable rather than prose,
+same discipline as the language shortlist fix. Includes the "this doesn't need a
+plan" outcome (`NO-PLAN-NEEDED: <reason>`) as a legitimate result, not a failure to
+find anything. `src/planning/Analysis.ts` is the model-calling glue; no model
+configured means no analysis runs, not a fabricated one — there is no honest written
+fallback for "find the problems in this idea" the way there is for a question.
+`clarvis.planProject` now runs it automatically once the interview reaches "enough to
+draft", and findings are appended to the summary document. **Findings only, no
+verdicts yet** — accept/reject/modify (M9c) is not built, so nothing found is
+actionable beyond reading it. M9c, M9d (generation, including Branch flow and
+conventions) are not built.
 
 
 

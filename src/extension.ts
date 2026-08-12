@@ -23,6 +23,7 @@ import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { runInterview } from './planning/Interview';
+import { runAnalysis } from './planning/Analysis';
 import { openQuestions, readyToDraft } from './planning/interviewTopics';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
@@ -626,8 +627,9 @@ function startBranchFlow(
  * Deliberately separate from the chat panel rather than routed through ChatService:
  * this is the first slice of a large milestone, and the eventual "questions arrive in
  * the chat panel" experience is a later piece of work, not something this needed to
- * wait for. Ends by reporting what was gathered — M9b/c/d (analysis, verdicts, writing
- * `plan.md`) are not built yet.
+ * wait for. Now also runs M9b — the analysis pass — once the interview reaches "enough
+ * to draft". Findings are reported, not yet actionable: M9c (accept/reject/modify) and
+ * M9d (writing `plan.md`) are not built yet.
  */
 function registerPlanningCommand(context: vscode.ExtensionContext, models: ModelService, logger: ClarvisLog): void {
   context.subscriptions.push(
@@ -652,6 +654,22 @@ function registerPlanningCommand(context: vscode.ExtensionContext, models: Model
 
       if (open.length > 0) {
         lines.push('', '## Open questions', ...open.map((answer) => `- ${answer.topic} — not yet known`));
+      }
+
+      if (readyToDraft(state)) {
+        const analysis = await runAnalysis(models, state, (message) => logger.write(message));
+        if (analysis.noPlanNeeded) {
+          lines.push('', '## Analysis', `This may not need a plan: ${analysis.noPlanNeeded}`);
+        } else if (analysis.findings.length > 0) {
+          lines.push('', '## Analysis');
+          for (const finding of analysis.findings) {
+            lines.push(
+              `- **[${finding.class}]** ${finding.what}`,
+              `  Why it matters: ${finding.whyItMatters}`,
+              `  Suggested fix: ${finding.suggestedResolution}`
+            );
+          }
+        }
       }
 
       // Logged, not just shown. An untitled document exists only until the tab closes

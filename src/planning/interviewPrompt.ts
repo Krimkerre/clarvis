@@ -11,7 +11,7 @@ import { InterviewState, TopicId } from './interviewTopics';
  */
 
 /** What each topic is actually trying to establish, for the model to ask about. */
-const TOPIC_BRIEF: Record<TopicId, string> = {
+export const TOPIC_BRIEF: Record<TopicId, string> = {
   'what-it-does': 'What it does, concretely — the one-sentence version, then the first real use case.',
   'who-and-where':
     "Who runs it, and where — platform, runtime, how it reaches whoever uses it. Often the single most plan-shaping answer. Don't ask about programming language here — that is a separate question, later.",

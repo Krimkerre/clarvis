@@ -3422,6 +3422,16 @@ inherited section stops at Plan/Code Mode and does not yet include clean-code ru
 and analysis didn't conclude no plan is needed, then opens it. M9e (sign-off gate,
 handoff into an agent task) is not built.
 
+**Pushback (13 Aug).** The interview no longer takes every answer at face value.
+`challengePrompt.ts` (pure, tested) judges whether an answer is specific enough to
+plan against or hides ambiguity, a risk, or a contradiction with something already
+established; `Interview.ts`'s `challengeAnswer()` runs it after every answer except
+an explicit "I don't know" (already a first-class answer, never pushed on) and asks
+at most one follow-up — the same "challenged once, then honoured" rule §4.9 already
+states for language, now applied to every topic. Declining the follow-up keeps the
+original answer; answering it appends the follow-up Q&A onto the same answer text
+rather than replacing it, so nothing already said is lost.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

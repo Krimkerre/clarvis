@@ -4,6 +4,7 @@ import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
 import { namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
+import { challengePrompt, parseChallengeResult } from './challengePrompt';
 
 /**
  * Runs one project-planning interview (M9a — §4.9), start to "enough to draft".
@@ -57,45 +58,107 @@ export async function runInterview(
     const question = await phraseQuestion(models, topic, state, log);
     log(`planning: "${topic}" asked — ${question}`);
 
+    let answer: Answer;
+
     if (topic === 'language') {
-      const answer = await askLanguage(models, question, state, log);
+      const resolved = await askLanguage(models, question, state, log);
       // Cancelling (Escape) pauses the interview rather than answering "I don't know"
       // on the user's behalf — same rule as the free-text path below.
-      if (!answer) {
+      if (!resolved) {
         log(`planning: interview paused at "${topic}"`);
         return { state, seed: seed.trim() };
       }
       // The raw shortlist is `Name | advantage | cost` per line — real for a
       // QuickPick, unreadable as "what was asked" in a written plan. A plain
       // recap reads honestly instead of dumping the pipe-delimited format.
-      answer.question = 'Which language should this be built in?';
-      log(`planning: "${topic}" answered — ${answer.text}${answer.reasoning ? ` (${answer.reasoning})` : ''}`);
-      state.answers.push(answer);
-      continue;
+      resolved.question = 'Which language should this be built in?';
+      answer = resolved;
+    } else {
+      const raw = await vscode.window.showInputBox({
+        prompt: question,
+        placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
+        ignoreFocusOut: true,
+      });
+
+      // Cancelling the box (Escape) pauses the interview rather than answering "I
+      // don't know" on the user's behalf — those are different things, and only one
+      // of them should get written into the plan as a recorded unknown.
+      if (raw === undefined) {
+        log(`planning: interview paused at "${topic}"`);
+        return { state, seed: seed.trim() };
+      }
+
+      answer = toAnswer(topic, raw);
+      answer.question = question;
     }
 
-    const raw = await vscode.window.showInputBox({
-      prompt: question,
-      placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
-      ignoreFocusOut: true,
-    });
-
-    // Cancelling the box (Escape) pauses the interview rather than answering "I don't
-    // know" on the user's behalf — those are different things, and only one of them
-    // should get written into the plan as a recorded unknown.
-    if (raw === undefined) {
-      log(`planning: interview paused at "${topic}"`);
-      return { state, seed: seed.trim() };
-    }
-
-    const answer = toAnswer(topic, raw);
-    answer.question = question;
+    answer = await challengeAnswer(models, topic, answer, state, log);
     log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
     state.answers.push(answer);
   }
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
   return { state, seed: seed.trim() };
+}
+
+/**
+ * Pushes back once on a vague answer, or an answer that hides a risk or a
+ * contradiction — never more than once per topic.
+ *
+ * **An honest "I don't know" is never challenged** — that is already the
+ * first-class answer this interview treats it as, not something to talk someone out
+ * of. **At most one follow-up** — §4.9's own "challenged once, then honoured" rule,
+ * applied to every topic rather than only language: a topic that pushed back
+ * repeatedly would be the interrogation this interview has avoided since M9a.
+ * Declining the follow-up (Escape, or leaving it blank) keeps the original answer
+ * rather than forcing an elaboration nobody wants to give.
+ */
+async function challengeAnswer(
+  models: ModelService,
+  topic: TopicId,
+  answer: Answer,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<Answer> {
+  if (!answer.text) return answer;
+  if (!(await models.isReady('chat'))) return answer;
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: challengePrompt(topic, answer.text!, state) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 400) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const result = parseChallengeResult(text);
+    if (result.fine) {
+      log(`planning: "${topic}" — answer accepted as given`);
+      return answer;
+    }
+
+    log(`planning: "${topic}" — pushed back — ${result.followUp}`);
+    const raw = await vscode.window.showInputBox({
+      prompt: result.followUp,
+      placeHolder: "Type your answer, or leave blank to keep what you said",
+      ignoreFocusOut: true,
+    });
+    if (!raw?.trim()) {
+      log(`planning: "${topic}" — follow-up declined, kept original answer`);
+      return answer;
+    }
+
+    log(`planning: "${topic}" — follow-up answered — ${raw.trim()}`);
+    return { ...answer, text: `${answer.text}\n\nFollow-up — ${result.followUp}\n${raw.trim()}` };
+  } catch (error) {
+    log(`planning: "${topic}" — challenge failed (${String(error)}), kept original answer`);
+    return answer;
+  }
 }
 
 /**

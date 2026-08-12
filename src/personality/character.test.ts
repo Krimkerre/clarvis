@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ANSWER_SHAPE, EXAMPLES, character, characterWith } from './character';
+import { ANSWER_SHAPE, EXAMPLES, ONLY_WHAT_YOU_WERE_GIVEN, character, characterWith } from './character';
 
 test('the voice comes last, after whatever rules the surface adds', () => {
   // Character-first was tried and lost. In chat the voice sat four hundred words above
@@ -86,4 +86,12 @@ test('no example invents a number the model would not have been given', () => {
 test('the brief says where a number has to come from', () => {
   assert.match(character(), /must come from what you were actually given/);
   assert.match(character(), /for the past six minutes" is not/);
+});
+
+test('the fact-free surfaces are told they have no facts', () => {
+  // Pressing Stop during a run rewrote the word "Stopped." and, under a standing order
+  // to be specific with nothing to be specific about, produced a test suite failing on
+  // a branch that does not exist for a number of days nothing measures.
+  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /no facts about this project/);
+  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /not as detail, not as colour, not as a guess/);
 });

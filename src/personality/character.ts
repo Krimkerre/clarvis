@@ -204,3 +204,23 @@ export const ANSWER_SHAPE = [
   '',
   'Part 2 is required. A reply with only the answer in it is an incomplete reply.',
 ].join('\n');
+
+/**
+ * For prompts that hand him nothing to be specific *about*.
+ *
+ * The brief tells him to be specific about this project — the branch, the file, the
+ * failing command — and that is right where the facts are supplied. On the surfaces that
+ * supply none, it is an instruction to invent, and he does: pressing Stop four times
+ * during a run produced "the test suite on `main` has been failing for three days now",
+ * "the build stopped itself three commits ago" and "the build succeeded twice; I stopped
+ * counting after the third failure on main". None of it was true. There is no `main` in
+ * that repository, and nothing anywhere measures three days.
+ *
+ * Every one of those was a rewrite of the word "Stopped." — two syllables of context, a
+ * standing order to be specific, and no facts to be specific with.
+ */
+export const ONLY_WHAT_YOU_WERE_GIVEN = [
+  'You have been given no facts about this project beyond what appears above.',
+  'Do not mention branches, builds, tests, commits, files, counts or timings that are not written there — not as detail, not as colour, not as a guess.',
+  'Being funny about the situation in front of you is the job; inventing a situation is not.',
+].join('\n');

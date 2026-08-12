@@ -1,4 +1,4 @@
-import { character } from './character';
+import { character, ONLY_WHAT_YOU_WERE_GIVEN } from './character';
 
 /**
  * Every sentence Clarvis says to a person goes through here.
@@ -90,6 +90,7 @@ export function rewritePrompt(line: Line): string {
     line.keep?.length ? `Include these exactly: ${line.keep.join(', ')}` : '',
     '',
     LICENCE[line.purpose],
+    ONLY_WHAT_YOU_WERE_GIVEN,
     'One sentence. No emoji, no exclamation marks, no quotation marks, no preamble.',
     'Reply with the line alone.',
   ]

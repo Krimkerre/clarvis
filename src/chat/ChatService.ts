@@ -690,8 +690,12 @@ export class ChatService {
    * was already finishing.
    */
   private setBusy(busy: boolean): void {
+    if (busy) this.stopAnnounced = false;
     this.panel.post({ type: 'busy', busy });
   }
+
+  /** Whether "Stopped." has already been said about whatever is running. */
+  private stopAnnounced = false;
 
   /**
    * "Stop", typed rather than clicked.
@@ -703,6 +707,15 @@ export class ChatService {
   private async stopFromChat(): Promise<void> {
     const busy = Boolean(this.streaming) || this.agentBusy.running;
 
+    // **Once per thing stopped.** Four clicks during one run produced four separate
+    // replies — and because each was a rewrite of the word "Stopped." with no facts
+    // attached, the model filled the space with invented history: a test suite failing
+    // on a branch that does not exist, for a number of days nothing measures.
+    if (busy && this.stopAnnounced) {
+      this.stop();
+      return;
+    }
+
     if (!busy) {
       this.log('chat: asked to stop, nothing running');
       await this.say(await this.phrase('report', 'Nothing to stop. I was already idle.'), 'neutral');
@@ -710,6 +723,7 @@ export class ChatService {
     }
 
     this.log('chat: stopped by typed request');
+    this.stopAnnounced = true;
     this.stop();
     await this.say(await this.phrase('report', 'Stopped.'), 'neutral');
   }

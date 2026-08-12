@@ -1,5 +1,5 @@
 import { QuipTrigger } from './quipBank';
-import { character } from './character';
+import { character, ONLY_WHAT_YOU_WERE_GIVEN } from './character';
 
 /**
  * Quips written for the moment, rather than drawn from a bank of fixed lines.
@@ -55,6 +55,7 @@ export function quipPrompt(context: QuipContext): string {
     '- The joke is about the situation or about you, never about the user being bad at their job.',
     `- ${context.sharp ? 'You may be pointed; the session has earned it.' : 'Stay polite; nothing has gone wrong enough to warrant more.'}`,
     '- No greeting, no offer of help, no question, no emoji, no explanation of the joke.',
+    ONLY_WHAT_YOU_WERE_GIVEN,
     'Reply with the remark alone.',
   ]
     .filter(Boolean)
@@ -119,6 +120,7 @@ export function acknowledgementPrompt(task: string): string {
     '- Dry and understated. You are about to do it, not delighted about it.',
     '- Refer to the actual task if it is worth referring to. Do not restate it in full.',
     '- No questions, no offers of help, no emoji, no exclamation marks.',
+    ONLY_WHAT_YOU_WERE_GIVEN,
     'Reply with the line alone.',
   ].join('\n');
 }
@@ -145,6 +147,7 @@ export function completionQuipPrompt(task: string, summary: string): string {
     '- Dry, understated, faintly put-upon. Never proud, never enthusiastic.',
     '- About the work or about yourself — never about the user being slow or wrong.',
     '- No questions, no offers of help, no emoji, no exclamation marks.',
+    ONLY_WHAT_YOU_WERE_GIVEN,
     'Reply with the remark alone.',
   ].join('\n');
 }

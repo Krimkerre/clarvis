@@ -222,6 +222,31 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
  * three documents in one: a stylesheet, a page, and a script, none of which had
  * anything to say to the others beyond the nonce.
  */
+/**
+ * The clickable-answer buttons, styled apart from the rest of the panel.
+ *
+ * Its own constant for the same reason `chatMarkup` is its own function: the
+ * stylesheet in there is already at the linter's ceiling, and these rules have
+ * nothing to say to the transcript's beyond sitting underneath it.
+ */
+const CHOICE_STYLES = `
+      /* Each option is a button carrying its own explanation, rather than a list
+         above a row of bare labels repeating it. */
+      .clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; margin-top:-2px; }
+      /* Options with an explanation stack full-width so the text has room; bare
+         labels (Yes / No / Approve) sit side by side, where a stack looks absurd. */
+      .clarvis-choices.stacked { flex-direction:column; align-items:stretch; }
+      .clarvis-choice { font: inherit; cursor:pointer; text-align:left; display:flex;
+        flex-direction:column; gap:2px; padding:6px 10px; border-radius:5px;
+        border:1px solid var(--vscode-button-border, var(--vscode-focusBorder));
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); }
+      .clarvis-choice:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+      .clarvis-choice .label { font-weight:600; }
+      /* The explanation is why you would pick it, not the thing you are picking. */
+      .clarvis-choice .detail { font-size:11px; line-height:1.35; opacity:.75; white-space:normal; }
+`;
+
 function chatMarkup(n: string): string {
   return `<style nonce="${n}">
       /* avatar.html is a standalone demo: it centres one 320px avatar in the middle of
@@ -281,14 +306,7 @@ function chatMarkup(n: string): string {
       .clarvis-turn code { font-family: var(--vscode-editor-font-family);
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
 
-      /* Clickable answers. Wraps rather than scrolls (a scrollbar would hide the
-         options that did not fit), and sits tight under the message it answers. */
-      .clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; margin-top:-2px; }
-      .clarvis-choice { font: inherit; cursor:pointer; padding:4px 10px; border-radius:4px;
-        border:1px solid var(--vscode-button-border, var(--vscode-focusBorder));
-        background: var(--vscode-button-secondaryBackground, transparent);
-        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); }
-      .clarvis-choice:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+      ${CHOICE_STYLES}
       /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
          bottom so the icon stays level with the first line as the box grows. */
       .clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }

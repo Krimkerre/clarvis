@@ -145,7 +145,7 @@ export class ChatService {
     const io = new PlanningChatIO(
       (text) => this.remark(text),
       (text) => this.note(text),
-      (labels) => this.panel.post(labels.length ? { type: 'choices', items: labels } : { type: 'choices-clear' }),
+      (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       this.log
     );
     this.planningIO = io;
@@ -235,7 +235,7 @@ export class ChatService {
       )
     );
     this.awaitingPlanAnswer = true;
-    this.panel.post({ type: 'choices', items: ['Yes', 'No'] });
+    this.panel.post({ type: 'choices', items: [{ label: 'Yes' }, { label: 'No' }] });
   }
 
   constructor(

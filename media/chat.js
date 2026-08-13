@@ -88,21 +88,39 @@ const clearChoices = () => {
   choiceRow = null;
 };
 
+// Each option is one button carrying its own explanation, rather than a list
+// of options above a row of bare labels saying the same thing twice.
 const showChoices = (items) => {
   clearChoices();
   if (!items.length) return;
 
   const row = document.createElement('div');
-  row.className = 'clarvis-choices';
+  // Options with an explanation stack full-width so the text has room; bare
+  // labels (Yes / No / Approve) sit side by side, where a stack looks absurd.
+  const detailed = items.some((item) => item && item.detail);
+  row.className = 'clarvis-choices' + (detailed ? ' stacked' : '');
 
   items.forEach((item) => {
+    const label = String((item && item.label) || item);
     const button = document.createElement('button');
     button.className = 'clarvis-choice';
-    // textContent, never innerHTML: these labels come from a model.
-    button.textContent = String(item);
+
+    const name = document.createElement('span');
+    name.className = 'label';
+    // textContent, never innerHTML: every one of these comes from a model.
+    name.textContent = label;
+    button.appendChild(name);
+
+    if (item && item.detail) {
+      const detail = document.createElement('span');
+      detail.className = 'detail';
+      detail.textContent = String(item.detail);
+      button.appendChild(detail);
+    }
+
     button.addEventListener('click', () => {
       clearChoices();
-      vscode.postMessage({ type: 'ask', text: String(item) });
+      vscode.postMessage({ type: 'ask', text: label });
     });
     row.appendChild(button);
   });

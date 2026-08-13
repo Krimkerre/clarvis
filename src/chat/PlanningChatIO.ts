@@ -27,7 +27,7 @@ export class PlanningChatIO implements PlanningIO {
     private readonly speak: (text: string) => Promise<void>,
     private readonly write: (text: string) => Promise<void>,
     /** Offers the answers as buttons in the panel. Typing still works regardless. */
-    private readonly offer: (labels: string[]) => void,
+    private readonly offer: (items: { label: string; detail?: string }[]) => void,
     private readonly log: (message: string) => void
   ) {}
 
@@ -76,23 +76,17 @@ export class PlanningChatIO implements PlanningIO {
    * list, which nobody would forgive.
    */
   async askChoice(prompt: string, items: { label: string; detail?: string }[]): Promise<string | undefined> {
-    // **Spoken and written differ here on purpose.** The question is worth hearing;
-    // five options with a clause of detail each, read aloud, is forty seconds of
-    // audio nobody asked for — and the options are on screen as buttons anyway.
-    // The one option they pick gets read out, at the point they pick it.
+    // **The options are the buttons.** They were a written list *and* a row of bare
+    // labels underneath — the same information twice, in a panel narrow enough that
+    // it filled the window. The explanation now lives on the button it belongs to.
     //
-    // **No markdown.** The panel renders plain text with `code` spans and nothing
-    // else, so `**1.**` arrived on screen as literal asterisks — found live. A blank
-    // line between options and an indented detail line do the same job in a format
-    // the panel actually has.
-    const menu = items
-      .map((item, index) => `${index + 1}.  ${item.label}${item.detail ? `\n      ${item.detail}` : ''}`)
-      .join('\n\n');
+    // Spoken and written still differ: the question is worth hearing, five options
+    // with a clause each is forty seconds of audio nobody asked for, and the one
+    // option they pick gets read out at the point they pick it.
     await this.speak(prompt);
 
     for (;;) {
-      await this.write(menu);
-      this.offer(items.map((item) => item.label));
+      this.offer(items);
 
       const reply = (await this.nextMessage())?.trim();
       if (!reply) return undefined;
@@ -127,7 +121,7 @@ export class PlanningChatIO implements PlanningIO {
   private async confirmChoice(chosen: { label: string; detail?: string }): Promise<boolean> {
     await this.speak(chosen.detail ? `${chosen.label}. ${chosen.detail}` : chosen.label);
     await this.write(await phrase('ask', 'Go with that?', []));
-    this.offer(['Yes', 'No']);
+    this.offer([{ label: 'Yes' }, { label: 'No' }]);
 
     const answer = (await this.nextMessage())?.trim().toLowerCase();
     return answer === 'yes' || answer === 'y' || answer === '1';
@@ -142,7 +136,7 @@ export class PlanningChatIO implements PlanningIO {
   async confirm(title: string, detail: string, buttons: string[]): Promise<string | undefined> {
     await this.speak(title);
     await this.write(detail);
-    this.offer(buttons);
+    this.offer(buttons.map((label) => ({ label })));
 
     const reply = (await this.nextMessage())?.trim();
     if (!reply) return undefined;

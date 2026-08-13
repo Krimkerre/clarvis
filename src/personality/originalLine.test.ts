@@ -51,6 +51,14 @@ test('two leading fillers and a dash do not hide the question', () => {
   assert.match(line ?? '', /together\?$/);
 });
 
+test('a question trailing a long clause is repaired', () => {
+  // Verbatim from the model, rejected live: no sentence break before the question,
+  // so the "last sentence" was the whole line and began "We could spend...".
+  const real =
+    'We could spend the next month watching you decide things twice, or we could sit down for twenty minutes and write them down once—shall we do that.';
+  assert.match(acceptOpening(real, true) ?? '', /shall we do that\?$/);
+});
+
 test('a line that asks nothing at all is still rejected', () => {
   // Repairing punctuation is fine; inventing the question would be putting words
   // in his mouth.

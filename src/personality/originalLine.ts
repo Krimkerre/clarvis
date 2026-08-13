@@ -57,7 +57,7 @@ export function openingPrompt(situation: string, mustAsk: boolean): string {
     'Write ONE opening line for that. Rules:',
     '- One or two short sentences, and no more. Under 200 characters.',
     mustAsk
-      ? '- It must end by asking them, in your own words, whether they want to. A question they can answer yes or no.'
+      ? '- It must end by asking them, in your own words, whether they want to — a question they can answer yes or no, ending in a question mark.'
       : '- Not a question.',
     '- Dry, understated, faintly put-upon. Have a view about it — a line that could have come from any tool is a failed line.',
     '- No greeting, no emoji, no exclamation marks, no offer of further help.',
@@ -118,8 +118,15 @@ export function acceptOpening(raw: string | undefined, mustAsk: boolean): string
 function ensureQuestion(text: string): string | undefined {
   if (text.includes('?')) return text;
 
+  // **The last clause, not only the last sentence.** His most natural construction
+  // puts the question at the end of a longer line — "…or we could write them down
+  // once—shall we do that." — where there is no sentence break before the question
+  // at all, so testing the sentence tested "We could spend the next month…" and
+  // rejected every line of that shape. Found live, twice.
   const lastSentence = text.split(/(?<=[.!?])\s+/).pop() ?? text;
-  if (!INTERROGATIVE.test(lastSentence)) return undefined;
+  const lastClause = lastSentence.split(/[,;—–-]+\s*/).pop() ?? lastSentence;
+
+  if (!INTERROGATIVE.test(lastSentence) && !INTERROGATIVE.test(lastClause)) return undefined;
 
   return text.replace(/\.?$/, '?');
 }

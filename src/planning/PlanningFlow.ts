@@ -6,6 +6,7 @@ import { collectVerdicts } from './Verdicts';
 import { formatVerdict, FindingVerdict } from './verdictSummary';
 import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
+import { describeProgress, InterviewSnapshot, worthResuming } from './interviewStore';
 import { PlanningIO } from './PlanningIO';
 import { handoffTask } from './handoff';
 import { Milestone } from './milestonePrompt';
@@ -75,20 +76,32 @@ export async function okToReplaceExistingPlan(io: PlanningIO, log: (message: str
   return true;
 }
 
+/**
+ * Where a half-finished interview is kept between windows. Supplied by the caller,
+ * which owns the storage; planning owns what is worth keeping and when to offer it.
+ */
+export interface InterviewMemory {
+  save(state: InterviewState, seed: string): Promise<void>;
+  load(): InterviewSnapshot | undefined;
+  clear(): Promise<void>;
+}
+
 export async function runPlanning(
   models: ModelService,
   io: PlanningIO,
   lines: PlanningLines,
   log: (message: string) => void,
-  startBuild?: StartBuild
+  startBuild?: StartBuild,
+  memory?: InterviewMemory
 ): Promise<void> {
-  if (!(await okToReplaceExistingPlan(io, log))) return;
-
-  const opening = await lines.acknowledge('plan this project');
-  if (opening) await io.say(opening);
-
-  const result = await runInterview(models, io, log);
+  // **Offered before anything else, including the plan.md question.** Someone
+  // halfway through an interview does not want to be asked whether to replace a
+  // plan that does not exist yet.
+  const result = await gatherAnswers(models, io, lines, log, memory);
+  // A paused interview keeps its snapshot: cancelling is not abandoning, and the
+  // next window should still offer to carry on.
   if (!result) return;
+  await memory?.clear();
 
   const { state, seed } = result;
   const summary = summaryLines(state, seed);
@@ -141,6 +154,71 @@ export async function runPlanning(
   // the seam §0's two-mode discipline exists to make invisible. Still asked — the
   // sign-off gate is on writing the plan, and starting to build is its own decision.
   if (approved && startBuild) await offerToBuild(state, seed, verdicts, milestones, io, log, startBuild);
+}
+
+/**
+ * Everything before the analysis: resume or start, and then the interview itself.
+ *
+ * Split out because it is the one stretch with three ways to not happen — leave the
+ * old interview alone, keep the existing plan, or cancel mid-question — and folding
+ * those into the main flow made it unreadable.
+ */
+async function gatherAnswers(
+  models: ModelService,
+  io: PlanningIO,
+  lines: PlanningLines,
+  log: (message: string) => void,
+  memory?: InterviewMemory
+): Promise<{ state: InterviewState; seed: string } | undefined> {
+  const { resume, stop } = await offerResume(io, log, memory);
+  if (stop) return undefined;
+
+  if (!resume && !(await okToReplaceExistingPlan(io, log))) return undefined;
+
+  if (!resume) {
+    const opening = await lines.acknowledge('plan this project');
+    if (opening) await io.say(opening);
+  }
+
+  return runInterview(models, io, log, memory ? (state, seed) => memory.save(state, seed) : undefined, resume);
+}
+
+/**
+ * Offers to carry on a half-finished interview, if there is one worth carrying on.
+ *
+ * Declining clears it. An offer that keeps coming back after "no" is the nagging
+ * §6 exists to prevent, and a snapshot nobody wants is not worth a second question.
+ */
+async function offerResume(
+  io: PlanningIO,
+  log: (message: string) => void,
+  memory?: InterviewMemory
+): Promise<{ resume?: { state: InterviewState; seed: string }; stop?: boolean }> {
+  const snapshot = memory?.load();
+  if (!snapshot || !worthResuming(snapshot, Date.now())) return {};
+
+  const choice = await io.confirm(
+    await phrase('ask', 'We were part-way through planning something.', []),
+    `${describeProgress(snapshot)}. Carry on from there, throw it away and start fresh, or leave it for now?`,
+    ['Carry on', 'Start again', 'Leave it']
+  );
+
+  if (choice === 'Carry on') {
+    log(`planning: resuming an interview — ${describeProgress(snapshot)}`);
+    return { resume: { state: snapshot.state, seed: snapshot.seed } };
+  }
+
+  if (choice === 'Start again') {
+    log('planning: unfinished interview thrown away, starting fresh');
+    await memory?.clear();
+    return {};
+  }
+
+  // **Escape means "not now", not "delete it".** Cancelling used to discard the
+  // interview *and* start a new one — two decisions out of one keypress, and the
+  // destructive half was the one nobody chose.
+  log('planning: unfinished interview left where it is');
+  return { stop: true };
 }
 
 /**

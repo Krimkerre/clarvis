@@ -116,6 +116,11 @@ export class RunSession {
    * answering it in chat while the agent carries on regardless, is worse: the user
    * watches it keep doing the thing they just asked it not to.
    */
+  /** Whether a run is under way and can be spoken to. */
+  get isRunning(): boolean {
+    return this.running !== undefined;
+  }
+
   redirect(text: string): boolean {
     if (!this.running) return false;
     this.running.interject(text);

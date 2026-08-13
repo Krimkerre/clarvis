@@ -25,7 +25,7 @@ import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { runPlanning } from './planning/PlanningFlow';
 import { VsCodeIO } from './planning/VsCodeIO';
 import { recordMilestone } from './planning/recordMilestone';
-import { MilestoneState, milestoneSteps, nextMilestone } from './planning/planUpdate';
+import { pendingBuild } from './planning/pendingBuild';
 import { nextMilestoneTask } from './planning/nextMilestoneTask';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
@@ -669,7 +669,7 @@ function registerRecordMilestone(
       // so the next is already written down — offered rather than started, because
       // "keep going" is a decision and a build that rolls straight into the next
       // milestone is one nobody agreed to.
-      const next = await pendingMilestone();
+      const next = await pendingBuild();
       if (!next) {
         void vscode.window.showInformationMessage(outcome);
         return;
@@ -689,34 +689,6 @@ function registerRecordMilestone(
       await chatOf()?.startNextMilestone(nextMilestoneTask(next.milestone, next.projectName), next.steps);
     })
   );
-}
-
-/**
- * The next unfinished milestone in this workspace's `plan.md`, if there is one.
- *
- * Read from the file every time rather than remembered: the plan outlives the window,
- * and the user may have ticked something off by hand since the last run.
- */
-async function pendingMilestone(): Promise<
-  { milestone: MilestoneState; projectName: string; steps: string[] } | undefined
-> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return undefined;
-
-  const planText = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
-    (bytes) => Buffer.from(bytes).toString('utf8'),
-    () => undefined
-  );
-  if (!planText) return undefined;
-
-  const milestone = nextMilestone(planText);
-  if (!milestone) return undefined;
-
-  return {
-    milestone,
-    projectName: /^#\s+(.+)$/m.exec(planText)?.[1]?.trim() ?? 'this project',
-    steps: milestoneSteps(planText, milestone.number),
-  };
 }
 
 function registerPlanningCommand(

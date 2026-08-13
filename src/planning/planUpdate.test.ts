@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { markSteps, milestoneComplete, milestoneSteps, nextMilestone, readMilestones } from './planUpdate';
+import { addSteps, appendMilestone, markSteps, milestoneComplete, milestoneSteps, nextMilestone, readMilestones } from './planUpdate';
 
 const plan = [
   '## 7. Milestone 1 — v1',
@@ -132,4 +132,43 @@ test('every step is returned, ticked or not', () => {
 
 test('a milestone that is not there has no steps', () => {
   assert.deepEqual(milestoneSteps(multi, 9), []);
+});
+
+test('new steps join the milestone they belong to, at the end of its list', () => {
+  // Where new work belongs among existing steps is a judgement about the project;
+  // guessing would reorder a plan the user approved.
+  const updated = addSteps(multi, 1, [{ step: 'Refuse to overwrite', check: 'run twice, second is refused' }]);
+
+  assert.match(updated, /- \[x\] Rename a file\n- \[ \] Refuse to overwrite/);
+  assert.match(updated, /- Check: run twice, second is refused/);
+  assert.match(updated, /- Result: not run yet/);
+  // The milestone after it is untouched.
+  assert.match(updated, /### Milestone 2 — Batch renaming\n\n- \[ \] Accept a folder/);
+});
+
+test('adding to a milestone that is not there changes nothing', () => {
+  assert.equal(addSteps(multi, 9, [{ step: 'Whatever' }]), multi);
+});
+
+test('adding nothing changes nothing', () => {
+  assert.equal(addSteps(multi, 1, []), multi);
+});
+
+test('a new milestone lands at the end, numbered past the last', () => {
+  // The numbering is what readMilestones reads back to decide what comes next, so a
+  // duplicate would send the build to the wrong place.
+  const updated = appendMilestone(multi, 'Email the results', [{ step: 'Send an email', check: 'check the inbox' }]);
+
+  assert.match(updated, /### Milestone 3 — Email the results/);
+  assert.equal(readMilestones(updated).length, 3);
+  assert.equal(nextMilestone(updated)?.number, 2, 'the unfinished one is still next');
+});
+
+test('a new milestone goes above the sections that end the plan', () => {
+  // Decisions, Open Questions and Branch flow live at the bottom; a milestone
+  // appended after them would read as an afterthought to a different document.
+  const withTail = `${multi}\n\n## 8. Decisions\n_None rejected._\n\n## Branch flow\n- trunk: main`;
+  const updated = appendMilestone(withTail, 'Email the results', [{ step: 'Send an email' }]);
+
+  assert.ok(updated.indexOf('### Milestone 3') < updated.indexOf('## 8. Decisions'));
 });

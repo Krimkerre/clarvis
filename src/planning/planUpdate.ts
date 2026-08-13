@@ -1,3 +1,4 @@
+import { MilestoneStep } from './milestonePrompt';
 /**
  * Writing a finished milestone back into `plan.md`.
  *
@@ -173,6 +174,81 @@ export function milestoneSteps(planText: string, number: number): string[] {
 /** The first milestone with work left in it, or `undefined` when the plan is finished. */
 export function nextMilestone(planText: string): MilestoneState | undefined {
   return readMilestones(planText).find((milestone) => milestone.done < milestone.total);
+}
+
+/**
+ * Adds steps to a milestone that already exists in the plan.
+ *
+ * **Appended to the end of that milestone's list, never woven in.** Where new work
+ * belongs among existing steps is a judgement about the project; guessing at it
+ * would reorder a plan the user approved. Added at the end, in the order they were
+ * agreed, it stays obvious what was there before and what arrived later.
+ */
+export function addSteps(planText: string, number: number, steps: readonly MilestoneStep[]): string {
+  if (steps.length === 0) return planText;
+
+  const lines = planText.split('\n');
+  const output: string[] = [];
+  let inside = false;
+  let lastStepLine = -1;
+
+  for (const line of lines) {
+    if (MILESTONE_HEADING.exec(line.trim())) {
+      // Leaving the milestone we were adding to: everything is already emitted, so
+      // the new steps go in before this heading.
+      if (inside && lastStepLine !== -1) {
+        output.splice(lastStepLine + 1, 0, ...renderSteps(steps));
+        lastStepLine = -1;
+      }
+      inside = Number(MILESTONE_HEADING.exec(line.trim())![1]) === number;
+      output.push(line);
+      continue;
+    }
+
+    output.push(line);
+    // The last line belonging to this milestone's checklist, so trailing prose and
+    // blank lines stay below the steps rather than above them.
+    if (inside && (STEP_LINE.test(line) || isSubLineOf(line, ''))) lastStepLine = output.length - 1;
+  }
+
+  if (inside && lastStepLine !== -1) output.splice(lastStepLine + 1, 0, ...renderSteps(steps));
+
+  return output.join('\n');
+}
+
+/**
+ * A new milestone at the end of the plan.
+ *
+ * Numbered one past the highest already there — the numbering is what
+ * `readMilestones` reads back to decide what comes next, so a duplicate would send
+ * the build to the wrong place.
+ */
+export function appendMilestone(planText: string, title: string, steps: readonly MilestoneStep[]): string {
+  if (steps.length === 0) return planText;
+
+  const existing = readMilestones(planText);
+  const number = existing.length > 0 ? Math.max(...existing.map((milestone) => milestone.number)) + 1 : 1;
+  const lines = planText.split('\n');
+
+  // Inserted after the last milestone's steps rather than at the end of the file,
+  // which is where Decisions, Open Questions and Branch flow live.
+  let insertAt = lines.length;
+  for (let index = lines.length - 1; index >= 0; index--) {
+    if (STEP_LINE.test(lines[index]) || isSubLineOf(lines[index], '')) {
+      insertAt = index + 1;
+      break;
+    }
+  }
+
+  lines.splice(insertAt, 0, '', `### Milestone ${number} — ${title}`, '', ...renderSteps(steps));
+  return lines.join('\n');
+}
+
+function renderSteps(steps: readonly MilestoneStep[]): string[] {
+  return steps.flatMap((step) => [
+    `- [ ] ${step.step}`,
+    ...(step.check ? [`  - Check: ${step.check}`, '  - Result: not run yet'] : []),
+  ]);
 }
 
 /**

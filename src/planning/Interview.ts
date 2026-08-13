@@ -44,7 +44,7 @@ export async function runInterview(
       'You are starting a planning interview. Ask them what they are building — one sentence is plenty, and "I don\'t know" is a perfectly good answer they can give.',
       'What are you building? One sentence is plenty.'
     ),
-    "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas"
+    await seedHint()
   );
   if (seed === undefined) return undefined;
 
@@ -223,6 +223,27 @@ async function synthesizeAnswer(
     log(`planning: "${topic}" — synthesis failed (${String(error)}), kept the raw combination`);
     return fallback;
   }
+}
+
+/**
+ * The example under the seed question, written fresh when there is a model.
+ *
+ * The fixed one — a CLI that renames photos by their EXIF date — is a perfectly
+ * good example and was the same example every time, in the one place a new user is
+ * deciding what this thing is for. A different plausible project each time says
+ * "anything, really" better than any wording of "anything, really" could.
+ *
+ * **The "I don't know" half is added in code, never generated.** It is the
+ * instruction that makes the next question possible, and a rewrite that dropped it
+ * would quietly close the door this feature exists to hold open.
+ */
+async function seedHint(): Promise<string> {
+  const example = await opening(
+    'Give ONE example of a small project someone might describe in a sentence — the sort of thing that goes under a question as a hint. A concrete thing that does something, under twelve words. Not a question, not a preamble, just the example itself.',
+    'a CLI that renames photos by their EXIF date',
+    false
+  );
+  return `e.g. ${example}, or "I don't know" for ideas`;
 }
 
 /**

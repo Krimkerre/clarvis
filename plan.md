@@ -3707,6 +3707,41 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   watches the agent start building it — with the plan file as the shared source of truth
   for both scope and progress.
 
+### M9f — Container isolation *(optional stretch, not scheduled)*
+
+Run `runCommand` inside a container instead of on the host. Assessed 13 Aug and
+deliberately deferred — recorded here so the reasoning survives rather than being
+rediscovered.
+
+**What it buys.** The deny-list (M8d) is a blocklist, and a blocklist is leaky by
+construction: `curl … | sh` inside an approved step runs on the user's actual
+machine. A container drops the blast radius of an unexpected command to the
+container — their dotfiles, keys and other projects stop being reachable.
+
+**What it does not buy, and this is the limit.** The workspace has to be bind-mounted
+for the agent's read-after-write loop to work at all, so `rm -rf .` inside the
+container still deletes the real files: it protects the *machine*, not the *project*.
+And `--network none`, the setting that would make it a sandbox in any strong sense,
+breaks `npm install` and every dependency step in every milestone one — so the escape
+hatch most worth closing is the one that must stay open. Per-step approval and the
+deny-list stay exactly as load-bearing as they are today; this is depth behind them.
+
+**Shape, if it is ever built.** One long-lived container per workspace (`docker run
+-d` once, `docker exec` per command) — a fresh `--rm` container per command puts
+`npm install` and `npm test` in different worlds. Mount the workspace at *the same
+absolute path* it has on the host, or a stack trace says `/work/src/app.py` and the
+file tools, which run in the extension host, cannot find it. `--user` with the host
+uid/gid, or Linux users get root-owned files in their own project. Image chosen by a
+lookup on the interview's language with a generic fallback, never a model call.
+Detection cached per session, and silent fallback to the host when Docker is absent —
+§6's audience may not know what git is, and this can never stand between someone and
+their first build.
+
+**What it costs.** Native and hardware projects stop working entirely — a container
+cannot read the thermostat on the Raspberry Pi that a live run planned. Bind-mount IO
+across the macOS and Windows VM boundary runs test suites 2–4× slower. First image
+pull is minutes, and would have to happen at plan time rather than mid-milestone.
+
 ### M10 — Voice Input *(stretch — independent of M7's output side)*
 
 **Build.**

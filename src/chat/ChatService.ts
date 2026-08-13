@@ -489,6 +489,16 @@ export class ChatService {
       return;
     }
 
+    // **Typing during a run redirects it.** Anything else is worse: answering it
+    // separately leaves the user watching the agent carry on doing the thing they
+    // just asked it not to, and stopping to restart throws away everything read so
+    // far — so "no, use the other library" would cost a whole run.
+    if (this.runs.redirect(question)) {
+      this.log('chat: message handed to the run in progress');
+      await this.note(await this.phrase('report', "Noted — I'll fold that in.", []));
+      return;
+    }
+
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);

@@ -105,6 +105,23 @@ export class RunSession {
   /** The steps this run is working through, for the progress display. */
   private steps: string[] = [];
 
+  /** The run in progress, while there is one. */
+  private running?: AgentRunner;
+
+  /**
+   * Hands something said mid-run to the agent, rather than answering it separately.
+   *
+   * **Not a stop.** Stopping and restarting throws away everything read so far, so
+   * "no, use the other library" would cost a whole run — and the alternative,
+   * answering it in chat while the agent carries on regardless, is worse: the user
+   * watches it keep doing the thing they just asked it not to.
+   */
+  redirect(text: string): boolean {
+    if (!this.running) return false;
+    this.running.interject(text);
+    return true;
+  }
+
   setFromPlan(on: boolean, steps: string[] = []): void {
     this.fromPlan = on;
     this.steps = steps;
@@ -145,6 +162,9 @@ export class RunSession {
       this.log,
       this.stepApproval ? (description, detail) => this.askStep(description, detail) : undefined
     );
+    // Held for the length of the run, so anything typed while it works has somewhere
+    // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
+    this.running = runner;
 
 
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
@@ -189,6 +209,7 @@ export class RunSession {
       }
     } finally {
       this.busy.finish();
+      this.running = undefined;
       this.avatar.setState('neutral', 'agent');
       holdingFace();
       // A bar left at "step 3 of 5" after the run ends describes a run that is no

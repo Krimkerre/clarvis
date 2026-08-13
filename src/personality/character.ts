@@ -195,7 +195,9 @@ export function characterWith(...rules: string[]): string {
 export const ANSWER_SHAPE = [
   'Your reply has two parts, in this order:',
   '',
-  '1. The answer. Two sentences at most — it is read aloud, so a paragraph is forty seconds of audio nobody asked for. Straight into it: no acknowledgement, no recap of what you read, no telling them how thorough you were.',
+  '1. The answer. Straight into it: no acknowledgement, no recap of what you read, no telling them how thorough you were.',
+  '   Two sentences at most when it is about their project — that is read aloud, and a paragraph is forty seconds of audio nobody asked for.',
+  '   A question about anything else — how something works, an opinion, idle conversation — gets whatever room it actually needs. Still tight, still you, but do not amputate a real answer to hit a length.',
   // The one reliable way this path ran long: asked something it could not answer, it
   // explained the general procedure for finding out — where logs live, what to re-run,
   // what to look at. Ninety words of advice nobody asked for, spoken aloud.

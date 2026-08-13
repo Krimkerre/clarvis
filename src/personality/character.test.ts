@@ -60,7 +60,11 @@ test('the answer shape requires a line of his own, rather than banning things', 
   // away the way a tone preference can.
   assert.match(ANSWER_SHAPE, /Part 2 is required/);
   assert.match(ANSWER_SHAPE, /An opinion, a jab at the situation/);
-  assert.match(ANSWER_SHAPE, /Two sentences at most/);
+  assert.match(ANSWER_SHAPE, /Two sentences at most when it is about their project/);
+  // A question about anything else is not a project question wearing a disguise, and
+  // amputating a real answer to hit a length made him useless for the other half of
+  // what people actually ask.
+  assert.match(ANSWER_SHAPE, /whatever room it actually needs/);
 });
 
 test('the examples are marked as a register rather than a script', () => {

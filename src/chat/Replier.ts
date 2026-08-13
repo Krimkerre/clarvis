@@ -221,7 +221,12 @@ export class Replier {
   private systemPrompt(): string {
     return characterWith(
       'You are looking at their project: you watch builds, tests and errors as they happen.',
-      'Answer in a few sentences unless asked for more. Prefer specifics over hedging.'
+      // The same loosening as the tool-capable path: a question about something other
+      // than this codebase is a normal question, and answering it by steering back to
+      // the project is how an assistant becomes a single-subject bore.
+      'Not everything they ask is about the project. Questions about how something works, opinions, or plain conversation are yours to answer from what you know.',
+      'Keep project answers to a few sentences. Give anything else the room it deserves — still short, still you, but not amputated to hit a length.',
+      'Prefer specifics over hedging.'
     );
   }
 }

@@ -14,7 +14,10 @@ project, plans what you're building, and does the work.*
    They're answered from what Clarvis has actually watched happen in this project.
 3. **Run a build.** Walk away. When it finishes, Clarvis tells you what happened and
    how long it took — and remembers what was failing when you closed the window.
-4. **Turn on the voice** (optional) — type `change voice`, or see *Voice* below.
+4. **Plan something.** On a project with no `plan.md` he offers; otherwise type
+   `/plan`. He asks what you're building — "I don't know" is a real answer — and ends
+   with a plan he can build against. See *Starting a project* below.
+5. **Turn on the voice** (optional) — type `change voice`, or see *Voice* below.
 
 That's it. Everything else is opt-in.
 
@@ -68,6 +71,8 @@ or `/forget`, and it is gone.
 ---
 
 ## Starting a project
+
+<img src="planning.png" alt="Clarvis in the VS Code sidebar during plan mode: the user answered 'I don't know yet', and Clarvis replied 'Fine. Here are four. Two of them I am even serious about.' — followed by four clickable idea cards, each with a sentence explaining what it does, and a 'Something else...' option. The mode toggle reads Plan." width="100%">
 
 Open a project with no `plan.md` and he'll offer, out loud, with **Yes** and **No**
 buttons. Say yes — or type `/plan` whenever you want. It all happens in the chat

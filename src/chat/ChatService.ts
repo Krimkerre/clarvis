@@ -17,6 +17,8 @@ import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
 import { Voice, opening } from '../personality/Voice';
+import { researchWorkspace } from '../planning/workspaceResearch';
+import { describeWorkspaceSignals } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { runPlanning } from '../planning/PlanningFlow';
@@ -246,15 +248,30 @@ export class ChatService {
     );
     if (exists) return;
 
-    this.log('chat: no plan.md here, offered to plan');
+    // What is actually here, so the line can react to *this* folder rather than to
+    // the abstract fact of a missing file. An empty one deserves "oh, a new project?";
+    // one with a year of code in it and no plan does not.
+    const signals = await researchWorkspace();
+    const looksNew = signals ? !signals.hasGit && signals.topLevelEntries.length <= 2 : false;
+    this.log(`chat: no plan.md here, offered to plan${looksNew ? ' (looks like a new project)' : ''}`);
 
     // **A question with buttons, not an instruction to remember a command.** Spoken
     // as well as written: it is the one line that tells someone this feature exists,
     // and a notice nobody hears is a feature nobody finds.
     await this.remark(
       await opening(
-        'This project has no plan.md — nothing here has been planned. You are offering to plan one with them: an interview, then a written plan they sign off on.',
-        'No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?'
+        [
+          looksNew
+            ? 'They have just opened what looks like a brand new project: an empty folder, nothing built yet, no plan.md.'
+            : 'This project has no plan.md — nothing here has been planned.',
+          signals ? `What is actually in the folder: ${describeWorkspaceSignals(signals)}` : '',
+          'Open by noticing what this is — a new project, or an old one nobody wrote down — then offer to plan it with them: an interview, then a written plan they sign off on.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        looksNew
+          ? 'Oh, a new project? We could sketch out what this is meant to do before the next person asks — or would you rather keep discovering it as we go?'
+          : 'No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?'
       )
     );
     this.awaitingPlanAnswer = true;

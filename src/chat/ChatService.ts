@@ -18,6 +18,8 @@ import { classifyIntent } from './intentModel';
 import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
 import { Voice } from '../personality/Voice';
 import { AgentTerminal } from '../agent/tools/commandTools';
+import { PlanningChatIO } from './PlanningChatIO';
+import { runPlanning } from '../planning/PlanningFlow';
 
 
 /**
@@ -113,6 +115,76 @@ export class ChatService {
 
   /** The things chat can *do*, as opposed to answer. */
   private readonly actions: ChatActions;
+
+  /** Present only while a planning interview is running in the panel. */
+  private planningIO?: PlanningChatIO;
+
+  /**
+   * Runs the whole planning milestone through the chat panel (M9, §4.9).
+   *
+   * The same flow the command palette drives — only the `PlanningIO` differs, so
+   * questions land in the transcript and the next message typed is the answer.
+   * Guarded against re-entry: a second interview started mid-interview would have
+   * two sets of questions competing for the same replies.
+   */
+  private async startPlanning(): Promise<void> {
+    if (this.planningIO) {
+      await this.note("We're already in the middle of that one.");
+      return;
+    }
+
+    const io = new PlanningChatIO((text) => this.note(text), this.log);
+    this.planningIO = io;
+    try {
+      await runPlanning(
+        this.models,
+        io,
+        {
+          acknowledge: (task) => this.live?.acknowledge(task) ?? Promise.resolve(undefined),
+          afterTask: (task, summary) => this.live?.afterTask(task, summary) ?? Promise.resolve(undefined),
+        },
+        this.log,
+        // Plan mode hands straight to code mode — the same run path a typed job
+        // takes, so nothing about the build is special-cased for having come from
+        // planning. Cleared first: the run posts its own questions to chat, and
+        // planning must not still be intercepting them.
+        async (task) => {
+          this.planningIO = undefined;
+          await this.runs.run(task, 'Plan approved — starting on milestone one.');
+        }
+      );
+    } finally {
+      this.planningIO = undefined;
+    }
+  }
+
+  /**
+   * Offers to plan, once, when a project has no `plan.md` of its own.
+   *
+   * **An offer, not an ambush.** §4.9 wants planning to be the front door, and a
+   * project with no plan is exactly who it is for — but launching a ten-minute
+   * interview because someone opened a folder would be the nagging this product is
+   * written against (§6). So: a single line in the transcript, and nothing happens
+   * unless they answer it.
+   */
+  async offerPlanningIfUnplanned(): Promise<void> {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) return;
+
+    const exists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+      () => true,
+      () => false
+    );
+    if (exists) return;
+
+    this.log('chat: no plan.md here, offered to plan');
+    await this.note(
+      await this.phrase(
+        'report',
+        "There's no plan.md in this project. Say `/plan` when you want to fix that — I'll ask the questions."
+      )
+    );
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -268,6 +340,19 @@ export class ChatService {
   async ask(question: string): Promise<void> {
     await this.transcript.add({ speaker: 'user', text: question, at: Date.now() });
 
+    // **While planning runs, every message is an answer to the question just asked.**
+    // Routing it — stop, action, job, question — would be four chances to misread
+    // "yes" or "3" as something else entirely, so `ask()` gets out of the way.
+    if (this.planningIO?.isWaiting) {
+      if (isStopRequest(question)) {
+        this.log('chat: planning cancelled from chat');
+        this.planningIO.cancel();
+        return;
+      }
+      this.planningIO.supply(question);
+      return;
+    }
+
     // Before anything that costs a request: someone typing "stop" wants the thing to
     // stop, and asking a model about it first is both slow and beside the point.
     if (isStopRequest(question)) {
@@ -278,14 +363,25 @@ export class ChatService {
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);
+    if (action === 'planProject') {
+      await this.startPlanning();
+      return;
+    }
     if (action) {
       await this.actions.run(action, question);
       return;
     }
 
     // The matcher missed. A model may recognise it anyway — but only as a suggestion,
-    // and a declined suggestion falls through to a normal answer (M8f2).
-    if (await this.actions.offerInferred(question)) return;
+    // and a declined suggestion falls through to a normal answer (M8f2). Planning is
+    // the one action ChatActions cannot run itself: it owns the whole conversation
+    // for the next several minutes, which is ChatService's to hand over, not its.
+    const inferred = await this.actions.offerInferred(question);
+    if (inferred === 'planProject') {
+      await this.startPlanning();
+      return;
+    }
+    if (inferred) return;
 
     const mode = this.actions.mode();
     const decision = routeFor(question);

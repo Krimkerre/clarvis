@@ -22,12 +22,8 @@ import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
-import { runInterview } from './planning/Interview';
-import { runAnalysis } from './planning/Analysis';
-import { collectVerdicts } from './planning/Verdicts';
-import { formatVerdict, FindingVerdict } from './planning/verdictSummary';
-import { renderPlan } from './planning/PlanWriter';
-import { InterviewState, openQuestions, readyToDraft } from './planning/interviewTopics';
+import { runPlanning } from './planning/PlanningFlow';
+import { VsCodeIO } from './planning/VsCodeIO';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -145,6 +141,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const voiceWriter = new Voice(models, (message) => logger.write(message));
   setVoice(voiceWriter);
   chat.setVoiceWriter(voiceWriter);
+
+  // A project with no plan.md is exactly who §4.9's front door is for. Offered as one
+  // line in the transcript, never started unasked — and after the briefing, so the two
+  // don't arrive on top of each other.
+  const planOffer = setTimeout(() => void chat?.offerPlanningIfUnplanned(), 6000);
+  context.subscriptions.push({ dispose: () => clearTimeout(planOffer) });
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -641,34 +643,6 @@ function startBranchFlow(
  * `note()`; the lines themselves come from the same `LiveQuips` instance everything
  * else uses, not a second copy.
  */
-/**
- * Whether it's fine to run the interview and eventually replace `plan.md` —
- * `true` when there's nothing there yet, or the user explicitly says to redo it.
- */
-async function okToReplaceExistingPlan(logger: ClarvisLog): Promise<boolean> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return true;
-
-  const exists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
-    () => true,
-    () => false
-  );
-  if (!exists) return true;
-
-  const choice = await vscode.window.showInformationMessage(
-    'plan.md already exists in this workspace.',
-    { modal: true, detail: 'Keep it untouched, or run through planning again and replace it?' },
-    'Keep Existing',
-    'Plan Again'
-  );
-  if (choice !== 'Plan Again') {
-    logger.write('planning: plan.md already exists here, kept as-is, interview skipped');
-    return false;
-  }
-  logger.write('planning: replacing existing plan.md — running the interview again');
-  return true;
-}
-
 function registerPlanningCommand(
   context: vscode.ExtensionContext,
   models: ModelService,
@@ -676,148 +650,10 @@ function registerPlanningCommand(
   liveLines: LiveQuips
 ): void {
   context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.planProject', async () => {
-      // Asked before spending a whole interview on it — finding out at the very end
-      // that the answer was "keep the existing one" would waste every question and
-      // every model call that led there.
-      if (!(await okToReplaceExistingPlan(logger))) return;
-
-      const opening = await liveLines.acknowledge('plan this project');
-      if (opening) void vscode.window.showInformationMessage(opening);
-
-      const result = await runInterview(models, (message) => logger.write(message));
-      if (!result) return;
-
-      const { state, seed } = result;
-      const settled = state.answers.filter((answer) => answer.text);
-      const open = openQuestions(state);
-
-      const lines = [
-        state.projectName ? `# ${state.projectName}` : `# Interview — ${seed}`,
-        ...(state.projectName ? [`*${seed}*`] : []),
-        '',
-        readyToDraft(state)
-          ? 'Enough to draft. (Generating `plan.md` from this is M9d, not built yet.)'
-          : 'Paused — reopen `Clarvis: Plan This Project` to continue where this left off. (Nothing is saved between sessions yet; that is also still to come.)',
-        '',
-        '## Established',
-        ...settled.flatMap((answer) =>
-          answer.reasoning
-            ? [`- **${answer.topic}**: ${answer.text}`, `  Reasoning: ${answer.reasoning}`]
-            : [`- **${answer.topic}**: ${answer.text}`]
-        ),
-      ];
-
-      if (open.length > 0) {
-        lines.push('', '## Open questions', ...open.map((answer) => `- ${answer.topic} — not yet known`));
-      }
-
-      let verdicts: FindingVerdict[] = [];
-      let noPlanNeeded: string | undefined;
-
-      if (readyToDraft(state)) {
-        const analysis = await runAnalysis(models, state, (message) => logger.write(message));
-        noPlanNeeded = analysis.noPlanNeeded;
-        if (noPlanNeeded) {
-          lines.push('', '## Analysis', `This may not need a plan: ${noPlanNeeded}`);
-        } else if (analysis.findings.length > 0) {
-          verdicts = await collectVerdicts(analysis.findings, (message) => logger.write(message));
-          lines.push('', '## Analysis');
-          for (const verdict of verdicts) lines.push(...formatVerdict(verdict));
-        }
-      }
-
-      // M9d — draft, refine, approve, then write plan.md — unless it's the
-      // "doesn't need a plan" outcome.
-      if (readyToDraft(state) && !noPlanNeeded) {
-        await draftAndApprovePlan(state, seed, verdicts, logger, liveLines);
-      }
-
-      // Logged, not just shown. An untitled document exists only until the tab closes
-      // or VS Code restarts — a two-minute interview producing an artifact neither the
-      // user nor a later "check the log" request could recover was found the first
-      // time this ran live.
-      logger.write(`planning summary:\n${lines.join('\n')}`);
-
-      const document = await vscode.workspace.openTextDocument({ content: lines.join('\n'), language: 'markdown' });
-      await vscode.window.showTextDocument(document, { preview: false });
-
-      // The aside, same rule as everywhere else it appears: separate from the summary,
-      // never folded into it, so the document stays trustworthy and the joke stays a
-      // joke. Shown, not written into the document — it is a remark about the moment,
-      // not part of the plan.
-      const aside = await liveLines.afterTask('plan this project', lines.join('\n'));
-      if (aside) void vscode.window.showInformationMessage(aside);
-    })
+    vscode.commands.registerCommand('clarvis.planProject', () =>
+      runPlanning(models, new VsCodeIO(), liveLines, (message) => logger.write(message))
+    )
   );
-}
-
-/**
- * Drafts `plan.md`, shows it, and lets the user refine or approve before it's
- * written (M9d) — Claude Code's own plan-mode shape, asked for by name: present a
- * draft, iterate on it, gate the actual write behind an explicit approval rather
- * than writing the moment there's enough to draft.
- *
- * **Refining adds a note and redraws, nothing more.** No re-interrogation, no
- * re-running analysis — a "keep refining" loop that reopened the whole Q&A would be
- * exactly the interrogation this interview has avoided since M9a. The note becomes
- * a `## Notes` line in the redrawn plan, and the loop shows it again.
- *
- * Whether to keep or replace an existing `plan.md` is asked before the interview
- * even starts (`registerPlanningCommand`) — finding out at the end that the answer
- * was "keep it" would waste the whole interview. This always writes on Approve.
- */
-async function draftAndApprovePlan(
-  state: InterviewState,
-  seed: string,
-  verdicts: FindingVerdict[],
-  logger: ClarvisLog,
-  liveLines: LiveQuips
-): Promise<void> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder) return;
-
-  const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
-  let firstDraft = true;
-  for (;;) {
-    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });
-    const draftDocument = await vscode.workspace.openTextDocument({ content: planText, language: 'markdown' });
-    await vscode.window.showTextDocument(draftDocument, { preview: false });
-
-    if (firstDraft) {
-      firstDraft = false;
-      const draftLine = await liveLines.acknowledge('look over a plan draft');
-      if (draftLine) void vscode.window.showInformationMessage(draftLine);
-    }
-
-    const choice = await vscode.window.showInformationMessage(
-      'Draft plan ready.',
-      { modal: true, detail: 'Approve writes plan.md. Keep refining lets you add anything missing first.' },
-      'Approve',
-      'Keep Refining'
-    );
-
-    if (choice !== 'Keep Refining') {
-      if (choice === 'Approve') {
-        await vscode.workspace.fs.writeFile(planUri, Buffer.from(planText, 'utf8'));
-        logger.write(`planning: wrote plan.md\n${planText}`);
-        const written = await vscode.workspace.openTextDocument(planUri);
-        await vscode.window.showTextDocument(written, { preview: false });
-      } else {
-        logger.write('planning: draft not approved, plan.md not written');
-      }
-      return;
-    }
-
-    const note = await vscode.window.showInputBox({
-      prompt: 'What should be added or changed?',
-      ignoreFocusOut: true,
-    });
-    if (note?.trim()) {
-      state.notes = [...(state.notes ?? []), note.trim()];
-      logger.write(`planning: refinement note — ${note.trim()}`);
-    }
-  }
 }
 
 /**

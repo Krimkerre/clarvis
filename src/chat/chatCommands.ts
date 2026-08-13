@@ -37,7 +37,8 @@ export type ChatAction =
   | 'chooseModel'
   | 'switchBranch'
   | 'explainGit'
-  | 'forgetFailure';
+  | 'forgetFailure'
+  | 'planProject';
 
 interface Intent {
   action: ChatAction;
@@ -120,6 +121,18 @@ const INTENTS: Intent[] = [
     phrases: [
       /\b(forget|drop|ignore|stop mentioning|stop going on about|let go of)\b.{0,30}\b(fail|failing|failure|build|test|it)\b/,
       /\bi know about the (build|test|failure)\b/,
+    ],
+  },
+  {
+    action: 'planProject',
+    slash: ['/plan'],
+    // Deliberately narrow. "Plan" is a common enough word that a loose pattern would
+    // hijack "what's the plan for this refactor?" — a question, not a request to spend
+    // ten minutes being interviewed.
+    phrases: [
+      /\b(start|begin|do|run)\b.{0,20}\b(planning|plan mode)\b/,
+      /\bplan (this|my|a new) project\b/,
+      /\bhelp me plan\b/,
     ],
   },
   {

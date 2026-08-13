@@ -105,11 +105,11 @@ export class ChatActions {
    * all three mean the same thing to the caller: answer normally. A declined suggestion
    * left hanging would be the worst of both, having interrupted *and* not answered.
    */
-  async offerInferred(question: string): Promise<boolean> {
-    if (!worthInferring(question)) return false;
+  async offerInferred(question: string): Promise<ChatAction | undefined> {
+    if (!worthInferring(question)) return undefined;
 
     const guess = await classifyAction(this.models, question, this.log);
-    if (!guess) return false;
+    if (!guess) return undefined;
 
     // Modal, because it interrupts something the user is waiting on and a toast that
     // times out unanswered would leave the question unanswered too.
@@ -121,11 +121,15 @@ export class ChatActions {
 
     if (answer !== 'Yes') {
       this.log(`action intent: declined ${guess}, answering instead`);
-      return false;
+      return undefined;
     }
 
+    // Planning is handed back to the caller rather than run here — it takes over the
+    // whole conversation, which is ChatService's call to make, not this class's.
+    if (guess === 'planProject') return guess;
+
     await this.run(guess, question);
-    return true;
+    return guess;
   }
 
   async run(action: ChatAction, question = ''): Promise<void> {

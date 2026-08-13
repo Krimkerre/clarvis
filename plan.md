@@ -3479,6 +3479,31 @@ answer was "keep it" only at the very end, wasting every question and model call
 led there. `draftAndApprovePlan()` no longer has its own existence check; it always
 writes on Approve, since the decision is already settled by the time it runs.
 
+**Chat-native planning, and the handoff to code mode (13 Aug).** Planning was a
+command-palette flow driving `vscode.window.*` directly; it now runs through
+`PlanningIO` (`src/planning/PlanningIO.ts`) — `askText`, `askChoice`, `confirm`,
+`say`, `showDocument`. `VsCodeIO` implements it exactly as the old call sites
+behaved; `PlanningChatIO` (`src/chat/`) implements it as a conversation, questions
+landing in the transcript and the next message typed being the answer. `Interview.ts`
+and `Verdicts.ts` are now `vscode`-free. The whole flow moved out of `extension.ts`
+into `PlanningFlow.ts`, which both front ends call.
+
+While planning runs, `ChatService.ask()` gets out of the way entirely — a message is
+an answer to the question just asked, and routing it (stop / action / job / question)
+would be four chances to misread "yes" or "3". `/plan` starts it; a project with no
+`plan.md` gets **one** offered line in the transcript at startup, never an interview
+launched unasked (§6).
+
+**M9e's first half is built:** an approved plan flows into code mode without the user
+restating anything. `handoff.ts` (pure, tested) assembles milestone one — what it is,
+where it runs, language, scope, and a checklist from definition-of-done plus every
+accepted/modified finding — and the prompt is **shown and editable before it runs**
+(§4.9), with Not Yet a first-class answer. From chat it goes through the same
+`RunSession.run()` a typed job takes; nothing about the build is special-cased for
+having come from planning. Still not built in M9e: ticking checklist items in
+`plan.md` as the agent completes them, and the agent's own mid-build clarifying
+questions.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

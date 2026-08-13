@@ -1,38 +1,31 @@
-import * as vscode from 'vscode';
 import { Finding } from './analysisPrompt';
+import { PlanningIO } from './PlanningIO';
 import { FindingVerdict } from './verdictSummary';
 
 /**
  * Collects accept / reject / modify for each analysis finding (M9c — §4.9).
  *
- * Same temporary front end as M9a/M9b: chained dialogs per finding rather than the
- * eventual panel, real and usable today without waiting on that separate piece of
- * work. Cancelling any prompt (Escape) counts as accepting that finding as-is —
- * silently dropping a finding the user didn't actively reject would be worse than
- * keeping it.
+ * Cancelling any prompt (Escape, or an unrecognised chat reply) counts as accepting
+ * that finding as-is — silently dropping a finding the user didn't actively reject
+ * would be worse than keeping it.
  *
- * **A modal message, not a QuickPick.** Found live: a QuickPick's `placeHolder` is a
- * single line, and a finding's `what` alone routinely ran past it — unreadable,
- * truncated by VS Code itself before this project's own 400-char bug ever entered
- * into it. A modal's `detail` wraps and shows the full finding — what, why it
- * matters, and the suggested fix — before asking for a decision.
+ * **The whole finding is shown, not a truncated line.** Found live: a QuickPick's
+ * `placeHolder` is a single line and VS Code truncated findings mid-sentence in it.
+ * `confirm()` carries a `detail` that wraps, so what/why/fix all arrive intact
+ * whichever front end is in use.
  */
 export async function collectVerdicts(
   findings: Finding[],
+  io: PlanningIO,
   log: (message: string) => void
 ): Promise<FindingVerdict[]> {
   const verdicts: FindingVerdict[] = [];
 
   for (const finding of findings) {
-    const pick = await vscode.window.showInformationMessage(
+    const pick = await io.confirm(
       `[${finding.class}] ${finding.what}`,
-      {
-        modal: true,
-        detail: `Why it matters: ${finding.whyItMatters}\n\nSuggested fix: ${finding.suggestedResolution}`,
-      },
-      'Accept',
-      'Reject',
-      'Modify'
+      `Why it matters: ${finding.whyItMatters}\n\nSuggested fix: ${finding.suggestedResolution}`,
+      ['Accept', 'Reject', 'Modify']
     );
 
     if (!pick || pick === 'Accept') {
@@ -42,20 +35,13 @@ export async function collectVerdicts(
     }
 
     if (pick === 'Reject') {
-      const reasoning = await vscode.window.showInputBox({
-        prompt: 'Why reject this?',
-        ignoreFocusOut: true,
-      });
+      const reasoning = await io.askText('Why reject this?');
       log(`planning: verdict [${finding.class}] rejected — ${reasoning || '(no reason given)'}`);
       verdicts.push({ finding, status: 'rejected', reasoning: reasoning?.trim() || undefined });
       continue;
     }
 
-    const reasoning = await vscode.window.showInputBox({
-      prompt: 'Rewrite this finding',
-      value: finding.what,
-      ignoreFocusOut: true,
-    });
+    const reasoning = await io.askText('Rewrite this finding', finding.what);
     if (!reasoning?.trim()) {
       log(`planning: verdict [${finding.class}] modify cancelled, kept as-is`);
       verdicts.push({ finding, status: 'accepted' });

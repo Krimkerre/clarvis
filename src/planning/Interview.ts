@@ -1,5 +1,5 @@
-import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
+import { PlanningIO } from './PlanningIO';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
 import { namePrompt, parseNameResult } from './namePrompt';
@@ -33,17 +33,17 @@ const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
 
 export async function runInterview(
   models: ModelService,
+  io: PlanningIO,
   log: (message: string) => void
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
-  let seed = await vscode.window.showInputBox({
-    prompt: 'What are you building? One sentence is plenty.',
-    placeHolder: "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas",
-    ignoreFocusOut: true,
-  });
+  let seed = await io.askText(
+    'What are you building? One sentence is plenty.',
+    "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas"
+  );
   if (seed === undefined) return undefined;
 
   if (!seed.trim() || UNKNOWN_ANSWER.test(seed.trim())) {
-    seed = await offerIdeas(models, log);
+    seed = await offerIdeas(models, io, log);
     if (!seed) return undefined;
   }
 
@@ -62,7 +62,7 @@ export async function runInterview(
     log(`planning: workspace — ${state.workspaceContext}`);
   }
 
-  state.projectName = await resolveProjectName(models, seed.trim(), log);
+  state.projectName = await resolveProjectName(models, io, seed.trim(), log);
 
   for (;;) {
     const topic = nextTopic(state);
@@ -74,7 +74,7 @@ export async function runInterview(
     let answer: Answer;
 
     if (topic === 'language') {
-      const resolved = await askLanguage(models, question, state, log);
+      const resolved = await askLanguage(models, io, question, state, log);
       // Cancelling (Escape) pauses the interview rather than answering "I don't know"
       // on the user's behalf — same rule as the free-text path below.
       if (!resolved) {
@@ -87,11 +87,7 @@ export async function runInterview(
       resolved.question = 'Which language should this be built in?';
       answer = resolved;
     } else {
-      const raw = await vscode.window.showInputBox({
-        prompt: question,
-        placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
-        ignoreFocusOut: true,
-      });
+      const raw = await io.askText(question, "Type your answer, or \"I don't know yet\" — that's a fine answer here.");
 
       // Cancelling the box (Escape) pauses the interview rather than answering "I
       // don't know" on the user's behalf — those are different things, and only one
@@ -105,7 +101,7 @@ export async function runInterview(
       answer.question = question;
     }
 
-    answer = await challengeAnswer(models, topic, answer, state, log);
+    answer = await challengeAnswer(models, io, topic, answer, state, log);
     log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
     state.answers.push(answer);
   }
@@ -128,6 +124,7 @@ export async function runInterview(
  */
 async function challengeAnswer(
   models: ModelService,
+  io: PlanningIO,
   topic: TopicId,
   answer: Answer,
   state: InterviewState,
@@ -156,11 +153,7 @@ async function challengeAnswer(
     }
 
     log(`planning: "${topic}" — pushed back — ${result.followUp}`);
-    const raw = await vscode.window.showInputBox({
-      prompt: result.followUp,
-      placeHolder: "Type your answer, or leave blank to keep what you said",
-      ignoreFocusOut: true,
-    });
+    const raw = await io.askText(result.followUp, 'Type your answer, or leave blank to keep what you said');
     if (!raw?.trim()) {
       log(`planning: "${topic}" — follow-up declined, kept original answer`);
       return answer;
@@ -228,7 +221,11 @@ async function synthesizeAnswer(
  * answer rather than something to route around. No model, no ideas: there is no
  * honest written fallback for "make something up that's funny".
  */
-async function offerIdeas(models: ModelService, log: (message: string) => void): Promise<string | undefined> {
+async function offerIdeas(
+  models: ModelService,
+  io: PlanningIO,
+  log: (message: string) => void
+): Promise<string | undefined> {
   if (!(await models.isReady('chat'))) {
     log('planning: seed — no model configured, could not suggest ideas');
     return undefined;
@@ -254,25 +251,22 @@ async function offerIdeas(models: ModelService, log: (message: string) => void):
     }
 
     const SOMETHING_ELSE = 'Something else…';
-    const picked = await vscode.window.showQuickPick(
-      [...ideas.map((idea) => ({ label: idea.name, detail: idea.description })), { label: SOMETHING_ELSE }],
-      { placeHolder: "Didn't know what to build? Pick one, or describe your own", ignoreFocusOut: true }
-    );
+    const picked = await io.askChoice("Didn't know what to build? Pick one, or describe your own", [
+      ...ideas.map((idea) => ({ label: idea.name, detail: idea.description })),
+      { label: SOMETHING_ELSE },
+    ]);
     if (!picked) {
       log('planning: seed — idea picker cancelled');
       return undefined;
     }
-    if (picked.label === SOMETHING_ELSE) {
-      const typed = await vscode.window.showInputBox({
-        prompt: 'What are you building? One sentence is plenty.',
-        ignoreFocusOut: true,
-      });
+    if (picked === SOMETHING_ELSE) {
+      const typed = await io.askText('What are you building? One sentence is plenty.');
       return typed?.trim() || undefined;
     }
 
-    const idea = ideas.find((candidate) => candidate.name === picked.label);
-    log(`planning: seed — chose idea: ${picked.label}`);
-    return idea ? `${idea.name}, ${idea.description}` : picked.label;
+    const idea = ideas.find((candidate) => candidate.name === picked);
+    log(`planning: seed — chose idea: ${picked}`);
+    return idea ? `${idea.name}, ${idea.description}` : picked;
   } catch (error) {
     log(`planning: seed — idea generation failed (${String(error)})`);
     return undefined;
@@ -288,6 +282,7 @@ async function offerIdeas(models: ModelService, log: (message: string) => void):
  */
 async function resolveProjectName(
   models: ModelService,
+  io: PlanningIO,
   seed: string,
   log: (message: string) => void
 ): Promise<string | undefined> {
@@ -320,25 +315,22 @@ async function resolveProjectName(
     }
 
     const SOMETHING_ELSE = 'Something else…';
-    const picked = await vscode.window.showQuickPick(
-      [
-        ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
-        { label: SOMETHING_ELSE },
-      ],
-      { placeHolder: 'No name given yet — pick one, or name it yourself', ignoreFocusOut: true }
-    );
+    const picked = await io.askChoice('No name given yet — pick one, or name it yourself', [
+      ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
+      { label: SOMETHING_ELSE },
+    ]);
     if (!picked) {
       log('planning: name — suggestion picker cancelled, left unresolved');
       return undefined;
     }
-    if (picked.label === SOMETHING_ELSE) {
-      const typed = await vscode.window.showInputBox({ prompt: 'What should it be called?', ignoreFocusOut: true });
+    if (picked === SOMETHING_ELSE) {
+      const typed = await io.askText('What should it be called?');
       log(`planning: name — ${typed ? `set to ${typed.trim()}` : 'left unresolved'}`);
       return typed?.trim() || undefined;
     }
 
-    log(`planning: name — chose suggestion: ${picked.label}`);
-    return picked.label;
+    log(`planning: name — chose suggestion: ${picked}`);
+    return picked;
   } catch (error) {
     log(`planning: name — resolution failed (${String(error)}), skipped`);
     return undefined;
@@ -376,6 +368,7 @@ function parseLanguageOptions(text: string): LanguageOption[] {
  */
 async function askLanguage(
   models: ModelService,
+  io: PlanningIO,
   question: string,
   state: InterviewState,
   log: (message: string) => void
@@ -383,39 +376,30 @@ async function askLanguage(
   const options = parseLanguageOptions(question);
   if (options.length === 0) {
     log('planning: "language" — shortlist did not parse, fell back to free text');
-    const raw = await vscode.window.showInputBox({
-      prompt: question,
-      placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
-      ignoreFocusOut: true,
-    });
+    const raw = await io.askText(question, "Type your answer, or \"I don't know yet\" — that's a fine answer here.");
     return raw === undefined ? undefined : toAnswer('language', raw);
   }
 
   const YOU_PICK = 'You pick';
   const SOMETHING_ELSE = 'Something else…';
-  const items: vscode.QuickPickItem[] = [
+  const picked = await io.askChoice('Pick a language, or "You pick" to leave it to him', [
     ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
     { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },
     { label: SOMETHING_ELSE },
-  ];
-
-  const picked = await vscode.window.showQuickPick(items, {
-    placeHolder: 'Pick a language, or "You pick" to leave it to him',
-    ignoreFocusOut: true,
-  });
+  ]);
   if (!picked) return undefined;
 
-  if (picked.label === SOMETHING_ELSE) {
-    const raw = await vscode.window.showInputBox({ prompt: 'What language?', ignoreFocusOut: true });
+  if (picked === SOMETHING_ELSE) {
+    const raw = await io.askText('What language?');
     return raw === undefined ? undefined : toAnswer('language', raw);
   }
 
-  if (picked.label === YOU_PICK) {
+  if (picked === YOU_PICK) {
     const { name, reasoning } = await pickLanguageForUser(models, options, state, log);
     return { topic: 'language', text: name, reasoning };
   }
 
-  return { topic: 'language', text: picked.label };
+  return { topic: 'language', text: picked };
 }
 
 /**

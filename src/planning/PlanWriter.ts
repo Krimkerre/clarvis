@@ -19,6 +19,8 @@ export interface PlanInput {
   seed: string;
   state: InterviewState;
   verdicts: FindingVerdict[];
+  /** The build steps for milestone one. Empty means none could be written. */
+  steps?: string[];
 }
 
 /**
@@ -76,7 +78,7 @@ function section(heading: string, answer: Answer | undefined): string {
   return [heading, '', ...(answer.question ? [`**Asked:** ${answer.question}`, ''] : []), answer.text].join('\n');
 }
 
-export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): string {
+export function renderPlan({ projectName, seed, state, verdicts, steps = [] }: PlanInput): string {
   const title = projectName ?? seed;
   const language = state.answers.find((answer) => answer.topic === 'language');
   const accepted = verdicts.filter((verdict) => verdict.status !== 'rejected');
@@ -114,14 +116,26 @@ export function renderPlan({ projectName, seed, state, verdicts }: PlanInput): s
     ...(state.notes && state.notes.length > 0 ? ['## Notes', '', ...state.notes.map((note) => `- ${note}`), ''] : []),
     '## 7. Milestone 1 — v1',
     '',
-    '**Exit checklist:**',
-    ...(answerText(state, 'definition-of-done') ? [`- [ ] ${answerText(state, 'definition-of-done')}`] : []),
-    // A modified finding's checklist item is the user's own rewrite, not Clarvis's
-    // original suggested fix — same rule as the summary display, and for the same
-    // reason: the original fix describes a finding the user has already replaced.
-    ...accepted.map((verdict) => `- [ ] ${verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution}`),
-    ...(answerText(state, 'definition-of-done') || accepted.length > 0 ? [] : ['_Not yet determined._']),
+    ...(answerText(state, 'definition-of-done') ? [`**Done when:** ${answerText(state, 'definition-of-done')}`, ''] : []),
+    '**Build:**',
+    // **Work, not decisions.** This list used to be the definition of done plus every
+    // accepted finding's suggested fix — and a fix is a clarification ("Clarify
+    // whether v1 accepts user-provided words"). Handed that as a task, the agent read
+    // the plan, found nothing it could do, and stopped. Found live.
+    ...(steps.length > 0 ? steps.map((step) => `- [ ] ${step}`) : ['_No steps written — planning could not reach a model._']),
     '',
+    // The findings keep their own section: they are questions to settle before or
+    // during the build, and mixing them into the work is what emptied the work.
+    ...(accepted.length > 0
+      ? [
+          '**Settle while building:**',
+          ...accepted.map(
+            (verdict) =>
+              `- ${verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution}`
+          ),
+          '',
+        ]
+      : []),
     '## 8. Decisions',
     ...(rejected.length > 0
       ? rejected.map(

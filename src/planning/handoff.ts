@@ -17,19 +17,24 @@ function answerText(state: InterviewState, topic: TopicId): string | undefined {
 }
 
 /** Milestone one, as a task the agent can act on. */
-export function handoffTask(state: InterviewState, seed: string, verdicts: FindingVerdict[]): string {
+export function handoffTask(
+  state: InterviewState,
+  seed: string,
+  verdicts: FindingVerdict[],
+  steps: string[] = []
+): string {
   const name = state.projectName ?? seed;
   const language = answerText(state, 'language');
   const done = answerText(state, 'definition-of-done');
 
-  const checklist = [
-    ...(done ? [done] : []),
-    ...verdicts
-      .filter((verdict) => verdict.status !== 'rejected')
-      .map((verdict) =>
-        verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution
-      ),
-  ];
+  // **The steps are the work; the findings are questions.** Handing over a list of
+  // "Clarify whether…" items produced a run that read the plan, found nothing to do,
+  // and stopped — found live. They are still passed on, named for what they are.
+  const settle = verdicts
+    .filter((verdict) => verdict.status !== 'rejected')
+    .map((verdict) =>
+      verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution
+    );
 
   return [
     `Start building ${name}, following the approved plan.md in this workspace.`,
@@ -39,8 +44,12 @@ export function handoffTask(state: InterviewState, seed: string, verdicts: Findi
     ...(language ? [`Language: ${language}`] : []),
     ...(answerText(state, 'scope') ? [`Scope: ${answerText(state, 'scope')}`] : []),
     '',
-    'Milestone 1 — work through this checklist, ticking each item in plan.md as it lands:',
-    ...(checklist.length > 0 ? checklist.map((item) => `- ${item}`) : ['- (no checklist items were agreed)']),
+    ...(done ? [`Done when: ${done}`, ''] : []),
+    'Milestone 1 — build these, ticking each off in plan.md as it lands:',
+    ...(steps.length > 0
+      ? steps.map((step) => `- ${step}`)
+      : ['- (no build steps were written — work out the smallest thing that runs, and do that)']),
+    ...(settle.length > 0 ? ['', 'Open questions to settle as you go, not before you start:', ...settle.map((item) => `- ${item}`)] : []),
     '',
     'Start with the smallest thing that runs. Do not build past milestone 1.',
   ].join('\n');

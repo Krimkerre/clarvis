@@ -60,14 +60,34 @@ test('open questions list unanswered topics', () => {
   assert.match(plan, /## 9\. Open Questions\n- data — not yet known/);
 });
 
-test('accepted findings become exit-checklist items, rejected findings become decisions', () => {
+test('the build checklist is the steps, not the findings', () => {
+  // Found live: milestone one was the definition of done plus every finding's
+  // suggested fix — all of them clarifications — so the agent read the plan, found
+  // nothing it could build, and stopped.
+  const plan = renderPlan({
+    seed: 'renames photos',
+    state,
+    verdicts,
+    steps: ['Create the CLI entry point', 'Read EXIF dates'],
+  });
+  assert.match(plan, /\*\*Build:\*\*\n- \[ \] Create the CLI entry point\n- \[ \] Read EXIF dates/);
+  // Accepted findings are questions to settle, listed apart from the work.
+  assert.match(plan, /\*\*Settle while building:\*\*\n- add a --dry-run flag/);
+  assert.doesNotMatch(plan, /- \[ \] add a --dry-run flag/);
+});
+
+test('a plan with no steps says so rather than looking finished', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(plan, /_No steps written/);
+});
+
+test('rejected findings become decisions', () => {
   const plan = renderPlan({ seed: 'renames photos', state, verdicts });
-  assert.match(plan, /- \[ \] add a --dry-run flag/);
-  assert.doesNotMatch(plan, /- \[ \] support common formats/);
+  assert.doesNotMatch(plan, /support common formats/);
   assert.match(plan, /## 8\. Decisions\n- \*\*\[scope\]\*\* assumes JPEG only — rejected\. JPEG-only is fine for v1/);
 });
 
-test('a modified finding\'s checklist item is the user\'s rewrite, not the original fix', () => {
+test('a modified finding is settled in the user\'s own words, not the original fix', () => {
   // Found live: modifying a finding to "ESLint" still put the original "name a
   // linter" suggestion in the checklist, contradicting the edit sitting right above it.
   const modified: FindingVerdict = {
@@ -81,7 +101,7 @@ test('a modified finding\'s checklist item is the user\'s rewrite, not the origi
     reasoning: 'ESLint',
   };
   const plan = renderPlan({ seed: 'renames photos', state, verdicts: [modified] });
-  assert.match(plan, /- \[ \] ESLint/);
+  assert.match(plan, /- ESLint/);
   assert.doesNotMatch(plan, /Name the linter in the definition of done/);
 });
 

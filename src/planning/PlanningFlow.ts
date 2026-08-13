@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { runInterview } from './Interview';
-import { runAnalysis } from './Analysis';
+import { planMilestone, runAnalysis } from './Analysis';
 import { collectVerdicts } from './Verdicts';
 import { formatVerdict, FindingVerdict } from './verdictSummary';
 import { renderPlan } from './PlanWriter';
@@ -102,8 +102,12 @@ export async function runPlanning(
     }
   }
 
+  // The build steps, written before the draft is shown — a plan whose milestone is
+  // empty is not a plan anyone can approve, and it is what the agent reads next.
+  const steps = readyToDraft(state) && !noPlanNeeded ? await planMilestone(models, state, log) : [];
+
   const approved = readyToDraft(state) && !noPlanNeeded
-    ? await draftAndApprovePlan(state, seed, verdicts, io, lines, log)
+    ? await draftAndApprovePlan(state, seed, verdicts, steps, io, lines, log)
     : false;
 
   // Logged, not just shown. An untitled document exists only until the tab closes or
@@ -124,7 +128,7 @@ export async function runPlanning(
   // one is right there, and making the user restate it as a fresh request would be
   // the seam §0's two-mode discipline exists to make invisible. Still asked — the
   // sign-off gate is on writing the plan, and starting to build is its own decision.
-  if (approved && startBuild) await offerToBuild(state, seed, verdicts, io, log, startBuild);
+  if (approved && startBuild) await offerToBuild(state, seed, verdicts, steps, io, log, startBuild);
 }
 
 /**
@@ -138,11 +142,12 @@ async function offerToBuild(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
+  steps: string[],
   io: PlanningIO,
   log: (message: string) => void,
   startBuild: StartBuild
 ): Promise<void> {
-  const task = handoffTask(state, seed, verdicts);
+  const task = handoffTask(state, seed, verdicts, steps);
 
   const choice = await io.confirm(
     await phrase('ask', 'Plan approved. Shall I go and build the first milestone, then?', []),
@@ -214,6 +219,7 @@ async function draftAndApprovePlan(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
+  steps: string[],
   io: PlanningIO,
   lines: PlanningLines,
   log: (message: string) => void
@@ -224,7 +230,7 @@ async function draftAndApprovePlan(
   const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
   let firstDraft = true;
   for (;;) {
-    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });
+    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts, steps });
     await io.showDocument(planText);
 
     if (firstDraft) {

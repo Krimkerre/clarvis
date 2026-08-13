@@ -33,19 +33,22 @@ test('the task names the project and what was established', () => {
   assert.match(task, /renames photos by EXIF date/);
 });
 
-test('accepted findings become checklist items, rejected ones do not', () => {
-  const task = handoffTask(state, 'renames photos', verdicts);
-  assert.match(task, /- add a --dry-run flag/);
+test('the build list is the steps; findings are named as questions', () => {
+  // Found live: handing over a list of "Clarify whether…" items produced a run that
+  // read the plan, found nothing it could do, and stopped.
+  const task = handoffTask(state, 'renames photos', verdicts, ['Create the entry point']);
+  assert.match(task, /Milestone 1 — build these[^]*- Create the entry point/);
+  assert.match(task, /Open questions to settle as you go[^]*- add a --dry-run flag/);
   assert.doesNotMatch(task, /support all formats/);
 });
 
-test('a modified finding contributes the user\'s own wording', () => {
+test('a modified finding is settled in the user\'s own wording', () => {
   const modified: FindingVerdict = {
     finding: { class: 'improvement', what: 'no linter named', whyItMatters: 'x', suggestedResolution: 'name a linter' },
     status: 'modified',
     reasoning: 'use ruff',
   };
-  const task = handoffTask(state, 'renames photos', [modified]);
+  const task = handoffTask(state, 'renames photos', [modified], ['Create the entry point']);
   assert.match(task, /- use ruff/);
   assert.doesNotMatch(task, /name a linter/);
 });
@@ -54,7 +57,7 @@ test('it refuses to build past milestone one', () => {
   assert.match(handoffTask(state, 'renames photos', []), /Do not build past milestone 1/);
 });
 
-test('an empty checklist says so rather than inventing work', () => {
+test('no steps says so rather than pretending the milestone is empty on purpose', () => {
   const bare: InterviewState = { answers: [{ topic: 'what-it-does', text: 'a thing' }] };
-  assert.match(handoffTask(bare, 'a thing', []), /no checklist items were agreed/);
+  assert.match(handoffTask(bare, 'a thing', []), /no build steps were written/);
 });

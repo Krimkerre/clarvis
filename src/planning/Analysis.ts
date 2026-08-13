@@ -1,6 +1,7 @@
 import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
 import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResult } from './analysisPrompt';
+import { milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
 
 /**
  * Runs one analysis pass over a finished interview (M9b — §4.9).
@@ -58,5 +59,46 @@ export async function runAnalysis(
   } catch (error) {
     log(`planning: analysis failed (${String(error)})`);
     return { findings: [] };
+  }
+}
+
+/**
+ * The build steps for milestone one.
+ *
+ * **No model, no steps — and that is reported rather than papered over.** An empty
+ * milestone is a visible hole in the plan; a fabricated one sends the agent to build
+ * something nobody described, which is worse and much harder to notice.
+ */
+export async function planMilestone(
+  models: ModelService,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<string[]> {
+  if (!(await models.isReady('chat'))) {
+    log('planning: milestone — no model configured, no steps written');
+    return [];
+  }
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > MAX_RESPONSE_CHARS) break;
+      }
+    })();
+
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, ANALYSIS_TIMEOUT_MS))]);
+
+    const steps = parseMilestoneSteps(text);
+    log(`planning: milestone — ${steps.length} step(s)`);
+    for (const step of steps) log(`planning: milestone step — ${step}`);
+    return steps;
+  } catch (error) {
+    log(`planning: milestone failed (${String(error)})`);
+    return [];
   }
 }

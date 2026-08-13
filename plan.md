@@ -3527,6 +3527,16 @@ already used), with the load-bearing words (`plan.md`, `/plan`, `Approve`) passe
 now rather than quietly written — it is the one line that tells someone the feature
 exists, and a notice nobody hears is a feature nobody finds.
 
+**The offer is a question, not an instruction (13 Aug).** It read "Say `/plan` when
+you want to fix that" — a command to memorise, from a butler. It now asks plainly
+("…Shall we plan something?") with **Yes / No** buttons, and the next message answers
+it: yes starts the interview, anything else falls through to a normal reply, so
+declining costs nothing and saying something unrelated still gets answered. `/plan`
+still works for anyone who wants it. The written fallbacks throughout planning were
+also rewritten with some bite to them — they are both what shows when no model is
+configured *and* the seed `phrase()` rewrites from, so a flat fallback produces a
+flat line either way.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

@@ -57,8 +57,8 @@ export async function okToReplaceExistingPlan(io: PlanningIO, log: (message: str
   if (!exists) return true;
 
   const choice = await io.confirm(
-    await phrase('ask', 'There is already a plan.md in this project.', ['plan.md']),
-    await phrase('ask', 'Keep it untouched, or run through planning again and replace it?', ['plan.md']),
+    await phrase('ask', 'There is already a plan.md here. Someone was organised once.', ['plan.md']),
+    await phrase('ask', 'Keep it untouched, or start over and replace it?', ['plan.md']),
     ['Keep Existing', 'Plan Again']
   );
   if (choice !== 'Plan Again') {
@@ -145,8 +145,8 @@ async function offerToBuild(
   const task = handoffTask(state, seed, verdicts);
 
   const choice = await io.confirm(
-    await phrase('ask', 'Plan approved. Shall I start on milestone one?', ['milestone one']),
-    `${await phrase('report', 'This is what I would hand myself:', [])}\n\n${task}`,
+    await phrase('ask', 'Plan approved. Shall I go and build the first milestone, then?', []),
+    `${await phrase('report', 'This is what I would be handing myself:', [])}\n\n${task}`,
     ['Start Building', 'Edit The Task First', 'Not Yet']
   );
   if (!choice || choice === 'Not Yet') {
@@ -234,7 +234,7 @@ async function draftAndApprovePlan(
     }
 
     const choice = await io.confirm(
-      await phrase('ask', 'That is the draft.', []),
+      await phrase('ask', 'There it is. Read it before you agree to it.', []),
       await phrase(
         'ask',
         'Approve writes plan.md. Keep refining lets you add anything missing first.',

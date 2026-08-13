@@ -253,7 +253,7 @@ async function offerIdeas(
 
     const SOMETHING_ELSE = 'Something else…';
     const picked = await io.askChoice(
-      await phrase('ask', "No idea what to build? Here are a few. Pick one, or describe your own.", []),
+      await phrase('ask', "Fine. Here are four. Two of them I am even serious about.", []),
       [
         ...ideas.map((idea) => ({ label: idea.name, detail: idea.description })),
         { label: SOMETHING_ELSE },
@@ -320,7 +320,7 @@ async function resolveProjectName(
 
     const SOMETHING_ELSE = 'Something else…';
     const picked = await io.askChoice(
-      await phrase('ask', 'It has no name yet. Pick one of these, or name it yourself.', []),
+      await phrase('ask', 'It needs a name. These are the ones I could live with.', []),
       [
         ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
         { label: SOMETHING_ELSE },
@@ -390,7 +390,7 @@ async function askLanguage(
   const YOU_PICK = 'You pick';
   const SOMETHING_ELSE = 'Something else…';
   const picked = await io.askChoice(
-    await phrase('ask', 'Which language, then? Or leave it to me.', []),
+    await phrase('ask', 'Which language, then. Or leave it to me and accept the consequences.', []),
     [
       ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
       { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },

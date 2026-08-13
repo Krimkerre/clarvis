@@ -120,6 +120,15 @@ export class ChatService {
   private planningIO?: PlanningChatIO;
 
   /**
+   * True between offering to plan and the user answering.
+   *
+   * The offer is a question, so the next message is an answer to it — not something
+   * to route as a job or a question of its own. Cleared either way, so a "no" (or
+   * anything else) never leaves chat quietly intercepting later messages.
+   */
+  private awaitingPlanAnswer = false;
+
+  /**
    * Runs the whole planning milestone through the chat panel (M9, §4.9).
    *
    * The same flow the command palette drives — only the `PlanningIO` differs, so
@@ -164,6 +173,37 @@ export class ChatService {
   }
 
   /**
+   * Whether planning consumed this message — either as an answer to a question it
+   * asked, or as the reply to the offer to start.
+   */
+  private async planningTook(question: string): Promise<boolean> {
+    if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
+    if (!this.planningIO?.isWaiting) return false;
+
+    if (isStopRequest(question)) {
+      this.log('chat: planning cancelled from chat');
+      this.planningIO.cancel();
+      return true;
+    }
+    this.planningIO.supply(question);
+    return true;
+  }
+
+  /** Takes the reply to the planning offer. `true` once planning has started. */
+  private async answeredPlanOffer(question: string): Promise<boolean> {
+    this.awaitingPlanAnswer = false;
+    this.panel.post({ type: 'choices-clear' });
+
+    if (/^(y|yes|sure|go on|please|ok|okay)\b/i.test(question.trim())) {
+      await this.startPlanning();
+      return true;
+    }
+
+    this.log('chat: planning offer declined');
+    return false;
+  }
+
+  /**
    * Offers to plan, once, when a project has no `plan.md` of its own.
    *
    * **An offer, not an ambush.** §4.9 wants planning to be the front door, and a
@@ -183,15 +223,19 @@ export class ChatService {
     if (exists) return;
 
     this.log('chat: no plan.md here, offered to plan');
-    // Spoken, not just written: it is the one line that tells someone this feature
-    // exists at all, and a notice nobody hears is a feature nobody finds.
+
+    // **A question with buttons, not an instruction to remember a command.** Spoken
+    // as well as written: it is the one line that tells someone this feature exists,
+    // and a notice nobody hears is a feature nobody finds.
     await this.remark(
       await this.phrase(
-        'report',
-        "There's no plan.md in this project. Say `/plan` when you want to fix that — I'll ask the questions.",
-        ['/plan', 'plan.md']
+        'ask',
+        "No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?",
+        ['plan.md']
       )
     );
+    this.awaitingPlanAnswer = true;
+    this.panel.post({ type: 'choices', items: ['Yes', 'No'] });
   }
 
   constructor(
@@ -351,15 +395,10 @@ export class ChatService {
     // **While planning runs, every message is an answer to the question just asked.**
     // Routing it — stop, action, job, question — would be four chances to misread
     // "yes" or "3" as something else entirely, so `ask()` gets out of the way.
-    if (this.planningIO?.isWaiting) {
-      if (isStopRequest(question)) {
-        this.log('chat: planning cancelled from chat');
-        this.planningIO.cancel();
-        return;
-      }
-      this.planningIO.supply(question);
-      return;
-    }
+    // Planning owns the message when it is mid-question, or when the offer to plan
+    // is still hanging. Both are questions Clarvis just asked, and routing an answer
+    // to them as a job or a query would be several chances to misread "yes".
+    if (await this.planningTook(question)) return;
 
     // Before anything that costs a request: someone typing "stop" wants the thing to
     // stop, and asking a model about it first is both slow and beside the point.

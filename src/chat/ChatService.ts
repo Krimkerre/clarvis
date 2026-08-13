@@ -152,6 +152,15 @@ export class ChatService {
       this.log
     );
     this.planningIO = io;
+
+    // **Plan mode, for the duration.** The interview is the one stretch where a
+    // stray "fix the tests" would be actively harmful — a half-finished plan and a
+    // half-finished edit, neither signed off — and §0's rule is that nothing but
+    // `plan.md` gets written until the plan is approved. Setting the mode makes that
+    // visible on the button rather than leaving it as a rule only the code knows.
+    const modeBefore = this.actions.mode();
+    await this.actions.setMode('plan');
+
     try {
       await runPlanning(
         this.models,
@@ -179,6 +188,9 @@ export class ChatService {
       );
     } finally {
       this.planningIO = undefined;
+      // Restored unless planning already moved on to Agent for the build — putting
+      // them back in Plan a second after they approved one would undo the handoff.
+      if (this.actions.mode() === 'plan') await this.actions.setMode(modeBefore);
     }
   }
 

@@ -205,6 +205,15 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  // Text handed back for editing — a rewrite starts from what is there, rather
+  // than from a blank box next to something you have to copy by hand.
+  if (msg.type === 'prefill') {
+    input.value = String(msg.text || '');
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+    return;
+  }
+
   // A streamed reply is one turn that grows, not many turns. Appending to the
   // same node keeps inline code spans working across fragment boundaries, which
   // rendering each fragment separately would break.

@@ -41,7 +41,8 @@ export async function collectVerdicts(
       continue;
     }
 
-    const reasoning = await io.askText('Rewrite this finding', finding.what);
+    // The finding itself, in the box, editable — not a placeholder to retype.
+    const reasoning = await io.askText('Rewrite this finding', undefined, finding.what);
     if (!reasoning?.trim()) {
       log(`planning: verdict [${finding.class}] modify cancelled, kept as-is`);
       verdicts.push({ finding, status: 'accepted' });

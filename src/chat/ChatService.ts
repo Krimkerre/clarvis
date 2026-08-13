@@ -149,6 +149,7 @@ export class ChatService {
       (text) => this.note(text),
       (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       (text) => this.showPlanDocument(text),
+      (text) => this.panel.post({ type: 'prefill', text }),
       this.log
     );
     this.planningIO = io;

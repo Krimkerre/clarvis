@@ -318,6 +318,11 @@ export class ChatService {
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
     this.panel.onDidRequestClear(() => void this.confirmAndClear());
     this.panel.onDidRequestHistory(() => void this.showHistory());
+    // **Reveal, not a new view.** Every command and tool call already goes to the
+    // Clarvis terminal — a run's actual output has been one click away the whole
+    // time, with nothing in the panel saying so. `show(true)` keeps focus where it
+    // is: the point is seeing what is happening, not being dragged to it.
+    this.panel.onDidRequestOutput(() => this.terminal.reveal());
     // The same path a typed "stop" takes, so clicking it while nothing is running says
     // so rather than silently doing nothing — which, on an always-visible button, would
     // read as the button being broken.

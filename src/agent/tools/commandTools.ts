@@ -148,6 +148,11 @@ export class AgentTerminal {
     this.write(`\r\n$ ${command}\r\n`);
   }
 
+  /** Brings the output into view without stealing focus. */
+  reveal(): void {
+    this.ensure().show(true);
+  }
+
   write(chunk: string): void {
     this.ensure();
     // Terminals want CRLF; a bare \n leaves output stair-stepping down the screen.

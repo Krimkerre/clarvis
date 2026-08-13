@@ -92,6 +92,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       'toggle-mute': () => this.muteToggled.fire(),
       'clear-chat': () => this.clearRequested.fire(),
       'show-history': () => this.historyRequested.fire(),
+      'show-output': () => this.outputRequested.fire(),
       stop: () => this.stopRequested.fire(),
       models: () => this.modelsRequested.fire(),
       'choose-mode': () => this.modeRequested.fire(),
@@ -107,6 +108,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly muteToggled = new vscode.EventEmitter<void>();
   private readonly clearRequested = new vscode.EventEmitter<void>();
   private readonly historyRequested = new vscode.EventEmitter<void>();
+  /** Reveal the terminal every command and tool call already writes to. */
+  private readonly outputRequested = new vscode.EventEmitter<void>();
   private readonly stopRequested = new vscode.EventEmitter<void>();
   private readonly modelsRequested = new vscode.EventEmitter<void>();
   private readonly modeRequested = new vscode.EventEmitter<void>();
@@ -120,6 +123,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidRequestClear = this.clearRequested.event;
   /** The History button was clicked. */
   readonly onDidRequestHistory = this.historyRequested.event;
+  readonly onDidRequestOutput = this.outputRequested.event;
   /** The bowtie next to the prompt was clicked. */
   readonly onDidRequestModels = this.modelsRequested.event;
   /** The mode button was clicked. */
@@ -164,6 +168,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.muteToggled,
       this.clearRequested,
       this.historyRequested,
+      this.outputRequested,
       this.stopRequested,
       this.modelsRequested,
       this.modeRequested,
@@ -335,6 +340,8 @@ function chatMarkup(n: string): string {
       <div class="clarvis-chat-head">
         <button id="clarvis-mode" class="clarvis-mute clarvis-mode"
                 title="What Clarvis is allowed to do">Auto</button>
+        <button id="clarvis-output" class="clarvis-mute"
+                title="Every command and tool call, as it runs.">Output</button>
         <button id="clarvis-history" class="clarvis-mute"
                 title="Earlier conversations from this workspace.">History</button>
         <button id="clarvis-clear" class="clarvis-mute"

@@ -152,6 +152,9 @@ document.getElementById('clarvis-clear')
   .addEventListener('click', () => vscode.postMessage({ type: 'clear-chat' }));
 document.getElementById('clarvis-history')
   .addEventListener('click', () => vscode.postMessage({ type: 'show-history' }));
+document
+  .getElementById('clarvis-output')
+  .addEventListener('click', () => vscode.postMessage({ type: 'show-output' }));
 
 const modelsButton = document.getElementById('clarvis-models');
 modelsButton.addEventListener('click', () => vscode.postMessage({ type: 'models' }));

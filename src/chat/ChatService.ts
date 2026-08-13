@@ -171,6 +171,7 @@ export class ChatService {
           // a useful default to *choose* and the wrong thing to land in by accident
           // immediately after signing off on a plan.
           await this.actions.setMode('agent');
+          this.runs.setStepApproval(true);
           await this.runs.run(task, 'Plan approved — starting on milestone one.');
         }
       );
@@ -462,6 +463,9 @@ export class ChatService {
 
     const job = await this.jobIn(question, mode, decision);
     if (job) {
+      // Agent asks before each step that acts; Auto is the mode that decides for
+      // itself, which is the only thing separating the two now that both can edit.
+      this.runs.setStepApproval(mode === 'agent');
       await this.runs.run(job.task, job.because);
       return;
     }

@@ -63,6 +63,19 @@ export class RunSession {
    * would otherwise begin editing files with no warning — and the announcement is what
    * makes Stop a real option rather than a theoretical one.
    */
+  /**
+   * Whether this run stops and asks before each step that acts.
+   *
+   * Set by the caller from the mode: Agent asks, Auto does not. Auto's whole
+   * proposition is deciding for itself, and a mode that asked before every step
+   * would be Agent wearing a different label.
+   */
+  private stepApproval = false;
+
+  setStepApproval(on: boolean): void {
+    this.stepApproval = on;
+  }
+
   async run(task: string, because: string): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
@@ -83,7 +96,14 @@ export class RunSession {
 
     const controller = this.busy.start('reply');
 
-    const runner = new AgentRunner(this.context, root, this.models, this.terminal, this.log);
+    const runner = new AgentRunner(
+      this.context,
+      root,
+      this.models,
+      this.terminal,
+      this.log,
+      this.stepApproval ? (description, detail) => this.askStep(description, detail) : undefined
+    );
 
 
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
@@ -132,6 +152,24 @@ export class RunSession {
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
     if (files.length > 0) await this.offerReview(commits, files);
+  }
+
+  /**
+   * Describes one step and waits for a yes.
+   *
+   * Modal, and deliberately: the run is stopped until it is answered, and a toast
+   * that timed out would either strand the run or, worse, be treated as consent.
+   * "Skip this step" rather than "No", because the run continues either way — the
+   * model is told what was declined and asked to find another route.
+   */
+  private async askStep(description: string, detail: string): Promise<boolean> {
+    const answer = await vscode.window.showInformationMessage(
+      description,
+      { modal: true, detail },
+      'Do it',
+      'Skip this step'
+    );
+    return answer === 'Do it';
   }
 
   /**

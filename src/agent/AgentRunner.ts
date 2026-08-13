@@ -82,7 +82,16 @@ export class AgentRunner {
     private readonly root: string | undefined,
     private readonly models: ModelService,
     private readonly terminal: AgentTerminal,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /**
+     * Asked before every step that acts, when the caller wants it (Agent mode).
+     *
+     * Absent in Auto, which is the mode whose whole proposition is deciding for
+     * itself — a mode that asked before each step would be Agent with extra words.
+     * Absent for read-only calls in every mode: approving a file *read* six times
+     * teaches people to click yes without reading, which is worse than not asking.
+     */
+    private readonly approveStep?: (description: string, detail: string) => Promise<boolean>
   ) {}
 
   /**
@@ -297,6 +306,24 @@ export class AgentRunner {
         toChat: isToolName(call.name) && changesAFile(call.name),
         step: this.steps,
       });
+
+      // **Asked before it happens, not reported after.** The narration above says
+      // what is about to be done; this is where the user gets to say no to it. The
+      // deny-list gate (below, in `runCommand`) is a different thing and stays: that
+      // one fires on what is dangerous, this one on what is about to change
+      // anything at all.
+      const acting = isToolName(call.name) && !isLookingAround(call.name, args);
+      if (this.approveStep && acting) {
+        const description = isToolName(call.name) ? narrateTool(call.name, args) : call.name;
+        const approved = await this.approveStep(description, describe(call));
+        if (!approved) {
+          this.log(`agent [declined] ${description}`);
+          const declined = 'The user declined that step. Do not retry it — find another way, or stop and say what you would have done.';
+          results.push({ id: call.id, content: declined, isError: true });
+          yield this.record({ kind: 'gate', text: `Skipped: ${description}`, toChat: true });
+          continue;
+        }
+      }
 
       const result = await this.dispatch(call, checkpoint, signal);
       results.push(result);

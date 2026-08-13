@@ -641,6 +641,34 @@ function startBranchFlow(
  * `note()`; the lines themselves come from the same `LiveQuips` instance everything
  * else uses, not a second copy.
  */
+/**
+ * Whether it's fine to run the interview and eventually replace `plan.md` —
+ * `true` when there's nothing there yet, or the user explicitly says to redo it.
+ */
+async function okToReplaceExistingPlan(logger: ClarvisLog): Promise<boolean> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return true;
+
+  const exists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+    () => true,
+    () => false
+  );
+  if (!exists) return true;
+
+  const choice = await vscode.window.showInformationMessage(
+    'plan.md already exists in this workspace.',
+    { modal: true, detail: 'Keep it untouched, or run through planning again and replace it?' },
+    'Keep Existing',
+    'Plan Again'
+  );
+  if (choice !== 'Plan Again') {
+    logger.write('planning: plan.md already exists here, kept as-is, interview skipped');
+    return false;
+  }
+  logger.write('planning: replacing existing plan.md — running the interview again');
+  return true;
+}
+
 function registerPlanningCommand(
   context: vscode.ExtensionContext,
   models: ModelService,
@@ -649,6 +677,11 @@ function registerPlanningCommand(
 ): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.planProject', async () => {
+      // Asked before spending a whole interview on it — finding out at the very end
+      // that the answer was "keep the existing one" would waste every question and
+      // every model call that led there.
+      if (!(await okToReplaceExistingPlan(logger))) return;
+
       const opening = await liveLines.acknowledge('plan this project');
       if (opening) void vscode.window.showInformationMessage(opening);
 
@@ -730,8 +763,9 @@ function registerPlanningCommand(
  * exactly the interrogation this interview has avoided since M9a. The note becomes
  * a `## Notes` line in the redrawn plan, and the loop shows it again.
  *
- * Never overwrites an existing `plan.md` — that means someone is already using this
- * project's own Plan Mode, and clobbering it would be the opposite of the point.
+ * Whether to keep or replace an existing `plan.md` is asked before the interview
+ * even starts (`registerPlanningCommand`) — finding out at the end that the answer
+ * was "keep it" would waste the whole interview. This always writes on Approve.
  */
 async function draftAndApprovePlan(
   state: InterviewState,
@@ -744,16 +778,6 @@ async function draftAndApprovePlan(
   if (!folder) return;
 
   const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
-  const exists = await vscode.workspace.fs.stat(planUri).then(
-    () => true,
-    () => false
-  );
-  if (exists) {
-    logger.write('planning: plan.md already exists here, not overwritten');
-    void vscode.window.showInformationMessage('plan.md already exists in this workspace — leaving it alone.');
-    return;
-  }
-
   let firstDraft = true;
   for (;;) {
     const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });

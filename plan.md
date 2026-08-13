@@ -3470,6 +3470,15 @@ answers instead of to not inventing new ones. No model, no rewrite: falls back t
 plain concatenation, honest if inelegant, rather than losing either answer.
 `Interview.ts`'s `synthesizeAnswer()` is the glue.
 
+**Existing `plan.md`: asked, not silently kept or clobbered (13 Aug).** Was an
+unconditional "never overwrite" — found live to mean a stale `plan.md` from an
+earlier test run kept getting shown back, silently, run after run.
+`okToReplaceExistingPlan()` now asks up front, **before the interview starts** — Keep
+Existing skips the interview entirely rather than running it and discovering the
+answer was "keep it" only at the very end, wasting every question and model call that
+led there. `draftAndApprovePlan()` no longer has its own existence check; it always
+writes on Approve, since the decision is already settled by the time it runs.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

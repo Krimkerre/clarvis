@@ -41,6 +41,16 @@ test('a question that ended in a full stop is repaired, not rejected', () => {
   assert.equal(line, "I could walk you through what's supposed to happen here and write it down. Would the second one help?");
 });
 
+test('two leading fillers and a dash do not hide the question', () => {
+  // Found live: "Right then — what are you actually building..." was rejected
+  // because only one leading filler was allowed for.
+  const line = acceptOpening(
+    'Right then — what are you actually building, or would you rather we found out together.',
+    true
+  );
+  assert.match(line ?? '', /together\?$/);
+});
+
 test('a line that asks nothing at all is still rejected', () => {
   // Repairing punctuation is fine; inventing the question would be putting words
   // in his mouth.

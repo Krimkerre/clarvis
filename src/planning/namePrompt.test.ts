@@ -12,10 +12,14 @@ test('the prompt asks for the NAMED: shape and the shortlist shape', () => {
   assert.match(prompt, /Name \| one clause/);
 });
 
-test('the prompt asks for five suggestions, two with his own humour', () => {
+test('the prompt asks for eight suggestions, three with his own humour', () => {
   const prompt = namePrompt('a lore generator');
-  assert.match(prompt, /5 short candidate names/);
+  assert.match(prompt, /8 short candidate names/);
   assert.match(prompt, /dry sense of humour/i);
+});
+
+test('the prompt asks for variety, not eight takes on one idea', () => {
+  assert.match(namePrompt('a lore generator'), /Make them different from each other/);
 });
 
 test('parses an already-named response', () => {

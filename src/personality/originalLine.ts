@@ -26,10 +26,12 @@ export const MAX_OPENING_LENGTH = 320;
 /**
  * How a question opens, when it forgot to close with a mark.
  *
- * Anchored to the *start* of the last sentence, past a leading conjunction at most
- * ("So, shall we"). Two narrowings, both from a test that caught them: matching
- * anywhere in the sentence turned "There is no plan in this project." into a
- * question on its `is`, and allowing any leading word did the same via "There".
+ * Anchored to the *start* of the last sentence, past up to two leading fillers and
+ * whatever punctuation they bring ("Right then — what are you building"). Two
+ * narrowings, both from a test that caught them: matching anywhere in the sentence
+ * turned "There is no plan in this project." into a question on its `is`, and
+ * allowing *any* leading word did the same via "There". The filler list is closed
+ * for exactly that reason.
  *
  * Found live: "…or I could walk you through what's actually supposed to happen here.
  * Would the second one help." — a perfectly good offer, rejected for ending in a
@@ -37,7 +39,7 @@ export const MAX_OPENING_LENGTH = 320;
  * this is repair rather than rejection.
  */
 const INTERROGATIVE =
-  /^\W*(?:(?:so|or|and|well|right|now|then|but)[,\s]+)?(shall|would|want|should|do|does|did|can|could|are|will|how|what|why|which|who|ready)\b/i;
+  /^\W*(?:(?:so|or|and|well|right|now|then|but|ok|okay|fine)[,\s—–-]+){0,2}(shall|would|want|should|do|does|did|can|could|are|will|how|what|why|which|who|ready)\b/i;
 
 /**
  * The instruction for one original line.

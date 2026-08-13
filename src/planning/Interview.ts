@@ -338,15 +338,43 @@ async function resolveProjectName(
     if (picked === SOMETHING_ELSE) {
       const typed = await io.askText(await phrase('ask', 'What should it be called?', []));
       log(`planning: name — ${typed ? `set to ${typed.trim()}` : 'left unresolved'}`);
+      if (typed?.trim()) await remarkOnName(io, typed.trim(), seed, log);
       return typed?.trim() || undefined;
     }
 
     log(`planning: name — chose suggestion: ${picked}`);
+    await remarkOnName(io, picked, seed, log);
     return picked;
   } catch (error) {
     log(`planning: name — resolution failed (${String(error)}), skipped`);
     return undefined;
   }
+}
+
+/**
+ * Says the chosen name out loud, with a remark about it.
+ *
+ * **The one moment in the interview with something to be funny about.** Everywhere
+ * else he is asking questions about a project he knows nothing about yet; a name
+ * that was just picked is a concrete thing, in front of him, that he has an opinion
+ * about — which is the whole condition `character.ts` says a good line needs.
+ *
+ * Never blocks: an unusable line means the name is simply confirmed and the
+ * interview moves on. Nothing here is load-bearing.
+ */
+async function remarkOnName(
+  io: PlanningIO,
+  name: string,
+  seed: string,
+  log: (message: string) => void
+): Promise<void> {
+  const line = await opening(
+    `They have just named their project "${name}". It is: ${seed}. Say the name back to them and make one dry remark about it — about the name itself, or about what it says about the project.`,
+    `${name}, then.`,
+    false
+  );
+  log(`planning: name — remarked: ${line}`);
+  await io.say(line);
 }
 
 /** One parsed `Name | advantage | cost` line from the model's shortlist. */

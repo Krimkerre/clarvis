@@ -2,15 +2,19 @@
 
 > Clippy's presence. Jarvis's competence. A butler's disdain.
 
-**It can only see — and only touch — the workspace it was born in.**
+**He can only see, and only touch, the project folder you opened him in.**
 
-Clarvis is a sarcastic butler VS Code extension: it activates with a window and dies
-with it. No tray icon, no background daemon, no screen reading. It watches your builds
-so you don't have to, remembers the error you keep making, occasionally judges you for
-it — and when you ask, it does the work: edits, runs, iterates until the task is done.
+Clarvis is a sarcastic butler who lives in your code editor. He watches your builds so
+you don't have to, remembers the mistake you keep making, occasionally judges you for
+it — and when you ask, he does the work: writes the code, runs it, and keeps going
+until the job is done.
 
-The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**ntelligent
-**S**ystem — Clippy's presence, with something closer to Jarvis's competence.
+He starts when you open a window and stops when you close it. Nothing runs in the
+background, nothing sits in your menu bar, and he cannot see your screen or any folder
+but the one you're working in.
+
+The name is an acronym nobody needed: **C**lippy-**L**ike, **A** **R**ather **V**ery
+**I**ntelligent **S**ystem.
 
 ## Avatar states
 
@@ -45,215 +49,214 @@ Note the mode toggle: starting an interview switches to **Plan** by itself and b
 when it finishes, because §0's rule is that nothing but `plan.md` gets written until
 the plan is signed off — and a rule the code knows should be one the interface shows.
 
-**What actually runs today.** Give it one sentence — or say you don't know and it'll
-suggest a few, at least a couple of them genuinely funny. It reads the workspace first
-(an existing `package.json`, a git repo, a README) so questions are grounded in what's
-actually there. It asks in batches, never a 30-question interrogation, and "I don't know
-yet" is recorded as an honest open question rather than argued with — but a *vague*
-answer gets pushed back on once, with one specific follow-up, before it's accepted as
-given. Language gets a real shortlist — 2-4 options, each with one genuine advantage and
-one genuine cost, "you pick" a first-class answer with its own one-line reason, never a
-list where everything looks good. Once there's enough to draft, it analyses the whole
-thing for safety problems, logic contradictions and scope creep — findings you accept,
-reject (with your reasoning recorded, so it isn't re-litigated next time), or modify in
-your own words. Then it drafts `plan.md`, shows it to you, and lets you keep adding
-notes and redrawing until you explicitly approve — nothing is written until you do.
-
 ## What it does
 
-**Unprompted (the Jarvis half):**
-- **Task & build watching** — tracks tasks, terminal commands, and debug sessions;
-  notifies on completion with outcome and duration, not just "done." Walk away from a
-  build, come back to an answer.
-- **Pattern memory** — fingerprints recurring errors per project; on the 3rd occurrence
-  in a week, surfaces what fixed it last time. Heuristic, and never applied on its own —
-  it's an unsolicited surface, so it suggests. Reply "go on then" and the agent takes it.
-- **Session briefing** — on launch: branch + dirty state, what was failing when you
-  left, recent files touched, one open pattern-memory item. Four lines, written as
-  someone talking rather than a status bar — and the opener matches the mood of what it
-  found, because greeting you cheerfully over a red build is how a character becomes a
-  template. Nothing worth reporting means nothing is said.
-- **Dev-moment commentary** — a slow build, a third identical failure, a suite going
-  green, a 200-file diff. Rate-limited hard (≤1 unsolicited surface per minute, shared
-  across *everything* he says unprompted); silence is the default response. Things you
-  need to know now — a build going red, an error you've hit before — get a shorter
-  floor, so good news can't crowd out bad.
+### Things he does without being asked
+- **He watches things run.** Builds, tests, scripts, anything you start in the
+  terminal. When it finishes he tells you whether it worked and how long it took — so
+  you can walk away and come back to an answer rather than a wall of output.
+- **He remembers the error you keep hitting.** The third time the same failure catches
+  you in a week, he mentions it, and what fixed it last time. It's a suggestion, not an
+  action: say "go on then" and he'll do something about it.
+- **He tells you where you left off.** Open a window and you get a few lines: what was
+  failing when you closed it, what you were last editing, anything still unfinished. If
+  there's nothing worth saying, he says nothing.
+- **He has opinions about your day.** A build that's taking forever, a test suite that
+  finally passes, a change touching two hundred files. This is the part that's there
+  for fun, and it's strictly rationed — **at most one unprompted remark a minute**,
+  across everything above. Silence is the default. Bad news gets through faster than
+  good, so a passing test can't drown out a broken build.
 
-**On request (the primary interactive surface):**
-- **Project planning** — arrive with one sentence ("a CLI that renames photos by EXIF
-  date"), or with nothing at all: say you don't know and he'll suggest a few, at least
-  two of them genuinely funny. He reads what's already in the folder before asking
-  anything, so the questions are about *this* project rather than a blank slate. Answer
-  vaguely and he pushes back — **once** — with one specific follow-up, then writes the
-  pair up as a single coherent line. "I don't know yet" is recorded as an open question
-  rather than argued with. Then he reports what's wrong with the idea: safety problems,
-  logic contradictions, scope that will balloon. You rule on every finding, and your
-  rejections are recorded *with your reasoning*, so nothing gets re-litigated later.
-  The result is a `plan.md` with **real build steps** — work you can do and tick off,
-  not a list of things still to decide — across every milestone, each step carrying
-  the check that proves it works. Approve it and the agent builds one milestone at a
-  time, showing you the handoff prompt first, then stops: what changed, what the
-  checks produced, ticked off in the plan, and the next milestone offered rather than
-  assumed.
-- **Chat** — the assistant you talk to in this window, replacing the default chat
-  panel: avatar on top, conversation below, prompt at the bottom. **Answers from its own
-  watch/memory state need no key, no network and no tokens** — "what's broken?", "what
-  branch am I on?", "have we seen this before?" are answered from what it watched
-  happen. Harder questions go to whichever model you bring (see *Models* below).
-  Context sent with a question is explicit, bounded, and visible.
-  Everything he says unprompted lands in the transcript too, so a notification you
-  missed is still there. Each window starts with a clean conversation; earlier ones are
-  a click away under **History**. And a **Mute** button sits next to the prompt — it
-  stops him mid-sentence, and it's for the next ten minutes, not forever: reload and he
-  talks again.
-  **`/help` opens the manual** — quickstart, every setting, voice setup, troubleshooting.
-  Slash commands cover the rest (`/voice`, `/engine`, `/key`, `/mute`, `/history`,
-  `/clear`, `/settings`), and plain English works too: *"change the voice"*, *"shut up"*,
-  *"show me earlier chats"*. Asking a **question** — *"what voice are you using?"* — gets
-  you an answer instead of a dialog. Once a model is connected it will also read the
-  oblique ones (*"I can't stand this voice"*) — and because that's a guess rather than a
-  match, it asks before opening anything.
-- **Agent** — hand it a real task ("fix the failing test", "rename this everywhere")
-  and it edits, runs commands, reads the results, and iterates until it's done. Work
-  happens on its own `clarvis/<task>` branch, committed step by step, so your
-  uncommitted changes stay yours and the whole run is reviewable — or discardable in
-  one command. Files open as it writes them, scrolled to what changed. In **Agent**
-  mode it describes each step that alters anything and waits for a yes; **Auto** is
-  the mode that gets on with it. Type while it works and it takes the correction
-  rather than queueing behind it. Every file it touches is listed live with a
-  clickable diff, and it stops to ask before anything destructive or outward-facing.
-  Merging and pushing are yours.
-- **Voice** — not a bolt-on. Half the character is in the writing, the other half is in
-  the delivery, so briefings and completions are spoken by a voice chosen to match:
-  gravelly, impatient, casually brilliant, bored of having to explain. Fish Audio by
-  default (your key), OS voices as a fallback. Don't like the one we picked? **Paste any
-  Fish Audio voice ID** into the picker and it uses that instead — a first-class option,
-  not buried in advanced settings, with a format hint so you know what to look for. You
-  also choose the **TTS engine** separately from the voice — defaulting to Fish Audio's
-  `s2.1-pro-free`, their current best model on a free developer tier, so the good voice
-  doesn't cost per utterance. Voices you paste in can be **saved under a name** and
-  picked again later. **Everything he says can be spoken** — briefings, build outcomes,
-  chat replies, the sardonic asides — because splitting it would mean the voice carried
-  the dull half of the character and the text carried the funny half. How *often* he
-  speaks is governed by the interruption budget above, not by muzzling half of it.
-  Off until you enable it — a voice that surprises you once is a voice you disable
-  forever — but Clarvis offers to set it up **once**, on first run, and drops the
-  subject permanently if you decline. Adding a key switches it on. Mute is one click
-  from the prompt and stops him mid-sentence; the setting turns him off for good.
-- **Voice input** *(optional, off by default)* — push-to-talk dictation into the chat
-  box, including first-class Flemish Dutch (`nl-BE`) recognition with code-switched
-  English jargon. Never auto-sends; the transcript is always editable text. Recording
-  happens outside the editor's sandbox, which needs `ffmpeg` — Clarvis tells you what's
-  missing and hands you the install command rather than running anything itself, and
-  everything else works without it.
+### Things you ask him for
+- **Planning a project.** Turn up with one sentence — "an app that renames my photos
+  by the date they were taken" — or with nothing at all. Say you don't know and he'll
+  suggest a few ideas, at least two of them genuinely funny.
 
-- **Git, without needing to know git** — the audience for this isn't a room full of git
-  experts, so Clarvis doesn't talk like one. `/git` answers *"where am I, and is
-  anything at risk?"* in plain words. `switch to main` changes branch — and if you have
-  unsaved work it tells you what will happen to it *before* moving, then offers to save
-  it where it is. After a task it asks what to do with the result: look at it, merge it,
-  keep it, or bin it, each option stating its consequence. It warns before a merge or
-  delete would take work the task didn't make, and it never uses the words *detached
-  HEAD*, *unstaged* or *unmerged* at you. Your project's `plan.md` can name your own
-  branch flow, and Clarvis follows it instead of guessing — asking where a new branch
-  fits, and offering to tidy up ones that no longer exist.
-- **Works with your linter, doesn't pick one for you** — ESLint findings (or any other
-  tool that reports problems) already feed pattern memory like anything else. If a
-  project is set up for a linter that isn't running, Clarvis offers to connect it, once.
-  If the project never chose one, it says nothing — imposing a style opinion on someone
-  else's codebase isn't a butler's job. New projects get asked during planning, when
-  it's a decision rather than a critique.
+  He reads what's already in your folder before asking anything, so the questions are
+  about *your* project rather than a blank page. Answer vaguely and he pushes back —
+  **once** — with one specific question. "I don't know yet" is a real answer: it gets
+  written down as an open question instead of argued with.
+
+  Then he tells you what's wrong with your idea. Things that could lose your data,
+  two decisions that contradict each other, work that's quietly much bigger than you
+  think. You decide on each one, and if you disagree, **your reasoning is written
+  down** so nobody re-opens it in a month.
+
+  What you end up with is a plan file: the project broken into milestones, each with
+  real steps you can tick off, and each step carrying the test that proves it works.
+  Approve it and he builds one milestone at a time — showing you exactly what he's
+  about to do first, then stopping when it's done to tell you what changed and what
+  the tests said.
+- **Talking to him.** A panel in your editor: his face on top, the conversation
+  below, a box to type in at the bottom.
+
+  **A lot of what you'll ask costs nothing at all.** "What's broken?", "how long did
+  that take?", "have we hit this before?" — he answers those from what he watched
+  happen, with no account, no internet and no bill. Harder questions go to whichever
+  AI service you've connected (see *Models* below), and you can always see what's
+  being sent with them.
+
+  Everything he says on his own lands in the conversation too, so a notification you
+  missed is still there to scroll back to. Each window starts fresh; older
+  conversations are one click away under **History**. **Mute** sits next to the box
+  and stops him mid-sentence — for the next ten minutes, not forever.
+
+  **Type `/help` for the manual.** There are shortcuts for the common things
+  (`/plan`, `/voice`, `/mute`, `/history`, `/clear`, `/settings`), but plain English
+  works just as well: *"change the voice"*, *"shut up"*, *"show me earlier chats"*.
+  Ask a **question** rather than giving an order — *"what voice are you using?"* — and
+  you get an answer instead of a settings dialog.
+- **Doing the actual work.** Give him a real job — "fix the failing test", "rename
+  this everywhere" — and he writes the code, runs it, reads what happened, and keeps
+  going until it's done.
+
+  You watch it happen. Files open as he writes them, scrolled to the bit that
+  changed, and everything he touches is listed as you go. Choose **Agent** and he
+  describes each step that changes anything and waits for you to say yes; choose
+  **Auto** and he just gets on with it. Type while he's working and he takes it as a
+  correction rather than making you wait.
+
+  **Nothing you haven't saved is at risk.** He works on a copy of your project's
+  history, kept separate from your own unsaved changes, and the whole thing undoes
+  with one command. Whether any of it becomes permanent is your decision, never his.
+- **He can speak.** Half the character is in the writing and the other half is in the
+  delivery, so he reads things aloud in a voice chosen to match: gravelly, impatient,
+  faintly bored of having to explain. Everything he says can be spoken, not just the
+  boring half — splitting it would leave the voice reading status updates while the
+  text got the jokes.
+
+  It's **off until you turn it on**, because a voice that surprises you once is a
+  voice you switch off forever. He offers to set it up exactly once and never brings
+  it up again if you say no. Don't like the voice? Paste in a different one — it's a
+  normal option, not buried in advanced settings — and give it a name to keep it. How
+  *often* he speaks is governed by the same one-a-minute limit as everything else.
+  **Mute** stops him mid-sentence; the setting turns him off for good.
+- **You can speak to him** *(optional, off by default)* — hold a button and talk
+  instead of typing, in English or Flemish Dutch, including the habit of mixing
+  English jargon into a Dutch sentence. It never sends on its own: what you said turns
+  into text you can edit first. It needs one extra program installed, and if it's
+  missing he tells you which and hands you the command rather than running anything
+  himself.
+
+- **Version control, without needing to understand it.** Git is the thing that keeps
+  a history of your project, and it is famously unfriendly. Clarvis doesn't talk like
+  it. Ask `/git` and you get *"where am I, and is anything at risk?"* in plain words.
+  Say "switch to main" and he tells you what will happen to your unsaved work
+  **before** moving, then offers to put it somewhere safe.
+
+  After he's done a job he asks what to do with the result — look at it, keep it,
+  throw it away — and each option says what it will actually do. He warns you before
+  anything would throw away work he didn't write. And he never says *detached HEAD*,
+  *unstaged* or *unmerged* at you, because those explain nothing to the person who
+  needs them explained.
+- **He works with your tools, and doesn't choose them for you.** If your project is
+  set up to check its own code for mistakes and that check isn't running, he offers to
+  switch it on — once. If your project never chose one, he says nothing: turning up in
+  someone else's codebase with opinions about style isn't a butler's job. On a new
+  project he asks during planning, where it's a decision rather than a criticism.
 - **Tutor Mode** *(planned)* — the same Clarvis, explaining every step, for people
   learning to program on a real project of their own. You choose it when you start a
   project, you can type the code yourself or watch it be typed, and it's built to be
   outgrown. Full guide: [**TUTOR-README.md**](./TUTOR-README.md).
 
-Full spec, including every setting, API, and edge case: [`plan.md`](./plan.md).
+Every setting, decision and edge case is written down in [`plan.md`](./plan.md).
 
 ## Models — bring whatever you already have
 
-The goal is for Clarvis to feel like Claude Code in a sidebar, with a face: you watch
-each tool call and command as it happens, changed files show up as diffs, answers are
-terse, and you can interrupt at any point.
+Clarvis has no AI of his own. You connect him to a service you already have an account
+with — or to one running on your own machine — and he uses that. Most of them need an
+**API key**: a long password you generate on the provider's website, which lets a
+program use your account. Clarvis keeps it in your system keychain, never in a settings
+file and never in a log. The aim is that
+working with him feels like watching someone competent work: you see each thing he
+does as he does it, changed files show up as changes you can read, answers are short,
+and you can cut in at any point.
 
-| Provider | Auth | Agent path |
+| Service | What you need | Can it do the work? |
 |---|---|---|
-| Anthropic API | your API key | ✅ |
-| OpenAI | your API key | ✅ |
-| OpenRouter | your API key | ✅ |
-| Ollama *(local)* | none | depends on the model |
-| LM Studio *(local)* | none | depends on the model |
-| Host LM API | none | only where the host provides tools |
+| Anthropic (Claude) | an API key | yes |
+| OpenAI | an API key | yes |
+| OpenRouter | an API key | yes |
+| Ollama *(runs on your machine)* | nothing | depends which model |
+| LM Studio *(runs on your machine)* | nothing | depends which model |
 
-**Fully local is a first-class setup**, not an afterthought: point it at Ollama or LM
-Studio and nothing leaves your machine at all.
+**Running everything on your own machine is a proper option**, not an afterthought.
+Point him at Ollama or LM Studio and nothing you write ever leaves your computer.
 
-**No "sign in with Claude", and that's deliberate.** Anthropic doesn't permit
-third-party products to offer claude.ai login or subscription rate limits without prior
-approval — so Clarvis doesn't, and won't pretend otherwise by reading Claude Code's
-stored credentials or wrapping its CLI behind the scenes. Bring an API key instead. We
-checked this *before* building a login flow, not after.
+**There's no "sign in with Claude", on purpose.** Anthropic doesn't allow other
+products to use claude.ai logins or subscription limits without permission, so Clarvis
+doesn't — and doesn't quietly borrow credentials from anything else on your machine
+either. Bring an API key. We checked the rules before building a login button, rather
+than after.
 
-**Local models vary a lot at tool calling**, which is what the agent depends on, so
-Clarvis probes each model's tool support and will tell you it needs a more capable one
-rather than starting a run it can't finish.
+**Models that run locally vary a lot** in whether they can operate the editor at all.
+Clarvis tests each one and tells you when you need a more capable model, rather than
+starting a job it can't finish.
 
 ## Keeping an agent honest
 
-An agent that edits your code is only worth having if getting back out is trivial and
-its limits are real. Clarvis's are enforced in the tool layer, not asked for in a
-system prompt — a model can't talk its way past code that refuses.
+Something that edits your code is only worth having if backing out is easy and its
+limits are real. Clarvis's limits are enforced in code, not written as instructions to
+the AI — an AI can be talked out of an instruction, and cannot be talked past code that
+simply refuses.
 
-**It acts only when asked.** It will happily rewrite your file; it will never decide on
-its own that your file needed rewriting. Everything it notices unprompted comes out as
-a remark, not a commit. Ambiguity resolves toward answering — "why is this failing?"
-gets you an explanation, not four rewritten files.
+**He acts only when asked.** He'll happily rewrite your file; he will never decide on
+his own that it needed rewriting. Anything he notices by himself comes out as a remark,
+not a change. If it's unclear whether you wanted a job done or a question answered, he
+answers the question — "why is this failing?" gets you an explanation, not four
+rewritten files.
 
-**It works somewhere you aren't.** Each task runs on its own `clarvis/<task>` branch,
-committing only the paths it touched — never `git add -A` — so your uncommitted work
-stays uncommitted and yours. Merging and pushing are your decisions.
+**He works somewhere you aren't.** Each job happens on its own copy of your project's
+history, and he only ever records the files he actually touched. Your unsaved work
+stays unsaved and yours. Whether any of it becomes part of your project for good is
+your decision.
 
-**It's undoable in one command.** Every run checkpoints the files it's about to touch.
-`Clarvis: Undo Last Agent Run` restores them and puts you back on your branch. Edits go
-through VS Code's own edit API, so `Cmd+Z` works normally too. `Clarvis: Stop` aborts at
-the next step.
+**One command undoes all of it.** Before touching anything he takes a copy of every
+file he's about to change. **Undo Last Agent Run** puts them all back and returns you
+to where you were. Ordinary undo (`Cmd+Z`) works too, because he edits files the same
+way you do. **Stop** halts him at the next step.
 
-**It stops before the one-way doors — and tells you why.** Destructive shell commands,
-`git push`, publishing, and dependency installs all pause and ask. Crucially, a gate
-isn't a bare "Approve?" — that just teaches you to click Approve without reading. Each
-one states what it's about to run, why that class of action is risky, what specifically
-could go wrong this time, and **whether it can be undone**. `rm -rf` and `git push`
-aren't dangerous in the same way, and irreversible actions look different from
-reversible ones. Anything resolving outside the workspace is refused outright — symlinks
-included. There is deliberately no setting to turn gates off; a switch that only
-half-worked would be worse than none.
+**He stops before anything you can't take back — and says why.** Deleting things,
+publishing, installing software, sharing your work outwards: all of them pause and ask
+first.
 
-The warning text is written in the tool layer, never by the model — a model that has
-just been reading your files could be talked into describing `rm -rf` as harmless, and a
-warning a prompt injection can rewrite is not a warning.
+The asking matters as much as the stopping. A bare "Approve?" just teaches people to
+click Approve without reading, so each one tells you what he's about to run, why that
+kind of thing is risky, what could go wrong *this time*, and — the important part —
+**whether it can be undone**. Deleting files and publishing your work are dangerous in
+completely different ways, and the warnings look different too.
 
-**You watch it work.** Every file opened, every file changed, every command run, plus
-live step and token counters — in the panel, while it happens, not discovered
-afterwards. The avatar tracks it too: thinking while it works, talking when it's
-explaining or asking permission, and unimpressed when it gives up — so a glance at the
-sidebar (or the status-bar glyph, with the panel closed) tells you where things stand.
+Anything that would reach outside your project folder is refused outright. There's
+deliberately no setting to switch this off, because a safety feature with an off switch
+is one that gets switched off.
 
-**Where git isn't available**, it offers the fix instead of silently degrading — `git
-init` if the folder isn't a repository, enabling the Git extension if it's switched off,
-or install instructions if `git` itself is missing. Decline and you get checkpoint-only
-protection, which is still a complete one-command undo; you're asked once per workspace,
-never again.
+**The warnings are written by us, never by the AI.** An AI that has just been reading
+your files could be persuaded — by something written *in* those files — to describe a
+delete-everything command as perfectly safe. A warning that can be rewritten by the
+thing it's warning about is not a warning.
+
+**You watch him work.** Every file opened, every file changed, every command run,
+while it happens rather than discovered afterwards. His face tracks it too — thinking
+while he works, talking when he's explaining or asking, unimpressed when he gives up —
+so a glance at the sidebar tells you where things stand without reading a word.
+
+**If your project has no version history yet**, he offers to set one up rather than
+quietly doing without — and tells you what's missing if the tools aren't installed.
+Say no and you still get the full one-command undo. He asks once per project and never
+again.
 
 ## Platform
 
-One `.vsix`, unmodified, on **VS Code** and **VSCodium**. Ships to both the VS Code
-Marketplace and Open VSX. (Antigravity and Cursor were evaluated and dropped from
-scope — see `plan.md` §1.)
+One install file, unmodified, on **VS Code** and **VSCodium** — published to both of
+their extension stores. (Antigravity and Cursor were tried and dropped from scope; the
+reasoning is in `plan.md` §1.)
 
 ## Progress
 
-Built milestone by milestone against `plan.md`'s own checklist — see that file for
-the full per-milestone build notes and exit criteria.
+Built milestone by milestone against `plan.md`'s own checklist. *This part is the
+build log, and it's written for anyone who wants to check the work — it's the one
+section that assumes you know the jargon.* Full notes for each milestone are in
+[`plan.md`](./plan.md).
 
 - [x] **M0 — Skeleton.** Extension scaffold, manifest, esbuild bundling,
       activate/deactivate lifecycle. Installs, activates, tears down clean.
@@ -349,27 +352,29 @@ the full per-milestone build notes and exit criteria.
 
 ## Development process
 
-This repo plans and builds itself under a two-mode discipline (`plan.md` §0): a Plan
-Mode where only `plan.md` gets touched and every milestone needs explicit sign-off
-before any project code is written, and a Code Mode where `plan.md`'s own checklists
-get ticked off as each step lands. Scope changes kick back to Plan Mode rather than
-growing quietly inside a build. Branch layout: `main` ← `testing` ← one branch per
-milestone (`m0-skeleton`, `m1-event-surface-spike`, …), merged up through `testing`
-before reaching `main`.
+This project is built the same way Clarvis makes you build yours (`plan.md` §0). In
+**Plan Mode** the only file anyone may edit is the plan itself, and no code gets
+written until a milestone is signed off. In **Code Mode** the plan's own checklist gets
+ticked off as each step lands. If the work turns out to need something the plan doesn't
+cover, it goes back to Plan Mode rather than growing quietly inside the build.
 
-Code follows a documented set of clean-code rules (`plan.md` §0), with one deliberate
-deviation: comments are used liberally rather than treated as a last resort, because
-this codebase doubles as a worked example. Pure logic is kept in modules that import
-nothing from `vscode`, which is what makes it unit-testable without an extension host —
-`npm test` runs those against Node's built-in runner, no test framework required.
+Each milestone gets its own branch, merged through `testing` before it reaches `main`.
 
-`npm run lint` enforces a complexity ceiling rather than a style. It was added after a
-report that the project had "too much cyclomatic complexity" with no number attached;
-measuring found five functions at or near the limit in ~8,700 lines, and the useful
-outcome was making that a number the build checks rather than an opinion to relitigate.
-The threshold is 15 — below ESLint's default of 20, which the two worst functions would
-have passed unchanged. Extracting those produced the first tests the provider streaming
-code ever had, which is a better argument for the rule than the number is.
+The code follows a written set of rules (`plan.md` §0), with one deliberate exception:
+comments are used liberally rather than sparingly, because this codebase is meant to be
+read as a worked example. Anything that can be tested on its own is kept in files that
+know nothing about the editor, which is what makes them testable without running the
+editor at all — `npm test` runs those with Node's built-in test runner and no
+framework.
+
+`npm run lint` checks how complicated each function is allowed to get, rather than
+checking style. It was added after someone reported the project had "too much
+complexity" without saying how much — measuring found five functions at or near the
+limit across ~8,700 lines, and the useful outcome was turning that into a number the
+build checks rather than an opinion to argue about. The limit is stricter than the
+default, which the two worst offenders would have passed unchanged. Breaking those up
+produced the first tests that part of the code had ever had, which is a better argument
+for the rule than the number is.
 
 ## Special thanks
 

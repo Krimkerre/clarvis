@@ -3517,6 +3517,16 @@ that silently accepts a misclick is one you restart. `confirm()` is exempt: its
 buttons *are* the confirmation, and "Approve" asked twice is a dialog arguing with
 itself.
 
+**Every fixed line goes through his voice (13 Aug).** The planning flow had a dozen
+hand-written strings — "Draft plan ready.", "Pick a language", "What should be added
+or changed?" — which is exactly the drift `character.ts` was built to end: a surface
+that sounds like a form rather than like him. All of them now go through
+`phrase()` (`personality/Voice.ts`, the same module-level writer `firstRun.ts`
+already used), with the load-bearing words (`plan.md`, `/plan`, `Approve`) passed as
+`keep` so rephrasing can't rename a command. The no-plan.md offer is also **spoken**
+now rather than quietly written — it is the one line that tells someone the feature
+exists, and a notice nobody hears is a feature nobody finds.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

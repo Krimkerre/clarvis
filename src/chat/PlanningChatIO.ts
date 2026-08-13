@@ -1,4 +1,5 @@
 import { PlanningIO } from '../planning/PlanningIO';
+import { phrase } from '../personality/Voice';
 
 /**
  * `PlanningIO` as a conversation: questions arrive in the chat panel and the next
@@ -117,7 +118,7 @@ export class PlanningChatIO implements PlanningIO {
   /** Reads the chosen option back and waits for a yes. Anything else means no. */
   private async confirmChoice(chosen: { label: string; detail?: string }): Promise<boolean> {
     await this.speak(chosen.detail ? `${chosen.label}. ${chosen.detail}` : chosen.label);
-    await this.write('Go with that?');
+    await this.write(await phrase('ask', 'Go with that?', []));
     this.offer(['Yes', 'No']);
 
     const answer = (await this.nextMessage())?.trim().toLowerCase();

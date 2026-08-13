@@ -8,6 +8,7 @@ import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
 import { PlanningIO } from './PlanningIO';
 import { handoffTask } from './handoff';
+import { phrase } from '../personality/Voice';
 
 /**
  * The whole planning milestone, end to end, independent of where it's driven from.
@@ -56,8 +57,8 @@ export async function okToReplaceExistingPlan(io: PlanningIO, log: (message: str
   if (!exists) return true;
 
   const choice = await io.confirm(
-    'plan.md already exists in this workspace.',
-    'Keep it untouched, or run through planning again and replace it?',
+    await phrase('ask', 'There is already a plan.md in this project.', ['plan.md']),
+    await phrase('ask', 'Keep it untouched, or run through planning again and replace it?', ['plan.md']),
     ['Keep Existing', 'Plan Again']
   );
   if (choice !== 'Plan Again') {
@@ -144,8 +145,8 @@ async function offerToBuild(
   const task = handoffTask(state, seed, verdicts);
 
   const choice = await io.confirm(
-    'Plan approved. Start building milestone 1?',
-    `This is what I would hand myself:\n\n${task}`,
+    await phrase('ask', 'Plan approved. Shall I start on milestone one?', ['milestone one']),
+    `${await phrase('report', 'This is what I would hand myself:', [])}\n\n${task}`,
     ['Start Building', 'Edit The Task First', 'Not Yet']
   );
   if (!choice || choice === 'Not Yet') {
@@ -155,7 +156,10 @@ async function offerToBuild(
 
   let finalTask = task;
   if (choice === 'Edit The Task First') {
-    const edited = await io.askText('The task, as it will be given to the agent:', task);
+    const edited = await io.askText(
+      await phrase('ask', 'The task, as it will be given to the agent:', []),
+      task
+    );
     if (!edited?.trim()) {
       log('planning: handoff edit cancelled, nothing started');
       return;
@@ -230,8 +234,12 @@ async function draftAndApprovePlan(
     }
 
     const choice = await io.confirm(
-      'Draft plan ready.',
-      'Approve writes plan.md. Keep refining lets you add anything missing first.',
+      await phrase('ask', 'That is the draft.', []),
+      await phrase(
+        'ask',
+        'Approve writes plan.md. Keep refining lets you add anything missing first.',
+        ['plan.md', 'Approve']
+      ),
       ['Approve', 'Keep Refining']
     );
 
@@ -247,7 +255,7 @@ async function draftAndApprovePlan(
       return false;
     }
 
-    const note = await io.askText('What should be added or changed?');
+    const note = await io.askText(await phrase('ask', 'What should be added or changed?', []));
     if (note?.trim()) {
       state.notes = [...(state.notes ?? []), note.trim()];
       log(`planning: refinement note — ${note.trim()}`);

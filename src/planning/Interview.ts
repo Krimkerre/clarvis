@@ -1,5 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { PlanningIO } from './PlanningIO';
+import { phrase } from '../personality/Voice';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
 import { namePrompt, parseNameResult } from './namePrompt';
@@ -37,7 +38,7 @@ export async function runInterview(
   log: (message: string) => void
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
   let seed = await io.askText(
-    'What are you building? One sentence is plenty.',
+    await phrase('ask', 'What are you building? One sentence is plenty.', []),
     "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas"
   );
   if (seed === undefined) return undefined;
@@ -251,16 +252,19 @@ async function offerIdeas(
     }
 
     const SOMETHING_ELSE = 'Something else…';
-    const picked = await io.askChoice("Didn't know what to build? Pick one, or describe your own", [
-      ...ideas.map((idea) => ({ label: idea.name, detail: idea.description })),
-      { label: SOMETHING_ELSE },
-    ]);
+    const picked = await io.askChoice(
+      await phrase('ask', "No idea what to build? Here are a few. Pick one, or describe your own.", []),
+      [
+        ...ideas.map((idea) => ({ label: idea.name, detail: idea.description })),
+        { label: SOMETHING_ELSE },
+      ]
+    );
     if (!picked) {
       log('planning: seed — idea picker cancelled');
       return undefined;
     }
     if (picked === SOMETHING_ELSE) {
-      const typed = await io.askText('What are you building? One sentence is plenty.');
+      const typed = await io.askText(await phrase('ask', 'What are you building? One sentence is plenty.', []));
       return typed?.trim() || undefined;
     }
 
@@ -315,16 +319,19 @@ async function resolveProjectName(
     }
 
     const SOMETHING_ELSE = 'Something else…';
-    const picked = await io.askChoice('No name given yet — pick one, or name it yourself', [
-      ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
-      { label: SOMETHING_ELSE },
-    ]);
+    const picked = await io.askChoice(
+      await phrase('ask', 'It has no name yet. Pick one of these, or name it yourself.', []),
+      [
+        ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
+        { label: SOMETHING_ELSE },
+      ]
+    );
     if (!picked) {
       log('planning: name — suggestion picker cancelled, left unresolved');
       return undefined;
     }
     if (picked === SOMETHING_ELSE) {
-      const typed = await io.askText('What should it be called?');
+      const typed = await io.askText(await phrase('ask', 'What should it be called?', []));
       log(`planning: name — ${typed ? `set to ${typed.trim()}` : 'left unresolved'}`);
       return typed?.trim() || undefined;
     }
@@ -382,15 +389,18 @@ async function askLanguage(
 
   const YOU_PICK = 'You pick';
   const SOMETHING_ELSE = 'Something else…';
-  const picked = await io.askChoice('Pick a language, or "You pick" to leave it to him', [
-    ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
-    { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },
-    { label: SOMETHING_ELSE },
-  ]);
+  const picked = await io.askChoice(
+    await phrase('ask', 'Which language, then? Or leave it to me.', []),
+    [
+      ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
+      { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },
+      { label: SOMETHING_ELSE },
+    ]
+  );
   if (!picked) return undefined;
 
   if (picked === SOMETHING_ELSE) {
-    const raw = await io.askText('What language?');
+    const raw = await io.askText(await phrase('ask', 'What language?', []));
     return raw === undefined ? undefined : toAnswer('language', raw);
   }
 

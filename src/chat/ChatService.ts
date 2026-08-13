@@ -183,10 +183,13 @@ export class ChatService {
     if (exists) return;
 
     this.log('chat: no plan.md here, offered to plan');
-    await this.note(
+    // Spoken, not just written: it is the one line that tells someone this feature
+    // exists at all, and a notice nobody hears is a feature nobody finds.
+    await this.remark(
       await this.phrase(
         'report',
-        "There's no plan.md in this project. Say `/plan` when you want to fix that — I'll ask the questions."
+        "There's no plan.md in this project. Say `/plan` when you want to fix that — I'll ask the questions.",
+        ['/plan', 'plan.md']
       )
     );
   }

@@ -60,8 +60,24 @@
         "title": "Clarvis: Open Voice Cache Folder"
       },
       {
+        "command": "clarvis.planProject",
+        "title": "Clarvis: Plan This Project"
+      },
+      {
         "command": "clarvis.runTask",
         "title": "Clarvis: Run a Task"
+      },
+      {
+        "command": "clarvis.forgetBranchAnswers",
+        "title": "Clarvis: Forget Branch Flow Answers"
+      },
+      {
+        "command": "clarvis.forgetGitOfferAnswer",
+        "title": "Clarvis: Ask About Git Setup Again"
+      },
+      {
+        "command": "clarvis.forgetFailure",
+        "title": "Clarvis: Forget the Failing Job"
       },
       {
         "command": "clarvis.reviewRun",
@@ -76,12 +92,16 @@
         "title": "Clarvis: Open Log File"
       },
       {
+        "command": "clarvis.debug.voiceCheck",
+        "title": "Clarvis: Debug \u2014 Voice Check"
+      },
+      {
         "command": "clarvis.debug.tools",
         "title": "Clarvis: Debug \u2014 Try a Tool"
       },
       {
         "command": "clarvis.debug.micProbe",
-        "title": "Clarvis: Debug — Microphone Probe"
+        "title": "Clarvis: Debug \u2014 Microphone Probe"
       },
       {
         "command": "clarvis.configureModels",
@@ -140,7 +160,12 @@
         "clarvis.chat.mode": {
           "type": "string",
           "default": "auto",
-          "enum": ["auto", "chat", "plan", "agent"],
+          "enum": [
+            "auto",
+            "chat",
+            "plan",
+            "agent"
+          ],
           "enumDescriptions": [
             "Questions get answered, jobs get done, ambiguity gets answered.",
             "Answer and read only. Clarvis will not change a thing.",
@@ -152,7 +177,13 @@
         "clarvis.chat.provider": {
           "type": "string",
           "default": "anthropic",
-          "enum": ["anthropic", "openai", "openrouter", "ollama", "lmstudio"],
+          "enum": [
+            "anthropic",
+            "openai",
+            "openrouter",
+            "ollama",
+            "lmstudio"
+          ],
           "enumDescriptions": [
             "Anthropic API with your own key. Best tool calling.",
             "OpenAI with your own key.",
@@ -170,7 +201,14 @@
         "clarvis.agent.provider": {
           "type": "string",
           "default": "",
-          "enum": ["", "anthropic", "openai", "openrouter", "ollama", "lmstudio"],
+          "enum": [
+            "",
+            "anthropic",
+            "openai",
+            "openrouter",
+            "ollama",
+            "lmstudio"
+          ],
           "enumDescriptions": [
             "Use the same provider as chat.",
             "Anthropic API with your own key.",
@@ -246,13 +284,17 @@
     "watch": "node esbuild.js --watch",
     "package": "vsce package",
     "check-types": "tsc --noEmit",
-    "test": "rm -rf out && tsc --outDir out && node --test \"out/**/*.test.js\""
+    "test": "rm -rf out && tsc --outDir out && node --test \"out/**/*.test.js\"",
+    "lint": "eslint src",
+    "check": "npm run check-types && npm run lint && npm test"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.93.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.23.0",
-    "typescript": "^5.5.0"
+    "eslint": "^9.39.5",
+    "typescript": "^5.5.0",
+    "typescript-eslint": "^8.67.0"
   }
 }

@@ -286,13 +286,26 @@ the full per-milestone build notes and exit criteria.
       goes through the OS's headless player rather than the webview, because Chromium
       blocks audio until the panel is clicked — which the launch briefing can never
       satisfy. Rendered speech is cached on disk, so repeats cost nothing.
-- [~] **M8 — Chat & Agent.** *In progress.* **M8a is done**: the chat panel, answers
-      from local state with no key or network, the transcript that keeps what he says,
-      per-session history, the mute button, and a built-in manual on `/help` with slash
-      commands and plain-English equivalents. Still to come: the model layer, the tool
-      layer, the gates, and the agent loop itself. *(The big one: local answers, then the
-      Answer path, then a real agentic harness — tool layer and gates built and tested
-      before the model can reach them.)*
+- [x] **M8 — Chat & Agent.** *Built and safety-verified live: gates, path escape,
+      prompt injection, undo, branch isolation, the `git init` offer. Not exhaustively
+      verified — ~45 finer-grained checklist items (mute mid-sentence, avatar strobing,
+      transcript persistence, Ollama, and others) are still open, most of them better
+      suited to the outstanding M6 dogfood pass than to being scripted one at a time. See
+      `plan.md`'s M8 section for the honest breakdown.* The chat panel answers from local state with no key or
+      network, then from a model when one is configured — five providers, separate
+      models for chat and for coding so the cheap one handles talking. A tool layer, a
+      deny-list gate, checkpoints and per-run branch isolation were built and tested
+      *before* the model could reach them, which is why the gate caught a real `rm` the
+      day it shipped. Then the agent loop, routing between answering and acting, and a
+      git wizard aimed at people who have never used git.
+      Two things were rebuilt mid-milestone after being wrong in use rather than in
+      test. **Nothing technical reaches the chat any more** — tool calls and command
+      output go to a terminal, and the transcript gets what a person would say.
+      And the **personality was rebuilt from the prompt outwards** after it drifted into
+      five separate hand-written descriptions and started sounding like a status page;
+      `Clarvis: Debug — Voice Check` now reads his lines back through the real prompts
+      before a change ships. *(Full notes, including the deviations from spec and why,
+      are in `plan.md`.)*
 - [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
       `plan.md` → sign-off → hand milestone one to the agent.)*
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
@@ -316,6 +329,14 @@ deviation: comments are used liberally rather than treated as a last resort, bec
 this codebase doubles as a worked example. Pure logic is kept in modules that import
 nothing from `vscode`, which is what makes it unit-testable without an extension host —
 `npm test` runs those against Node's built-in runner, no test framework required.
+
+`npm run lint` enforces a complexity ceiling rather than a style. It was added after a
+report that the project had "too much cyclomatic complexity" with no number attached;
+measuring found five functions at or near the limit in ~8,700 lines, and the useful
+outcome was making that a number the build checks rather than an opinion to relitigate.
+The threshold is 15 — below ESLint's default of 20, which the two worst functions would
+have passed unchanged. Extracting those produced the first tests the provider streaming
+code ever had, which is a better argument for the rule than the number is.
 
 ## Special thanks
 

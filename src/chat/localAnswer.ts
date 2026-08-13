@@ -17,9 +17,23 @@ export interface WorkspaceFacts {
   lastFailure?: { label: string; exitCode: number | undefined; at: number };
   /** Files touched recently, newest first (M4). */
   recentFiles: string[];
-  git?: { branch: string; dirtyCount: number };
+  git?: { branch: string; dirtyCount: number; untrackedCount?: number };
   /** Repeat errors seen at least twice (M5). */
   patterns: Pattern[];
+  /**
+   * What the linter and compiler are complaining about right now.
+   *
+   * Added because he invented it. Asked about an error, he said "your linter has been
+   * informing me of this for the past six minutes" — the *capability* is real, since
+   * M5 watches diagnostics, but nothing had ever put a number in front of him, so he
+   * supplied one. Giving him the real count is the fix; telling him not to guess is
+   * only the half that stops the symptom.
+   *
+   * Note what is deliberately absent: how long a problem has been there. VS Code does
+   * not report when a diagnostic first appeared, so that number cannot be made true and
+   * is therefore one he must never use.
+   */
+  problems?: { errors: number; warnings: number; worstFile?: string };
 }
 
 /** A local reply, plus the face to wear while giving it. */
@@ -100,13 +114,19 @@ function branchAnswer(facts: WorkspaceFacts): LocalReply {
     };
   }
 
-  const { branch, dirtyCount } = facts.git;
+  const { branch, dirtyCount, untrackedCount } = facts.git;
+  // Counted separately, because a file git has never seen is a different situation from
+  // an edit that has not been committed — and only one of them is at risk of being lost.
+  const newFiles = untrackedCount
+    ? ` ${untrackedCount} new ${plural(untrackedCount, 'file', 'files')} git isn't tracking.`
+    : '';
+
   if (dirtyCount === 0) {
-    return { text: `\`${branch}\`, clean.`, state: 'neutral' };
+    return { text: `\`${branch}\`, clean.${newFiles}`, state: 'neutral' };
   }
 
   return {
-    text: `\`${branch}\`, with ${dirtyCount} uncommitted ${plural(dirtyCount, 'change', 'changes')}.`,
+    text: `\`${branch}\`, with ${dirtyCount} uncommitted ${plural(dirtyCount, 'change', 'changes')}.${newFiles}`,
     state: 'neutral',
   };
 }
@@ -176,7 +196,14 @@ function runningAnswer(facts: WorkspaceFacts): LocalReply {
   };
 }
 
-/** "4m ago" / "2h ago" — approximate on purpose; nobody asks this wanting milliseconds. */
+/**
+ * "4m ago" / "2h ago" / "3d ago" — approximate on purpose; nobody asks this wanting
+ * milliseconds.
+ *
+ * Used by the facts block too, which used to format its own elapsed time and always in
+ * minutes: he told a user a build had been failing "for 4186 minutes", which is true,
+ * useless, and reads as something being broken.
+ */
 function ago(ms: number): string {
   const minutes = Math.round(ms / 60_000);
   if (minutes < 1) return 'just now';
@@ -211,45 +238,65 @@ function plural(count: number, one: string, many: string): string {
  * "none", because a model handed `lastFailure: none` will cheerfully write a sentence
  * about there being no failures, which is noise nobody asked for.
  */
+/**
+ * Each fact, as the one line the model sees.
+ *
+ * A list of small functions rather than one long body: every entry is independent, they
+ * are read far more often than they are run, and the whole point of this block is that
+ * a reader can check it against what the editor actually says.
+ *
+ * Each returns undefined when it has nothing to report, so an absent fact is absent
+ * rather than empty — a blank line here reads to the model as a fact it has been given.
+ */
+const FACT_LINES: ((facts: WorkspaceFacts) => string | undefined)[] = [
+  ({ git }) =>
+    !git
+      ? undefined
+      : `Current branch: ${git.branch}` +
+      (git.dirtyCount > 0 ? `, ${git.dirtyCount} uncommitted change(s)` : ', working tree clean') +
+        (git.untrackedCount ? `, plus ${git.untrackedCount} untracked file(s)` : ''),
+
+  ({ running, now }) => {
+    if (running.length === 0) return undefined;
+
+    const oldest = [...running].sort((a, b) => a.startedAt - b.startedAt)[0];
+    const seconds = Math.round((now - oldest.startedAt) / 1000);
+    return `Running now: ${running.length} job(s), oldest is "${oldest.label}", started ${seconds}s ago`;
+  },
+
+  ({ lastOutcome }) =>
+    !lastOutcome
+      ? undefined
+      : `Last finished: "${lastOutcome.label}" exited ${lastOutcome.exitCode ?? 'without a code'} after ` +
+      `${Math.round(lastOutcome.durationMs / 1000)}s`,
+
+  ({ lastFailure, now }) =>
+    !lastFailure
+      ? undefined
+      : `Still failing: "${lastFailure.label}" (exit ${lastFailure.exitCode ?? 'unknown'}), ` +
+        `last seen ${ago(now - lastFailure.at)}`,
+
+  ({ problems }) => {
+    if (!problems || problems.errors + problems.warnings === 0) return undefined;
+
+    // The last clause is doing real work: the absent fact is the one he reached for when
+    // he claimed a linter had been complaining "for the past six minutes".
+    return (
+      `Problems open right now: ${problems.errors} error(s), ${problems.warnings} warning(s)` +
+      (problems.worstFile ? `, most of them in ${problems.worstFile}` : '') +
+      ' — you have no information about how long any of them have been there'
+    );
+  },
+
+  ({ recentFiles }) =>
+    recentFiles.length > 0 ? `Recently edited: ${recentFiles.slice(0, 5).join(', ')}` : undefined,
+];
+
 export function factsBlock(facts: WorkspaceFacts): string {
-  const lines: string[] = [];
+  const lines = FACT_LINES.map((line) => line(facts)).filter((line): line is string => Boolean(line));
 
-  if (facts.git) {
-    lines.push(
-      `Current branch: ${facts.git.branch}` +
-        (facts.git.dirtyCount > 0 ? `, ${facts.git.dirtyCount} uncommitted change(s)` : ', working tree clean')
-    );
-  }
-
-  if (facts.running.length > 0) {
-    const oldest = [...facts.running].sort((a, b) => a.startedAt - b.startedAt)[0];
-    lines.push(
-      `Running now: ${facts.running.length} job(s), oldest is "${oldest.label}", started ${Math.round(
-        (facts.now - oldest.startedAt) / 1000
-      )}s ago`
-    );
-  }
-
-  if (facts.lastOutcome) {
-    lines.push(
-      `Last finished: "${facts.lastOutcome.label}" exited ${facts.lastOutcome.exitCode ?? 'without a code'} after ${Math.round(
-        facts.lastOutcome.durationMs / 1000
-      )}s`
-    );
-  }
-
-  if (facts.lastFailure) {
-    lines.push(
-      `Still failing: "${facts.lastFailure.label}" (exit ${facts.lastFailure.exitCode ?? 'unknown'}), ${Math.round(
-        (facts.now - facts.lastFailure.at) / 60000
-      )} minutes ago`
-    );
-  }
-
-  if (facts.recentFiles.length > 0) {
-    lines.push(`Recently edited: ${facts.recentFiles.slice(0, 5).join(', ')}`);
-  }
-
+  // Patterns are a list rather than a single line, so they are appended rather than
+  // being one more entry above.
   for (const pattern of facts.patterns.slice(0, 3)) {
     lines.push(
       `Recurring error seen ${pattern.occurrences.length}x: ${pattern.sample}` +

@@ -106,3 +106,91 @@ test('every read-only tool really is non-mutating', () => {
     assert.equal(tool.mutates, false, tool.name);
   }
 });
+
+import { narrateTool } from '../toolNarration';
+
+test('the transcript gets a sentence, not a log line', () => {
+  // "applyEdit: src/app.ts" is a log line that leaked into a conversation.
+  assert.equal(narrateTool('readFile', { path: 'app.js' }), 'Reading app.js');
+  assert.equal(narrateTool('applyEdit', { path: 'src/a.ts' }), 'Editing src/a.ts');
+  assert.equal(narrateTool('runCommand', { command: 'npm test' }), 'Running npm test');
+  assert.equal(narrateTool('gitStatus', {}), 'Checking where things stand in git');
+});
+
+test('missing arguments still produce a sentence', () => {
+  // A malformed call is reported to the model separately; the transcript should not
+  // read "Reading undefined" in the meantime.
+  assert.equal(narrateTool('readFile', {}), 'Reading a file');
+  assert.equal(narrateTool('runCommand', {}), 'Running a command');
+});
+
+test('listing the whole project reads differently from listing a folder', () => {
+  assert.equal(narrateTool('listFiles', {}), 'Looking through the project');
+  assert.equal(narrateTool('listFiles', { directory: '.' }), 'Looking through the project');
+  assert.equal(narrateTool('listFiles', { directory: 'src/watch' }), 'Looking through src/watch');
+});
+
+import { commitSubject } from '../commitSubject';
+
+test('a useless closing line does not become the commit message', () => {
+  // Models close with "Done." constantly. It is fine conversation and a useless line
+  // in a history someone reads six months later.
+  assert.equal(commitSubject('Done.', 'edit the comment in plan.md'), 'edit the comment in plan.md');
+  assert.equal(commitSubject('Fixed it!', 'fix the failing test'), 'fix the failing test');
+  assert.equal(commitSubject('  ', 'add a comment'), 'add a comment');
+});
+
+test('a descriptive closing line is kept', () => {
+  assert.equal(
+    commitSubject('Changed the comment to dubbawubbalublub in plan.md.', 'edit it'),
+    'Changed the comment to dubbawubbalublub in plan.md.'
+  );
+});
+
+test('the subject stays short enough to read in a log', () => {
+  assert.ok(commitSubject('x'.repeat(200), 'task').length <= 72);
+});
+
+test('a leading blank line does not defeat it', () => {
+  // Streamed narration often starts with whitespace.
+  assert.equal(commitSubject('\n\nRenamed the helper for clarity.', 'task'), 'Renamed the helper for clarity.');
+});
+
+import { narrateCommand, isLookingAround } from '../toolNarration';
+
+test('a command with commit hashes is described, not quoted', () => {
+  // "git show a1dc402 -- plan.md; echo ---; git show de8ee1f -- plan.md" is fine in a
+  // log and alarming in a conversation: §6's audience does not know what a hash is,
+  // and four of them make a routine look-up feel like something going wrong.
+  assert.equal(
+    narrateCommand('git show a1dc402 -- plan.md; echo ---; git show de8ee1f -- plan.md'),
+    'Reading the project history'
+  );
+  assert.equal(narrateCommand('git log --oneline --all -20'), 'Reading the project history');
+  assert.equal(narrateCommand('git branch -a'), 'Listing the branches');
+  assert.equal(narrateCommand('git branch milestone/1 master'), 'Making a branch');
+});
+
+test('short familiar commands are still shown as themselves', () => {
+  // A developer reads `npm test` faster than any sentence about it, and hiding it
+  // would be its own kind of unclear.
+  assert.equal(narrateCommand('npm test'), 'Running npm test');
+  assert.equal(narrateCommand('pytest'), 'Running pytest');
+});
+
+test('a long or compound command is summarised rather than pasted', () => {
+  assert.equal(narrateCommand('npm run build && npm run lint && npm test'), 'Running a few commands');
+  assert.equal(narrateCommand('node ' + 'x'.repeat(60)), 'Running a few commands');
+});
+
+test('reading steps are marked so they can be collapsed', () => {
+  assert.equal(isLookingAround('readFile', { path: 'a.ts' }), true);
+  assert.equal(isLookingAround('search', { pattern: 'x' }), true);
+  assert.equal(isLookingAround('runCommand', { command: 'git log --oneline' }), true);
+
+  // Anything that changes something is always shown.
+  assert.equal(isLookingAround('applyEdit', { path: 'a.ts' }), false);
+  assert.equal(isLookingAround('writeFile', { path: 'a.ts' }), false);
+  assert.equal(isLookingAround('runCommand', { command: 'npm test' }), false);
+  assert.equal(isLookingAround('runCommand', { command: 'git branch new-thing' }), false);
+});

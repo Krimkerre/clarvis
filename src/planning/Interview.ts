@@ -1,0 +1,491 @@
+import * as vscode from 'vscode';
+import { ModelService } from '../model/ModelService';
+import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
+import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
+import { namePrompt, parseNameResult } from './namePrompt';
+import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
+import { challengePrompt, parseChallengeResult } from './challengePrompt';
+import { researchWorkspace } from './workspaceResearch';
+import { describeWorkspaceSignals } from './workspaceSignals';
+
+/**
+ * Runs one project-planning interview (M9a — §4.9), start to "enough to draft".
+ *
+ * **A minimal, real front end, not the final one.** The eventual shape has questions
+ * arriving in the chat panel with an avatar reacting to them; this drives the same
+ * state machine and the same prompts through a chained input box instead — the
+ * pattern this codebase already uses for `promptForVoiceId` and its siblings. It is
+ * genuinely usable end to end today; the panel integration is a later, separate piece
+ * of work, not a prerequisite for the interview logic itself being real.
+ *
+ * **Only the interview.** M9b (analysis), M9c (verdicts) and M9d (writing `plan.md`)
+ * are not built yet — this ends by reporting what was gathered and what is still
+ * open, not by producing a plan. Each M8 sub-stage shipped alone and was useful
+ * alone; this is that same discipline applied to M9.
+ */
+
+/** How long the model gets to phrase a question before the written fallback wins. */
+const PHRASE_TIMEOUT_MS = 6000;
+
+/** Same "I don't know"-family answers the rest of the interview recognises. */
+const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
+
+export async function runInterview(
+  models: ModelService,
+  log: (message: string) => void
+): Promise<{ state: InterviewState; seed: string } | undefined> {
+  let seed = await vscode.window.showInputBox({
+    prompt: 'What are you building? One sentence is plenty.',
+    placeHolder: "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas",
+    ignoreFocusOut: true,
+  });
+  if (seed === undefined) return undefined;
+
+  if (!seed.trim() || UNKNOWN_ANSWER.test(seed.trim())) {
+    seed = await offerIdeas(models, log);
+    if (!seed) return undefined;
+  }
+
+  log(`planning: interview started — "${seed.trim()}"`);
+
+  const state: InterviewState = {
+    answers: [{ topic: 'what-it-does', text: seed.trim(), question: 'What are you building?' }],
+  };
+
+  // Grounds every question that follows in what's actually here, rather than only
+  // in what was just typed — an existing package.json or README is worth more than
+  // asking from a blank slate.
+  const signals = await researchWorkspace();
+  if (signals) {
+    state.workspaceContext = describeWorkspaceSignals(signals);
+    log(`planning: workspace — ${state.workspaceContext}`);
+  }
+
+  state.projectName = await resolveProjectName(models, seed.trim(), log);
+
+  for (;;) {
+    const topic = nextTopic(state);
+    if (!topic || readyToDraft(state)) break;
+
+    const question = await phraseQuestion(models, topic, state, log);
+    log(`planning: "${topic}" asked — ${question}`);
+
+    let answer: Answer;
+
+    if (topic === 'language') {
+      const resolved = await askLanguage(models, question, state, log);
+      // Cancelling (Escape) pauses the interview rather than answering "I don't know"
+      // on the user's behalf — same rule as the free-text path below.
+      if (!resolved) {
+        log(`planning: interview paused at "${topic}"`);
+        return { state, seed: seed.trim() };
+      }
+      // The raw shortlist is `Name | advantage | cost` per line — real for a
+      // QuickPick, unreadable as "what was asked" in a written plan. A plain
+      // recap reads honestly instead of dumping the pipe-delimited format.
+      resolved.question = 'Which language should this be built in?';
+      answer = resolved;
+    } else {
+      const raw = await vscode.window.showInputBox({
+        prompt: question,
+        placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
+        ignoreFocusOut: true,
+      });
+
+      // Cancelling the box (Escape) pauses the interview rather than answering "I
+      // don't know" on the user's behalf — those are different things, and only one
+      // of them should get written into the plan as a recorded unknown.
+      if (raw === undefined) {
+        log(`planning: interview paused at "${topic}"`);
+        return { state, seed: seed.trim() };
+      }
+
+      answer = toAnswer(topic, raw);
+      answer.question = question;
+    }
+
+    answer = await challengeAnswer(models, topic, answer, state, log);
+    log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
+    state.answers.push(answer);
+  }
+
+  log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
+  return { state, seed: seed.trim() };
+}
+
+/**
+ * Pushes back once on a vague answer, or an answer that hides a risk or a
+ * contradiction — never more than once per topic.
+ *
+ * **An honest "I don't know" is never challenged** — that is already the
+ * first-class answer this interview treats it as, not something to talk someone out
+ * of. **At most one follow-up** — §4.9's own "challenged once, then honoured" rule,
+ * applied to every topic rather than only language: a topic that pushed back
+ * repeatedly would be the interrogation this interview has avoided since M9a.
+ * Declining the follow-up (Escape, or leaving it blank) keeps the original answer
+ * rather than forcing an elaboration nobody wants to give.
+ */
+async function challengeAnswer(
+  models: ModelService,
+  topic: TopicId,
+  answer: Answer,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<Answer> {
+  if (!answer.text) return answer;
+  if (!(await models.isReady('chat'))) return answer;
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: challengePrompt(topic, answer.text!, state) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 400) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const result = parseChallengeResult(text);
+    if (result.fine) {
+      log(`planning: "${topic}" — answer accepted as given`);
+      return answer;
+    }
+
+    log(`planning: "${topic}" — pushed back — ${result.followUp}`);
+    const raw = await vscode.window.showInputBox({
+      prompt: result.followUp,
+      placeHolder: "Type your answer, or leave blank to keep what you said",
+      ignoreFocusOut: true,
+    });
+    if (!raw?.trim()) {
+      log(`planning: "${topic}" — follow-up declined, kept original answer`);
+      return answer;
+    }
+
+    log(`planning: "${topic}" — follow-up answered — ${raw.trim()}`);
+    return { ...answer, text: `${answer.text}\n\nFollow-up — ${result.followUp}\n${raw.trim()}` };
+  } catch (error) {
+    log(`planning: "${topic}" — challenge failed (${String(error)}), kept original answer`);
+    return answer;
+  }
+}
+
+/**
+ * A few project ideas, for when the seed question comes back "I don't know".
+ *
+ * Not asked for automatically — only once the user has actually said they don't
+ * know, same as everywhere else in this interview "I don't know" is a real, welcome
+ * answer rather than something to route around. No model, no ideas: there is no
+ * honest written fallback for "make something up that's funny".
+ */
+async function offerIdeas(models: ModelService, log: (message: string) => void): Promise<string | undefined> {
+  if (!(await models.isReady('chat'))) {
+    log('planning: seed — no model configured, could not suggest ideas');
+    return undefined;
+  }
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: ideaPrompt() }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 800) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const ideas = parseIdeaResult(text);
+    if (ideas.length === 0) {
+      log('planning: seed — idea response did not parse');
+      return undefined;
+    }
+
+    const SOMETHING_ELSE = 'Something else…';
+    const picked = await vscode.window.showQuickPick(
+      [...ideas.map((idea) => ({ label: idea.name, detail: idea.description })), { label: SOMETHING_ELSE }],
+      { placeHolder: "Didn't know what to build? Pick one, or describe your own", ignoreFocusOut: true }
+    );
+    if (!picked) {
+      log('planning: seed — idea picker cancelled');
+      return undefined;
+    }
+    if (picked.label === SOMETHING_ELSE) {
+      const typed = await vscode.window.showInputBox({
+        prompt: 'What are you building? One sentence is plenty.',
+        ignoreFocusOut: true,
+      });
+      return typed?.trim() || undefined;
+    }
+
+    const idea = ideas.find((candidate) => candidate.name === picked.label);
+    log(`planning: seed — chose idea: ${picked.label}`);
+    return idea ? `${idea.name}, ${idea.description}` : picked.label;
+  } catch (error) {
+    log(`planning: seed — idea generation failed (${String(error)})`);
+    return undefined;
+  }
+}
+
+/**
+ * Detects a name already in the seed, or offers a shortlist if there isn't one.
+ *
+ * A missing name isn't blocking — cancelling the picker just leaves it unresolved and
+ * the interview carries on, same as "you pick" cancelling would not stall the rest of
+ * the interview over a preference nobody has strong feelings about yet.
+ */
+async function resolveProjectName(
+  models: ModelService,
+  seed: string,
+  log: (message: string) => void
+): Promise<string | undefined> {
+  if (!(await models.isReady('chat'))) {
+    log('planning: name — no model configured, skipped');
+    return undefined;
+  }
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: namePrompt(seed) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 400) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const result = parseNameResult(text);
+    if ('named' in result) {
+      log(`planning: name — already named in the seed: ${result.named}`);
+      return result.named;
+    }
+    if (result.suggestions.length === 0) {
+      log('planning: name — response did not parse, skipped');
+      return undefined;
+    }
+
+    const SOMETHING_ELSE = 'Something else…';
+    const picked = await vscode.window.showQuickPick(
+      [
+        ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
+        { label: SOMETHING_ELSE },
+      ],
+      { placeHolder: 'No name given yet — pick one, or name it yourself', ignoreFocusOut: true }
+    );
+    if (!picked) {
+      log('planning: name — suggestion picker cancelled, left unresolved');
+      return undefined;
+    }
+    if (picked.label === SOMETHING_ELSE) {
+      const typed = await vscode.window.showInputBox({ prompt: 'What should it be called?', ignoreFocusOut: true });
+      log(`planning: name — ${typed ? `set to ${typed.trim()}` : 'left unresolved'}`);
+      return typed?.trim() || undefined;
+    }
+
+    log(`planning: name — chose suggestion: ${picked.label}`);
+    return picked.label;
+  } catch (error) {
+    log(`planning: name — resolution failed (${String(error)}), skipped`);
+    return undefined;
+  }
+}
+
+/** One parsed `Name | advantage | cost` line from the model's shortlist. */
+interface LanguageOption {
+  name: string;
+  advantage: string;
+  cost: string;
+}
+
+/** Parses the model's pipe-delimited shortlist. Lines that don't fit the shape are skipped. */
+function parseLanguageOptions(text: string): LanguageOption[] {
+  return text
+    .split('\n')
+    .map((line) => line.split('|').map((part) => part.trim()))
+    .filter((parts): parts is [string, string, string] => parts.length === 3 && parts.every(Boolean))
+    .map(([name, advantage, cost]) => ({ name, advantage, cost }));
+}
+
+/**
+ * The language step as a QuickPick menu instead of a free-text prompt.
+ *
+ * Found live: a wall of text in an input box's single-line prompt field is a bad fit
+ * for comparing options, regardless of whether the text is complete. "You pick" and
+ * "something else" are added by code, not the model, so they always exist even if
+ * parsing finds nothing.
+ *
+ * **"You pick" resolves to an actual language, not the literal words "You pick".**
+ * Found live: the answer got recorded as `language: You pick`, which is not a
+ * language and directly contradicts §4.9 — "you pick" is supposed to produce a real
+ * choice with a one-line reason, not sit in the plan as an unresolved placeholder.
+ */
+async function askLanguage(
+  models: ModelService,
+  question: string,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<Answer | undefined> {
+  const options = parseLanguageOptions(question);
+  if (options.length === 0) {
+    log('planning: "language" — shortlist did not parse, fell back to free text');
+    const raw = await vscode.window.showInputBox({
+      prompt: question,
+      placeHolder: "Type your answer, or \"I don't know yet\" — that's a fine answer here.",
+      ignoreFocusOut: true,
+    });
+    return raw === undefined ? undefined : toAnswer('language', raw);
+  }
+
+  const YOU_PICK = 'You pick';
+  const SOMETHING_ELSE = 'Something else…';
+  const items: vscode.QuickPickItem[] = [
+    ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
+    { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },
+    { label: SOMETHING_ELSE },
+  ];
+
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: 'Pick a language, or "You pick" to leave it to him',
+    ignoreFocusOut: true,
+  });
+  if (!picked) return undefined;
+
+  if (picked.label === SOMETHING_ELSE) {
+    const raw = await vscode.window.showInputBox({ prompt: 'What language?', ignoreFocusOut: true });
+    return raw === undefined ? undefined : toAnswer('language', raw);
+  }
+
+  if (picked.label === YOU_PICK) {
+    const { name, reasoning } = await pickLanguageForUser(models, options, state, log);
+    return { topic: 'language', text: name, reasoning };
+  }
+
+  return { topic: 'language', text: picked.label };
+}
+
+/**
+ * Resolves "you pick" into one option plus a one-line reason.
+ *
+ * Falls back to the first option with an honest, generic reason if no model is
+ * configured or the call fails — never a fabricated justification, same rule as
+ * everywhere else this project talks about a project it wasn't told about.
+ */
+async function pickLanguageForUser(
+  models: ModelService,
+  options: LanguageOption[],
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<{ name: string; reasoning: string }> {
+  const fallback = {
+    name: options[0].name,
+    reasoning: 'left to me to pick, and no model was available to weigh in — took the first of the shortlist.',
+  };
+  if (!(await models.isReady('chat'))) {
+    log('planning: "language" — "you pick" — no model configured, used the first option');
+    return fallback;
+  }
+
+  try {
+    const known = state.answers
+      .filter((answer) => answer.text)
+      .map((answer) => `${answer.topic}: ${answer.text}`)
+      .join('\n');
+    const shortlist = options.map((option) => `${option.name} | ${option.advantage} | ${option.cost}`).join('\n');
+    const prompt = [
+      'They said "you pick" for the language. Choose exactly one from this shortlist and',
+      'give one honest sentence why, grounded in what is known below.',
+      '',
+      `What is known:\n${known}`,
+      '',
+      `Shortlist:\n${shortlist}`,
+      '',
+      'Output exactly one line, nothing else: Name | one-sentence reason',
+    ].join('\n');
+
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream({ system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }] }, 'chat')) {
+        text += fragment;
+        if (text.length > 400) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const [name, ...rest] = text.trim().split('|').map((part) => part.trim());
+    const chosen = options.find((option) => option.name.toLowerCase() === name?.toLowerCase());
+    if (!chosen || rest.length === 0 || !rest[0]) {
+      log('planning: "language" — "you pick" response did not parse, used the first option');
+      return fallback;
+    }
+
+    log(`planning: "language" — "you pick" resolved to ${chosen.name}`);
+    return { name: chosen.name, reasoning: rest[0] };
+  } catch (error) {
+    log(`planning: "language" — "you pick" failed (${String(error)}), used the first option`);
+    return fallback;
+  }
+}
+
+/** Whatever was typed, as a settled answer or a recorded unknown. */
+function toAnswer(topic: TopicId, raw: string): Answer {
+  const text = raw.trim();
+  return { topic, text: UNKNOWN_ANSWER.test(text) || !text ? undefined : text };
+}
+
+async function phraseQuestion(
+  models: ModelService,
+  topic: TopicId,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<string> {
+  // **Every path here is distinguishable in the log.** The briefing spent several
+  // rounds today logging "from the bank" for three different reasons before anyone
+  // could tell which one had actually happened; this does not get to make the same
+  // mistake on its first day.
+  if (!(await models.isReady('chat'))) {
+    log(`planning: "${topic}" — no model configured, used the written question`);
+    return FALLBACK_QUESTION[topic];
+  }
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: interviewQuestionPrompt(topic, state) }] },
+        'chat'
+      )) {
+        text += fragment;
+        // Every topic but language is one sentence; language is a 2-4 option shortlist
+        // and this cap was cutting it off mid-option before it reached "you pick" — the
+        // exact truncation seen live. Give it real headroom instead of none.
+        if (text.length > (topic === 'language' ? 2000 : 400)) break;
+      }
+    })();
+
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    // Every topic but language is genuinely one sentence, and truncating to the first
+    // line has caught a stray blank line from the model harmlessly. Language is not:
+    // it is a shortlist of 2-4 options, inherently multi-line, and the same truncation
+    // would have silently thrown away every option after the first one.
+    const phrased = (topic === 'language' ? text.trim() : text.trim().split('\n')[0]);
+    if (!phrased) {
+      log(`planning: "${topic}" — model returned nothing, used the written question`);
+      return FALLBACK_QUESTION[topic];
+    }
+
+    log(`planning: "${topic}" — phrased by the model`);
+    return phrased;
+  } catch (error) {
+    log(`planning: "${topic}" — phrasing failed (${String(error)}), used the written question`);
+    return FALLBACK_QUESTION[topic];
+  }
+}

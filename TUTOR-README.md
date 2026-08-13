@@ -125,6 +125,13 @@ rather than when a syllabus says so.
   Clarvis asks whether you want that; in Tutor Mode you always get it, because the code
   *is* the lesson and next week you'll be reading it back with nobody to ask. Those
   comments are yours permanently — nothing strips them out when you move on.
+- **Git gets explained as it happens, not up front.** Version control is the biggest
+  thing here that isn't about your project, and Clarvis uses it constantly — a separate
+  branch for every task, a save point for every run. The first time each piece comes
+  up, you get three sentences on what it is and what it means for your work: what a
+  branch is when one gets made, what a commit is when one lands, what merging does when
+  you're offered it. Each explained once, ever — including on your next project, since
+  it remembers that you've already met it.
 - **You're invited to break things.** *"Change that number and see what happens — I'll
   put it back."* Clarvis takes a snapshot before it touches anything, so experimenting
   costs nothing. Poking at code is how it starts making sense.

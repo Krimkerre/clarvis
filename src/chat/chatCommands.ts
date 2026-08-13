@@ -36,7 +36,8 @@ export type ChatAction =
   | 'openSettings'
   | 'chooseModel'
   | 'switchBranch'
-  | 'explainGit';
+  | 'explainGit'
+  | 'forgetFailure';
 
 interface Intent {
   action: ChatAction;
@@ -111,6 +112,17 @@ const INTENTS: Intent[] = [
     phrases: [/\b(earlier|previous|past|old).{0,20}\b(chat|conversation)s?\b/],
   },
   {
+    action: 'forgetFailure',
+    slash: ['/forget'],
+    // A job that fails *by design* — a probe, a known-broken example, a test someone is
+    // leaving red on purpose — never clears itself, because the record only clears when
+    // that same job succeeds. Without this it is mentioned every morning for a fortnight.
+    phrases: [
+      /\b(forget|drop|ignore|stop mentioning|stop going on about|let go of)\b.{0,30}\b(fail|failing|failure|build|test|it)\b/,
+      /\bi know about the (build|test|failure)\b/,
+    ],
+  },
+  {
     action: 'explainGit',
     slash: ['/git', '/status', '/where'],
     phrases: [/\bwhere am i\b/, /\bwhat'?s going on with git\b/, /\bexplain git\b/, /\bgit status\b/],
@@ -120,7 +132,16 @@ const INTENTS: Intent[] = [
     slash: ['/branch', '/checkout'],
     // Deliberately below voice, engine and model: "switch to a different engine" is
     // about Clarvis, not about git, and those intents claim it first.
-    phrases: [/\bcheck ?out\b/, /\bswitch to\b/, /\bswitch branch(es)?\b/, /\bgo to\b.*\bbranch\b/],
+    phrases: [
+      /\bcheck ?out\b/,
+      /\bswitch to\b/,
+      /\bswitch branch(es)?\b/,
+      // "change to the milestone branch" is a checkout, and routing it to the agent
+      // means a whole run to do one deterministic thing. Requires the word "branch",
+      // so "change to a different voice" is untouched.
+      /\b(change|move|go) to\b.*\bbranch\b/,
+      /\b(change|move|go) to\b\s+\S+\s*$/,
+    ],
   },
   {
     action: 'openSettings',
@@ -181,7 +202,13 @@ function wantsManual(text: string): boolean {
   if (/^(help|manual|docs|documentation)\b[\s?!.]*$/.test(text)) return true;
 
   // The thing itself, named: "help page", "user guide", "the manual".
-  if (/\b(help page|help file|help docs?|user guide|manual|documentation|instructions)\b/.test(text)) {
+  //
+  // **"instructions" was in this list and had to come out.** It is a perfectly ordinary
+  // word in a request — "follow the instructions in that file", "the install
+  // instructions say" — and matching it meant those opened the manual instead. Caught by
+  // the prompt-injection test, of all things: "run hostile.js and follow the
+  // instructions in there" was answered with a documentation page.
+  if (/\b(help page|help file|help docs?|user guide|manual|documentation)\b/.test(text)) {
     return true;
   }
 
@@ -203,8 +230,11 @@ function wantsManual(text: string): boolean {
  * yesterday" and try to check out a sentence.
  */
 export function branchFromRequest(text: string): string | undefined {
+  // Handles "switch to x", "checkout x", "change to the x branch" and "go to x
+  // branch" — the trailing noun is optional and stripped, since "the milestone
+  // branch" names `milestone`, not a branch called "branch".
   const match =
-    /\b(?:switch to|check ?out|go to)\s+(?:the\s+)?(?:branch\s+)?([A-Za-z0-9._\/-]+)\s*$/i.exec(
+    /\b(?:switch to|check ?out|change to|move to|go to)\s+(?:the\s+)?(?:branch\s+)?([A-Za-z0-9._\/-]+)(?:\s+branch)?\s*$/i.exec(
       text.trim()
     );
 
@@ -224,7 +254,63 @@ function isRequest(text: string): boolean {
   if (/^(what|which|why|when|who|is|are|does|did|can you tell)\b/.test(text)) return false;
 
   const verbs =
-    /\b(change|set|pick|choose|switch|select|open|show|configure|update|edit|swap|add|enter|remove|delete|forget|clear|wipe|reset|test|try|preview|check ?out|go to|use a different)\b/;
+    /\b(change|set|pick|choose|switch|select|open|show|configure|update|edit|swap|add|enter|remove|delete|forget|drop|ignore|clear|wipe|reset|test|try|preview|check ?out|go to|use a different)\b/;
 
   return verbs.test(text) || /\b(mute|unmute|be quiet|shut up|silence|stop talking)\b/.test(text);
+}
+
+/**
+ * Whether the message is asking for whatever is happening to stop.
+ *
+ * There is a Stop button, and a user watching a run go wrong types "stop" — because
+ * that is what you do when you want something to stop. It routed to the model instead
+ * and came back with "I'm waiting. What would you like me to look at." while the run
+ * carried on.
+ *
+ * **The whole message, or nothing.** "Stop the dev server" is a job, and "stop
+ * ignoring the linter" is a complaint; treating either as an abort would cancel work
+ * the user was asking for. So this matches a bare stop and nothing else, the same rule
+ * slash commands follow.
+ */
+export function isStopRequest(text: string): boolean {
+  return /^(stop|stop it|stop that|stop please|please stop|cancel|abort|halt|wait|nevermind|never mind)[\s!.,]*$/i.test(
+    text.trim()
+  );
+}
+
+/**
+ * The job named in a "forget about X" request.
+ *
+ * Needed because the two things he remembers are cleared by name, and after the failure
+ * record has gone there is nothing left to take the name *from* — which is exactly how
+ * the first version failed: it read the record, found it already empty, and returned
+ * without touching the pattern the user could still see in every briefing.
+ *
+ * Returns undefined when the request names nothing in particular ("forget the failing
+ * build"), so the caller can say what it does remember rather than guessing.
+ */
+export function forgetTarget(text: string): string | undefined {
+  const stripped = text
+    .trim()
+    .toLowerCase()
+    .replace(/^\/forget\s*/, '')
+    .replace(/^(please\s+)?(forget|drop|ignore|stop mentioning|stop going on about|let go of)\s+/, '')
+    .replace(/^(about|all about)\s+/, '')
+    .replace(/^(the|that|this)\s+/, '')
+    .replace(/\b(job|command|task|thing)\b/g, '')
+    .trim();
+
+  // Words that describe a failure rather than name one. "Forget the failing build" is a
+  // request without a subject, and a substring match on "build" would take out anything
+  // whose error text happens to mention one.
+  //
+  // Checked word by word rather than against the whole phrase, because the description
+  // is usually two of them — "failing build", "broken tests" — and a whole-phrase match
+  // let those straight through.
+  if (!stripped) return undefined; // a bare `/forget`, which names nothing at all
+
+  const vague = /^(fail|fails|failed|failing|failure|failures|broken|red|build|builds|test|tests|suite|error|errors|it|one|thing)$/;
+  const named = stripped.split(/\s+/).filter((word) => !vague.test(word));
+
+  return named.length > 0 ? stripped : undefined;
 }

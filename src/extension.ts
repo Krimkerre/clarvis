@@ -20,13 +20,26 @@ import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
+import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
+import { forgetGitOfferAnswer } from './agent/gitOffer';
+import { runInterview } from './planning/Interview';
+import { runAnalysis } from './planning/Analysis';
+import { collectVerdicts } from './planning/Verdicts';
+import { formatVerdict, FindingVerdict } from './planning/verdictSummary';
+import { renderPlan } from './planning/PlanWriter';
+import { InterviewState, openQuestions, readyToDraft } from './planning/interviewTopics';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
+import { LiveQuips } from './personality/LiveQuips';
+import { Voice } from './personality/Voice';
+import { phrase, setVoice } from './personality/Voice';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
+import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
+import { runVoiceCheck } from './personality/voiceCheck';
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -80,6 +93,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Chat is built last (it reads what the watchers own), but the briefing needs to
   // write into it. A late-bound reference keeps the construction order honest rather
   // than shuffling the wiring to suit one call.
+  // Assigned below, but the closures underneath capture it first — a const declared
+  // later would leave them referencing it before it exists.
+  // eslint-disable-next-line prefer-const
   let chat: ChatService | undefined;
   const toTranscript = (message: string) => void chat?.note(message);
 
@@ -93,140 +109,42 @@ export function activate(context: vscode.ExtensionContext): void {
   const models = new ModelService(context, (message) => logger.write(message));
   registerModelCommands(context, models, (message) => logger.write(message));
 
-  const tracker = startTaskWatching(context, avatar, logger, announcer);
+  // One place that knows what a run is doing: whether one is in progress, and what it
+  // committed. Quips stay out of the way during one (§4.6 personality under load), the
+  // watcher holds its completion toasts (M8e2), and neither celebrates its commits.
+  // Declared before the watcher, which reads it.
+  const agentBusy: { running: boolean; noteCommit?: (hash: string) => void } = { running: false };
+
+  const tracker = startTaskWatching(context, avatar, logger, announcer, () => agentBusy.running);
   const memory = startPatternMemory(context, tracker, logger, announcer);
   const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
-  startPersonality(context, tracker, logger, announcer);
+
+  const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
+  // **Wired, and deliberately never called.** ChatService has no call site for this: the
+  // agent's commits are never registered as its own, so the "first commit in a while"
+  // quip fires on them and Clarvis ends up remarking on his own work. That was a bug
+  // when it was found and the user has since asked to keep it — it is funnier than the
+  // rule it breaks (§5, amended). Left connected rather than deleted because the hook is
+  // the only way back if that ever stops being true.
+  agentBusy.noteCommit = (hash) => personality.noteOwnCommit(hash);
+
+  // The same writer the quips use, for the line that opens a run.
+  const liveLines = new LiveQuips(models, () => false, (message) => logger.write(message));
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
-  // Keeps plan.md's branch flow in step with the repository: a declared flow that has
-  // gone stale is worse than none, since the wizard keeps offering branches it knows
-  // while ignoring the one work now passes through.
-  const branchFlow = new BranchFlowWatcher(
-    context,
-    (message) => logger.write(message),
-    toTranscriptSpoken,
-    toTranscript
-  );
-  context.subscriptions.push(branchFlow.start());
+  startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
-  // Called by the agent path the moment a run finishes: a branch the user just asked
-  // for should be sorted out while they are still looking at it.
-  context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow())
-  );
+  const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
+  registerPlanningCommand(context, models, logger, liveLines);
 
-
-  // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
-  // shared so a probe run reads as one transcript rather than one window per command.
-  const agentTerminal = new AgentTerminal();
-  context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
-  context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.openLog', async () => {
-      if (!logger.filePath) {
-        void vscode.window.showWarningMessage('Clarvis: no log file — writing to it failed at startup.');
-        return;
-      }
-      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
-      await vscode.window.showTextDocument(document);
-    }),
-    // The agent (M8e). A command for now; M8f routes chat requests into it.
-    vscode.commands.registerCommand('clarvis.runTask', async () => {
-      const task = await vscode.window.showInputBox({
-        prompt: 'What should I do?',
-        placeHolder: 'e.g. fix the failing test in src/watch',
-        ignoreFocusOut: true,
-      });
-      if (!task?.trim()) return;
-
-      const controller = new AbortController();
-      const runner = new AgentRunner(
-        context,
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        models,
-        agentTerminal,
-        (message) => logger.write(message)
-      );
-
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
-        async (progress, token) => {
-          // Cancel must reach the run itself, not merely close the notification.
-          token.onCancellationRequested(() => controller.abort());
-
-          for await (const event of runner.run(task.trim(), controller.signal)) {
-            // No logging here: AgentRunner records every event itself, so both callers
-            // produce the same trail rather than each rolling their own.
-            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
-
-            if (event.kind === 'done' || event.kind === 'error') {
-              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
-              // The closing event no longer repeats the narration, so it can be empty.
-              const text = event.text.trim() || 'Finished.';
-              void vscode.window.showInformationMessage(`Clarvis: ${text}${files}`);
-            }
-          }
-        }
-      );
-    }),
-
-    // Available any time, not only after a run — the question "what is this branch and
-    // what do I do with it" outlives the run that created it.
-    vscode.commands.registerCommand('clarvis.reviewRun', () =>
-      reviewRun(
-        [],
-        [],
-        (message) => logger.write(message),
-        context.workspaceState.get('clarvis.agent.baseBranch'),
-        toTranscriptSpoken
-      )
-    ),
-
-    // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
-    // the escape hatch exists before the thing it rescues you from.
-    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const record = Checkpoint.stored(context);
-
-      if (!record || record.entries.length === 0) {
-        void vscode.window.showInformationMessage('Clarvis: there is nothing to undo.');
-        return;
-      }
-
-      const confirmed = await vscode.window.showWarningMessage(
-        `Undo the last run — "${record.task}"?`,
-        {
-          modal: true,
-          detail:
-            `${record.entries.length} file(s) go back to how they were before it started. ` +
-            'Anything you changed since then in those files goes too.',
-        },
-        'Undo it'
-      );
-      if (confirmed !== 'Undo it') return;
-
-      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
-      const summary =
-        `Clarvis: restored ${result.restored}, removed ${result.deleted}` +
-        (result.failed.length > 0 ? `, failed on ${result.failed.join(', ')}` : '.');
-
-      // A partial restore is reported as a warning, not an information message: half
-      // undone is a state someone needs to look at rather than be reassured about.
-      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
-      else void vscode.window.showInformationMessage(summary);
-    }),
-
-    vscode.commands.registerCommand('clarvis.debug.tools', () =>
-      probeTools(
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        (message) => logger.write(message),
-        agentTerminal
-      )
-    )
-  );
-
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, logger);
+  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
+  chat.setLiveLines(liveLines);
+  // One writer, reachable from every surface — see §2.2. Set as early as the model
+  // layer exists, so the first dialog of a session is already in character.
+  const voiceWriter = new Voice(models, (message) => logger.write(message));
+  setVoice(voiceWriter);
+  chat.setVoiceWriter(voiceWriter);
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -255,6 +173,7 @@ function createAvatar(
   provider.onDidReportState((state) => avatar.setState(state));
 
   context.subscriptions.push(
+    { dispose: () => avatar.dispose() }, // the dwell timer, so a reload leaves nothing pending
     provider.disposable,
     statusBar.disposable,
     vscode.window.registerWebviewViewProvider(ButlerViewProvider.viewId, provider, {
@@ -301,12 +220,13 @@ function startTaskWatching(
   context: vscode.ExtensionContext,
   avatar: AvatarController,
   log: ClarvisLog,
-  announcer: Announcer
+  announcer: Announcer,
+  agentRunning: () => boolean
 ): BusyTracker {
   const tracker = new BusyTracker();
   wireBusyTracker(tracker, context);
 
-  const presenter = new WatchPresenter(avatar, (message) => log.write(message), announcer);
+  const presenter = new WatchPresenter(avatar, (message) => log.write(message), announcer, agentRunning);
   presenter.attachTo(tracker);
   context.subscriptions.push({ dispose: () => presenter.dispose() });
 
@@ -361,7 +281,19 @@ function startBriefing(
 
     let text = '';
     for await (const fragment of models.stream(
-      { system: 'You are Clarvis: dry, brief, never cheerful about a failure.', messages: [{ role: 'user', content: prompt }] },
+      {
+        // **Found live, in a folder with no git at all.** The briefing's system prompt
+        // never carried this rule — only the rewrite and quip prompts did — and with
+        // `facts.git` genuinely absent, the model invented one: "last commit was on
+        // `main` three days ago", none of which exists anywhere. The briefing gets real
+        // facts on an ordinary project, which is exactly why the gaps are more
+        // convincing here than on the fully fact-free surfaces this rule first targeted.
+        system: characterWith(
+          'This is the first thing the user hears today. Do not greet them.',
+          ONLY_WHAT_YOU_WERE_GIVEN
+        ),
+        messages: [{ role: 'user', content: prompt }],
+      },
       'chat'
     )) {
       text += fragment;
@@ -402,6 +334,7 @@ function startChat(
   voice: VoiceService,
   models: ModelService,
   terminal: AgentTerminal,
+  agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -414,14 +347,39 @@ function startChat(
     tracker,
     () => briefing.recent,
     () => memory.known,
+    (needle) => memory.forget(needle),
     voice,
     models,
     terminal,
+    agentBusy,
     (message) => log.write(message)
   );
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.clear()),
+    // The palette route to the same thing chat does. A job that fails on purpose — a
+    // probe, a deliberately red suite — never clears its own record, because that only
+    // happens when the same job succeeds.
+    vscode.commands.registerCommand('clarvis.forgetFailure', async () => {
+      const stored = parseRecord(context.workspaceState.get(FAILURE_KEY));
+      if (stored) await context.workspaceState.update(FAILURE_KEY, undefined);
+
+      // Both stores, independently: the record may already be gone while the pattern —
+      // the line the user actually sees every morning — is still there.
+      const dropped = stored ? await memory.forget(stored.label) : 0;
+      log.write(`chat: forget from the palette — record ${stored ? 'cleared' : 'was empty'}, ${dropped} pattern(s)`);
+
+      void vscode.window.showInformationMessage(
+        stored || dropped > 0
+          ? await phrase('report', `Forgotten. ${stored?.label ?? 'That'} is your business now.`)
+          : await phrase('report', 'There is nothing on my mind to forget.')
+      );
+    }),
+
+    // Through the confirming path, not the raw one. M8f2 rule: a destructive action
+    // asks for itself whatever route reached it — a typed "/clear", a chat phrasing, or
+    // a model's guess that the user already said yes to. Two prompts is correct here;
+    // agreeing that a guess was right is not the same as agreeing to lose the thread.
+    vscode.commands.registerCommand('clarvis.clearConversation', () => void chat.confirmAndClear()),
     vscode.commands.registerCommand('clarvis.showHistory', () => void chat.showHistory()),
     vscode.commands.registerCommand('clarvis.openManual', () => void chat.openHelp())
   );
@@ -472,7 +430,7 @@ function registerModelCommands(
       'clarvis.configureModels',
       () => void configureModels(context, models, log)
     ),
-    vscode.commands.registerCommand('clarvis.chooseProvider', () => void chooseProvider(models, log)),
+    vscode.commands.registerCommand('clarvis.chooseProvider', () => void chooseProvider(context, models, log)),
     vscode.commands.registerCommand('clarvis.chooseModel', () => void chooseModel(context, models, log)),
     vscode.commands.registerCommand('clarvis.manageModelKeys', () => void manageKeys(models, log)),
     vscode.commands.registerCommand(
@@ -499,14 +457,25 @@ function registerVoiceCommands(
       if (!key) return;
 
       await context.secrets.store(FISH_KEY_SECRET, key.trim());
-      void vscode.window.showInformationMessage('Clarvis: key stored in the system keychain.');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'Key stored, in the system keychain where it belongs.')
+      );
       // Setting a key is an unambiguous request for the feature it unlocks.
       await enableVoiceAfterKey(log);
     }),
 
     vscode.commands.registerCommand('clarvis.clearFishKey', async () => {
+      // Same rule, and this one had no confirmation at all: the key is not recoverable
+      // from here, and getting another means going back to the provider for it.
+      const confirmed = await vscode.window.showWarningMessage(
+        'Remove the stored Fish Audio key? You will need to paste it in again to use the voice.',
+        { modal: true },
+        'Remove'
+      );
+      if (confirmed !== 'Remove') return;
+
       await context.secrets.delete(FISH_KEY_SECRET);
-      void vscode.window.showInformationMessage('Clarvis: key removed.');
+      void vscode.window.showInformationMessage(await phrase('report', 'Key removed.'));
     }),
 
     vscode.commands.registerCommand('clarvis.chooseVoice', () => chooseVoice(fish, voice, log)),
@@ -526,7 +495,9 @@ function registerVoiceCommands(
       const file = vscode.Uri.joinPath(context.globalStorageUri, 'mic-probe.wav');
       await vscode.workspace.fs.createDirectory(context.globalStorageUri);
 
-      void vscode.window.showInformationMessage('Clarvis: recording 3 seconds — say something.');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'Recording for three seconds. Say something.')
+      );
 
       try {
         const used = await recordClip(file.fsPath, 3, process.platform, log);
@@ -575,9 +546,18 @@ function startPersonality(
   context: vscode.ExtensionContext,
   tracker: BusyTracker,
   log: ClarvisLog,
-  announcer: Announcer
-): void {
-  new Personality(announcer, (message) => log.write(message)).start(tracker, context);
+  announcer: Announcer,
+  models: ModelService,
+  busy: () => boolean
+): Personality {
+  const personality = new Personality(announcer, (message) => log.write(message));
+
+  // Written lines when a model is configured; the bank when it isn't, is slow, or
+  // returns something unusable.
+  personality.setBusySignal(busy);
+  personality.setLiveQuips(new LiveQuips(models, busy, (message) => log.write(message)));
+  personality.start(tracker, context);
+  return personality;
 }
 
 /**
@@ -590,4 +570,372 @@ function startPersonality(
  */
 export function deactivate(): void {
   log?.write('Clarvis deactivated.');
+}
+
+/**
+ * The branch-flow watcher, and the two commands that only make sense beside it.
+ *
+ * Kept together because they share one object and nothing else does: `checkBranchFlow`
+ * is called by the agent path the moment a run finishes, and `forgetBranchAnswers`
+ * exists because "asked once" is right until somebody changes their mind or is testing.
+ */
+function startBranchFlow(
+  context: vscode.ExtensionContext,
+  logger: ClarvisLog,
+  toTranscriptSpoken: (message: string) => void,
+  toTranscript: (message: string) => void
+): void {
+  // Keeps plan.md's branch flow in step with the repository: a declared flow that has
+  // gone stale is worse than none, since the wizard keeps offering branches it knows
+  // while ignoring the one work now passes through.
+  const branchFlow = new BranchFlowWatcher(
+    context,
+    (message) => logger.write(message),
+    toTranscriptSpoken,
+    toTranscript
+  );
+  context.subscriptions.push(branchFlow.start());
+
+  // Called by the agent path the moment a run finishes: a branch the user just asked
+  // for should be sorted out while they are still looking at it.
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.checkBranchFlow', () => branchFlow.checkNow()),
+
+
+    // "Asked once" is right until someone changes their mind, or is testing. Without
+    // this the only way to be asked again about a branch is a new workspace.
+    vscode.commands.registerCommand('clarvis.forgetBranchAnswers', async () => {
+      await context.workspaceState.update('clarvis.branchFlow.seen', undefined);
+      await context.workspaceState.update('clarvis.branchFlow.kept', undefined);
+      logger.write('branch flow: forgot which branches had been asked about');
+      void vscode.window.showInformationMessage(
+        await phrase('report', 'I have forgotten which branches I asked about.')
+      );
+      await branchFlow.checkNow();
+    }),
+
+    // Same shape as forgetBranchAnswers, for the same reason: "asked once" is right
+    // until someone changes their mind or is testing.
+    vscode.commands.registerCommand('clarvis.forgetGitOfferAnswer', async () => {
+      await forgetGitOfferAnswer(context);
+      logger.write('git offer: forgot the answer, will ask again next run');
+      void vscode.window.showInformationMessage(await phrase('report', 'Asking again, next time it comes up.'));
+    })
+  );
+}
+
+/**
+ * M9a — the project-planning interview, as its own command.
+ *
+ * Deliberately separate from the chat panel rather than routed through ChatService:
+ * this is the first slice of a large milestone, and the eventual "questions arrive in
+ * the chat panel" experience is a later piece of work, not something this needed to
+ * wait for. Runs M9b (analysis) once the interview reaches "enough to draft", then
+ * M9c (accept/reject/modify per finding) over whatever it found, then writes
+ * `plan.md` itself (M9d) — unless one already exists in the workspace, which it
+ * never overwrites. M9e (sign-off/handoff into an agent task) is not built yet.
+ *
+ * **Carries the same personality quips as chat and the agent** — the acknowledgement
+ * on the way in, the aside after the summary on the way out. Chained input boxes are
+ * not a chat transcript, so both surface via `showInformationMessage` instead of
+ * `note()`; the lines themselves come from the same `LiveQuips` instance everything
+ * else uses, not a second copy.
+ */
+function registerPlanningCommand(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  logger: ClarvisLog,
+  liveLines: LiveQuips
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.planProject', async () => {
+      const opening = await liveLines.acknowledge('plan this project');
+      if (opening) void vscode.window.showInformationMessage(opening);
+
+      const result = await runInterview(models, (message) => logger.write(message));
+      if (!result) return;
+
+      const { state, seed } = result;
+      const settled = state.answers.filter((answer) => answer.text);
+      const open = openQuestions(state);
+
+      const lines = [
+        state.projectName ? `# ${state.projectName}` : `# Interview — ${seed}`,
+        ...(state.projectName ? [`*${seed}*`] : []),
+        '',
+        readyToDraft(state)
+          ? 'Enough to draft. (Generating `plan.md` from this is M9d, not built yet.)'
+          : 'Paused — reopen `Clarvis: Plan This Project` to continue where this left off. (Nothing is saved between sessions yet; that is also still to come.)',
+        '',
+        '## Established',
+        ...settled.flatMap((answer) =>
+          answer.reasoning
+            ? [`- **${answer.topic}**: ${answer.text}`, `  Reasoning: ${answer.reasoning}`]
+            : [`- **${answer.topic}**: ${answer.text}`]
+        ),
+      ];
+
+      if (open.length > 0) {
+        lines.push('', '## Open questions', ...open.map((answer) => `- ${answer.topic} — not yet known`));
+      }
+
+      let verdicts: FindingVerdict[] = [];
+      let noPlanNeeded: string | undefined;
+
+      if (readyToDraft(state)) {
+        const analysis = await runAnalysis(models, state, (message) => logger.write(message));
+        noPlanNeeded = analysis.noPlanNeeded;
+        if (noPlanNeeded) {
+          lines.push('', '## Analysis', `This may not need a plan: ${noPlanNeeded}`);
+        } else if (analysis.findings.length > 0) {
+          verdicts = await collectVerdicts(analysis.findings, (message) => logger.write(message));
+          lines.push('', '## Analysis');
+          for (const verdict of verdicts) lines.push(...formatVerdict(verdict));
+        }
+      }
+
+      // M9d — draft, refine, approve, then write plan.md — unless it's the
+      // "doesn't need a plan" outcome.
+      if (readyToDraft(state) && !noPlanNeeded) {
+        await draftAndApprovePlan(state, seed, verdicts, logger, liveLines);
+      }
+
+      // Logged, not just shown. An untitled document exists only until the tab closes
+      // or VS Code restarts — a two-minute interview producing an artifact neither the
+      // user nor a later "check the log" request could recover was found the first
+      // time this ran live.
+      logger.write(`planning summary:\n${lines.join('\n')}`);
+
+      const document = await vscode.workspace.openTextDocument({ content: lines.join('\n'), language: 'markdown' });
+      await vscode.window.showTextDocument(document, { preview: false });
+
+      // The aside, same rule as everywhere else it appears: separate from the summary,
+      // never folded into it, so the document stays trustworthy and the joke stays a
+      // joke. Shown, not written into the document — it is a remark about the moment,
+      // not part of the plan.
+      const aside = await liveLines.afterTask('plan this project', lines.join('\n'));
+      if (aside) void vscode.window.showInformationMessage(aside);
+    })
+  );
+}
+
+/**
+ * Drafts `plan.md`, shows it, and lets the user refine or approve before it's
+ * written (M9d) — Claude Code's own plan-mode shape, asked for by name: present a
+ * draft, iterate on it, gate the actual write behind an explicit approval rather
+ * than writing the moment there's enough to draft.
+ *
+ * **Refining adds a note and redraws, nothing more.** No re-interrogation, no
+ * re-running analysis — a "keep refining" loop that reopened the whole Q&A would be
+ * exactly the interrogation this interview has avoided since M9a. The note becomes
+ * a `## Notes` line in the redrawn plan, and the loop shows it again.
+ *
+ * Never overwrites an existing `plan.md` — that means someone is already using this
+ * project's own Plan Mode, and clobbering it would be the opposite of the point.
+ */
+async function draftAndApprovePlan(
+  state: InterviewState,
+  seed: string,
+  verdicts: FindingVerdict[],
+  logger: ClarvisLog,
+  liveLines: LiveQuips
+): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return;
+
+  const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
+  const exists = await vscode.workspace.fs.stat(planUri).then(
+    () => true,
+    () => false
+  );
+  if (exists) {
+    logger.write('planning: plan.md already exists here, not overwritten');
+    void vscode.window.showInformationMessage('plan.md already exists in this workspace — leaving it alone.');
+    return;
+  }
+
+  let firstDraft = true;
+  for (;;) {
+    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts });
+    const draftDocument = await vscode.workspace.openTextDocument({ content: planText, language: 'markdown' });
+    await vscode.window.showTextDocument(draftDocument, { preview: false });
+
+    if (firstDraft) {
+      firstDraft = false;
+      const draftLine = await liveLines.acknowledge('look over a plan draft');
+      if (draftLine) void vscode.window.showInformationMessage(draftLine);
+    }
+
+    const choice = await vscode.window.showInformationMessage(
+      'Draft plan ready.',
+      { modal: true, detail: 'Approve writes plan.md. Keep refining lets you add anything missing first.' },
+      'Approve',
+      'Keep Refining'
+    );
+
+    if (choice !== 'Keep Refining') {
+      if (choice === 'Approve') {
+        await vscode.workspace.fs.writeFile(planUri, Buffer.from(planText, 'utf8'));
+        logger.write(`planning: wrote plan.md\n${planText}`);
+        const written = await vscode.workspace.openTextDocument(planUri);
+        await vscode.window.showTextDocument(written, { preview: false });
+      } else {
+        logger.write('planning: draft not approved, plan.md not written');
+      }
+      return;
+    }
+
+    const note = await vscode.window.showInputBox({
+      prompt: 'What should be added or changed?',
+      ignoreFocusOut: true,
+    });
+    if (note?.trim()) {
+      state.notes = [...(state.notes ?? []), note.trim()];
+      logger.write(`planning: refinement note — ${note.trim()}`);
+    }
+  }
+}
+
+/**
+ * Everything driveable by hand: the log, a run, the review, undo, and the two probes.
+ *
+ * Returns the shared terminal, because the chat path needs the same one — a probe run
+ * and an agent run in separate windows would read as two unrelated things happening.
+ */
+function registerAgentCommands(
+  context: vscode.ExtensionContext,
+  logger: ClarvisLog,
+  models: ModelService,
+  toTranscriptSpoken: (message: string) => void
+): AgentTerminal {
+  // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
+  // shared so a probe run reads as one transcript rather than one window per command.
+  const agentTerminal = new AgentTerminal();
+  context.subscriptions.push({ dispose: () => agentTerminal.dispose() });
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.openLog', async () => {
+      if (!logger.filePath) {
+        void vscode.window.showWarningMessage('Clarvis: no log file — writing to it failed at startup.');
+        return;
+      }
+      const document = await vscode.workspace.openTextDocument(vscode.Uri.file(logger.filePath));
+      await vscode.window.showTextDocument(document);
+    }),
+    // The agent (M8e). A command for now; M8f routes chat requests into it.
+    vscode.commands.registerCommand('clarvis.runTask', async () => {
+      const task = await vscode.window.showInputBox({
+        prompt: 'What should I do?',
+        placeHolder: 'e.g. fix the failing test in src/watch',
+        ignoreFocusOut: true,
+      });
+      if (!task?.trim()) return;
+
+      const controller = new AbortController();
+      const runner = new AgentRunner(
+        context,
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        models,
+        agentTerminal,
+        (message) => logger.write(message)
+      );
+
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
+        async (progress, token) => {
+          // Cancel must reach the run itself, not merely close the notification.
+          token.onCancellationRequested(() => controller.abort());
+
+          for await (const event of runner.run(task.trim(), controller.signal)) {
+            // No logging here: AgentRunner records every event itself, so both callers
+            // produce the same trail rather than each rolling their own.
+            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
+
+            if (event.kind === 'done' || event.kind === 'error') {
+              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
+              // The closing event no longer repeats the narration, so it can be empty.
+              const text = event.text.trim() || 'Finished.';
+              void vscode.window.showInformationMessage(await phrase('report', `${text}${files}`));
+            }
+          }
+        }
+      );
+    }),
+
+    // Available any time, not only after a run — the question "what is this branch and
+    // what do I do with it" outlives the run that created it.
+    vscode.commands.registerCommand('clarvis.reviewRun', () =>
+      reviewRun(
+        [],
+        [],
+        (message) => logger.write(message),
+        context.workspaceState.get('clarvis.agent.baseBranch'),
+        toTranscriptSpoken
+      )
+    ),
+
+    // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
+    // the escape hatch exists before the thing it rescues you from.
+    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
+      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+      const record = Checkpoint.stored(context);
+
+      if (!record || record.entries.length === 0) {
+        void vscode.window.showInformationMessage(await phrase('report', 'There is nothing to undo.'));
+        return;
+      }
+
+      const confirmed = await vscode.window.showWarningMessage(
+        `Undo the last run — "${record.task}"?`,
+        {
+          modal: true,
+          detail:
+            `${record.entries.length} file(s) go back to how they were before it started. ` +
+            'Anything you changed since then in those files goes too.' +
+            (record.startedOn ? ` You will be put back on \`${record.startedOn}\`.` : ''),
+        },
+        'Undo it'
+      );
+      if (confirmed !== 'Undo it') return;
+
+      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
+      const summary = await phrase(
+        result.failed.length > 0 ? 'warn' : 'report',
+        `Restored ${result.restored} file(s), removed ${result.deleted}` +
+          (result.failed.length > 0 ? `, and failed on ${result.failed.join(', ')}.` : '.'),
+        [String(result.restored), String(result.deleted)]
+      ) +
+        // Said plainly rather than phrased: being left somewhere you did not expect is
+        // the kind of thing a joke would bury.
+        (result.stuckOn
+          ? ` You are still on the run's branch — I could not switch back to \`${result.stuckOn}\` with unsaved changes in the way.`
+          : '');
+
+      // A partial restore is reported as a warning, not an information message: half
+      // undone is a state someone needs to look at rather than be reassured about.
+      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
+      else void vscode.window.showInformationMessage(summary);
+    }),
+
+    // Reads his lines back before they reach anyone. Opened as a document rather than
+    // logged, because the whole point is that a person sits and reads them.
+    vscode.commands.registerCommand('clarvis.debug.voiceCheck', async () => {
+      const report = await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: 'Clarvis: saying a few things…' },
+        () => runVoiceCheck(models, (message) => logger.write(message))
+      );
+
+      const document = await vscode.workspace.openTextDocument({ content: report, language: 'markdown' });
+      await vscode.window.showTextDocument(document, { preview: false });
+    }),
+
+    vscode.commands.registerCommand('clarvis.debug.tools', () =>
+      probeTools(
+        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+        (message) => logger.write(message),
+        agentTerminal
+      )
+    )
+  );
+
+  return agentTerminal;
 }

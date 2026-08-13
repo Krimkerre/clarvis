@@ -3,6 +3,7 @@ import { ENGINES, isKnownEngine } from './enginePicker';
 import { FishAudioProvider } from './FishAudioProvider';
 import { VoiceService } from './VoiceService';
 import { CURATED_VOICES } from './curatedVoices';
+import { phrase } from '../personality/Voice';
 import { readSavedVoices, withSavedVoice, SavedVoice } from './savedVoices';
 
 /**
@@ -96,7 +97,7 @@ export async function chooseVoice(
   if (!value) return;
 
   await writeSetting('voice.selectedVoice', value);
-  void vscode.window.showInformationMessage(`Clarvis: voice set to ${value}.`);
+  void vscode.window.showInformationMessage(await phrase('report', `Voice set to ${value}.`, [value]));
 }
 
 /**
@@ -247,7 +248,11 @@ export async function chooseEngine(): Promise<void> {
 
   await writeSetting('voice.fishAudio.engine', picked.id);
   void vscode.window.showInformationMessage(
-    `Clarvis: engine set to ${picked.id}. Cached lines keep their old engine until re-rendered.`
+    await phrase(
+      'report',
+      `Engine set to ${picked.id}. Anything already cached keeps the old one until it is said again.`,
+      [picked.id]
+    )
   );
 }
 

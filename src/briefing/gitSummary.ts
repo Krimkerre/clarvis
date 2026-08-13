@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { splitChanges } from './gitChanges';
 
 /**
  * Reads branch and dirty-file count from the built-in Git extension.
@@ -8,7 +9,9 @@ import * as vscode from 'vscode';
  * it comes from another extension's exports. Any of that failing means "no git facts",
  * which the briefing simply omits rather than treating as an error.
  */
-export async function readGitSummary(): Promise<{ branch: string; dirtyCount: number } | undefined> {
+export async function readGitSummary(): Promise<
+  { branch: string; dirtyCount: number; untrackedCount: number } | undefined
+> {
   try {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) return undefined;
@@ -25,8 +28,8 @@ export async function readGitSummary(): Promise<{ branch: string; dirtyCount: nu
     const branch: unknown = repository.state?.HEAD?.name;
     if (typeof branch !== 'string') return undefined; // detached HEAD, or mid-scan
 
-    const dirtyCount: number = repository.state?.workingTreeChanges?.length ?? 0;
-    return { branch, dirtyCount };
+    const { tracked, untracked } = splitChanges(repository.state ?? {});
+    return { branch, dirtyCount: tracked, untrackedCount: untracked };
   } catch {
     // A briefing is a nicety. It never breaks activation.
     return undefined;

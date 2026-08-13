@@ -87,10 +87,18 @@ export class ModelService {
     const cached = this.toolSupport.get(cacheKey);
     if (cached !== undefined) return cached;
 
-    const supported = await this.provider(role).supportsTools(model);
-    this.toolSupport.set(cacheKey, supported);
-    this.log(`model: ${cacheKey} tool support = ${supported}`);
-    return supported;
+    try {
+      const supported = await this.provider(role).supportsTools(model);
+      this.toolSupport.set(cacheKey, supported);
+      this.log(`model: ${cacheKey} tool support = ${supported}`);
+      return supported;
+    } catch (error) {
+      // Nothing was learned, so nothing is remembered. An unanswerable probe — a bad
+      // key, a rate limit — used to cache `false` and quietly disable the agent path for
+      // the rest of the session, including after the key was fixed.
+      this.log(`model: could not settle tool support for ${cacheKey} (${String(error)})`);
+      return false;
+    }
   }
 
   async listModels(role: ModelRole = 'chat'): Promise<ModelChoice[]> {

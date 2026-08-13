@@ -10,6 +10,24 @@
  * Deliberately free of any vscode import so the ordering and capping logic stays
  * testable without an extension host; persistence is the caller's job.
  */
+/**
+ * Paths that are never "what you were working on".
+ *
+ * VS Code saves `COMMIT_EDITMSG` when you commit through the Source Control view, so
+ * committing put *git's own scratch file* at the top of the list — and the briefing
+ * duly reported "last edits were to plan.md, README.md, and a commit message". Seen in
+ * a real session, which is the only way this was ever going to be noticed.
+ *
+ * Everything under `.git/` goes the same way: rebase state, merge messages, hooks
+ * being edited by a tool. None of it is the user's work.
+ */
+const NEVER_RECORD = [/[\\/]\.git[\\/]/, /COMMIT_EDITMSG$/, /MERGE_MSG$/, /TAG_EDITMSG$/, /[\\/]node_modules[\\/]/];
+
+/** Whether a saved file is the user's work rather than a tool's paperwork. */
+export function isWorthRemembering(path: string): boolean {
+  return !NEVER_RECORD.some((pattern) => pattern.test(path));
+}
+
 export class RecentFiles {
   private paths: string[];
 
@@ -23,6 +41,8 @@ export class RecentFiles {
    * everything else, which is exactly what happens while debugging.
    */
   record(path: string): void {
+    if (!isWorthRemembering(path)) return;
+
     const existing = this.paths.indexOf(path);
     if (existing !== -1) this.paths.splice(existing, 1);
 

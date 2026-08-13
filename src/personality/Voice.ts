@@ -80,7 +80,13 @@ export class Voice {
       ]);
 
       const line = acceptOpening(raw, mustAsk);
-      this.log(line ? 'voice: opening written for the moment' : 'voice: opening rejected, used the written line');
+      // **The rejected text, verbatim.** "Rejected" on its own says a rule fired and
+      // not which one — and every guess about which costs a rebuild and a live run.
+      this.log(
+        line
+          ? 'voice: opening written for the moment'
+          : `voice: opening rejected, used the written line — model said: ${JSON.stringify(raw ?? '(nothing)')}`
+      );
       return line ?? fallback;
     } catch (error) {
       this.log(`voice: opening failed (${String(error)})`);

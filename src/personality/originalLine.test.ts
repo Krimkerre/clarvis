@@ -24,6 +24,13 @@ test('a preface is stripped, quotes with it', () => {
   );
 });
 
+test('a second sentence on its own line is kept, not discarded', () => {
+  // Found live: keeping only the first line threw away the half with the question
+  // in it, and the line was then rejected for not asking anything — every time.
+  const line = acceptOpening('Nothing here has been planned.\nShall we fix that?', true);
+  assert.equal(line, 'Nothing here has been planned. Shall we fix that?');
+});
+
 test('a line that forgot to ask is rejected', () => {
   assert.equal(acceptOpening('There is no plan in this project.', true), undefined);
 });
@@ -38,7 +45,13 @@ test('enthusiasm and emoji are rejected, not repaired', () => {
 });
 
 test('an overlong line is rejected rather than truncated', () => {
-  assert.equal(acceptOpening(`${'x'.repeat(200)}?`, true), undefined);
+  assert.equal(acceptOpening(`${'x'.repeat(260)}?`, true), undefined);
+});
+
+test('two real sentences fit inside the limit', () => {
+  const real =
+    'There is no plan.md in this project, which means the whole thing is currently held together by whatever you remember on any given morning. Shall we write one down?';
+  assert.equal(acceptOpening(real, true), real);
 });
 
 test('nothing at all is undefined, not an empty string', () => {

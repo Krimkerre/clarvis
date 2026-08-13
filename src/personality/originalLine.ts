@@ -15,8 +15,12 @@ import { character, ONLY_WHAT_YOU_WERE_GIVEN } from './character';
  * this reason. The written line remains the fallback; nothing here can fail loudly.
  */
 
-/** Long enough to be a sentence with a joke in it, short enough to be an opener. */
-export const MAX_OPENING_LENGTH = 180;
+/**
+ * Long enough for two sentences with a joke in one of them, short enough to be an
+ * opener. 180 was the first guess and rejected real lines that were fine — the
+ * prompt asks for two sentences and two sentences do not reliably fit in 180.
+ */
+export const MAX_OPENING_LENGTH = 240;
 
 /**
  * The instruction for one original line.
@@ -62,8 +66,15 @@ export function acceptOpening(raw: string | undefined, mustAsk: boolean): string
     /clarvis|line|opening|remark|response/i.test(match) ? '' : match
   );
 
-  // Only the first paragraph: a second one is invariably an explanation of the first.
-  text = text.split('\n').find((part) => part.trim())?.trim() ?? '';
+  // **All of it, joined — not the first line.** The prompt asks for up to two
+  // sentences and models routinely put the second on its own line, so keeping only
+  // the first threw away the half with the question in it and the whole line was
+  // then rejected for not asking anything. Found live: rejected every time.
+  text = text
+    .split('\n')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(' ');
   text = text.replace(/^["'“”‘’]+|["'“”‘’]+$/g, '').trim();
 
   if (!text) return undefined;

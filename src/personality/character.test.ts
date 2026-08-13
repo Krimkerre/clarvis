@@ -96,7 +96,10 @@ test('the fact-free surfaces are told they have no facts', () => {
   // Pressing Stop during a run rewrote the word "Stopped." and, under a standing order
   // to be specific with nothing to be specific about, produced a test suite failing on
   // a branch that does not exist for a number of days nothing measures.
-  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /no facts about this project/);
+  // Phrased as a closed set rather than "nothing appears above": on the briefing, the
+  // facts arrive in the user turn, so "above" described an empty system prompt and the
+  // rule read as false — taking everything attached to it down with it.
+  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /except what you have been explicitly told/);
   assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /not as detail, not as colour, not as a guess/);
 });
 

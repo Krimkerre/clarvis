@@ -230,8 +230,22 @@ test('the briefing prompt carries the facts and the rules', () => {
   assert.match(prompt, /checkout\.ts/);
   assert.match(prompt, /ECONNREFUSED/);
   assert.match(prompt, /four short sentences/);
-  assert.match(prompt, /invent nothing/);
   assert.match(prompt, /never cheerful about a failure/);
+});
+
+test('the closed-list rule sits with the facts, and names what is not known', () => {
+  // Found live: the rule lived in the system prompt as "no facts beyond what appears
+  // above" while the facts arrived in the user turn — plainly false as written, and
+  // discarded along with everything attached to it. The briefing then invented a
+  // failing `npm run build`, a branch called main, and "47 passing tests and 3
+  // failing ones, all in the auth module", in a workspace with neither tests nor git.
+  const prompt = briefingPrompt({ recentFiles: ['/a/b/settings.json'] })!;
+
+  assert.match(prompt, /That list is complete/);
+  assert.match(prompt, /whether any test/);
+  assert.match(prompt, /a number you invented/);
+  // The rule has to come after the facts it closes off, or it describes an empty list.
+  assert.ok(prompt.indexOf('That list is complete') > prompt.indexOf('settings.json'));
 });
 
 test('nothing observed means no prompt, so silence stays silence', () => {

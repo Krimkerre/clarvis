@@ -222,7 +222,11 @@ export const ANSWER_SHAPE = [
  * standing order to be specific, and no facts to be specific with.
  */
 export const ONLY_WHAT_YOU_WERE_GIVEN = [
-  'You have been given no facts about this project beyond what appears above.',
+  // **"Above" meant the system prompt, and the facts arrive in the user turn.** On the
+  // briefing — the one surface here that *does* get real facts — the sentence read as
+  // plainly false, and a false premise takes the rules attached to it down with it.
+  // Said as a closed set instead, which is true wherever it appears.
+  'You know nothing about this project except what you have been explicitly told in this conversation.',
   'Do not mention branches, builds, tests, commits, files, counts or timings that are not written there — not as detail, not as colour, not as a guess.',
   'Being funny about the situation in front of you is the job; inventing a situation is not.',
   // Added immediately after the first version worked: told it had no facts, the model

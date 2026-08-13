@@ -112,7 +112,7 @@ test('the brief asks for a line that lands, not merely an inoffensive one', () =
   // this asks that some of them do rather than naming one.
   assert.ok(EXAMPLES.some((example) => prompt.includes(example)));
   // A rewrite gets the line and nothing else, so it must be told that is all it has.
-  assert.match(prompt, /no facts about this project/);
+  assert.match(prompt, /except what you have been explicitly told/);
 });
 
 test('warnings and questions are left alone entirely', () => {

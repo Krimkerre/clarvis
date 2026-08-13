@@ -3,7 +3,7 @@ import { PlanningIO } from './PlanningIO';
 import { opening, phrase } from '../personality/Voice';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
-import { namePrompt, parseNameResult } from './namePrompt';
+import { NameResult, namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
 import { synthesizeAnswerPrompt, cleanSynthesizedAnswer } from './synthesizePrompt';
@@ -48,9 +48,15 @@ export async function runInterview(
   );
   if (seed === undefined) return undefined;
 
+  // An idea picked from the list arrives with a working title. It is a candidate,
+  // not the answer — found live: choosing "Commit Roulette" produced a name
+  // question whose only option was Commit Roulette, which is not a question.
+  let namedByIdea: string | undefined;
   if (!seed.trim() || UNKNOWN_ANSWER.test(seed.trim())) {
-    seed = await offerIdeas(models, io, log);
-    if (!seed) return undefined;
+    const idea = await offerIdeas(models, io, log);
+    if (!idea) return undefined;
+    seed = idea.seed;
+    namedByIdea = idea.name;
   }
 
   log(`planning: interview started — "${seed.trim()}"`);
@@ -68,7 +74,7 @@ export async function runInterview(
     log(`planning: workspace — ${state.workspaceContext}`);
   }
 
-  state.projectName = await resolveProjectName(models, io, seed.trim(), log);
+  state.projectName = await resolveProjectName(models, io, seed.trim(), log, namedByIdea);
 
   for (;;) {
     const topic = nextTopic(state);
@@ -231,7 +237,7 @@ async function offerIdeas(
   models: ModelService,
   io: PlanningIO,
   log: (message: string) => void
-): Promise<string | undefined> {
+): Promise<{ seed: string; name?: string } | undefined> {
   if (!(await models.isReady('chat'))) {
     log('planning: seed — no model configured, could not suggest ideas');
     return undefined;
@@ -270,12 +276,13 @@ async function offerIdeas(
     }
     if (picked === SOMETHING_ELSE) {
       const typed = await io.askText(await phrase('ask', 'What are you building? One sentence is plenty.', []));
-      return typed?.trim() || undefined;
+      // Described by hand rather than picked, so it is not named yet.
+      return typed?.trim() ? { seed: typed.trim() } : undefined;
     }
 
     const idea = ideas.find((candidate) => candidate.name === picked);
     log(`planning: seed — chose idea: ${picked}`);
-    return idea ? `${idea.name}, ${idea.description}` : picked;
+    return idea ? { seed: `${idea.name}, ${idea.description}`, name: idea.name } : { seed: picked, name: picked };
   } catch (error) {
     log(`planning: seed — idea generation failed (${String(error)})`);
     return undefined;
@@ -293,7 +300,9 @@ async function resolveProjectName(
   models: ModelService,
   io: PlanningIO,
   seed: string,
-  log: (message: string) => void
+  log: (message: string) => void,
+  /** The working title a picked idea came with — offered as one candidate, not the answer. */
+  workingTitle?: string
 ): Promise<string | undefined> {
   if (!(await models.isReady('chat'))) {
     log('planning: name — no model configured, skipped');
@@ -304,7 +313,12 @@ async function resolveProjectName(
     let text = '';
     const collect = (async () => {
       for await (const fragment of models.stream(
-        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: namePrompt(seed) }] },
+        {
+          system: interviewSystemPrompt(),
+          // A working title is not an answer: asked to detect a name, the model
+          // finds the one it just invented and the question answers itself.
+          messages: [{ role: 'user', content: namePrompt(seed, workingTitle !== undefined) }],
+        },
         'chat'
       )) {
         text += fragment;
@@ -314,22 +328,22 @@ async function resolveProjectName(
     await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
 
     const result = parseNameResult(text);
-    if ('named' in result) {
+    if ('named' in result && !workingTitle) {
       log(`planning: name — already named in the seed: ${result.named}`);
       return result.named;
     }
-    if (result.suggestions.length === 0) {
-      log('planning: name — response did not parse, skipped');
-      return undefined;
+    // **Two is the fewest that is a choice.** A picker offering one name is not
+    // asking anything — it is announcing a decision while pretending otherwise.
+    if (nameCandidates(result, workingTitle).length < 2) {
+      log('planning: name — too few suggestions parsed, not worth asking');
+      return workingTitle;
     }
 
+    const candidates = nameCandidates(result, workingTitle);
     const SOMETHING_ELSE = 'Something else…';
     const picked = await io.askChoice(
       await phrase('ask', 'It needs a name. These are the ones I could live with.', []),
-      [
-        ...result.suggestions.map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
-        { label: SOMETHING_ELSE },
-      ]
+      [...candidates, { label: SOMETHING_ELSE }]
     );
     if (!picked) {
       log('planning: name — suggestion picker cancelled, left unresolved');
@@ -349,6 +363,25 @@ async function resolveProjectName(
     log(`planning: name — resolution failed (${String(error)}), skipped`);
     return undefined;
   }
+}
+
+/**
+ * The names worth offering: the working title first, then the alternatives.
+ *
+ * The title it arrived with leads because it is the one they have already seen —
+ * but as one option among the rest, not a decision already taken.
+ */
+function nameCandidates(
+  result: NameResult,
+  workingTitle?: string
+): { label: string; detail?: string }[] {
+  const suggestions = 'suggestions' in result ? result.suggestions : [];
+  return [
+    ...(workingTitle ? [{ label: workingTitle, detail: 'The name it arrived with. Keep it.' }] : []),
+    ...suggestions
+      .filter((suggestion) => suggestion.name.toLowerCase() !== workingTitle?.toLowerCase())
+      .map((suggestion) => ({ label: suggestion.name, detail: suggestion.reason })),
+  ];
 }
 
 /**

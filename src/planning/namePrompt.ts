@@ -12,8 +12,34 @@ export interface NameSuggestion {
 
 export type NameResult = { named: string } | { suggestions: NameSuggestion[] } | { suggestions: [] };
 
-/** The instruction for one detect-or-suggest round. */
-export function namePrompt(seed: string): string {
+/**
+ * The instruction for one detect-or-suggest round.
+ *
+ * `alwaysSuggest` is for a seed that already carries a working title — an idea the
+ * user picked off a list. Asked to *detect* a name there, the model finds the one it
+ * invented two questions ago and the question answers itself; the point is to offer
+ * alternatives to it.
+ */
+export function namePrompt(seed: string, alwaysSuggest = false): string {
+  if (alwaysSuggest) {
+    return [
+      'Here is a one-sentence description of a project, which already carries a',
+      'working title:',
+      '',
+      seed,
+      '',
+      'Suggest 8 alternative names for it — better ones, if you can manage it. Do not',
+      'repeat the working title it already has.',
+      'One per line, in exactly this format: Name | one clause on why it fits',
+      'Three of the eight should carry your own dry sense of humour — genuinely funny',
+      'about what this project is, not just a pun on the topic. The rest are',
+      'straightforward good fits, no joke required.',
+      'Make them different from each other: a plain descriptive one, a short invented',
+      'word, a metaphor, and so on. Eight variations on the same idea is one option.',
+      'Output nothing else — no intro, no numbering, no markdown.',
+    ].join('\n');
+  }
+
   return [
     'Here is a one-sentence description of a project:',
     '',

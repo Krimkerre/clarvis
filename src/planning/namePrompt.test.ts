@@ -22,6 +22,16 @@ test('the prompt asks for variety, not eight takes on one idea', () => {
   assert.match(namePrompt('a lore generator'), /Make them different from each other/);
 });
 
+test('a seed with a working title asks for alternatives, never detection', () => {
+  // Found live: picking the idea "Commit Roulette" produced a name question whose
+  // only option was Commit Roulette — the model detecting the title it had just
+  // invented, and the question answering itself.
+  const prompt = namePrompt('Commit Roulette, shuffles your staged changes', true);
+  assert.match(prompt, /8 alternative names/);
+  assert.match(prompt, /Do not\s+repeat the working title/);
+  assert.doesNotMatch(prompt, /NAMED:/);
+});
+
 test('parses an already-named response', () => {
   const result = parseNameResult('NAMED: LoreGen');
   assert.deepEqual(result, { named: 'LoreGen' });

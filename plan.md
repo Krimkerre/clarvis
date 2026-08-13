@@ -3494,15 +3494,18 @@ would be four chances to misread "yes" or "3". `/plan` starts it; a project with
 `plan.md` gets **one** offered line in the transcript at startup, never an interview
 launched unasked (§6).
 
-**M9e's first half is built:** an approved plan flows into code mode without the user
-restating anything. `handoff.ts` (pure, tested) assembles milestone one — what it is,
-where it runs, language, scope, and a checklist from definition-of-done plus every
-accepted/modified finding — and the prompt is **shown and editable before it runs**
-(§4.9), with Not Yet a first-class answer. From chat it goes through the same
-`RunSession.run()` a typed job takes; nothing about the build is special-cased for
-having come from planning. Still not built in M9e: ticking checklist items in
-`plan.md` as the agent completes them, and the agent's own mid-build clarifying
-questions.
+**M9e is built.** An approved plan flows into code mode without the user restating
+anything. `handoff.ts` (pure, tested) assembles **one** milestone — what it is, where
+it runs, language, scope, its steps and their checks — and the prompt is **shown and
+editable before it runs** (§4.9), with Not Yet a first-class answer. From chat it goes
+through the same `RunSession.run()` a typed job takes; nothing about the build is
+special-cased for having come from planning.
+
+Both things this paragraph once listed as missing now exist. Checklist items are
+ticked in `plan.md` as work lands (`planUpdate.ts`, `recordMilestone.ts`), with each
+step's check and its result recorded beside it. And the agent's mid-build questions
+reach the chat rather than the terminal, with the answer folded into the same task
+instead of starting a new run.
 
 **Voice and clickable answers in chat (13 Aug).** Planning ran silently and answered
 by typing a number. Now: questions are **spoken** (solicited by `/plan`, so §4.4
@@ -3741,6 +3744,31 @@ their first build.
 cannot read the thermostat on the Raspberry Pi that a live run planned. Bind-mount IO
 across the macOS and Windows VM boundary runs test suites 2–4× slower. First image
 pull is minutes, and would have to happen at plan time rather than mid-milestone.
+
+**M9 as merged (14 Aug).** On `main`. What a user gets: arrive with one sentence or
+with nothing, answer questions in the chat panel, rule on what he found wrong with the
+idea, approve a `plan.md`, and watch him build it one milestone at a time — asking
+before each step that changes anything, running the checks each step was written with,
+and recording the results back into the plan before offering the next milestone.
+Interruptions work in both directions: a correction folds into the run, new scope
+stops it and is written into the plan first (§0's oldest unkept promise, kept). Nothing
+is lost to a reload — half-finished interviews and part-finished milestones are both
+offered back.
+
+**Still open in M9:** M9d2, the per-language clean-code conventions section — the
+inherited §0 block stops at Plan/Code Mode discipline, which is generic, and does not
+yet carry the clean-code rules, which are not. And M9f, container isolation, recorded
+above as assessed and deliberately deferred.
+
+**What the milestone cost, and where the defects came from.** Almost every bug in this
+section was found by running it, not by the suite: the language shortlist truncated
+mid-option, "you pick" recorded as the literal words, an empty milestone that gave the
+agent nothing to build, a briefing that invented a test suite, `settings.json` reported
+as the user's work when Clarvis had written it himself, and a generated opening line
+rejected every time for its final punctuation mark. The tests caught the rest — the
+step-result line landing in the wrong place, a normaliser that turned "There is no plan
+in this project." into a question on its `is`. Both halves were necessary; neither
+would have been enough.
 
 ### M10 — Voice Input *(stretch — independent of M7's output side)*
 

@@ -1,7 +1,7 @@
 # Clarvis — the manual
 
 *A sarcastic butler for your editor. Watches your builds, answers questions about your
-project, and — once the agent lands — does the work.*
+project, plans what you're building, and does the work.*
 
 ---
 
@@ -14,7 +14,10 @@ project, and — once the agent lands — does the work.*
    They're answered from what Clarvis has actually watched happen in this project.
 3. **Run a build.** Walk away. When it finishes, Clarvis tells you what happened and
    how long it took — and remembers what was failing when you closed the window.
-4. **Turn on the voice** (optional) — type `change voice`, or see *Voice* below.
+4. **Plan something.** On a project with no `plan.md` he offers; otherwise type
+   `/plan`. He asks what you're building — "I don't know" is a real answer — and ends
+   with a plan he can build against. See *Starting a project* below.
+5. **Turn on the voice** (optional) — type `change voice`, or see *Voice* below.
 
 That's it. Everything else is opt-in.
 
@@ -69,6 +72,8 @@ or `/forget`, and it is gone.
 
 ## Starting a project
 
+<img src="planning.png" alt="Clarvis in the VS Code sidebar during plan mode: the user answered 'I don't know yet', and Clarvis replied 'Fine. Here are four. Two of them I am even serious about.' — followed by four clickable idea cards, each with a sentence explaining what it does, and a 'Something else...' option. The mode toggle reads Plan." width="100%">
+
 Open a project with no `plan.md` and he'll offer, out loud, with **Yes** and **No**
 buttons. Say yes — or type `/plan` whenever you want. It all happens in the chat
 panel: he asks, you answer in the box, and the options appear as buttons you can
@@ -103,13 +108,23 @@ to disk until you choose **Approve**. If a `plan.md` already exists he asks whet
 to keep it *before* the interview starts, rather than wasting your time and telling
 you at the end.
 
-**Then he builds it.** Milestone one is real build steps — work you can tick off, not
-things still to decide — and he shows you the exact task before it runs, editable, with
-**Not Yet** a perfectly good answer. Approving switches to **Agent** mode, where he
-describes each step that changes anything and waits for a yes. Files open as he writes
-them and the editor jumps to what changed. If he needs something decided mid-build he
-stops and asks in the chat, and your answer carries on the same task rather than
-starting a new one.
+**The plan has milestones, and each step has a check.** Up to four, the first being
+the smallest thing that actually runs, and every step carries the thing that proves it
+works — a command and what it should print, not "verify it works". They are written
+before any code exists, on purpose: a check invented afterwards describes whatever got
+built rather than testing what was meant.
+
+**Then he builds one milestone.** He shows you the exact task before it runs,
+editable, with **Not Yet** a perfectly good answer. Approving switches to **Agent**
+mode, where he describes each step that changes anything and waits for a yes. The
+panel shows which step he is on. Files open as he writes them and the editor jumps to
+what changed. If he needs something decided mid-build he stops and asks in the chat,
+and your answer carries on the same task rather than starting a new one.
+
+**When a milestone finishes he stops.** What changed, what the checks produced, and an
+offer to write it into `plan.md` — steps ticked off, results recorded next to them.
+Then the next milestone is offered, never started on its own. That is the loop, and it
+carries on until the plan runs out.
 
 **Ask for something new mid-build and he stops.** A correction — "use pytest
 instead", "call it something else" — gets folded into the run as you'd expect. But
@@ -413,6 +428,5 @@ outright.
 Clarvis is under construction, and this manual describes what exists today. The agent
 and **project planning** (above) both work end to end — that list used to say
 otherwise, twice. Still to come from planning: clean-code conventions written into the
-generated plan in the project's own language, and ticking checklist items off in
-`plan.md` as he finishes them. Also still to come: **voice input**, and **Tutor Mode**
-for people learning to program. See the README for progress.
+generated plan in the project's own language. Also still to come: **voice input**, and
+**Tutor Mode** for people learning to program. See the README for progress.

@@ -3548,6 +3548,49 @@ same reason. `Voice.open()` / the module-level `opening()` run it with a 5s dead
 anything doubtful, and fall back to the written line. Applied to the two lines that
 open plan mode: the offer, and the interview's first question.
 
+**The plan had no build steps in it (13 Aug).** The worst defect of the milestone, and
+it had been there since M9d shipped. Milestone one was assembled from the definition
+of done plus every accepted finding's *suggested fix* — and a fix is a clarification
+("Clarify whether v1 accepts user-provided words"). Handed that as a task, the agent
+read `plan.md`, found nothing it could act on, and stopped after two tool calls. The
+document was a summary of an interview wearing a checklist's formatting.
+`milestonePrompt.ts` (pure, tested) now asks for the work directly — 3-6 ordered
+steps, each something that can be done and checked off, starting from the smallest
+thing that runs end to end, staying inside what was described. Findings keep their own
+**Settle while building** section in both `plan.md` and the handoff, named for what
+they are; mixing them into the work is what emptied the work.
+
+**The agent's questions went where nobody was looking (13 Aug).** A run ended by
+asking four good questions and every one went to the terminal as narration, while the
+chat got `closingNote()` — a line about branches. The model's narration is now the
+run's closing message, with the branch note appended. And a run that ends on a
+question is remembered: the next message is folded into a follow-up carrying the
+original task, what was asked and what was answered, so replying "preview, one at a
+time" continues the work instead of starting a new run that never saw the question.
+
+**Agent mode asks before each step; Auto does not (13 Aug).** Both modes could edit and
+the only difference was routing. Agent now describes each step that changes anything
+and waits — "Skip this step" keeps the run going, with the model told what was refused.
+Read-only calls are never gated in either mode: approving a file read six times teaches
+people to click yes without reading. Auto deciding for itself is its whole proposition,
+so it is left alone, and the plan-mode handoff switches to Agent rather than leaving
+whatever was set.
+
+**Watching a run happen (13 Aug).** An **Output** button reveals the terminal every
+command and tool call already wrote to — one click away since M8c, with nothing saying
+so. Files open as they are written, focus preserved, one reused tab, and the editor
+scrolls to the change (`firstChangedLine.ts`, pure and tested — the crudest possible
+diff, because all it needs is somewhere honest to point). Which file is being edited is
+said in chat: "nothing technical reaches the chat" was about tool calls and command
+output, not about the one thing worth narrating.
+
+**"Nothing needed changing" was a claim, and it was false (13 Aug).** A run that
+returned no summary at all reported itself as "The code was already doing what you
+wanted" — a confident finding about work never looked at, in a folder whose only file
+the user had just deleted. A run that ends with nothing to say has established that
+*he did nothing*, not that nothing needed doing. The silent stop is also logged now:
+step count, files touched, and whatever the model said for itself before quitting.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

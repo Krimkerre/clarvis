@@ -29,6 +29,7 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 | Command | What it does |
 |---|---|
 | `/help` | Opens this manual |
+| `/plan` | Plan a project — the interview, then a `plan.md` |
 | `/voice` | Choose the voice |
 | `/engine` | Choose the speech engine |
 | `/key` | Set your Fish Audio key |
@@ -47,8 +48,8 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 "open the settings" all do the obvious thing. Asking a *question* — "what voice are you
 using?" — gets you an answer instead of a dialog, which is usually what you wanted.
 
-**The buttons above the prompt** do the most common things: **History**, **Clear**,
-**Mute**, and the mode toggle.
+**The buttons above the prompt** do the most common things: **Output** (every command
+and tool call, as it runs), **History**, **Clear**, **Mute**, and the mode toggle.
 
 **Stopping him.** Click the small square **Stop** in the prompt row, or type `stop` and
 press enter. Both do the same thing: he finishes the step he is on and puts the tools
@@ -68,33 +69,51 @@ or `/forget`, and it is gone.
 
 ## Starting a project
 
-Run **`Clarvis: Plan This Project`** from the command palette. Give it one sentence —
-or say `I don't know` and it'll suggest a few ideas, at least a couple of them
-genuinely funny. Say `I don't know` at the name question too and it'll suggest a
-shortlist, two of the five with his own sense of humour.
+Open a project with no `plan.md` and he'll offer, out loud, with **Yes** and **No**
+buttons. Say yes — or type `/plan` whenever you want. It all happens in the chat
+panel: he asks, you answer in the box, and the options appear as buttons you can
+click instead of type.
 
-He reads the workspace first — an existing `package.json`, a git repo, a README —
-before asking anything, so questions are grounded in what's actually there rather
-than starting from nothing. Questions arrive a few at a time, never a thirty-question
-interrogation, and `I don't know yet` is recorded as an honest open question rather
-than argued with. A *vague* answer gets pushed back on once, with one specific
-follow-up, before it's accepted as given — "it takes everything into account" earns a
-"such as what, specifically?", not a shrug.
+**If you don't know what to build**, say so. He'll suggest four ideas, at least two
+of them genuinely funny, and one of those becomes the starting point. Same at the
+name question: eight candidates, three with his own sense of humour, and he'll say
+the one you pick back to you with a remark about it.
 
-The language question is a real shortlist: 2-4 options, each with one genuine
-advantage and one genuine cost — never a list where everything looks good. Say
-`you pick` and he will, with a one-line reason for the choice.
+**He reads the folder first** — an existing `package.json`, a git repo, a README —
+so the questions are about *this* project rather than a blank slate.
 
-Once there's enough to work from, he reviews the whole thing for safety problems,
-logic contradictions, and scope quietly bigger than what you described. Each finding
-is yours to **Accept**, **Reject** (say why — it's recorded, not just dropped), or
-**Modify** (your own words replace his). Then he drafts `plan.md`, shows it to you,
-and lets you add anything missing and redraw as many times as you like — nothing is
-written to disk until you choose **Approve**.
+**Vague answers get pushed back on.** Once, with one specific follow-up: "it takes
+everything into account" earns "such as what, specifically?" rather than a shrug.
+Answer it and the two get written up as one sentence; leave it blank and your first
+answer stands. `I don't know yet` is a real answer throughout — it becomes a recorded
+open question, never an argument.
 
-*Still ahead: this runs through the command palette and QuickPicks today, not the*
-*chat panel yet, and approving a plan doesn't hand milestone one to the agent yet —*
-*see the README's progress list.*
+**The language question is a real shortlist**: 2–4 options, each with one genuine
+advantage and one genuine cost, never a list where everything looks good. Say
+`You pick` and he will, with a reason — and a remark about the trade you just made.
+
+**Then he tells you what's wrong with it.** Safety problems, logic contradictions,
+scope quietly bigger than you described. Each finding is yours to **Accept**,
+**Reject** (say why — it's recorded, not dropped) or **Modify** (your words replace
+his).
+
+**The draft opens in the editor**, rendered rather than raw, while the approval
+question stays in the chat. Add anything missing and he redraws; nothing is written
+to disk until you choose **Approve**. If a `plan.md` already exists he asks whether
+to keep it *before* the interview starts, rather than wasting your time and telling
+you at the end.
+
+**Then he builds it.** Milestone one is real build steps — work you can tick off, not
+things still to decide — and he shows you the exact task before it runs, editable, with
+**Not Yet** a perfectly good answer. Approving switches to **Agent** mode, where he
+describes each step that changes anything and waits for a yes. Files open as he writes
+them and the editor jumps to what changed. If he needs something decided mid-build he
+stops and asks in the chat, and your answer carries on the same task rather than
+starting a new one.
+
+*Still ahead: clean-code conventions written into the generated plan in the project's*
+*own language, ticking checklist items off in `plan.md` as he finishes them, and*
+*resuming an interview after a reload.*
 
 ---
 
@@ -209,8 +228,14 @@ can get around it.
 |---|---|---|
 | **Plan** | Read, and describe what he *would* change | You want the plan before the work |
 | **Chat** | Read and answer | You are asking, not asking for |
-| **Agent** | Read, edit, run commands | You want the work done |
-| **Auto** | Decides per message | Most of the time |
+| **Agent** | Read, edit, run commands — asking before each step that changes anything | You want the work done, and want to see it coming |
+| **Auto** | Decides per message, and gets on with it | Most of the time |
+
+**Agent asks, Auto acts.** That is the whole difference between the two now: in Agent
+mode he describes each step that would change something and waits for a yes, and
+"Skip this step" keeps the run going — he is told what you refused and finds another
+way. Reading files is never gated in either mode; approving a file *read* six times
+teaches you to click yes without looking, which is worse than not asking.
 
 **Ask for work in a read-only mode and he says so**, naming the mode and what to switch
 to, then answers the question anyway. Before, he would answer and mention in passing
@@ -365,8 +390,8 @@ outright.
 ## Not built yet
 
 Clarvis is under construction, and this manual describes what exists today. The agent
-that does the work is built — that list used to say otherwise. **Project planning**
-(above) is built through the command palette; still to come from it: a chat-panel
-front end and handing an approved plan's milestone one to the agent. Also still to
-come: **voice input**, and **Tutor Mode** for people learning to program. See the
-README for progress.
+and **project planning** (above) both work end to end — that list used to say
+otherwise, twice. Still to come from planning: clean-code conventions written into the
+generated plan in the project's own language, and ticking checklist items off in
+`plan.md` as he finishes them. Also still to come: **voice input**, and **Tutor Mode**
+for people learning to program. See the README for progress.

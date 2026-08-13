@@ -397,6 +397,13 @@ export class AgentRunner {
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
+        // **Why it stopped, in the log.** A run that ended after two reads with an
+        // empty summary left nothing to diagnose from — found live, and the closing
+        // line then invented a conclusion to fill the silence. Narration is what the
+        // model said for itself before deciding it was done.
+        this.log(
+          `agent: model stopped after ${this.steps} step(s), ${this.touched.size} file(s) touched — said: ${JSON.stringify(narration.trim() || '(nothing)')}`
+        );
         yield this.record(await this.completed(branch, task, narration, options.readOnly));
         return;
       }

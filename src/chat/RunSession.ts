@@ -191,7 +191,18 @@ export class RunSession {
     // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
     // crash looks, and this is the shape of a run that was refused, or that read a file
     // and correctly declined to act on it.
-    const said = summary || (changed === 0 ? await this.phrase('report', 'Nothing needed changing.') : '');
+    // **"Nothing needed changing" was a claim, and it was false.** Found live: the
+    // model stopped after reading two files and returned no summary at all, and this
+    // line reported it as a finding — rewritten in his voice into "The code was
+    // already doing what you wanted", about a project whose only file the user had
+    // just deleted. A run that ends with nothing to say has established that *he
+    // did nothing*, not that nothing needed doing, and the difference is the whole
+    // of §2.2's no-invented-facts rule.
+    const said =
+      summary ||
+      (changed === 0
+        ? await this.phrase('report', 'I stopped without changing anything, and without saying why. Ask me again if that was not what you wanted.')
+        : '');
     if (!said) return;
 
     await this.note(said);

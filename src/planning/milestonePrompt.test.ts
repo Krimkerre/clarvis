@@ -22,7 +22,17 @@ test('the prompt carries what was established', () => {
 });
 
 test('the prompt refuses to invent scope that was never asked for', () => {
-  assert.match(milestonePrompt(state), /no tests, no packaging, no CI unless they/);
+  assert.match(milestonePrompt(state), /no packaging or CI unless they were asked for/);
+});
+
+test('every step is asked to carry the check that proves it works', () => {
+  // A checklist you can only tick by believing yourself is not a checklist. The check
+  // is written now, with the step — after the code exists it becomes a description of
+  // whatever got built rather than a test of what was meant.
+  const prompt = milestonePrompt(state);
+  assert.match(prompt, /the check that proves it works/);
+  assert.match(prompt, /Not "verify it works"/);
+  assert.match(prompt, /The step \| the check that proves it works/);
 });
 
 test('accepted findings are offered for folding, work only', () => {
@@ -58,21 +68,34 @@ test('no findings means no folding instructions cluttering the prompt', () => {
   assert.doesNotMatch(milestonePrompt(state), /Fold the ones/);
 });
 
-test('steps parse one per line', () => {
-  const steps = parseMilestoneSteps('Create the entry point\nParse the arguments\nRename the file');
-  assert.deepEqual(steps, ['Create the entry point', 'Parse the arguments', 'Rename the file']);
+test('steps parse one per line, with their checks', () => {
+  const steps = parseMilestoneSteps('Create the entry point | run it with --help\nRename the file | the file is renamed');
+  assert.deepEqual(steps, [
+    { step: 'Create the entry point', check: 'run it with --help' },
+    { step: 'Rename the file', check: 'the file is renamed' },
+  ]);
+});
+
+test('a step with no check is kept rather than dropped', () => {
+  // Worth less than one with a check, worth far more than nothing.
+  assert.deepEqual(parseMilestoneSteps('Create the entry point'), [{ step: 'Create the entry point' }]);
+});
+
+test('a check containing a pipe survives intact', () => {
+  const steps = parseMilestoneSteps('Build it | run `ls | wc -l` and see 3');
+  assert.deepEqual(steps, [{ step: 'Build it', check: 'run `ls | wc -l` and see 3' }]);
 });
 
 test('numbering and bullets the model added anyway are stripped', () => {
   assert.deepEqual(parseMilestoneSteps('1. First thing\n2) Second thing\n- Third thing'), [
-    'First thing',
-    'Second thing',
-    'Third thing',
+    { step: 'First thing' },
+    { step: 'Second thing' },
+    { step: 'Third thing' },
   ]);
 });
 
 test('blank lines are dropped, not kept as empty steps', () => {
-  assert.deepEqual(parseMilestoneSteps('One\n\n\nTwo\n'), ['One', 'Two']);
+  assert.deepEqual(parseMilestoneSteps('One\n\n\nTwo\n'), [{ step: 'One' }, { step: 'Two' }]);
 });
 
 test('an overlong list is capped rather than passed through', () => {

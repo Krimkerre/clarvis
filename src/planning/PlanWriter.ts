@@ -1,6 +1,7 @@
 import { branchFlowSection } from '../agent/branchFlow';
 import { Answer, InterviewState, TopicId } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
+import { MilestoneStep } from './milestonePrompt';
 
 /**
  * Renders a finished interview + its analysis verdicts into `plan.md` (M9d — §4.9).
@@ -20,7 +21,7 @@ export interface PlanInput {
   state: InterviewState;
   verdicts: FindingVerdict[];
   /** The build steps for milestone one. Empty means none could be written. */
-  steps?: string[];
+  steps?: MilestoneStep[];
 }
 
 /**
@@ -122,7 +123,16 @@ export function renderPlan({ projectName, seed, state, verdicts, steps = [] }: P
     // accepted finding's suggested fix — and a fix is a clarification ("Clarify
     // whether v1 accepts user-provided words"). Handed that as a task, the agent read
     // the plan, found nothing it could do, and stopped. Found live.
-    ...(steps.length > 0 ? steps.map((step) => `- [ ] ${step}`) : ['_No steps written — planning could not reach a model._']),
+    // **Each step carries its check and a result line.** The result is written now,
+    // saying plainly that it has not been run — a checklist with no space for the
+    // outcome is one where "done" means "someone typed something", and the space has
+    // to exist before there is a result to put in it.
+    ...(steps.length > 0
+      ? steps.flatMap((step) => [
+          `- [ ] ${step.step}`,
+          ...(step.check ? [`  - Check: ${step.check}`, '  - Result: not run yet'] : []),
+        ])
+      : ['_No steps written — planning could not reach a model._']),
     '',
     // The findings keep their own section — as the record of what was agreed and
     // why, not a second checklist. Whichever of them described actual work is

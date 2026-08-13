@@ -184,6 +184,9 @@ export class ChatService {
           // immediately after signing off on a plan.
           await this.actions.setMode('agent');
           this.runs.setStepApproval(true);
+          // This run has a checklist to tick and has earned the pause afterwards; a
+          // one-off "rename this variable" has neither.
+          this.runs.setFromPlan(true);
           await this.runs.run(task, 'Plan approved — starting on milestone one.');
         }
       );
@@ -502,6 +505,7 @@ export class ChatService {
       // Agent asks before each step that acts; Auto is the mode that decides for
       // itself, which is the only thing separating the two now that both can edit.
       this.runs.setStepApproval(mode === 'agent');
+      this.runs.setFromPlan(false);
 
       // **An answer continues the work rather than starting new work.** A run that
       // stopped to ask "preview, or applied straight away?" gets a four-word reply

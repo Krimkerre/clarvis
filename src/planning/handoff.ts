@@ -1,5 +1,6 @@
 import { InterviewState, TopicId } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
+import { MilestoneStep } from './milestonePrompt';
 
 /**
  * Turning an approved plan into the first agent task (M9e — §4.6/§4.9).
@@ -21,7 +22,7 @@ export function handoffTask(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
-  steps: string[] = []
+  steps: MilestoneStep[] = []
 ): string {
   const name = state.projectName ?? seed;
   const language = answerText(state, 'language');
@@ -47,7 +48,7 @@ export function handoffTask(
     ...(done ? [`Done when: ${done}`, ''] : []),
     'Milestone 1 — build these, ticking each off in plan.md as it lands:',
     ...(steps.length > 0
-      ? steps.map((step) => `- ${step}`)
+      ? steps.flatMap((step) => [`- ${step.step}`, ...(step.check ? [`  Check: ${step.check}`] : [])])
       : ['- (no build steps were written — work out the smallest thing that runs, and do that)']),
     ...(settle.length > 0
       ? [
@@ -58,6 +59,15 @@ export function handoffTask(
         ]
       : []),
     '',
-    'Start with the smallest thing that runs. Do not build past milestone 1.',
+    '',
+    // **Run the checks, then stop.** A milestone reported as finished on the model's
+    // own say-so is a milestone nobody verified; the checks are written into the plan
+    // precisely so that "done" means something ran.
+    'When the steps are done, run each check above and report what actually happened —',
+    'the command you ran and its real output, not what you expect it to say. A check',
+    'that fails is a result, not a failure to hide: say so and stop.',
+    'Then stop. Do not build past milestone 1, and do not start the next one.',
+    '',
+    'Start with the smallest thing that runs.',
   ].join('\n');
 }

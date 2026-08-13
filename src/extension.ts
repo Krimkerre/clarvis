@@ -24,6 +24,7 @@ import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { runPlanning } from './planning/PlanningFlow';
 import { VsCodeIO } from './planning/VsCodeIO';
+import { recordMilestone } from './planning/recordMilestone';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -133,6 +134,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
   registerPlanningCommand(context, models, logger, liveLines);
+  registerRecordMilestone(context, models, logger);
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
@@ -643,6 +645,21 @@ function startBranchFlow(
  * `note()`; the lines themselves come from the same `LiveQuips` instance everything
  * else uses, not a second copy.
  */
+/**
+ * Writing a finished run back into `plan.md` (§0's live checklist).
+ *
+ * A command rather than a direct call because the run session raises it — it knows a
+ * milestone just finished, and knows nothing about plans, models or files.
+ */
+function registerRecordMilestone(context: vscode.ExtensionContext, models: ModelService, logger: ClarvisLog): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.recordMilestone', async (summary: string) => {
+      const outcome = await recordMilestone(models, summary ?? '', (message: string) => logger.write(message));
+      if (outcome) void vscode.window.showInformationMessage(outcome);
+    })
+  );
+}
+
 function registerPlanningCommand(
   context: vscode.ExtensionContext,
   models: ModelService,

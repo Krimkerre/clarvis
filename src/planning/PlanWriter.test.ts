@@ -68,9 +68,18 @@ test('the build checklist is the steps, not the findings', () => {
     seed: 'renames photos',
     state,
     verdicts,
-    steps: ['Create the CLI entry point', 'Read EXIF dates'],
+    steps: [
+      { step: 'Create the CLI entry point', check: 'run `photoname --help`, see the usage text' },
+      { step: 'Read EXIF dates' },
+    ],
   });
-  assert.match(plan, /\*\*Build:\*\*\n- \[ \] Create the CLI entry point\n- \[ \] Read EXIF dates/);
+  assert.match(plan, /\*\*Build:\*\*\n- \[ \] Create the CLI entry point/);
+  // The check and a place to put its result, written before there is a result.
+  assert.match(plan, /- Check: run `photoname --help`, see the usage text/);
+  assert.match(plan, /- Result: not run yet/);
+  // A step the model gave no check for still appears; a step is worth more with its
+  // test and far more than nothing.
+  assert.match(plan, /- \[ \] Read EXIF dates/);
   // Accepted findings are recorded as what was agreed, not as a second checklist —
   // the actionable ones are folded into the steps by whoever wrote them.
   assert.match(plan, /\*\*Agreed during review\*\*[^]*- add a --dry-run flag/);

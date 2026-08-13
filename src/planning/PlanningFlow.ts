@@ -8,6 +8,7 @@ import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
 import { PlanningIO } from './PlanningIO';
 import { handoffTask } from './handoff';
+import { MilestoneStep } from './milestonePrompt';
 import { phrase } from '../personality/Voice';
 
 /**
@@ -148,7 +149,7 @@ async function offerToBuild(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
-  steps: string[],
+  steps: MilestoneStep[],
   io: PlanningIO,
   log: (message: string) => void,
   startBuild: StartBuild
@@ -225,7 +226,7 @@ async function draftAndApprovePlan(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
-  steps: string[],
+  steps: MilestoneStep[],
   io: PlanningIO,
   lines: PlanningLines,
   log: (message: string) => void

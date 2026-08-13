@@ -36,8 +36,13 @@ test('the task names the project and what was established', () => {
 test('the build list is the steps; findings are named as questions', () => {
   // Found live: handing over a list of "Clarify whether…" items produced a run that
   // read the plan, found nothing it could do, and stopped.
-  const task = handoffTask(state, 'renames photos', verdicts, ['Create the entry point']);
+  const task = handoffTask(state, 'renames photos', verdicts, [
+    { step: 'Create the entry point', check: 'run `photoname --help`' },
+  ]);
   assert.match(task, /Milestone 1 — build these[^]*- Create the entry point/);
+  // The check travels with the step, and running it is part of the job.
+  assert.match(task, /Check: run `photoname --help`/);
+  assert.match(task, /report what actually happened/);
   assert.match(task, /Agreed during review[^]*- add a --dry-run flag/);
   assert.doesNotMatch(task, /support all formats/);
 });
@@ -48,7 +53,7 @@ test('a modified finding is settled in the user\'s own wording', () => {
     status: 'modified',
     reasoning: 'use ruff',
   };
-  const task = handoffTask(state, 'renames photos', [modified], ['Create the entry point']);
+  const task = handoffTask(state, 'renames photos', [modified], [{ step: 'Create the entry point' }]);
   assert.match(task, /- use ruff/);
   assert.doesNotMatch(task, /name a linter/);
 });

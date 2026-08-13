@@ -90,6 +90,18 @@ export class RunSession {
    */
   private unanswered?: { task: string; question: string };
 
+  /**
+   * Whether this run is building an approved plan, rather than a one-off job.
+   *
+   * Only a plan run has a checklist to tick, and only a plan run has earned the
+   * pause: stopping to review after "rename this variable" would be ceremony.
+   */
+  private fromPlan = false;
+
+  setFromPlan(on: boolean): void {
+    this.fromPlan = on;
+  }
+
   /** The pending question, folded into a follow-up task. Consumed by reading it. */
   takeUnanswered(): { task: string; question: string } | undefined {
     const pending = this.unanswered;
@@ -176,6 +188,32 @@ export class RunSession {
   }
 
   /**
+   * The moment after a milestone: what changed, and whether to write it down.
+   *
+   * Offered rather than done silently. The plan is the user's document, and a tool
+   * that edits it on its own behalf — recording its own work as complete, on its own
+   * say-so — is exactly the thing sign-off exists to prevent.
+   */
+  private async settleMilestone(summary: string, changed: number): Promise<void> {
+    const answer = await vscode.window.showInformationMessage(
+      `Milestone finished — ${changed} file(s) changed.`,
+      {
+        modal: true,
+        detail: `${summary}\n\nShall I mark off what's done in plan.md and record what the checks produced?`,
+      },
+      'Update the plan',
+      'Leave it'
+    );
+
+    if (answer !== 'Update the plan') {
+      this.log('agent: milestone finished, plan left untouched');
+      return;
+    }
+
+    await vscode.commands.executeCommand('clarvis.recordMilestone', summary);
+  }
+
+  /**
    * Describes one step and waits for a yes.
    *
    * Modal, and deliberately: the run is stopped until it is answered, and a toast
@@ -231,6 +269,13 @@ export class RunSession {
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.
     this.unanswered = said.includes('?') ? { task, question: said } : undefined;
+
+    // **The pause after a milestone.** §0 says the plan becomes a live checklist in
+    // Code Mode, ticked as each step lands — which had never been implemented, so a
+    // plan approved on Monday still read as entirely unbuilt on Friday. A run that
+    // came from a plan stops here, shows what it changed, and offers to write that
+    // back before anything else happens.
+    if (this.fromPlan && changed > 0) await this.settleMilestone(said, changed);
 
     const aside = (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
     if (aside) await this.note(aside);

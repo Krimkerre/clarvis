@@ -57,11 +57,27 @@ export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[
     'should work". A step that asks a question rather than doing something belongs in',
     'the open questions, not here.',
     'Start with the smallest thing that runs end to end, then build outward from it.',
-    'Stay inside what was described above: no tests, no packaging, no CI unless they',
-    'were actually asked for.',
+    'Stay inside what was described: no packaging or CI unless they were asked for.',
     '',
-    'Output the steps alone, one per line, no numbering and no markdown.',
+    // **Every step carries how to know it worked.** A checklist you can only tick by
+    // believing yourself is not a checklist. The check is written now, with the step,
+    // rather than after the code exists — by then it is a description of whatever got
+    // built rather than a test of what was meant.
+    'For each step, also give the check that proves it works: a command to run and what',
+    'it should print, or a specific thing to do and what should happen. Concrete enough',
+    'that someone else could run it and agree. Not "verify it works".',
+    '',
+    'Output one step per line, in exactly this format and nothing else — no numbering,',
+    'no markdown:',
+    'The step | the check that proves it works',
   ].join('\n');
+}
+
+/** One build step, with the check that proves it works. */
+export interface MilestoneStep {
+  step: string;
+  /** How to know it worked. Absent when the model gave no check for this one. */
+  check?: string;
 }
 
 /**
@@ -70,11 +86,20 @@ export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[
  * Strips whatever numbering or bullet the model added anyway — the instruction not
  * to number them is obeyed most of the time, and a "1. " surviving into a checklist
  * that renders its own `- [ ]` looks like a mistake because it is one.
+ *
+ * A line with no check is kept rather than dropped: a step without its test is worth
+ * less than one with it, and worth far more than nothing.
  */
-export function parseMilestoneSteps(text: string): string[] {
+export function parseMilestoneSteps(text: string): MilestoneStep[] {
   return text
     .split('\n')
     .map((line) => line.trim().replace(/^(\d+[.)]|[-*+])\s*/, '').trim())
     .filter(Boolean)
+    .map((line) => {
+      const [step, ...rest] = line.split('|').map((part) => part.trim());
+      const check = rest.join(' | ').trim();
+      return check ? { step, check } : { step };
+    })
+    .filter((parsed) => parsed.step.length > 0)
     .slice(0, MAX_STEPS);
 }

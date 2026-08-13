@@ -1,7 +1,7 @@
 import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
 import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResult } from './analysisPrompt';
-import { milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
+import { MilestoneStep, milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
 import { FindingVerdict } from './verdictSummary';
 
 /**
@@ -76,7 +76,7 @@ export async function planMilestone(
   log: (message: string) => void,
   /** Findings the user accepted or rewrote — the actionable ones become steps. */
   accepted: FindingVerdict[] = []
-): Promise<string[]> {
+): Promise<MilestoneStep[]> {
   if (!(await models.isReady('chat'))) {
     log('planning: milestone — no model configured, no steps written');
     return [];
@@ -98,7 +98,7 @@ export async function planMilestone(
 
     const steps = parseMilestoneSteps(text);
     log(`planning: milestone — ${steps.length} step(s)`);
-    for (const step of steps) log(`planning: milestone step — ${step}`);
+    for (const step of steps) log(`planning: milestone step — ${step.step}${step.check ? ` (check: ${step.check})` : ' (no check given)'}`);
     return steps;
   } catch (error) {
     log(`planning: milestone failed (${String(error)})`);

@@ -3537,6 +3537,17 @@ also rewritten with some bite to them — they are both what shows when no model
 configured *and* the seed `phrase()` rewrites from, so a flat fallback produces a
 flat line either way.
 
+**Openings are written, not rewritten (13 Aug).** The offer still sounded like a
+template because it was one: `Voice.say()` only rewrites `report` and `aside` — a
+question comes back verbatim by design (§2.2, rewriting a plain question cost
+stiffness), so `phrase('ask', …)` was returning the fallback word for word every
+session. `originalLine.ts` (pure, tested) asks for the line *itself* from the
+situation, with no draft to improve — the same shape `liveQuip.ts` uses, and for the
+same reason. `Voice.open()` / the module-level `opening()` run it with a 5s deadline
+(nothing is blocked on an opening the way a modal is), reject rather than repair
+anything doubtful, and fall back to the written line. Applied to the two lines that
+open plan mode: the offer, and the interview's first question.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

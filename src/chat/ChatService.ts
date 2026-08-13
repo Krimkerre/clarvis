@@ -16,7 +16,7 @@ import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
-import { Voice } from '../personality/Voice';
+import { Voice, opening } from '../personality/Voice';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { runPlanning } from '../planning/PlanningFlow';
@@ -228,10 +228,9 @@ export class ChatService {
     // as well as written: it is the one line that tells someone this feature exists,
     // and a notice nobody hears is a feature nobody finds.
     await this.remark(
-      await this.phrase(
-        'ask',
-        "No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?",
-        ['plan.md']
+      await opening(
+        'This project has no plan.md — nothing here has been planned. You are offering to plan one with them: an interview, then a written plan they sign off on.',
+        'No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?'
       )
     );
     this.awaitingPlanAnswer = true;

@@ -1,6 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { PlanningIO } from './PlanningIO';
-import { phrase } from '../personality/Voice';
+import { opening, phrase } from '../personality/Voice';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
 import { namePrompt, parseNameResult } from './namePrompt';
@@ -37,8 +37,13 @@ export async function runInterview(
   io: PlanningIO,
   log: (message: string) => void
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
+  // The first question of the interview, written for the moment rather than
+  // rewritten from a template — it sets the tone for everything that follows.
   let seed = await io.askText(
-    await phrase('ask', 'What are you building? One sentence is plenty.', []),
+    await opening(
+      'You are starting a planning interview. Ask them what they are building — one sentence is plenty, and "I don\'t know" is a perfectly good answer they can give.',
+      'What are you building? One sentence is plenty.'
+    ),
     "e.g. a CLI that renames photos by their EXIF date, or \"I don't know\" for ideas"
   );
   if (seed === undefined) return undefined;

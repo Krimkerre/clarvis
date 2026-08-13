@@ -146,6 +146,7 @@ export class ChatService {
       (text) => this.remark(text),
       (text) => this.note(text),
       (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
+      (text) => this.showPlanDocument(text),
       this.log
     );
     this.planningIO = io;
@@ -201,6 +202,22 @@ export class ChatService {
 
     this.log('chat: planning offer declined');
     return false;
+  }
+
+  /**
+   * Shows a plan draft in the editor, rendered rather than as raw markdown.
+   *
+   * Markdown's preview is the whole point here — the draft is being *read*, by
+   * someone deciding whether to approve it, and asking them to parse hashes and
+   * asterisks while they do that is the opposite of help. Beside the editor rather
+   * than over it, so the chat panel and its question stay visible.
+   */
+  private async showPlanDocument(text: string): Promise<void> {
+    const document = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
+    await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
+    // Best effort: an editor showing the source is a fine outcome if the preview
+    // command is unavailable, and far better than an error where a plan should be.
+    await vscode.commands.executeCommand('markdown.showPreview').then(undefined, () => undefined);
   }
 
   /**

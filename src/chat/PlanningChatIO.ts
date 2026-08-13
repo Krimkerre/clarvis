@@ -28,6 +28,8 @@ export class PlanningChatIO implements PlanningIO {
     private readonly write: (text: string) => Promise<void>,
     /** Offers the answers as buttons in the panel. Typing still works regardless. */
     private readonly offer: (items: { label: string; detail?: string }[]) => void,
+    /** Opens a document in the editor, where a long one can actually be read. */
+    private readonly openDocument: (text: string) => Promise<void>,
     private readonly log: (message: string) => void
   ) {}
 
@@ -150,9 +152,17 @@ export class PlanningChatIO implements PlanningIO {
     await this.speak(text);
   }
 
-  /** Written, never read aloud — nobody wants a plan draft spoken at them. */
+  /**
+   * The editor, not the chat panel.
+   *
+   * Found live: a whole `plan.md` posted into a side panel arrives as one
+   * unreadable slab — no headings, no spacing that survives, and it pushes the
+   * question about it off the top of the transcript. The document goes where
+   * documents are read; the approval question stays in the conversation, where it
+   * can be answered. Never read aloud either — nobody wants a plan spoken at them.
+   */
   async showDocument(text: string): Promise<void> {
-    await this.write(text);
+    await this.openDocument(text);
   }
 
   private nextMessage(): Promise<string | undefined> {

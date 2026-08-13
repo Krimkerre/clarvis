@@ -27,33 +27,16 @@ quip line under each.
 
 ## In action
 
-<img src="media/mockup.png" alt="Mockup of VS Code with Clarvis docked in the sidebar: an agent run in progress on branch clarvis/fix-checkout-test, showing a diff in checkout.js, a streamed list of completed tool steps, a files-changed summary, an approval gate asking before running npm install, and a live step and token counter." width="100%">
+<img src="media/planning.png" alt="VS Code with Clarvis docked in the sidebar: the user answered 'I don't know yet' to what they are building, and Clarvis has replied 'Fine. Here are four. Two of them I am even serious about.' followed by four clickable idea cards — Rent Judge, Relative Recall, The Sourdough Prosecutor, Commute Amnesia — each with a sentence on what it actually does, plus a 'Something else...' option. The mode toggle reads Plan." width="100%">
 
-*Mockup, not a real screenshot* — an agent run mid-flight. Clarvis is fixing a failing
-test on its own `clarvis/fix-checkout-test` branch: it read the files, ran the suite,
-made the edit you can see in the diff, and is re-running the tests. It has stopped to
-ask before installing a dependency — and the gate explains what that does, what it
-changes, and how to undo it, rather than just asking for a click. Note where the
-character does and doesn't appear: the tool steps stay factual (he shuts up while
-working), the safety copy stays plain because it's templated rather than written by the
-model, and the personality shows up in the one place he's actually addressing you. Step and token counters run
-live, `Stop` is always there, and the whole run reverts with one command.
+*A real screenshot.* Plan mode, in the chat panel, on a project with no `plan.md` yet.
+The user said they didn't know what to build; the ideas are written for the moment
+rather than drawn from a list, which is why they are not four puns about git. Every
+option is a button carrying its own explanation, and typing works just as well.
 
-For the animated version — a self-contained HTML page in the same spirit as
-`avatar.html`: real CSS keyframes, no recording, no compression — open
-[`media/mockup-demo.html`](./media/mockup-demo.html) in a browser and watch the steps
-stream in, the diff land, and Clarvis switch from `thinking` to `talking` as he stops to
-ask. It loops. The panel and avatar are built and working today; the agent surfaces shown here are
-still on the roadmap (§ Progress).
-
-### Starting a project
-
-<img src="media/mockup-planning.png" alt="Mockup of Clarvis in plan mode: the user says 'a maps app', Clarvis points out there are already four of those owned by companies with satellites and asks what makes this one worth existing. The user says 'surprise me', and Clarvis proposes Dead Reckoning — a maps app that routes you almost correctly so you learn the city — with Accept, Reject and Modify buttons and a note that it stays off near hospitals or on low battery." width="100%">
-
-*Mockup of the eventual chat-panel version* — the questions, the pushback and the
-Accept/Reject/Modify findings shown here are real and working today (M9, below), just
-through `Clarvis: Plan This Project` rather than the chat panel yet. Animated version:
-[`media/mockup-planning.html`](./media/mockup-planning.html).
+Note the mode toggle: starting an interview switches to **Plan** by itself and back
+when it finishes, because §0's rule is that nothing but `plan.md` gets written until
+the plan is signed off — and a rule the code knows should be one the interface shows.
 
 **What actually runs today.** Give it one sentence — or say you don't know and it'll
 suggest a few, at least a couple of them genuinely funny. It reads the workspace first

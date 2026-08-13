@@ -172,7 +172,10 @@ async function challengeAnswer(
     }
 
     log(`planning: "${topic}" — pushed back — ${result.followUp}`);
-    const raw = await io.askText(result.followUp, 'Type your answer, or leave blank to keep what you said');
+    // No placeholder. The main question's hint was reduced to once for being a form
+    // reciting its own rules — and this one repeated under *every* follow-up, which
+    // is the same defect in the place it is most tiring.
+    const raw = await io.askText(result.followUp);
     if (!raw?.trim()) {
       log(`planning: "${topic}" — follow-up declined, kept original answer`);
       return answer;

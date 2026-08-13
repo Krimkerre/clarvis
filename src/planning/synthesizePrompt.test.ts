@@ -14,6 +14,14 @@ test('the prompt includes both answers and forbids inventing detail', () => {
   assert.match(prompt, /do not add,\s*infer, or invent/);
 });
 
+test('asks for a statement about the project, not about the person', () => {
+  // Found live: "They want the linter, but not set up now." — hearsay about the
+  // user, in a document describing the project, alongside answers phrased plainly.
+  const prompt = synthesizeAnswerPrompt('linter', 'yip', 'set up now, or in principle?', 'nope');
+  assert.match(prompt, /never "They want it to run locally"/);
+  assert.match(prompt, /say what remains open/);
+});
+
 test('asks for prose, not a transcript', () => {
   const prompt = synthesizeAnswerPrompt('scope', 'a', 'q', 'b');
   assert.match(prompt, /not\s*a transcript, not a Q&A/);

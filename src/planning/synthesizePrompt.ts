@@ -28,6 +28,12 @@ export function synthesizeAnswerPrompt(
     'infer, or invent any detail neither answer contains. If the two answers cover',
     'different aspects, just state both plainly in one or two sentences.',
     '',
+    'Write it as a statement about the project, not about the person who answered:',
+    '"The tool runs locally", never "They want it to run locally". It is going into a',
+    'plan document, where a sentence about what someone wants reads as hearsay.',
+    'If the follow-up did not actually settle the question, say what remains open',
+    'rather than choosing an answer on their behalf.',
+    '',
     'Output the statement alone — no preamble, no quotes, no "they said."',
   ].join('\n');
 }

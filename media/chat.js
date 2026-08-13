@@ -200,6 +200,21 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  // Where the build has got to. Hidden entirely when nothing is running — an idle
+  // progress bar reading 0/0 is furniture.
+  if (msg.type === 'progress') {
+    var box = document.getElementById('clarvis-progress');
+    if (!msg.total) {
+      box.setAttribute('data-active', 'false');
+      return;
+    }
+    box.setAttribute('data-active', 'true');
+    box.querySelector('.count').textContent = 'Step ' + msg.current + ' of ' + msg.total;
+    box.querySelector('.step').textContent = String(msg.label || '');
+    box.querySelector('.bar i').style.width = Math.round((msg.current / msg.total) * 100) + '%';
+    return;
+  }
+
   if (msg.type === 'choices-clear') {
     clearChoices();
     return;

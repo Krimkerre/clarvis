@@ -234,6 +234,23 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
  * stylesheet in there is already at the linter's ceiling, and these rules have
  * nothing to say to the transcript's beyond sitting underneath it.
  */
+const PROGRESS_STYLES = `
+      /* Where a build has got to, while it is getting there. A file is the checklist;
+         this is the part you can see without opening it. */
+      .clarvis-progress { display:none; flex:0 0 auto; padding:4px 8px; border-radius:4px;
+        background: var(--vscode-editorWidget-background, transparent);
+        border:1px solid var(--vscode-widget-border, transparent); font-size:11px; }
+      .clarvis-progress[data-active="true"] { display:block; }
+      .clarvis-progress .count { opacity:.6; letter-spacing:.04em; }
+      .clarvis-progress .step { display:block; margin-top:2px; }
+      /* A bar rather than a spinner: a spinner says "something is happening", which
+         was never in doubt. The question is how much is left. */
+      .clarvis-progress .bar { display:block; height:2px; margin-top:5px; border-radius:2px;
+        background: var(--vscode-widget-border, var(--vscode-descriptionForeground)); }
+      .clarvis-progress .bar i { display:block; height:100%; border-radius:2px;
+        background: var(--vscode-focusBorder); transition: width .3s ease; }
+`;
+
 const CHOICE_STYLES = `
       /* Each option is a button carrying its own explanation, rather than a list
          above a row of bare labels repeating it. */
@@ -312,6 +329,7 @@ function chatMarkup(n: string): string {
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
 
       ${CHOICE_STYLES}
+      ${PROGRESS_STYLES}
       /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
          bottom so the icon stays level with the first line as the box grows. */
       .clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }
@@ -337,6 +355,10 @@ function chatMarkup(n: string): string {
       <!-- Controls sit between the history and the prompt: pinned to the bottom with
            the input, where the hand already is, rather than at the top where reaching
            them means looking away from what you were typing. -->
+      <div id="clarvis-progress" class="clarvis-progress" data-active="false">
+        <span class="count"></span><span class="step"></span>
+        <span class="bar"><i style="width:0%"></i></span>
+      </div>
       <div class="clarvis-chat-head">
         <button id="clarvis-mode" class="clarvis-mute clarvis-mode"
                 title="What Clarvis is allowed to do">Auto</button>

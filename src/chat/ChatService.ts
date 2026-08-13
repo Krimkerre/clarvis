@@ -175,7 +175,7 @@ export class ChatService {
         // takes, so nothing about the build is special-cased for having come from
         // planning. Cleared first: the run posts its own questions to chat, and
         // planning must not still be intercepting them.
-        async (task) => {
+        async (task, steps) => {
           this.planningIO = undefined;
           // **Agent, not Auto.** Pressing Start Building is an explicit answer to
           // "shall I build this", so the mode that follows should be the explicit
@@ -186,7 +186,7 @@ export class ChatService {
           this.runs.setStepApproval(true);
           // This run has a checklist to tick and has earned the pause afterwards; a
           // one-off "rename this variable" has neither.
-          this.runs.setFromPlan(true);
+          this.runs.setFromPlan(true, steps);
           await this.runs.run(task, 'Plan approved — starting on milestone one.');
         }
       );
@@ -334,6 +334,7 @@ export class ChatService {
       (text) => this.note(text),
       (text) => this.remark(text),
       (purpose, fallback, keep) => this.phrase(purpose, fallback, keep),
+      (frame) => panel.post({ type: 'progress', ...frame }),
       log
     );
     this.replier = new Replier(

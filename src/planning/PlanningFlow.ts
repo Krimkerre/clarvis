@@ -37,7 +37,12 @@ export interface PlanningLines {
  * that ends at a written plan is still a complete outcome. Where it exists, plan
  * mode flows into code mode without the user having to restate what was just agreed.
  */
-export type StartBuild = (task: string) => Promise<void>;
+/**
+ * Hands milestone one to the agent. The steps travel with the task so the panel can
+ * show which one is in progress — the task text alone is prose to everything
+ * downstream of it.
+ */
+export type StartBuild = (task: string, steps: string[]) => Promise<void>;
 
 /**
  * Whether it's fine to run the interview and eventually replace `plan.md` —
@@ -180,7 +185,7 @@ async function offerToBuild(
   }
 
   log(`planning: handing milestone 1 to the agent\n${finalTask}`);
-  await startBuild(finalTask);
+  await startBuild(finalTask, steps.map((step) => step.step));
 }
 
 /** What was established and what is still open, as the summary document's lines. */

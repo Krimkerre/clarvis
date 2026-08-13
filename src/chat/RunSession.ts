@@ -8,6 +8,7 @@ import { detectTestCommand } from '../agent/testCommand';
 import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
+import { matchStep, readStepMarkers } from '../agent/stepProgress';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -37,6 +38,9 @@ export class RunSession {
     private readonly note: (text: string) => Promise<void>,
     private readonly remark: (text: string) => Promise<void>,
     private readonly phrase: (purpose: 'report' | 'warn' | 'ask' | 'aside', fallback: string, keep?: string[]) => Promise<string>,
+    /** Shows where the run has got to. A function rather than the panel itself: this
+     * class needs one frame, not a view. */
+    private readonly showProgress: (frame: { current: number; total: number; label: string }) => void,
     private readonly log: (message: string) => void
   ) {}
 
@@ -98,8 +102,12 @@ export class RunSession {
    */
   private fromPlan = false;
 
-  setFromPlan(on: boolean): void {
+  /** The steps this run is working through, for the progress display. */
+  private steps: string[] = [];
+
+  setFromPlan(on: boolean, steps: string[] = []): void {
     this.fromPlan = on;
+    this.steps = steps;
   }
 
   /** The pending question, folded into a follow-up task. Consumed by reading it. */
@@ -161,9 +169,15 @@ export class RunSession {
         if (!event.text) continue;
         if (event.kind === 'done') summary = event.text.trim();
 
+        // Step announcements are for the panel, not for reading: pulled out here so
+        // they never reach the terminal as stray "STEP:" lines. An event that was
+        // nothing but an announcement has nothing left to show.
+        const text = this.takeStepMarkers(event);
+        if (text === undefined) continue;
+
         // Everything, verbatim, in the place that is meant to be read line by line.
         this.terminal.write(
-          event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : event.text
+          event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : text
         );
 
         // The one exception to "nothing technical reaches the chat": isolation could
@@ -177,6 +191,10 @@ export class RunSession {
       this.busy.finish();
       this.avatar.setState('neutral', 'agent');
       holdingFace();
+      // A bar left at "step 3 of 5" after the run ends describes a run that is no
+      // longer happening. Cleared here rather than on success, so a stopped or
+      // failed run clears it too.
+      this.showProgress({ current: 0, total: 0, label: '' });
     }
 
     const { commits, files } = runner.result;
@@ -185,6 +203,35 @@ export class RunSession {
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
     if (files.length > 0) await this.offerReview(commits, files);
+  }
+
+  /**
+   * The event's text with any step announcement removed, or `undefined` when the
+   * announcement was all there was.
+   */
+  private takeStepMarkers(event: { kind: string; text: string }): string | undefined {
+    if (event.kind !== 'text' || this.steps.length === 0) return event.text;
+
+    const progress = readStepMarkers(event.text);
+    for (const announced of progress.announced) this.showStep(announced);
+    return progress.text.trim() ? progress.text : undefined;
+  }
+
+  /**
+   * Moves the progress display to the step just announced.
+   *
+   * An announcement matching no planned step is ignored rather than counted: the bar
+   * holding still is a smaller lie than the bar pointing at the wrong step.
+   */
+  private showStep(announced: string): void {
+    const index = matchStep(announced, this.steps);
+    if (index === undefined) {
+      this.log(`agent: announced a step that matches none in the plan — "${announced}"`);
+      return;
+    }
+
+    this.log(`agent: step ${index + 1} of ${this.steps.length} — ${this.steps[index]}`);
+    this.showProgress({ current: index + 1, total: this.steps.length, label: this.steps[index] });
   }
 
   /**

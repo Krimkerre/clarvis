@@ -68,6 +68,14 @@ export function handoffTask(
     'that fails is a result, not a failure to hide: say so and stop.',
     'Then stop. Do not build past milestone 1, and do not start the next one.',
     '',
+    // **Announced, so the panel can show where the run has got to.** Parsed out
+    // before the user sees it — same mechanism the reply's facial expression uses,
+    // and for the same reason: the model already knows which step it is on, and
+    // asking separately would double the cost of every step to find out.
+    'Before you begin each step above, output a line on its own containing exactly:',
+    'STEP: <the step, copied from the list>',
+    'Nothing else on that line. It is read by the editor, not by them.',
+    '',
     'Start with the smallest thing that runs.',
   ].join('\n');
 }

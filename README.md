@@ -100,8 +100,11 @@ notes and redrawing until you explicitly approve — nothing is written until yo
   logic contradictions, scope that will balloon. You rule on every finding, and your
   rejections are recorded *with your reasoning*, so nothing gets re-litigated later.
   The result is a `plan.md` with **real build steps** — work you can do and tick off,
-  not a list of things still to decide. Approve it and the agent starts building
-  against it, showing you the handoff prompt first.
+  not a list of things still to decide — across every milestone, each step carrying
+  the check that proves it works. Approve it and the agent builds one milestone at a
+  time, showing you the handoff prompt first, then stops: what changed, what the
+  checks produced, ticked off in the plan, and the next milestone offered rather than
+  assumed.
 - **Chat** — the assistant you talk to in this window, replacing the default chat
   panel: avatar on top, conversation below, prompt at the bottom. **Answers from its own
   watch/memory state need no key, no network and no tokens** — "what's broken?", "what
@@ -124,8 +127,12 @@ notes and redrawing until you explicitly approve — nothing is written until yo
   and it edits, runs commands, reads the results, and iterates until it's done. Work
   happens on its own `clarvis/<task>` branch, committed step by step, so your
   uncommitted changes stay yours and the whole run is reviewable — or discardable in
-  one command. Every file it touches is listed live with a clickable diff, and it stops
-  to ask before anything destructive or outward-facing. Merging and pushing are yours.
+  one command. Files open as it writes them, scrolled to what changed. In **Agent**
+  mode it describes each step that alters anything and waits for a yes; **Auto** is
+  the mode that gets on with it. Type while it works and it takes the correction
+  rather than queueing behind it. Every file it touches is listed live with a
+  clickable diff, and it stops to ask before anything destructive or outward-facing.
+  Merging and pushing are yours.
 - **Voice** — not a bolt-on. Half the character is in the writing, the other half is in
   the delivery, so briefings and completions are spoken by a voice chosen to match:
   gravelly, impatient, casually brilliant, bored of having to explain. Fish Audio by
@@ -332,11 +339,18 @@ the full per-milestone build notes and exit criteria.
       one coherent sentence rather than a transcript. Analysis reports safety, logic and
       scope problems you rule on individually. The draft opens in the editor as rendered
       markdown while the approval question stays in the conversation, and nothing is
-      written until you approve it. Then milestone one — **real build steps**, not a
-      list of things to decide — is handed to the agent, shown and editable first.
-      *Not built:* per-language clean-code conventions in the generated plan, ticking
-      checklist items off in `plan.md` as the agent completes them, and resuming an
-      interview after a reload.
+      written until you approve it. The plan holds **every milestone**, each step
+      carrying the check that proves it works — written before the code exists, so it
+      tests what was meant rather than describing what got built. The agent builds one
+      milestone at a time, asking before each step that changes anything, showing which
+      step it is on, opening files as it writes them. It runs the checks, reports what
+      actually happened, and the results are written back into `plan.md` — steps ticked
+      off, outcomes recorded — before the next milestone is offered. Interruptions
+      work: a correction folds into the run, **new scope stops it** and gets written
+      into the plan first (§0). Half-finished interviews and part-finished milestones
+      are both offered back after a reload.
+      *Not built:* per-language clean-code conventions in the generated plan, and
+      container isolation for commands (M9f — assessed, deliberately deferred).
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
       people learning to program on a real project of their own. Opt-in per project,

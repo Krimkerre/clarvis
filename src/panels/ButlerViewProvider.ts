@@ -267,6 +267,16 @@ const CHOICE_STYLES = `
       .clarvis-choice .label { font-weight:600; }
       /* The explanation is why you would pick it, not the thing you are picking. */
       .clarvis-choice .detail { font-size:11px; line-height:1.35; opacity:.75; white-space:normal; }
+
+      /* A yes-or-no, pushed apart. These arrive mid-conversation, exactly where the
+         cursor already was, and a misclick is a decision nobody made — so the two
+         answers are as far apart as the panel allows and large enough to aim at.
+         Not colour-coded: which of the two is the "safe" one changes with the
+         question, and a green button that sometimes means stop is worse than none. */
+      .clarvis-choices.binary { justify-content: space-between; gap:16px; padding:2px 8px 0; }
+      .clarvis-choices.binary .clarvis-choice { flex:0 1 45%; padding:10px 14px; font-size:13px;
+        justify-content:center; text-align:center; }
+      .clarvis-choices.binary .clarvis-choice .label { font-weight:600; }
 `;
 
 function chatMarkup(n: string): string {

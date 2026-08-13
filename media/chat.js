@@ -98,7 +98,11 @@ const showChoices = (items) => {
   // Options with an explanation stack full-width so the text has room; bare
   // labels (Yes / No / Approve) sit side by side, where a stack looks absurd.
   const detailed = items.some((item) => item && item.detail);
-  row.className = 'clarvis-choices' + (detailed ? ' stacked' : '');
+  // Two bare labels is a yes-or-no, and those get pushed to opposite ends and made
+  // bigger. They arrive mid-conversation, right where you were about to type, and a
+  // misclick on one of those is a decision you never made.
+  const binary = !detailed && items.length === 2;
+  row.className = 'clarvis-choices' + (detailed ? ' stacked' : '') + (binary ? ' binary' : '');
 
   items.forEach((item) => {
     const label = String((item && item.label) || item);

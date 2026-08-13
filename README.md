@@ -16,14 +16,21 @@ The name is a backronym: **C**lippy-**L**ike, **A** **R**ather **V**ery **I**nte
 
 <img src="media/states-strip.png" alt="Clarvis avatar in its six expression states: Neutral, Judging, Impressed, Thinking, Talking, Surprised" width="100%">
 
-Driven by a single `setState(name)` call — the whole integration surface between the
-extension host and the webview. The face reacts to what's actually happening: builds and
-tests (built), agent runs, and the tone of Clarvis's own replies — mild contempt at a
-global variable, genuine approval at something neat, alarm at "I force-pushed to main". Six states: `neutral`, `judging`, `impressed`,
-`thinking`, `talking`, `surprised`. Idle animation (bob, blink) runs autonomously so it
-reads as alive, not looping. See [`avatar.html`](./avatar.html) for the live,
-interactive version — open it directly in a browser to try every state and read the
-quip line under each.
+He has a face, and it reacts to what's actually happening — mild contempt at a global
+variable, genuine approval at something neat, alarm at "I force-pushed to main".
+Builds and tests move it, agent runs move it, and so does the tone of whatever he's
+about to say.
+
+Six expressions: `neutral`, `judging`, `impressed`, `thinking`, `talking`,
+`surprised`. Between them he bobs and blinks on his own, so an idle avatar reads as
+someone waiting rather than a paused animation.
+
+Everything the extension host can say to the webview about the face is one
+`setState(name)` call — deliberately the narrowest surface the two sides could agree
+on.
+
+Open [`avatar.html`](./avatar.html) in a browser for the live version: every state,
+with the quip line under each.
 
 ## In action
 

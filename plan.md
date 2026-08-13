@@ -3755,10 +3755,26 @@ stops it and is written into the plan first (§0's oldest unkept promise, kept).
 is lost to a reload — half-finished interviews and part-finished milestones are both
 offered back.
 
-**Still open in M9:** M9d2, the per-language clean-code conventions section — the
-inherited §0 block stops at Plan/Code Mode discipline, which is generic, and does not
-yet carry the clean-code rules, which are not. And M9f, container isolation, recorded
-above as assessed and deliberately deferred.
+**M9d2 built (14 Aug), and worth recording why it nearly wasn't.** Every other gap in
+this milestone was found by using the thing — the truncated shortlist, the empty
+milestone, the interview lost to a reload. This one has no symptom: the plan rendered,
+the agent built against it, and the missing section never announced itself. It survived
+because dogfooding is good at finding things that behave wrongly and bad at finding
+things that were never there. It also left two exit-checklist items unpassable, which
+is the more objective tell and was sitting in plain sight.
+
+`conventions.ts` renders §0's rules into every generated plan, adapted to the language:
+PEP 8 and `snake_case` for Python, `gofmt` and wrapped errors for Go, `cargo clippy`
+and borrow-before-clone for Rust. **A lookup, never a model call** — the person most in
+need of these rules is exactly the person who could not tell an invented one from a
+real one, so a language nobody wrote an entry for gets the universal set and says so
+plainly rather than getting four plausible inventions. The comment-style question is
+asked in the same final round as the linter, both options presented as legitimate, and
+recorded in the plan. The handoff names the section rather than restating it: two
+copies of a standard is one standard and one thing to drift from it.
+
+**Still open in M9:** only M9f, container isolation, recorded above as assessed and
+deliberately deferred.
 
 **What the milestone cost, and where the defects came from.** Almost every bug in this
 section was found by running it, not by the suite: the language shortlist truncated

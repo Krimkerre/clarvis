@@ -141,8 +141,11 @@ build: if a milestone was part-way through, he offers to pick it up when the win
 opens. Both read from what was actually saved, so they survive a restart, a new
 machine, and you ticking something off in `plan.md` by hand.
 
-*Still ahead: clean-code conventions written into the generated plan in the project's*
-*own language.*
+**The plan says how the code should be written, too.** Near the end he asks how chatty
+you want the comments — explained throughout, or only where something is surprising —
+and neither answer is the right one. That, plus the conventions for whichever language
+you chose, goes into the plan as a section you can read and argue with, rather than
+sitting in a hidden instruction.
 
 ---
 
@@ -427,6 +430,5 @@ outright.
 
 Clarvis is under construction, and this manual describes what exists today. The agent
 and **project planning** (above) both work end to end — that list used to say
-otherwise, twice. Still to come from planning: clean-code conventions written into the
-generated plan in the project's own language. Also still to come: **voice input**, and
+otherwise, twice. Still to come: **voice input**, and
 **Tutor Mode** for people learning to program. See the README for progress.

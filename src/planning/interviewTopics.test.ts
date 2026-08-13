@@ -36,6 +36,36 @@ test('a detected language is never asked about', () => {
   assert.equal(nextTopic(state), 'scope');
 });
 
+test('comment style is asked in the same final round as the linter', () => {
+  // Both are questions about how the code gets written rather than what it does, and
+  // asking either before the project has a shape reads as a style opinion about
+  // something that does not exist yet.
+  const state: InterviewState = {
+    answers: [
+      { topic: 'what-it-does', text: 'renames photos' },
+      { topic: 'who-and-where', text: 'CLI, runs locally' },
+      { topic: 'language', text: 'Python' },
+      { topic: 'scope', text: 'no GUI' },
+      { topic: 'data', text: 'reads EXIF, writes nothing' },
+      { topic: 'definition-of-done', text: 'renames a folder correctly' },
+      { topic: 'linter', text: 'yes' },
+    ],
+  };
+  assert.equal(nextTopic(state), 'comment-style');
+});
+
+test('a plan is not draftable until the comment question has been asked', () => {
+  const state: InterviewState = {
+    answers: [
+      { topic: 'what-it-does', text: 'a thing' },
+      { topic: 'who-and-where', text: 'somewhere' },
+      { topic: 'scope', text: 'not much' },
+      { topic: 'linter', text: 'yes' },
+    ],
+  };
+  assert.equal(readyToDraft(state), false);
+});
+
 test('the linter is asked last, after everything else', () => {
   const state: InterviewState = {
     answers: [
@@ -67,7 +97,7 @@ test('nothing is ready to draft until the linter question has been asked', () =>
   assert.equal(readyToDraft(state), false);
 });
 
-test('draftable once the must-haves and the linter question are both settled', () => {
+test('draftable once the must-haves and the final-round questions are settled', () => {
   // Data and definition-of-done are not in the must-have list: a seed can be draftable
   // without them if the user never got that far, and they become open questions instead.
   const state: InterviewState = {
@@ -76,6 +106,7 @@ test('draftable once the must-haves and the linter question are both settled', (
       { topic: 'who-and-where', text: 'somewhere' },
       { topic: 'scope', text: 'not much' },
       { topic: 'linter', text: 'yes' },
+      { topic: 'comment-style', text: 'lean' },
     ],
   };
   assert.equal(readyToDraft(state), true);

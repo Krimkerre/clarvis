@@ -257,6 +257,8 @@ export class RunSession {
       return;
     }
 
+    // Recording it also reports what is left, which is what makes the next milestone
+    // a decision rather than a thing you have to remember to go and look for.
     await vscode.commands.executeCommand('clarvis.recordMilestone', summary);
   }
 

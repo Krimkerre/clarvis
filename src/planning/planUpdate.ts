@@ -106,7 +106,81 @@ export function markSteps(planText: string, results: StepResult[]): string {
   return output.join('\n');
 }
 
-/** Whether every step in the plan is ticked — the milestone is genuinely finished. */
+/** A milestone heading in a rendered plan: `### Milestone 2 — Batch renaming`. */
+const MILESTONE_HEADING = /^#{2,4}\s*Milestone\s+(\d+)\s*[—:-]\s*(.+)$/i;
+
+/** What a plan says about one milestone's progress. */
+export interface MilestoneState {
+  number: number;
+  title: string;
+  done: number;
+  total: number;
+}
+
+/**
+ * Reads each milestone's progress straight out of the plan.
+ *
+ * **The plan is the source of truth, not memory.** A build resumed a week later, in a
+ * new window, has no state to consult but the file — and the user may have ticked
+ * something off by hand in the meantime, which is their document's prerogative.
+ */
+export function readMilestones(planText: string): MilestoneState[] {
+  const milestones: MilestoneState[] = [];
+  let current: MilestoneState | undefined;
+
+  for (const line of planText.split('\n')) {
+    const heading = MILESTONE_HEADING.exec(line.trim());
+    if (heading) {
+      current = { number: Number(heading[1]), title: heading[2].trim(), done: 0, total: 0 };
+      milestones.push(current);
+      continue;
+    }
+
+    const step = STEP_LINE.exec(line);
+    if (!step || !current) continue;
+
+    current.total++;
+    if (step[2].toLowerCase() === 'x') current.done++;
+  }
+
+  return milestones;
+}
+
+/**
+ * The step texts under one milestone, for the progress display.
+ *
+ * Every step, not only the unticked ones: "step 3 of 5" means the third of five, and
+ * renumbering as work completes would make the bar march backwards.
+ */
+export function milestoneSteps(planText: string, number: number): string[] {
+  const steps: string[] = [];
+  let inside = false;
+
+  for (const line of planText.split('\n')) {
+    const heading = MILESTONE_HEADING.exec(line.trim());
+    if (heading) {
+      inside = Number(heading[1]) === number;
+      continue;
+    }
+
+    const step = STEP_LINE.exec(line);
+    if (inside && step) steps.push(step[3]);
+  }
+
+  return steps;
+}
+
+/** The first milestone with work left in it, or `undefined` when the plan is finished. */
+export function nextMilestone(planText: string): MilestoneState | undefined {
+  return readMilestones(planText).find((milestone) => milestone.done < milestone.total);
+}
+
+/**
+ * Whether every step in the plan is ticked — the whole plan, not one milestone.
+ *
+ * Kept for the "and that is the lot" case; `nextMilestone` is what decides whether
+ * there is somewhere to go next.
+ */
 export function milestoneComplete(planText: string): boolean {
   const steps = planText.split('\n').map((line) => STEP_LINE.exec(line)).filter(Boolean);
   return steps.length > 0 && steps.every((match) => match![2].toLowerCase() === 'x');

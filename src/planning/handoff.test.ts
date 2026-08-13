@@ -36,10 +36,12 @@ test('the task names the project and what was established', () => {
 test('the build list is the steps; findings are named as questions', () => {
   // Found live: handing over a list of "Clarify whether…" items produced a run that
   // read the plan, found nothing it could do, and stopped.
-  const task = handoffTask(state, 'renames photos', verdicts, [
-    { step: 'Create the entry point', check: 'run `photoname --help`' },
-  ]);
-  assert.match(task, /Milestone 1 — build these[^]*- Create the entry point/);
+  const task = handoffTask(state, 'renames photos', verdicts, {
+    current: { title: 'A CLI that renames one file', steps: [{ step: 'Create the entry point', check: 'run `photoname --help`' }] },
+    number: 1,
+    total: 3,
+  });
+  assert.match(task, /Milestone 1 of 3 — A CLI that renames one file[^]*- Create the entry point/);
   // The check travels with the step, and running it is part of the job.
   assert.match(task, /Check: run `photoname --help`/);
   assert.match(task, /report what actually happened/);
@@ -53,7 +55,11 @@ test('a modified finding is settled in the user\'s own wording', () => {
     status: 'modified',
     reasoning: 'use ruff',
   };
-  const task = handoffTask(state, 'renames photos', [modified], [{ step: 'Create the entry point' }]);
+  const task = handoffTask(state, 'renames photos', [modified], {
+    current: { title: 'v1', steps: [{ step: 'Create the entry point' }] },
+    number: 1,
+    total: 1,
+  });
   assert.match(task, /- use ruff/);
   assert.doesNotMatch(task, /name a linter/);
 });
@@ -65,4 +71,17 @@ test('it refuses to build past milestone one', () => {
 test('no steps says so rather than pretending the milestone is empty on purpose', () => {
   const bare: InterviewState = { answers: [{ topic: 'what-it-does', text: 'a thing' }] };
   assert.match(handoffTask(bare, 'a thing', []), /no build steps were written/);
+});
+
+test('only the milestone being handed over is described, and it stops there', () => {
+  // The rest of the plan is written down and waiting. Starting the next one is a
+  // separate decision, taken after this one lands.
+  const task = handoffTask(state, 'renames photos', [], {
+    current: { title: 'Batch renaming', steps: [{ step: 'Accept a folder' }] },
+    number: 2,
+    total: 4,
+  });
+
+  assert.match(task, /Milestone 2 of 4 — Batch renaming/);
+  assert.match(task, /Build milestone 2 and no further/);
 });

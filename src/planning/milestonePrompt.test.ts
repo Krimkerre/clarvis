@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
+import { milestonePrompt, parseMilestones, parseMilestoneSteps } from './milestonePrompt';
 import { InterviewState } from './interviewTopics';
 
 const state: InterviewState = {
@@ -12,7 +12,7 @@ const state: InterviewState = {
 
 test('the prompt asks for work, not decisions', () => {
   const prompt = milestonePrompt(state);
-  assert.match(prompt, /3 to 6/);
+  assert.match(prompt, /2 to 6/);
   assert.match(prompt, /actually do and then check off/);
   assert.match(prompt, /belongs in\s*the open questions, not here/);
 });
@@ -105,4 +105,53 @@ test('an overlong list is capped rather than passed through', () => {
 
 test('nothing usable is an empty list, not a fabricated step', () => {
   assert.deepEqual(parseMilestoneSteps('   \n  '), []);
+});
+
+test('the prompt asks for milestones, first one the smallest thing that runs', () => {
+  const prompt = milestonePrompt(state);
+  assert.match(prompt, /up to 4 milestones/);
+  assert.match(prompt, /smallest thing that runs end to end/);
+  assert.match(prompt, /MILESTONE: what this one delivers/);
+});
+
+test('milestones parse with their titles and steps', () => {
+  const milestones = parseMilestones(
+    [
+      'MILESTONE: A CLI that renames one file',
+      'Create the entry point | run it with --help',
+      'Rename a file | the file is renamed',
+      'MILESTONE: Batch renaming',
+      'Accept a folder | point it at a folder, all files renamed',
+    ].join('\n')
+  );
+
+  assert.equal(milestones.length, 2);
+  assert.equal(milestones[0].title, 'A CLI that renames one file');
+  assert.deepEqual(milestones[0].steps, [
+    { step: 'Create the entry point', check: 'run it with --help' },
+    { step: 'Rename a file', check: 'the file is renamed' },
+  ]);
+  assert.equal(milestones[1].title, 'Batch renaming');
+});
+
+test('a flat list with no header is kept as one milestone', () => {
+  // A model that ignores the header has still done the useful part. Throwing it away
+  // to punish a formatting mistake would leave the plan empty — the exact failure
+  // this section exists to prevent.
+  const milestones = parseMilestones('Create the entry point | run it\nRename a file | it renames');
+
+  assert.equal(milestones.length, 1);
+  assert.equal(milestones[0].steps.length, 2);
+});
+
+test('a milestone with no steps is dropped rather than rendered empty', () => {
+  const milestones = parseMilestones('MILESTONE: Nothing here\nMILESTONE: Real one\nA step | a check');
+
+  assert.equal(milestones.length, 1);
+  assert.equal(milestones[0].title, 'Real one');
+});
+
+test('more milestones than the cap are ignored, not crammed in', () => {
+  const many = Array.from({ length: 9 }, (_, index) => `MILESTONE: ${index}\nA step | a check`).join('\n');
+  assert.equal(parseMilestones(many).length, 4);
 });

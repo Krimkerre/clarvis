@@ -8,7 +8,7 @@ import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
 import { PlanningIO } from './PlanningIO';
 import { handoffTask } from './handoff';
-import { MilestoneStep } from './milestonePrompt';
+import { Milestone } from './milestonePrompt';
 import { phrase } from '../personality/Voice';
 
 /**
@@ -113,13 +113,13 @@ export async function runPlanning(
   // The accepted findings go in with them: a fix the user just agreed to is part of
   // building, not a note beside it. The model decides which are work and which are
   // only questions — folding all of them in is what emptied milestone one before.
-  const steps =
+  const milestones =
     readyToDraft(state) && !noPlanNeeded
       ? await planMilestone(models, state, log, verdicts.filter((verdict) => verdict.status !== 'rejected'))
       : [];
 
   const approved = readyToDraft(state) && !noPlanNeeded
-    ? await draftAndApprovePlan(state, seed, verdicts, steps, io, lines, log)
+    ? await draftAndApprovePlan(state, seed, verdicts, milestones, io, lines, log)
     : false;
 
   // Logged, not just shown. An untitled document exists only until the tab closes or
@@ -140,7 +140,7 @@ export async function runPlanning(
   // one is right there, and making the user restate it as a fresh request would be
   // the seam §0's two-mode discipline exists to make invisible. Still asked — the
   // sign-off gate is on writing the plan, and starting to build is its own decision.
-  if (approved && startBuild) await offerToBuild(state, seed, verdicts, steps, io, log, startBuild);
+  if (approved && startBuild) await offerToBuild(state, seed, verdicts, milestones, io, log, startBuild);
 }
 
 /**
@@ -154,12 +154,20 @@ async function offerToBuild(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
-  steps: MilestoneStep[],
+  milestones: Milestone[],
   io: PlanningIO,
   log: (message: string) => void,
   startBuild: StartBuild
 ): Promise<void> {
-  const task = handoffTask(state, seed, verdicts, steps);
+  // Milestone one, and only milestone one: the rest of the plan is written down and
+  // waiting, and starting the next is its own decision after this one lands.
+  const first = milestones[0];
+  const task = handoffTask(
+    state,
+    seed,
+    verdicts,
+    first ? { current: first, number: 1, total: milestones.length } : undefined
+  );
 
   const choice = await io.confirm(
     await phrase('ask', 'Plan approved. Shall I go and build the first milestone, then?', []),
@@ -185,7 +193,7 @@ async function offerToBuild(
   }
 
   log(`planning: handing milestone 1 to the agent\n${finalTask}`);
-  await startBuild(finalTask, steps.map((step) => step.step));
+  await startBuild(finalTask, first ? first.steps.map((step) => step.step) : []);
 }
 
 /** What was established and what is still open, as the summary document's lines. */
@@ -231,7 +239,7 @@ async function draftAndApprovePlan(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
-  steps: MilestoneStep[],
+  milestones: Milestone[],
   io: PlanningIO,
   lines: PlanningLines,
   log: (message: string) => void
@@ -242,7 +250,7 @@ async function draftAndApprovePlan(
   const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
   let firstDraft = true;
   for (;;) {
-    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts, steps });
+    const planText = renderPlan({ projectName: state.projectName, seed, state, verdicts, milestones });
     await io.showDocument(planText);
 
     if (firstDraft) {

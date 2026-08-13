@@ -199,6 +199,20 @@ export class ChatService {
   }
 
   /**
+   * Starts the next milestone from an approved plan.
+   *
+   * Same run path as the first one — step approval on, progress showing, the pause
+   * afterwards — because nothing about the second milestone is special except which
+   * part of the plan it is building.
+   */
+  async startNextMilestone(task: string, steps: string[]): Promise<void> {
+    await this.actions.setMode('agent');
+    this.runs.setStepApproval(true);
+    this.runs.setFromPlan(true, steps);
+    await this.runs.run(task, 'Right — on to the next one.');
+  }
+
+  /**
    * Whether planning consumed this message — either as an answer to a question it
    * asked, or as the reply to the offer to start.
    */

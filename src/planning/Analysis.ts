@@ -1,7 +1,7 @@
 import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
 import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResult } from './analysisPrompt';
-import { MilestoneStep, milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
+import { Milestone, milestonePrompt, parseMilestones } from './milestonePrompt';
 import { FindingVerdict } from './verdictSummary';
 
 /**
@@ -76,7 +76,7 @@ export async function planMilestone(
   log: (message: string) => void,
   /** Findings the user accepted or rewrote — the actionable ones become steps. */
   accepted: FindingVerdict[] = []
-): Promise<MilestoneStep[]> {
+): Promise<Milestone[]> {
   if (!(await models.isReady('chat'))) {
     log('planning: milestone — no model configured, no steps written');
     return [];
@@ -96,10 +96,15 @@ export async function planMilestone(
 
     await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, ANALYSIS_TIMEOUT_MS))]);
 
-    const steps = parseMilestoneSteps(text);
-    log(`planning: milestone — ${steps.length} step(s)`);
-    for (const step of steps) log(`planning: milestone step — ${step.step}${step.check ? ` (check: ${step.check})` : ' (no check given)'}`);
-    return steps;
+    const milestones = parseMilestones(text);
+    log(`planning: ${milestones.length} milestone(s) planned`);
+    for (const [index, milestone] of milestones.entries()) {
+      log(`planning: milestone ${index + 1} — ${milestone.title} (${milestone.steps.length} step(s))`);
+      for (const step of milestone.steps) {
+        log(`planning:   step — ${step.step}${step.check ? ` (check: ${step.check})` : ' (no check given)'}`);
+      }
+    }
+    return milestones;
   } catch (error) {
     log(`planning: milestone failed (${String(error)})`);
     return [];

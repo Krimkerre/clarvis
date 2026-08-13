@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { analysisSystemPrompt } from './analysisPrompt';
-import { markSteps, milestoneComplete } from './planUpdate';
+import { markSteps, milestoneComplete, nextMilestone } from './planUpdate';
 import { MAX_RESPONSE_CHARS, parseStepResults, recordMilestonePrompt, TIMEOUT_MS } from './milestoneReport';
 
 /**
@@ -84,9 +84,17 @@ export async function recordMilestone(
       log(`planning: step "${result.step}" — ${result.done ? 'done' : 'not done'}${result.result ? ` — ${result.result}` : ''}`);
     }
 
-    return milestoneComplete(updated)
-      ? `plan.md updated — every step in this milestone is now ticked off.`
-      : `plan.md updated — ${done} of ${results.length} step(s) ticked off.`;
+    if (milestoneComplete(updated)) return 'plan.md updated — every milestone in the plan is now ticked off.';
+
+    // **Where to go next, read back out of the file.** The plan is the source of
+    // truth rather than anything held in memory: a build resumed next week in a new
+    // window has nothing else to consult, and the user may have ticked something off
+    // by hand in the meantime, which is their document's prerogative.
+    const next = nextMilestone(updated);
+    const ticked = `plan.md updated — ${done} of ${results.length} step(s) ticked off.`;
+    return next && next.done === 0
+      ? `${ticked} Next up: milestone ${next.number} — ${next.title}.`
+      : ticked;
   } catch (error) {
     log(`planning: recording the milestone failed (${String(error)})`);
     return undefined;

@@ -15,9 +15,18 @@ import { FindingVerdict } from './verdictSummary';
  * apart from the work rather than mixed into it.
  */
 
-/** Enough to be a real first milestone, few enough to be finished. */
-const MIN_STEPS = 3;
+/** Enough to be a real milestone, few enough to be finished. */
+const MIN_STEPS = 2;
 const MAX_STEPS = 6;
+
+/**
+ * Enough milestones to show where the project is going, few enough to be honest.
+ *
+ * Past three or four, a plan written before any code exists is guessing — and a
+ * guess in a checklist is indistinguishable from a decision. The later ones are
+ * deliberately allowed to be coarse; they get rewritten as the earlier ones land.
+ */
+const MAX_MILESTONES = 4;
 
 export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[] = []): string {
   // The user's own wording wins for a modified finding, same rule as everywhere else.
@@ -49,8 +58,13 @@ export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[
           '',
         ]
       : []),
-    `Write the build steps for milestone one — ${MIN_STEPS} to ${MAX_STEPS} of them, in the order`,
-    'they should be done.',
+    `Break the work into up to ${MAX_MILESTONES} milestones, in the order they should be built.`,
+    'Milestone one is the smallest thing that runs end to end and is worth showing',
+    'someone. Each one after it adds something they asked for, and each is worth',
+    `stopping at. Give each ${MIN_STEPS} to ${MAX_STEPS} steps.`,
+    '',
+    'Only what was actually described above. Do not invent a milestone for tests,',
+    'packaging, deployment or documentation unless they asked for it.',
     '',
     'Each step is a piece of work someone can actually do and then check off — "Create',
     'the CLI entry point that takes a filename argument", not "Decide how the CLI',
@@ -67,9 +81,13 @@ export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[
     'it should print, or a specific thing to do and what should happen. Concrete enough',
     'that someone else could run it and agree. Not "verify it works".',
     '',
-    'Output one step per line, in exactly this format and nothing else — no numbering,',
-    'no markdown:',
+    'Output nothing but the milestones and their steps, in exactly this shape — no',
+    'numbering, no markdown, no blank-line rules to interpret:',
+    'MILESTONE: what this one delivers, in a few words',
     'The step | the check that proves it works',
+    'The next step | its check',
+    'MILESTONE: what the next one delivers',
+    'Its first step | its check',
   ].join('\n');
 }
 
@@ -78,6 +96,12 @@ export interface MilestoneStep {
   step: string;
   /** How to know it worked. Absent when the model gave no check for this one. */
   check?: string;
+}
+
+/** One milestone: what it delivers, and the steps that get there. */
+export interface Milestone {
+  title: string;
+  steps: MilestoneStep[];
 }
 
 /**
@@ -102,4 +126,40 @@ export function parseMilestoneSteps(text: string): MilestoneStep[] {
     })
     .filter((parsed) => parsed.step.length > 0)
     .slice(0, MAX_STEPS);
+}
+
+/**
+ * Parses the model's milestones and their steps.
+ *
+ * **Steps before the first `MILESTONE:` line are kept, under a milestone of their
+ * own.** A model that ignores the header and returns a flat list has still done the
+ * useful part of the work, and throwing that away to punish a formatting mistake
+ * would leave the plan empty — which is the failure this whole section exists to
+ * prevent.
+ */
+export function parseMilestones(text: string): Milestone[] {
+  const milestones: Milestone[] = [];
+  let current: Milestone | undefined;
+
+  for (const raw of text.split('\n')) {
+    const line = raw.trim().replace(/^(\d+[.)]|[-*+])\s*/, '').trim();
+    if (!line) continue;
+
+    const header = /^#*\s*MILESTONE:\s*(.+)$/i.exec(line);
+    if (header) {
+      if (milestones.length >= MAX_MILESTONES) break;
+      current = { title: header[1].trim().replace(/[*_`]/g, ''), steps: [] };
+      milestones.push(current);
+      continue;
+    }
+
+    if (!current) {
+      current = { title: 'v1', steps: [] };
+      milestones.push(current);
+    }
+    if (current.steps.length >= MAX_STEPS) continue;
+    current.steps.push(...parseMilestoneSteps(line));
+  }
+
+  return milestones.filter((milestone) => milestone.steps.length > 0);
 }

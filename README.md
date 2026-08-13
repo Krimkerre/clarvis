@@ -50,14 +50,24 @@ still on the roadmap (§ Progress).
 
 <img src="media/mockup-planning.png" alt="Mockup of Clarvis in plan mode: the user says 'a maps app', Clarvis points out there are already four of those owned by companies with satellites and asks what makes this one worth existing. The user says 'surprise me', and Clarvis proposes Dead Reckoning — a maps app that routes you almost correctly so you learn the city — with Accept, Reject and Modify buttons and a note that it stays off near hospitals or on low battery." width="100%">
 
-*Mockup* — the other half of the product, before any code exists. You give it a
-sentence; it asks the questions that actually change the plan, records "no idea" as an
-open question rather than inventing an answer, and tells you what's wrong with your idea
-— safety problems, logic holes, scope that will balloon. Say "surprise me" and it will,
-in fact, surprise you. Every finding is yours to accept, reject, or modify, and your
-rejections are recorded *with your reasoning* so nothing gets re-litigated. `plan.md`
-fills in as you go, and nothing is built until you press Approve. Animated version:
+*Mockup of the eventual chat-panel version* — the questions, the pushback and the
+Accept/Reject/Modify findings shown here are real and working today (M9, below), just
+through `Clarvis: Plan This Project` rather than the chat panel yet. Animated version:
 [`media/mockup-planning.html`](./media/mockup-planning.html).
+
+**What actually runs today.** Give it one sentence — or say you don't know and it'll
+suggest a few, at least a couple of them genuinely funny. It reads the workspace first
+(an existing `package.json`, a git repo, a README) so questions are grounded in what's
+actually there. It asks in batches, never a 30-question interrogation, and "I don't know
+yet" is recorded as an honest open question rather than argued with — but a *vague*
+answer gets pushed back on once, with one specific follow-up, before it's accepted as
+given. Language gets a real shortlist — 2-4 options, each with one genuine advantage and
+one genuine cost, "you pick" a first-class answer with its own one-line reason, never a
+list where everything looks good. Once there's enough to draft, it analyses the whole
+thing for safety problems, logic contradictions and scope creep — findings you accept,
+reject (with your reasoning recorded, so it isn't re-litigated next time), or modify in
+your own words. Then it drafts `plan.md`, shows it to you, and lets you keep adding
+notes and redrawing until you explicitly approve — nothing is written until you do.
 
 ## What it does
 
@@ -81,12 +91,17 @@ fills in as you go, and nothing is built until you press Approve. Animated versi
 
 **On request (the primary interactive surface):**
 - **Project planning** — arrive with one sentence ("a CLI that renames photos by EXIF
-  date"). Clarvis asks the questions that actually shape the plan, then reports what he
-  found wrong with the idea: safety problems, logic contradictions, scope that will
-  balloon, and genuine suggestions. You rule on every finding — and your rejections are
-  recorded *with your reasoning*, so nothing gets re-litigated later. The result is a
-  `plan.md` with real milestones and exit checklists. Approve it, and the agent starts
-  building against it.
+  date"), or with nothing at all: say you don't know and he'll suggest a few, at least
+  two of them genuinely funny. He reads what's already in the folder before asking
+  anything, so the questions are about *this* project rather than a blank slate. Answer
+  vaguely and he pushes back — **once** — with one specific follow-up, then writes the
+  pair up as a single coherent line. "I don't know yet" is recorded as an open question
+  rather than argued with. Then he reports what's wrong with the idea: safety problems,
+  logic contradictions, scope that will balloon. You rule on every finding, and your
+  rejections are recorded *with your reasoning*, so nothing gets re-litigated later.
+  The result is a `plan.md` with **real build steps** — work you can do and tick off,
+  not a list of things still to decide. Approve it and the agent starts building
+  against it, showing you the handoff prompt first.
 - **Chat** — the assistant you talk to in this window, replacing the default chat
   panel: avatar on top, conversation below, prompt at the bottom. **Answers from its own
   watch/memory state need no key, no network and no tokens** — "what's broken?", "what
@@ -306,8 +321,22 @@ the full per-milestone build notes and exit criteria.
       `Clarvis: Debug — Voice Check` now reads his lines back through the real prompts
       before a change ships. *(Full notes, including the deviations from spec and why,
       are in `plan.md`.)*
-- [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
-      `plan.md` → sign-off → hand milestone one to the agent.)*
+- [ ] **M9 — Project Planning.** *In progress, and usable end to end — the front door:
+      interview → analysis → `plan.md` → sign-off → the agent builds it.* It runs **in
+      the chat panel**: questions arrive in the transcript, spoken, with the options as
+      clickable buttons carrying their own explanations; typing a number or the name
+      still works. Say yes to the offer on a project with no `plan.md`, or `/plan`.
+      He reads the workspace before asking anything, offers ideas when you don't know
+      what to build, suggests names and reacts to the one you pick, and **pushes back
+      once** on an answer that is vague or hides a risk — then folds the follow-up into
+      one coherent sentence rather than a transcript. Analysis reports safety, logic and
+      scope problems you rule on individually. The draft opens in the editor as rendered
+      markdown while the approval question stays in the conversation, and nothing is
+      written until you approve it. Then milestone one — **real build steps**, not a
+      list of things to decide — is handed to the agent, shown and editable first.
+      *Not built:* per-language clean-code conventions in the generated plan, ticking
+      checklist items off in `plan.md` as the agent completes them, and resuming an
+      interview after a reload.
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
       people learning to program on a real project of their own. Opt-in per project,

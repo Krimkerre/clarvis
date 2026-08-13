@@ -23,28 +23,28 @@ export const MODES: ModeSpec[] = [
     id: 'auto',
     label: 'Auto',
     short: 'Auto',
-    detail: 'I decide: questions get answered, jobs get done. Ambiguity gets answered.',
+    detail: 'I decide: questions get answered, jobs get done, and I get on with it without asking at each step.',
     canEdit: true,
   },
   {
     id: 'chat',
     label: 'Chat only',
     short: 'Chat',
-    detail: 'Answer and read the project. I will not change a thing, whatever you ask.',
+    detail: 'Answer, read the project, or talk about anything else. I will not change a thing, whatever you ask.',
     canEdit: false,
   },
   {
     id: 'plan',
     label: 'Plan only',
     short: 'Plan',
-    detail: 'Work out what to do and write it down. Still no edits — the plan is the output.',
+    detail: 'Work out what to do and write it down. No edits, and no wandering off the project — the plan is the output.',
     canEdit: false,
   },
   {
     id: 'agent',
     label: 'Agent',
     short: 'Agent',
-    detail: 'Treat everything as a job. Skips the guessing when you already know what you want.',
+    detail: 'Treat everything as a job — and check with you before each step that changes anything.',
     canEdit: true,
   },
 ];
@@ -66,4 +66,11 @@ export function canEdit(id: string): boolean {
  * no acting available, which is what makes it restful to use.
  */
 export const PLAN_ADDENDUM =
-  ' The user has put you in plan mode. Work out what would need to change and describe it: which files, what edits, in what order, and what could go wrong. Do not ask to proceed — you cannot, and offering would be theatre. End with the smallest first step.';
+  ' The user has put you in plan mode. Work out what would need to change and describe it: which files, what edits, in what order, and what could go wrong. Do not ask to proceed — you cannot, and offering would be theatre. End with the smallest first step.' +
+  // **The one mode that stays on the subject.** Chat mode was deliberately loosened
+  // to hold an ordinary conversation, which is right for chat and wrong here: plan
+  // mode is a working session with an output, and a digression into how closures work
+  // in the middle of one is the thing that loses the thread. Said plainly rather than
+  // enforced in code — this is about attention, not permission, and there is nothing
+  // to prevent.
+  ' Stay on this project. Unlike ordinary chat, this is a working session with a plan at the end of it: if they ask about something unrelated, answer in a sentence and bring it back to what you are both here to work out.';

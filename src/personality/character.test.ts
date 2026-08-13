@@ -60,7 +60,11 @@ test('the answer shape requires a line of his own, rather than banning things', 
   // away the way a tone preference can.
   assert.match(ANSWER_SHAPE, /Part 2 is required/);
   assert.match(ANSWER_SHAPE, /An opinion, a jab at the situation/);
-  assert.match(ANSWER_SHAPE, /Two sentences at most/);
+  assert.match(ANSWER_SHAPE, /Two sentences at most when it is about their project/);
+  // A question about anything else is not a project question wearing a disguise, and
+  // amputating a real answer to hit a length made him useless for the other half of
+  // what people actually ask.
+  assert.match(ANSWER_SHAPE, /whatever room it actually needs/);
 });
 
 test('the examples are marked as a register rather than a script', () => {
@@ -92,7 +96,10 @@ test('the fact-free surfaces are told they have no facts', () => {
   // Pressing Stop during a run rewrote the word "Stopped." and, under a standing order
   // to be specific with nothing to be specific about, produced a test suite failing on
   // a branch that does not exist for a number of days nothing measures.
-  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /no facts about this project/);
+  // Phrased as a closed set rather than "nothing appears above": on the briefing, the
+  // facts arrive in the user turn, so "above" described an empty system prompt and the
+  // rule read as false — taking everything attached to it down with it.
+  assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /except what you have been explicitly told/);
   assert.match(ONLY_WHAT_YOU_WERE_GIVEN, /not as detail, not as colour, not as a guess/);
 });
 

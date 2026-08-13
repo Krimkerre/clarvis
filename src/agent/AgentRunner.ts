@@ -2,7 +2,8 @@ import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
-import { isLookingAround, narrateTool } from './toolNarration';
+import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
+import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
 import { phrase } from '../personality/Voice';
 import { approveLabel, classifyCommand, explainGate } from './Gate';
@@ -82,8 +83,40 @@ export class AgentRunner {
     private readonly root: string | undefined,
     private readonly models: ModelService,
     private readonly terminal: AgentTerminal,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /**
+     * Asked before every step that acts, when the caller wants it (Agent mode).
+     *
+     * Absent in Auto, which is the mode whose whole proposition is deciding for
+     * itself — a mode that asked before each step would be Agent with extra words.
+     * Absent for read-only calls in every mode: approving a file *read* six times
+     * teaches people to click yes without reading, which is worse than not asking.
+     */
+    private readonly approveStep?: (description: string, detail: string) => Promise<boolean>
   ) {}
+
+  /**
+   * Things said while the run is going, waiting to be handed to the model.
+   *
+   * A queue rather than a single slot: three sentences typed in quick succession are
+   * three separate messages to VS Code, and dropping two of them would be worse than
+   * useless — the user would have no way to know which survived.
+   */
+  private interjections: string[] = [];
+
+  /** Adds something the user said mid-run. Delivered before the next model call. */
+  interject(text: string): void {
+    this.interjections.push(text);
+  }
+
+  /** Everything said since the last turn, as one block. Empties the queue. */
+  private takeInterjections(): string {
+    if (this.interjections.length === 0) return '';
+
+    const said = this.interjections.splice(0);
+    this.log(`agent: redirected mid-run — ${said.join(' / ')}`);
+    return interjectionMessage(said);
+  }
 
   /**
    * Logs an event, then hands it on.
@@ -217,9 +250,18 @@ export class AgentRunner {
       this.tidied = await branch.discardIfEmpty();
     }
 
+    // **What he actually said, in the conversation.** Narration went to the terminal
+    // only, and the chat got the branch note — so a run that ended by asking four
+    // questions ("Suggestions shown as a preview, or applied straight away?") put
+    // them where nobody was looking, and the panel showed a line about branches.
+    // Questions the agent needs answered are the whole point of it asking.
+    const closing = this.closingNote(branch);
+    const said = [narration.trim(), closing].filter(Boolean).join('\n\n');
+    if (!readOnly) this.log(`agent: finished with ${narration.trim() ? 'a message' : 'nothing to say'}`);
+
     return {
       kind: 'done',
-      text: readOnly ? '' : this.closingNote(branch),
+      text: readOnly ? '' : said,
       files: [...this.touched],
     };
   }
@@ -289,8 +331,32 @@ export class AgentRunner {
         text: isToolName(call.name) ? narrateTool(call.name, args) : `Asking for ${call.name}`,
         detail: describe(call),
         quiet: isToolName(call.name) && isLookingAround(call.name, args),
+        // **Edits are said out loud; looking around is not.** "Nothing technical
+        // reaches the chat" is about tool calls and command output, not about the
+        // one thing the user most wants narrated — which file is being changed, as
+        // it changes. Reads, searches and `git status` stay in the terminal, or the
+        // transcript becomes the log it was split away from.
+        toChat: isToolName(call.name) && changesAFile(call.name),
         step: this.steps,
       });
+
+      // **Asked before it happens, not reported after.** The narration above says
+      // what is about to be done; this is where the user gets to say no to it. The
+      // deny-list gate (below, in `runCommand`) is a different thing and stays: that
+      // one fires on what is dangerous, this one on what is about to change
+      // anything at all.
+      const acting = isToolName(call.name) && !isLookingAround(call.name, args);
+      if (this.approveStep && acting) {
+        const description = isToolName(call.name) ? narrateTool(call.name, args) : call.name;
+        const approved = await this.approveStep(description, describe(call));
+        if (!approved) {
+          this.log(`agent [declined] ${description}`);
+          const declined = 'The user declined that step. Do not retry it — find another way, or stop and say what you would have done.';
+          results.push({ id: call.id, content: declined, isError: true });
+          yield this.record({ kind: 'gate', text: `Skipped: ${description}`, toChat: true });
+          continue;
+        }
+      }
 
       const result = await this.dispatch(call, checkpoint, signal);
       results.push(result);
@@ -364,13 +430,26 @@ export class AgentRunner {
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
+        // **Why it stopped, in the log.** A run that ended after two reads with an
+        // empty summary left nothing to diagnose from — found live, and the closing
+        // line then invented a conclusion to fill the silence. Narration is what the
+        // model said for itself before deciding it was done.
+        this.log(
+          `agent: model stopped after ${this.steps} step(s), ${this.touched.size} file(s) touched — said: ${JSON.stringify(narration.trim() || '(nothing)')}`
+        );
         yield this.record(await this.completed(branch, task, narration, options.readOnly));
         return;
       }
 
       messages.push({ role: 'assistant', content: narration, toolCalls: calls });
       const results = yield* this.runCalls(calls, checkpoint, signal);
-      messages.push({ role: 'user', content: '', toolResults: results });
+
+      // **Anything said mid-run rides in with the tool results.** Stopping and
+      // restarting would throw away everything read so far and make "no, use the
+      // other library" cost a whole run; this arrives as the next thing in the
+      // conversation, which is what it is.
+      const redirect = this.takeInterjections();
+      messages.push({ role: 'user', content: redirect, toolResults: results });
     }
 
     // The cap is a stop-and-ask, not a failure: a long task is not a wrong one, but a
@@ -586,7 +665,14 @@ export function agentSystemPrompt(readOnly = false): string {
       return characterWith(
         'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
-        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.'
+        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
+        // **Not every question is about the project.** Told only about the codebase and
+        // handed a set of tools, the model treated "how do closures work" as something
+        // to answer by grepping — or deflected to what it could see. The person in the
+        // room asks about other things, and a butler who can only discuss the house is
+        // a worse butler.
+        'Not everything asked of you is about this project. Questions about how something works, opinions, or plain conversation are yours to answer from what you know — directly, without reaching for a tool to look something up in a codebase that has nothing to do with it.',
+        'Answer those as fully as they deserve. You are still yourself doing it: an opinion beats a survey, and you are not a reference manual.'
       );
     }
 

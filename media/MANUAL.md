@@ -29,6 +29,7 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 | Command | What it does |
 |---|---|
 | `/help` | Opens this manual |
+| `/plan` | Plan a project — the interview, then a `plan.md` |
 | `/voice` | Choose the voice |
 | `/engine` | Choose the speech engine |
 | `/key` | Set your Fish Audio key |
@@ -47,8 +48,8 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 "open the settings" all do the obvious thing. Asking a *question* — "what voice are you
 using?" — gets you an answer instead of a dialog, which is usually what you wanted.
 
-**The buttons above the prompt** do the most common things: **History**, **Clear**,
-**Mute**, and the mode toggle.
+**The buttons above the prompt** do the most common things: **Output** (every command
+and tool call, as it runs), **History**, **Clear**, **Mute**, and the mode toggle.
 
 **Stopping him.** Click the small square **Stop** in the prompt row, or type `stop` and
 press enter. Both do the same thing: he finishes the step he is on and puts the tools
@@ -63,6 +64,70 @@ failed and brings it up at launch, which is right for a test you mean to fix and
 for a probe or a deliberately red suite — those never clear themselves, because the
 record only clears when *that same job succeeds*. Say `forget about the failing build`,
 or `/forget`, and it is gone.
+
+---
+
+## Starting a project
+
+Open a project with no `plan.md` and he'll offer, out loud, with **Yes** and **No**
+buttons. Say yes — or type `/plan` whenever you want. It all happens in the chat
+panel: he asks, you answer in the box, and the options appear as buttons you can
+click instead of type.
+
+**If you don't know what to build**, say so. He'll suggest four ideas, at least two
+of them genuinely funny, and one of those becomes the starting point. Same at the
+name question: eight candidates, three with his own sense of humour, and he'll say
+the one you pick back to you with a remark about it.
+
+**He reads the folder first** — an existing `package.json`, a git repo, a README —
+so the questions are about *this* project rather than a blank slate.
+
+**Vague answers get pushed back on.** Once, with one specific follow-up: "it takes
+everything into account" earns "such as what, specifically?" rather than a shrug.
+Answer it and the two get written up as one sentence; leave it blank and your first
+answer stands. `I don't know yet` is a real answer throughout — it becomes a recorded
+open question, never an argument.
+
+**The language question is a real shortlist**: 2–4 options, each with one genuine
+advantage and one genuine cost, never a list where everything looks good. Say
+`You pick` and he will, with a reason — and a remark about the trade you just made.
+
+**Then he tells you what's wrong with it.** Safety problems, logic contradictions,
+scope quietly bigger than you described. Each finding is yours to **Accept**,
+**Reject** (say why — it's recorded, not dropped) or **Modify** (your words replace
+his).
+
+**The draft opens in the editor**, rendered rather than raw, while the approval
+question stays in the chat. Add anything missing and he redraws; nothing is written
+to disk until you choose **Approve**. If a `plan.md` already exists he asks whether
+to keep it *before* the interview starts, rather than wasting your time and telling
+you at the end.
+
+**Then he builds it.** Milestone one is real build steps — work you can tick off, not
+things still to decide — and he shows you the exact task before it runs, editable, with
+**Not Yet** a perfectly good answer. Approving switches to **Agent** mode, where he
+describes each step that changes anything and waits for a yes. Files open as he writes
+them and the editor jumps to what changed. If he needs something decided mid-build he
+stops and asks in the chat, and your answer carries on the same task rather than
+starting a new one.
+
+**Ask for something new mid-build and he stops.** A correction — "use pytest
+instead", "call it something else" — gets folded into the run as you'd expect. But
+something the plan does not cover, like "it should also email me the results", is new
+scope: he stops, says so, and offers to write it into `plan.md` first, either as
+steps on the current milestone or as a milestone of its own. That is §0's rule, and
+the point of it is that a plan approved on Monday still describes the project on
+Thursday.
+
+**Nothing is lost to a reload.** An interview is saved after every answer, so closing
+the window mid-question costs nothing — the next time you plan, he offers to carry on
+from where you stopped, throw it away and start fresh, or leave it for now. Same for a
+build: if a milestone was part-way through, he offers to pick it up when the window
+opens. Both read from what was actually saved, so they survive a restart, a new
+machine, and you ticking something off in `plan.md` by hand.
+
+*Still ahead: clean-code conventions written into the generated plan in the project's*
+*own language.*
 
 ---
 
@@ -175,10 +240,23 @@ can get around it.
 
 | Mode | He can | Use it when |
 |---|---|---|
-| **Plan** | Read, and describe what he *would* change | You want the plan before the work |
-| **Chat** | Read and answer | You are asking, not asking for |
-| **Agent** | Read, edit, run commands | You want the work done |
-| **Auto** | Decides per message | Most of the time |
+| **Plan** | Read, and describe what he *would* change — staying on the project | You want the plan before the work |
+| **Chat** | Read, answer, and talk about anything else | You are asking, not asking for |
+| **Agent** | Read, edit, run commands — asking before each step that changes anything | You want the work done, and want to see it coming |
+| **Auto** | Decides per message, and gets on with it | Most of the time |
+
+**Chat wanders, Plan does not.** In Chat he'll answer a question about anything —
+how something works, an opinion, ordinary conversation — because an assistant that
+can only discuss your codebase is a worse assistant. Plan mode is the opposite on
+purpose: it is a working session with a document at the end of it, so he answers a
+digression in a sentence and brings it back. **Starting an interview switches to Plan
+by itself**, and switches back when it finishes.
+
+**Agent asks, Auto acts.** That is the whole difference between the two now: in Agent
+mode he describes each step that would change something and waits for a yes, and
+"Skip this step" keeps the run going — he is told what you refused and finds another
+way. Reading files is never gated in either mode; approving a file *read* six times
+teaches you to click yes without looking, which is worse than not asking.
 
 **Ask for work in a read-only mode and he says so**, naming the mode and what to switch
 to, then answers the question anyway. Before, he would answer and mention in passing
@@ -333,6 +411,8 @@ outright.
 ## Not built yet
 
 Clarvis is under construction, and this manual describes what exists today. The agent
-that does the work is built — that list used to say otherwise. Still to come: **project
-planning** from a one-sentence idea, **voice input**, and **Tutor Mode** for people
-learning to program. See the README for progress.
+and **project planning** (above) both work end to end — that list used to say
+otherwise, twice. Still to come from planning: clean-code conventions written into the
+generated plan in the project's own language, and ticking checklist items off in
+`plan.md` as he finishes them. Also still to come: **voice input**, and **Tutor Mode**
+for people learning to program. See the README for progress.

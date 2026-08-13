@@ -228,10 +228,23 @@ export function briefingPrompt(facts: BriefingFacts): string | undefined {
   return [
     'Brief the user on where they left off. This is the first thing they hear on opening the editor.',
     'Rules: at most four short sentences. Open in character, matched to the mood of the facts —',
-    'never cheerful about a failure. State only what is listed below; invent nothing.',
+    'never cheerful about a failure.',
     'No greeting for its own sake, no offers of help, no questions.',
     '',
     'What you observed:',
     ...observed.map((line) => `- ${line}`),
+    '',
+    // **The closed-list rule has to sit with the list.** It lived in the system prompt
+    // as ONLY_WHAT_YOU_WERE_GIVEN — "no facts beyond what appears above" — while the
+    // facts arrived in the user turn, so the rule read as plainly false and was
+    // discarded with everything attached to it. Found live: a briefing that invented a
+    // failing `npm run build`, a branch called main, and "47 passing tests and 3
+    // failing ones, all in the auth module", in a workspace with no tests and no git.
+    'That list is complete. It is everything you observed — there is nothing else.',
+    'You do not know the branch, the commits, whether anything builds, whether any test',
+    'passes or fails, how many there are, or what any of the code does. Do not mention',
+    'any of those, not as detail and not as colour. A number you were not given above is',
+    'a number you invented.',
+    'Brief them on the lines above and nothing else.',
   ].join('\n');
 }

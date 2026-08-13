@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MODES, modeSpec, canEdit } from './modes';
+import { MODES, modeSpec, canEdit, PLAN_ADDENDUM } from './modes';
 import { isStopRequest } from './chatCommands';
 import { chatAction, forgetTarget } from './chatCommands';
 
@@ -86,4 +86,12 @@ test('a forget with no subject names nothing rather than guessing', () => {
   for (const vague of ['forget the failing build', 'forget about it', 'ignore that failure', '/forget']) {
     assert.equal(forgetTarget(vague), undefined, vague);
   }
+});
+
+test('plan mode stays on the project, where chat mode no longer has to', () => {
+  // Chat was deliberately loosened to hold an ordinary conversation. Plan is a
+  // working session with an output, and a digression in the middle of one is what
+  // loses the thread — so the two modes want opposite things from the same model.
+  assert.match(PLAN_ADDENDUM, /Stay on this project/);
+  assert.match(PLAN_ADDENDUM, /bring it back to what you are both here to work out/);
 });

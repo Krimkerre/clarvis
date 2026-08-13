@@ -97,6 +97,17 @@ const COMMAND_PHRASES: { pattern: RegExp; said: string }[] = [
  * Used to collapse a run of them into one line. Nine "Reading x" lines describe the
  * machinery; "Having a look at the project" describes what is happening.
  */
+/**
+ * Whether this call changes a file, as opposed to reading or running something.
+ *
+ * The two file-writing tools, named rather than derived: a new tool that edits
+ * should have to say so here, and a rule inferred from the name would quietly
+ * include the next thing called `writeSomething`.
+ */
+export function changesAFile(name: ToolName): boolean {
+  return name === 'applyEdit' || name === 'writeFile';
+}
+
 export function isLookingAround(name: ToolName, args: Record<string, unknown>): boolean {
   if (name === 'runCommand') {
     const command = typeof args.command === 'string' ? args.command.trim() : '';

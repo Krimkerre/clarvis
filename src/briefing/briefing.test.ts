@@ -230,8 +230,22 @@ test('the briefing prompt carries the facts and the rules', () => {
   assert.match(prompt, /checkout\.ts/);
   assert.match(prompt, /ECONNREFUSED/);
   assert.match(prompt, /four short sentences/);
-  assert.match(prompt, /invent nothing/);
   assert.match(prompt, /never cheerful about a failure/);
+});
+
+test('the closed-list rule sits with the facts, and names what is not known', () => {
+  // Found live: the rule lived in the system prompt as "no facts beyond what appears
+  // above" while the facts arrived in the user turn — plainly false as written, and
+  // discarded along with everything attached to it. The briefing then invented a
+  // failing `npm run build`, a branch called main, and "47 passing tests and 3
+  // failing ones, all in the auth module", in a workspace with neither tests nor git.
+  const prompt = briefingPrompt({ recentFiles: ['/a/b/settings.json'] })!;
+
+  assert.match(prompt, /That list is complete/);
+  assert.match(prompt, /whether any test/);
+  assert.match(prompt, /a number you invented/);
+  // The rule has to come after the facts it closes off, or it describes an empty list.
+  assert.ok(prompt.indexOf('That list is complete') > prompt.indexOf('settings.json'));
 });
 
 test('nothing observed means no prompt, so silence stays silence', () => {
@@ -261,9 +275,26 @@ test("git's own scratch files are not the user's work", () => {
   assert.equal(isWorthRemembering('/p/node_modules/x/index.js'), false);
 });
 
+test("the editor's own settings are not the user's work either", () => {
+  // Reported live: a session where nothing was touched opened with "settings.json was
+  // the last thing you touched". Clarvis writes that file himself — changing the chat
+  // mode, enabling voice, storing an engine — and VS Code saves it like any other, so
+  // his paperwork came back as their work.
+  assert.equal(isWorthRemembering('/p/.vscode/settings.json'), false);
+  assert.equal(isWorthRemembering('/Users/x/Library/Application Support/Code/User/settings.json'), false);
+  assert.equal(isWorthRemembering('/p/.vscode/launch.json'), false);
+  assert.equal(isWorthRemembering('/Users/x/Library/Application Support/Code/User/keybindings.json'), false);
+  // Not a bare settings.json rule: a project shipping its own config of that name is
+  // the user's work, and excluding it trades one wrong answer for another.
+  assert.equal(isWorthRemembering('/p/config/settings.json'), true);
+});
+
 test('ordinary files are still remembered', () => {
   assert.equal(isWorthRemembering('/p/src/app.ts'), true);
   assert.equal(isWorthRemembering('/p/README.md'), true);
   // A file that merely mentions git in its name is the user's, not git's.
   assert.equal(isWorthRemembering('/p/src/gitStatus.ts'), true);
+  // A project that genuinely has its own settings.json — an app's config, not the
+  // editor's — is the user's work and stays.
+  assert.equal(isWorthRemembering('/p/src/config/appSettings.json'), true);
 });

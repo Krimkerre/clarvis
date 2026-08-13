@@ -467,15 +467,56 @@ async function askLanguage(
 
   if (picked === SOMETHING_ELSE) {
     const raw = await io.askText(await phrase('ask', 'What language?', []));
-    return raw === undefined ? undefined : toAnswer('language', raw);
+    if (raw === undefined) return undefined;
+    const answer = toAnswer('language', raw);
+    if (answer.text) await remarkOnLanguage(io, answer.text, state, log);
+    return answer;
   }
 
   if (picked === YOU_PICK) {
     const { name, reasoning } = await pickLanguageForUser(models, options, state, log);
+    await remarkOnLanguage(io, name, state, log, reasoning);
     return { topic: 'language', text: name, reasoning };
   }
 
+  await remarkOnLanguage(io, picked, state, log, options.find((option) => option.name === picked)?.cost);
   return { topic: 'language', text: picked };
+}
+
+/**
+ * Says something about the language that was just chosen.
+ *
+ * **The second moment in the interview with a real opinion available.** A language
+ * choice is a decision with consequences he has watched play out — which is exactly
+ * the "be specific about *this* project, using the facts you were handed" condition
+ * `character.ts` asks for, and the reason this is written fresh rather than drawn
+ * from a bank of jokes about Python.
+ *
+ * The cost he already named for that option is handed over as the thing to be dry
+ * about: it keeps the remark tied to something real rather than to a stereotype
+ * about the language, which is where a generic model reply would go.
+ */
+async function remarkOnLanguage(
+  io: PlanningIO,
+  language: string,
+  state: InterviewState,
+  log: (message: string) => void,
+  cost?: string
+): Promise<void> {
+  const line = await opening(
+    [
+      `They have chosen ${language} for this project.`,
+      `The project: ${state.answers.find((answer) => answer.topic === 'what-it-does')?.text ?? 'not yet described'}.`,
+      cost ? `The cost you named for it: ${cost}` : '',
+      `Say one dry line about that choice — the trade they have just made, not a stereotype about ${language}.`,
+    ]
+      .filter(Boolean)
+      .join(' '),
+    `${language} it is.`,
+    false
+  );
+  log(`planning: language — remarked: ${line}`);
+  await io.say(line);
 }
 
 /**

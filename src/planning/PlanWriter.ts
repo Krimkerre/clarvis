@@ -2,6 +2,7 @@ import { branchFlowSection } from '../agent/branchFlow';
 import { Answer, InterviewState, TopicId } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
 import { Milestone } from './milestonePrompt';
+import { conventionsSection, parseCommentStyle } from './conventions';
 
 /**
  * Renders a finished interview + its analysis verdicts into `plan.md` (M9d — §4.9).
@@ -113,6 +114,12 @@ export function renderPlan({ projectName, seed, state, verdicts, milestones = []
     section('## 5. Data', findAnswer(state, 'data')),
     '',
     section('## 6. Linter', findAnswer(state, 'linter')),
+    '',
+    // **The standard, not just the task list** (§4.9/M9d2). A plan that says how to
+    // work and nothing about how to write leaves the agent building in whatever
+    // style its model reaches for — which is the drift §0 exists to prevent, and
+    // generated projects were inheriting only half of it.
+    conventionsSection(answerText(state, 'language'), parseCommentStyle(answerText(state, 'comment-style'))),
     '',
     ...(state.notes && state.notes.length > 0 ? ['## Notes', '', ...state.notes.map((note) => `- ${note}`), ''] : []),
     '## 7. Milestones',

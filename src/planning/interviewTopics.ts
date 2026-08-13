@@ -19,7 +19,8 @@ export type TopicId =
   | 'data'
   | 'definition-of-done'
   | 'language'
-  | 'linter';
+  | 'linter'
+  | 'comment-style';
 
 /** One thing established, or explicitly left open. */
 export interface Answer {
@@ -85,7 +86,7 @@ function isSettled(state: InterviewState, topic: TopicId): boolean {
  */
 export function readyToDraft(state: InterviewState): boolean {
   const mustHave: TopicId[] = ['what-it-does', 'who-and-where', 'scope'];
-  return mustHave.every((topic) => isSettled(state, topic)) && isSettled(state, 'linter');
+  return mustHave.every((topic) => isSettled(state, topic)) && isSettled(state, 'linter') && isSettled(state, 'comment-style');
 }
 
 /**
@@ -116,6 +117,12 @@ export function nextTopic(state: InterviewState): TopicId | undefined {
   }
 
   if (!isSettled(state, 'linter')) return 'linter';
+
+  // **Asked in the same final round as the linter** (§4.9), and for the same reason:
+  // both are questions about how the code gets written rather than what it does, and
+  // asking either before the project has a shape reads as a style opinion about
+  // something that does not exist yet.
+  if (!isSettled(state, 'comment-style')) return 'comment-style';
 
   return undefined;
 }

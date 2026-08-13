@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
-import { isLookingAround, narrateTool } from './toolNarration';
+import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
 import { commitSubject } from './commitSubject';
 import { phrase } from '../personality/Voice';
 import { approveLabel, classifyCommand, explainGate } from './Gate';
@@ -289,6 +289,12 @@ export class AgentRunner {
         text: isToolName(call.name) ? narrateTool(call.name, args) : `Asking for ${call.name}`,
         detail: describe(call),
         quiet: isToolName(call.name) && isLookingAround(call.name, args),
+        // **Edits are said out loud; looking around is not.** "Nothing technical
+        // reaches the chat" is about tool calls and command output, not about the
+        // one thing the user most wants narrated — which file is being changed, as
+        // it changes. Reads, searches and `git status` stay in the terminal, or the
+        // transcript becomes the log it was split away from.
+        toChat: isToolName(call.name) && changesAFile(call.name),
         step: this.steps,
       });
 

@@ -205,6 +205,24 @@ export class ChatActions {
    * Deleting the record rather than muting the line: there is nothing to remember, and
    * a suppression list would be a second thing to explain and to forget about.
    */
+  /**
+   * Puts chat into a mode explicitly, without asking.
+   *
+   * Only for the plan-mode handoff, where the user has just approved a plan and
+   * pressed Start Building — that is an answer to "shall I build this", and leaving
+   * the mode wherever it happened to be would route the very next thing they say by
+   * a rule they did not choose. Written at the same scope the picker uses.
+   */
+  async setMode(mode: ChatMode): Promise<void> {
+    const config = vscode.workspace.getConfiguration('clarvis');
+    const scope =
+      config.inspect('chat.mode')?.workspaceValue !== undefined
+        ? vscode.ConfigurationTarget.Workspace
+        : vscode.ConfigurationTarget.Global;
+    await config.update('chat.mode', mode, scope);
+    this.postMode();
+  }
+
   private async forgetFailure(question: string): Promise<void> {
     const stored = parseRecord(this.context.workspaceState.get(FAILURE_KEY));
 

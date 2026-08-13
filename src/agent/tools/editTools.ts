@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 import { canonicalRelative, resolveInWorkspace } from './workspacePaths';
+import { firstChangedLine } from './firstChangedLine';
 import { EditPlan, planReplace, planWrite } from './editPlan';
 
 /**
@@ -133,7 +134,7 @@ async function commit(uri: vscode.Uri, current: string | undefined, plan: EditPl
   const document = await vscode.workspace.openTextDocument(uri);
   if (document.isDirty) await document.save();
 
-  await reveal(document);
+  await reveal(document, current === undefined ? 0 : firstChangedLine(current, plan.next));
 }
 
 /**
@@ -149,13 +150,22 @@ async function commit(uri: vscode.Uri, current: string | undefined, plan: EditPl
  * Best effort throughout: a file that cannot be shown is not a failed edit, and
  * throwing here would undo work that has already landed on disk.
  */
-async function reveal(document: vscode.TextDocument): Promise<void> {
+async function reveal(document: vscode.TextDocument, line: number): Promise<void> {
   try {
-    await vscode.window.showTextDocument(document, {
+    const editor = await vscode.window.showTextDocument(document, {
       preview: true,
       preserveFocus: true,
       viewColumn: vscode.ViewColumn.One,
     });
+
+    // Scrolled to, not selected: a selection in a window the user is not focused on
+    // is a selection they will paste over by accident later. `InCenter` puts the
+    // change in the middle of the viewport rather than one line above the fold.
+    const target = new vscode.Range(
+      new vscode.Position(Math.min(line, Math.max(document.lineCount - 1, 0)), 0),
+      new vscode.Position(Math.min(line, Math.max(document.lineCount - 1, 0)), 0)
+    );
+    editor.revealRange(target, vscode.TextEditorRevealType.InCenter);
   } catch {
     // Nothing to do about it, and nothing worth failing the edit over.
   }

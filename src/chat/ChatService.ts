@@ -165,6 +165,12 @@ export class ChatService {
         // planning must not still be intercepting them.
         async (task) => {
           this.planningIO = undefined;
+          // **Agent, not Auto.** Pressing Start Building is an explicit answer to
+          // "shall I build this", so the mode that follows should be the explicit
+          // one. Auto guesses whether each message is a job or a question, which is
+          // a useful default to *choose* and the wrong thing to land in by accident
+          // immediately after signing off on a plan.
+          await this.actions.setMode('agent');
           await this.runs.run(task, 'Plan approved — starting on milestone one.');
         }
       );

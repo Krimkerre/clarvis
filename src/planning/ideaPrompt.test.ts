@@ -2,11 +2,33 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 
-test('the prompt asks for buildable ideas and requires humor in at least two', () => {
+test('the joke has to be the premise, not the name', () => {
+  // Live, this produced Commit Roulette, Git Blame Yourself and Bookmark Mortality —
+  // four puns pinned to ordinary tools. A pun is the cheapest thing a model reaches
+  // for and the first thing to get boring.
   const prompt = ideaPrompt();
-  assert.match(prompt, /genuinely buildable/i);
-  assert.match(prompt, /funny/i);
-  assert.match(prompt, /Name \| one-sentence description/);
+  assert.match(prompt, /The joke is what the thing DOES/);
+  assert.match(prompt, /Not a pun in the\s*name/);
+});
+
+test('each idea has to survive an interview', () => {
+  // "Small and buildable" was quietly pulling everything toward one-function toys,
+  // which is the opposite of what a planning interview needs.
+  const prompt = ideaPrompt();
+  assert.match(prompt, /enough substance to plan/);
+  assert.match(prompt, /five\s*questions about it and get five interesting answers/);
+});
+
+test('the domains have to vary, and the usual suspects are banned', () => {
+  // Left alone the model writes four developer tools about its own workflow.
+  const prompt = ideaPrompt();
+  assert.match(prompt, /Not four developer tools/);
+  assert.match(prompt, /At most one of\s*the four may be about programming/);
+  assert.match(prompt, /commit messages, git\s*history, bookmarks, inboxes/);
+});
+
+test('the output format is still one parseable line per idea', () => {
+  assert.match(ideaPrompt(), /Name \| one sentence on what it actually does/);
 });
 
 test('parses four well-formed ideas', () => {

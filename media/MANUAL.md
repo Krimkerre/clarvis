@@ -111,6 +111,14 @@ them and the editor jumps to what changed. If he needs something decided mid-bui
 stops and asks in the chat, and your answer carries on the same task rather than
 starting a new one.
 
+**Ask for something new mid-build and he stops.** A correction — "use pytest
+instead", "call it something else" — gets folded into the run as you'd expect. But
+something the plan does not cover, like "it should also email me the results", is new
+scope: he stops, says so, and offers to write it into `plan.md` first, either as
+steps on the current milestone or as a milestone of its own. That is §0's rule, and
+the point of it is that a plan approved on Monday still describes the project on
+Thursday.
+
 **Nothing is lost to a reload.** An interview is saved after every answer, so closing
 the window mid-question costs nothing — the next time you plan, he offers to carry on
 from where you stopped, throw it away and start fresh, or leave it for now. Same for a

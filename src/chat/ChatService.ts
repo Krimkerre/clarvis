@@ -24,6 +24,8 @@ import { PlanningChatIO } from './PlanningChatIO';
 import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { interruptedBuild } from '../planning/pendingBuild';
+import { judgeScope, recordScopeChange } from '../planning/kickback';
+import { ScopeVerdict } from '../planning/scopeChange';
 import { MilestoneState } from '../planning/planUpdate';
 import { nextMilestoneTask } from '../planning/nextMilestoneTask';
 
@@ -206,6 +208,68 @@ export class ChatService {
   }
 
   /**
+   * Something said mid-build: folded in, or kicked back for sign-off.
+   *
+   * The judgement is a model call, and it fails toward folding in — losing a
+   * sign-off costs a decision, stopping a build over a garbled reply costs the run,
+   * and the second is the worse trade made every time it fires.
+   */
+  private async handleMidRun(question: string): Promise<void> {
+    const verdict = await judgeScope(this.models, question, this.log);
+
+    if (verdict.kind === 'correction') {
+      this.runs.redirect(question);
+      this.log('chat: message handed to the run in progress');
+      await this.note(await this.phrase('report', "Noted — I'll fold that in.", []));
+      return;
+    }
+
+    // **The build stops before the gate, not after it.** Leaving it running while
+    // the scope is agreed means the code moves on from the plan being amended, and
+    // whatever it writes in the meantime nobody approved either.
+    this.stop();
+    await this.remark(
+      await this.phrase(
+        'warn',
+        `That is new scope, not a correction: ${verdict.summary}. I have stopped, and this needs writing down before I carry on.`,
+        []
+      )
+    );
+
+    this.awaitingScopeAnswer = verdict;
+    this.panel.post({ type: 'choices', items: [{ label: 'Add it to the plan' }, { label: 'Forget it' }] });
+  }
+
+  /** Set between naming a scope change and the user ruling on it. */
+  private awaitingScopeAnswer?: Extract<ScopeVerdict, { kind: 'scope' }>;
+
+  /** Takes the ruling. `true` once it has been dealt with either way. */
+  private async answeredScopeOffer(question: string): Promise<boolean> {
+    const verdict = this.awaitingScopeAnswer;
+    this.awaitingScopeAnswer = undefined;
+    this.panel.post({ type: 'choices-clear' });
+    if (!verdict) return false;
+
+    if (!/^(add|y|yes|ok|okay|sure|do it)\b/i.test(question.trim())) {
+      this.log('chat: scope change declined, plan unchanged');
+      await this.note(await this.phrase('report', 'Left out of the plan, then. Say the word when you want it back.', []));
+      return true;
+    }
+
+    const where = await recordScopeChange(verdict, this.log);
+    await this.note(
+      where
+        ? await this.phrase('report', `${where} Say "carry on" when you want me building again.`, [])
+        : await this.phrase(
+            'warn',
+            'I could not write that into plan.md, so it is agreed and unrecorded — worth adding by hand before it is forgotten.',
+            ['plan.md']
+          )
+    );
+    return true;
+  }
+
+  /**
    * Offers to pick up a build that was already started here.
    *
    * **Only when work has actually begun.** A freshly approved plan with nothing
@@ -268,6 +332,7 @@ export class ChatService {
    * asked, or as the reply to the offer to start.
    */
   private async planningTook(question: string): Promise<boolean> {
+    if (this.awaitingScopeAnswer) return this.answeredScopeOffer(question);
     if (this.awaitingBuildAnswer) return this.answeredBuildOffer(question);
     if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
     if (!this.planningIO?.isWaiting) return false;
@@ -550,9 +615,11 @@ export class ChatService {
     // separately leaves the user watching the agent carry on doing the thing they
     // just asked it not to, and stopping to restart throws away everything read so
     // far — so "no, use the other library" would cost a whole run.
-    if (this.runs.redirect(question)) {
-      this.log('chat: message handed to the run in progress');
-      await this.note(await this.phrase('report', "Noted — I'll fold that in.", []));
+    //
+    // Unless it is not a correction at all. §0: scope discovered mid-build kicks
+    // back to Plan Mode rather than growing silently inside Code Mode.
+    if (this.runs.isRunning) {
+      await this.handleMidRun(question);
       return;
     }
 

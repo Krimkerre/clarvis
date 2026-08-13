@@ -130,3 +130,27 @@ test('includes the working-process section and a branch flow section', () => {
   assert.match(plan, /## 0\. Working Process/);
   assert.match(plan, /## Branch flow/);
 });
+
+test('the plan carries conventions in the project\'s own language', () => {
+  // A plan that says how to work and nothing about how to write leaves the agent
+  // building in whatever style its model reaches for — the drift §0 exists to
+  // prevent, which generated projects were inheriting only half of.
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+
+  assert.match(plan, /## Conventions/);
+  assert.match(plan, /\*\*Python:\*\*/);
+  assert.match(plan, /PEP 8/);
+  // Not TypeScript's rules wearing a Python heading.
+  assert.doesNotMatch(plan, /camelCase/);
+});
+
+test('the recorded comment decision lands in the conventions', () => {
+  const decided: InterviewState = {
+    answers: [
+      ...state.answers,
+      { topic: 'comment-style', text: 'lean — the code should explain itself' },
+    ],
+  };
+
+  assert.match(renderPlan({ seed: 'x', state: decided, verdicts: [] }), /only where something is genuinely surprising/);
+});

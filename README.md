@@ -342,8 +342,10 @@ section that assumes you know the jargon.* Full notes for each milestone are in
       work: a correction folds into the run, **new scope stops it** and gets written
       into the plan first (§0). Half-finished interviews and part-finished milestones
       are both offered back after a reload.
-      *Not built:* per-language clean-code conventions in the generated plan, and
-      container isolation for commands (M9f — assessed, deliberately deferred).
+      The plan also carries a **Conventions** section in your project's own language,
+      so the code stays consistent when you come back to it in three months.
+      *Not built:* container isolation for commands (M9f — assessed, deliberately
+      deferred).
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
       people learning to program on a real project of their own. Opt-in per project,

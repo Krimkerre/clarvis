@@ -44,6 +44,9 @@ export function handoffTask(
     `What it is: ${answerText(state, 'what-it-does') ?? seed}`,
     ...(answerText(state, 'who-and-where') ? [`Where it runs: ${answerText(state, 'who-and-where')}`] : []),
     ...(language ? [`Language: ${language}`] : []),
+    // Named rather than restated: the plan carries the rules in full, and a summary
+    // of them in the task would be a second copy to drift from the first.
+    'Follow the Conventions section in plan.md — it says how this project writes code.',
     ...(answerText(state, 'scope') ? [`Scope: ${answerText(state, 'scope')}`] : []),
     '',
     ...(done ? [`Done when: ${done}`, ''] : []),

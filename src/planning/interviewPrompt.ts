@@ -21,6 +21,8 @@ export const TOPIC_BRIEF: Record<TopicId, string> = {
   language: 'A shortlist of 2-4 languages that fit what has been described so far, each with one real advantage and one real cost. Never a list where every option looks good — that is a failed shortlist.',
   linter:
     'Whether they want a linter. State the trade in one sentence: it flags likely mistakes and keeps formatting consistent, at the cost of mild overhead on a throwaway script.',
+  'comment-style':
+    'How chatty the code should be. Two options, both legitimate: comments on most things explaining what and why — good for coming back later, or for someone still learning — or lean comments where the code explains itself and a comment marks only the surprises, which is what most professional codebases do. Present both as real choices; neither is the right answer.',
 };
 
 /**
@@ -108,6 +110,8 @@ export const FALLBACK_QUESTION: Record<TopicId, string> = {
   'definition-of-done': "What has to be true for you to call the first version done?",
   language: 'Any preference on language, or would you like me to suggest one once I know more?',
   linter: "Want a linter set up? It flags likely mistakes and keeps formatting consistent, at the cost of a little overhead on a throwaway script.",
+  'comment-style':
+    'How chatty should the code be? Comments on most things, explaining what and why — or lean comments, where the code explains itself and a comment marks only the surprises. Both are defensible.',
 };
 
 /**

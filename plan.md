@@ -4072,6 +4072,51 @@ Clarvis works when a user:
 9. Never once finds that Clarvis changed something they didn't ask him to change.
 
 
+## 10. The codebase, measured
+
+As of 14 Aug, with M9 merged to `main`. Kept because §0's clean-code rules are argued
+about in the abstract otherwise, and because the M8 linter report — "too much
+cyclomatic complexity", no number attached — showed what an unmeasured claim costs.
+
+**26,764 lines of TypeScript across 189 files.**
+
+| | files | lines |
+|---|---|---|
+| Source | 135 | 20,919 |
+| Tests | 54 | 5,845 |
+
+Of the 20,919 source lines, **6,840 are comments** and 2,284 are blank — so the
+executable surface is roughly **11,800 lines**. That ratio is the deliberate §0
+deviation, not drift: comments are used liberally because this codebase is meant to be
+read as a worked example, and a third of it being prose is what that costs.
+
+| Area | lines | files | classes |
+|---|---|---|---|
+| `agent/` (incl. `tools/`) | 5,229 | 29 | 7 |
+| `chat/` | 3,716 | 17 | 9 |
+| `planning/` | 3,279 | 28 | 1 |
+| `model/` | 1,990 | 11 | 5 |
+| `personality/` | 1,830 | 12 | 5 |
+| `voice/` | 1,584 | 14 | 3 |
+| root (`extension.ts`, wiring) | 1,202 | 8 | 3 |
+| `briefing/` | 700 | 6 | 2 |
+| `memory/` | 535 | 5 | 2 |
+| `watch/` | 453 | 5 | 2 |
+| `panels/` | 428 | 1 | 1 |
+
+**40 classes, and 232 exported functions.** The ratio is the point: classes are used
+where something owns state or a lifecycle — `ModelService`, `AgentRunner`,
+`VoiceService`, `BusyTracker` — and everything else is plain functions. `planning/` is
+the clearest case, 28 files and **one** class, which is exactly why M9 could be tested
+as heavily as it was: almost all of it is pure, and pure code needs no extension host
+to run against. Alongside those, 73 interfaces and 31 type aliases.
+
+**604 tests**, against Node's built-in runner with no test framework — possible only
+because the logic worth testing lives in files that import nothing from `vscode`.
+
+Documentation, for scale: `plan.md` itself is the largest file in the repository at
+~4,100 lines, with the manual at 432, the README at 384 and the tutor guide at 198.
+
 ## Special thanks
 
 **[Alexander](https://github.com/alexander-keisse)** — for feedback, guidance and tips

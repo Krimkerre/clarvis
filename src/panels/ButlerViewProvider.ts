@@ -92,6 +92,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       'toggle-mute': () => this.muteToggled.fire(),
       'clear-chat': () => this.clearRequested.fire(),
       'show-history': () => this.historyRequested.fire(),
+      'show-output': () => this.outputRequested.fire(),
       stop: () => this.stopRequested.fire(),
       models: () => this.modelsRequested.fire(),
       'choose-mode': () => this.modeRequested.fire(),
@@ -107,6 +108,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly muteToggled = new vscode.EventEmitter<void>();
   private readonly clearRequested = new vscode.EventEmitter<void>();
   private readonly historyRequested = new vscode.EventEmitter<void>();
+  /** Reveal the terminal every command and tool call already writes to. */
+  private readonly outputRequested = new vscode.EventEmitter<void>();
   private readonly stopRequested = new vscode.EventEmitter<void>();
   private readonly modelsRequested = new vscode.EventEmitter<void>();
   private readonly modeRequested = new vscode.EventEmitter<void>();
@@ -120,6 +123,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidRequestClear = this.clearRequested.event;
   /** The History button was clicked. */
   readonly onDidRequestHistory = this.historyRequested.event;
+  readonly onDidRequestOutput = this.outputRequested.event;
   /** The bowtie next to the prompt was clicked. */
   readonly onDidRequestModels = this.modelsRequested.event;
   /** The mode button was clicked. */
@@ -164,6 +168,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.muteToggled,
       this.clearRequested,
       this.historyRequested,
+      this.outputRequested,
       this.stopRequested,
       this.modelsRequested,
       this.modeRequested,
@@ -222,6 +227,31 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
  * three documents in one: a stylesheet, a page, and a script, none of which had
  * anything to say to the others beyond the nonce.
  */
+/**
+ * The clickable-answer buttons, styled apart from the rest of the panel.
+ *
+ * Its own constant for the same reason `chatMarkup` is its own function: the
+ * stylesheet in there is already at the linter's ceiling, and these rules have
+ * nothing to say to the transcript's beyond sitting underneath it.
+ */
+const CHOICE_STYLES = `
+      /* Each option is a button carrying its own explanation, rather than a list
+         above a row of bare labels repeating it. */
+      .clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; margin-top:-2px; }
+      /* Options with an explanation stack full-width so the text has room; bare
+         labels (Yes / No / Approve) sit side by side, where a stack looks absurd. */
+      .clarvis-choices.stacked { flex-direction:column; align-items:stretch; }
+      .clarvis-choice { font: inherit; cursor:pointer; text-align:left; display:flex;
+        flex-direction:column; gap:2px; padding:6px 10px; border-radius:5px;
+        border:1px solid var(--vscode-button-border, var(--vscode-focusBorder));
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); }
+      .clarvis-choice:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+      .clarvis-choice .label { font-weight:600; }
+      /* The explanation is why you would pick it, not the thing you are picking. */
+      .clarvis-choice .detail { font-size:11px; line-height:1.35; opacity:.75; white-space:normal; }
+`;
+
 function chatMarkup(n: string): string {
   return `<style nonce="${n}">
       /* avatar.html is a standalone demo: it centres one 320px avatar in the middle of
@@ -280,6 +310,8 @@ function chatMarkup(n: string): string {
       .clarvis-turn.clarvis .who { color: var(--vscode-focusBorder); opacity:.8; }
       .clarvis-turn code { font-family: var(--vscode-editor-font-family);
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
+
+      ${CHOICE_STYLES}
       /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
          bottom so the icon stays level with the first line as the box grows. */
       .clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }
@@ -308,6 +340,8 @@ function chatMarkup(n: string): string {
       <div class="clarvis-chat-head">
         <button id="clarvis-mode" class="clarvis-mute clarvis-mode"
                 title="What Clarvis is allowed to do">Auto</button>
+        <button id="clarvis-output" class="clarvis-mute"
+                title="Every command and tool call, as it runs.">Output</button>
         <button id="clarvis-history" class="clarvis-mute"
                 title="Earlier conversations from this workspace.">History</button>
         <button id="clarvis-clear" class="clarvis-mute"

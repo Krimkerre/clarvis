@@ -22,6 +22,8 @@ import { reviewRun } from './agent/reviewWizard';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
+import { runPlanning } from './planning/PlanningFlow';
+import { VsCodeIO } from './planning/VsCodeIO';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -130,6 +132,7 @@ export function activate(context: vscode.ExtensionContext): void {
   startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
   const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
+  registerPlanningCommand(context, models, logger, liveLines);
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
@@ -138,6 +141,12 @@ export function activate(context: vscode.ExtensionContext): void {
   const voiceWriter = new Voice(models, (message) => logger.write(message));
   setVoice(voiceWriter);
   chat.setVoiceWriter(voiceWriter);
+
+  // A project with no plan.md is exactly who §4.9's front door is for. Offered as one
+  // line in the transcript, never started unasked — and after the briefing, so the two
+  // don't arrive on top of each other.
+  const planOffer = setTimeout(() => void chat?.offerPlanningIfUnplanned(), 6000);
+  context.subscriptions.push({ dispose: () => clearTimeout(planOffer) });
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -614,6 +623,36 @@ function startBranchFlow(
       logger.write('git offer: forgot the answer, will ask again next run');
       void vscode.window.showInformationMessage(await phrase('report', 'Asking again, next time it comes up.'));
     })
+  );
+}
+
+/**
+ * M9a — the project-planning interview, as its own command.
+ *
+ * Deliberately separate from the chat panel rather than routed through ChatService:
+ * this is the first slice of a large milestone, and the eventual "questions arrive in
+ * the chat panel" experience is a later piece of work, not something this needed to
+ * wait for. Runs M9b (analysis) once the interview reaches "enough to draft", then
+ * M9c (accept/reject/modify per finding) over whatever it found, then writes
+ * `plan.md` itself (M9d) — unless one already exists in the workspace, which it
+ * never overwrites. M9e (sign-off/handoff into an agent task) is not built yet.
+ *
+ * **Carries the same personality quips as chat and the agent** — the acknowledgement
+ * on the way in, the aside after the summary on the way out. Chained input boxes are
+ * not a chat transcript, so both surface via `showInformationMessage` instead of
+ * `note()`; the lines themselves come from the same `LiveQuips` instance everything
+ * else uses, not a second copy.
+ */
+function registerPlanningCommand(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  logger: ClarvisLog,
+  liveLines: LiveQuips
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.planProject', () =>
+      runPlanning(models, new VsCodeIO(), liveLines, (message) => logger.write(message))
+    )
   );
 }
 

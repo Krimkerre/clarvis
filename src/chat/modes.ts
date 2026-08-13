@@ -23,7 +23,7 @@ export const MODES: ModeSpec[] = [
     id: 'auto',
     label: 'Auto',
     short: 'Auto',
-    detail: 'I decide: questions get answered, jobs get done. Ambiguity gets answered.',
+    detail: 'I decide: questions get answered, jobs get done, and I get on with it without asking at each step.',
     canEdit: true,
   },
   {
@@ -44,7 +44,7 @@ export const MODES: ModeSpec[] = [
     id: 'agent',
     label: 'Agent',
     short: 'Agent',
-    detail: 'Treat everything as a job. Skips the guessing when you already know what you want.',
+    detail: 'Treat everything as a job — and check with you before each step that changes anything.',
     canEdit: true,
   },
 ];

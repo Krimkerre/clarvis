@@ -1,5 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { acceptRewrite, Line, Purpose, rewritePrompt, worthRewriting } from './say';
+import { acceptOpening, openingPrompt } from './originalLine';
 
 /**
  * Puts a line in Clarvis's voice, when there is a model to do it.
@@ -17,6 +18,9 @@ import { acceptRewrite, Line, Purpose, rewritePrompt, worthRewriting } from './s
 
 /** A dialog is being waited on. Late character is worse than none. */
 const DEADLINE_MS = 2000;
+
+/** Nothing is blocked on an opening line, and sounding fresh is worth the moment. */
+const OPENING_DEADLINE_MS = 5000;
 
 export class Voice {
   /**
@@ -51,6 +55,42 @@ export class Voice {
     } catch (error) {
       this.log(`voice: rewrite failed (${String(error)})`);
       return line.fallback;
+    }
+  }
+
+  /**
+   * A line written for the moment, rather than a written one rewritten.
+   *
+   * `say()` deliberately leaves questions alone — a question was already plain and
+   * exact, and rewriting it costs stiffness. That is right for "shall I stop?" and
+   * wrong for the line that opens plan mode, which is the first thing a new user
+   * hears and read like a template because it was one. This asks for the line
+   * itself, from the situation, with the written one still the fallback.
+   *
+   * A longer deadline than `say()`: nothing is waiting on this the way a modal is,
+   * and it is worth a moment to not sound the same twice.
+   */
+  async open(situation: string, fallback: string, mustAsk = true): Promise<string> {
+    try {
+      if (!(await this.models.isReady('chat'))) return fallback;
+
+      const raw = await Promise.race([
+        this.collect(openingPrompt(situation, mustAsk)),
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), OPENING_DEADLINE_MS)),
+      ]);
+
+      const line = acceptOpening(raw, mustAsk);
+      // **The rejected text, verbatim.** "Rejected" on its own says a rule fired and
+      // not which one — and every guess about which costs a rebuild and a live run.
+      this.log(
+        line
+          ? 'voice: opening written for the moment'
+          : `voice: opening rejected, used the written line — model said: ${JSON.stringify(raw ?? '(nothing)')}`
+      );
+      return line ?? fallback;
+    } catch (error) {
+      this.log(`voice: opening failed (${String(error)})`);
+      return fallback;
     }
   }
 
@@ -98,4 +138,10 @@ export function setVoice(voice: Voice): void {
 export async function phrase(purpose: Purpose, fallback: string, keep?: string[]): Promise<string> {
   if (!writer) return fallback;
   return writer.say({ purpose, fallback, keep });
+}
+
+/** An original line for a moment, from anywhere. See `Voice.open`. */
+export async function opening(situation: string, fallback: string, mustAsk = true): Promise<string> {
+  if (!writer) return fallback;
+  return writer.open(situation, fallback, mustAsk);
 }

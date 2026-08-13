@@ -66,6 +66,38 @@ or `/forget`, and it is gone.
 
 ---
 
+## Starting a project
+
+Run **`Clarvis: Plan This Project`** from the command palette. Give it one sentence —
+or say `I don't know` and it'll suggest a few ideas, at least a couple of them
+genuinely funny. Say `I don't know` at the name question too and it'll suggest a
+shortlist, two of the five with his own sense of humour.
+
+He reads the workspace first — an existing `package.json`, a git repo, a README —
+before asking anything, so questions are grounded in what's actually there rather
+than starting from nothing. Questions arrive a few at a time, never a thirty-question
+interrogation, and `I don't know yet` is recorded as an honest open question rather
+than argued with. A *vague* answer gets pushed back on once, with one specific
+follow-up, before it's accepted as given — "it takes everything into account" earns a
+"such as what, specifically?", not a shrug.
+
+The language question is a real shortlist: 2-4 options, each with one genuine
+advantage and one genuine cost — never a list where everything looks good. Say
+`you pick` and he will, with a one-line reason for the choice.
+
+Once there's enough to work from, he reviews the whole thing for safety problems,
+logic contradictions, and scope quietly bigger than what you described. Each finding
+is yours to **Accept**, **Reject** (say why — it's recorded, not just dropped), or
+**Modify** (your own words replace his). Then he drafts `plan.md`, shows it to you,
+and lets you add anything missing and redraw as many times as you like — nothing is
+written to disk until you choose **Approve**.
+
+*Still ahead: this runs through the command palette and QuickPicks today, not the*
+*chat panel yet, and approving a plan doesn't hand milestone one to the agent yet —*
+*see the README's progress list.*
+
+---
+
 ## What Clarvis does on his own
 
 He talks unprompted in four situations, and never more than **once a minute** in total
@@ -333,6 +365,8 @@ outright.
 ## Not built yet
 
 Clarvis is under construction, and this manual describes what exists today. The agent
-that does the work is built — that list used to say otherwise. Still to come: **project
-planning** from a one-sentence idea, **voice input**, and **Tutor Mode** for people
-learning to program. See the README for progress.
+that does the work is built — that list used to say otherwise. **Project planning**
+(above) is built through the command palette; still to come from it: a chat-panel
+front end and handing an approved plan's milestone one to the agent. Also still to
+come: **voice input**, and **Tutor Mode** for people learning to program. See the
+README for progress.

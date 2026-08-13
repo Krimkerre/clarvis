@@ -3358,6 +3358,198 @@ it. Both restored. Neither was in any test, and neither had been noticed in use.
 
 ### M9 — Project Planning *(the front door)*
 
+**M9a started (12 Aug).** `src/planning/interviewTopics.ts` is the pure state machine —
+topic ordering, the language-timing rule, the linter-asked-once-last rule, "enough to
+draft" as a condition rather than a question count, "I don't know yet" recorded as an
+open question. Fully tested (9 tests), including a real bug the tests caught before
+anything ran: `nextTopic()` first appended language *after* every core topic instead of
+inserting it right after `who-and-where`, which would have asked it too late to make
+the rest of the interview language-aware — exactly the failure §4.9 calls out by name.
+
+`src/planning/Interview.ts` drives it end to end via `Clarvis: Plan This Project` —
+chained input boxes, not the chat panel. That is a deliberate, temporary front end: the
+state machine and the model-phrased questions are real and usable today; the panel
+integration described in §4.9 is separate work this did not need to wait for. Ends by
+opening a document with what was established and what is still open — **not** a
+generated `plan.md`. Nothing persists between sessions yet either — a paused interview
+cannot be resumed after a reload, which §4.9's design calls for and this slice does
+not yet provide.
+
+**M9b started (13 Aug).** `src/planning/analysisPrompt.ts` — the safety / logic /
+scope / improvement passes over a finished interview, structured output
+(`class: / what: / why: / fix:` blocks) so findings are parseable rather than prose,
+same discipline as the language shortlist fix. Includes the "this doesn't need a
+plan" outcome (`NO-PLAN-NEEDED: <reason>`) as a legitimate result, not a failure to
+find anything. `src/planning/Analysis.ts` is the model-calling glue; no model
+configured means no analysis runs, not a fabricated one — there is no honest written
+fallback for "find the problems in this idea" the way there is for a question.
+`clarvis.planProject` now runs it automatically once the interview reaches "enough to
+draft", and findings are appended to the summary document.
+
+**M9c started (13 Aug).** `src/planning/Verdicts.ts` — accept/reject/modify per
+finding via a chained QuickPick, same temporary-front-end discipline as the rest of
+M9. `src/planning/verdictSummary.ts` (pure, tested) renders each verdict: accepted
+findings unchanged, rejected findings struck through with the reason recorded
+alongside them, modified findings show the user's own text, never the original. A
+cancelled prompt counts as accept rather than silently dropping a finding nobody
+rejected. `clarvis.planProject` now also carries the same acknowledgement/aside
+quips (`LiveQuips`) chat and the agent already use, surfaced via
+`showInformationMessage` since chained input boxes have no chat transcript to write
+into. M9d (generation, including Branch flow and conventions) is not built — this
+still ends at a summary document, not a written `plan.md`.
+
+**Personality pass (13 Aug).** Project-name suggestions widened from 3 to 5, two of
+which are explicitly asked to carry Clarvis's own dry humour rather than reading as a
+neutral list (`namePrompt.ts`). The seed question ("What are you building?") now
+recognises "I don't know" the same way every other topic already does — `Interview.ts`
+`offerIdeas()` asks for 4 small, genuinely buildable ideas, at least 2 of them funny,
+via the same `Name | description` structured format the rest of M9 uses
+(`ideaPrompt.ts`, pure and tested). Picking one seeds the interview exactly as if the
+user had typed it themselves.
+
+**M9d started (13 Aug).** `src/planning/PlanWriter.ts` (pure, tested) renders a
+finished interview and its verdicts into an actual `plan.md`: concept, where it runs,
+language with its reasoning, scope, data, linter, a milestone-1 exit checklist built
+from definition-of-done plus every accepted/modified finding's suggested fix,
+rejected findings recorded as decisions with their reasoning, open questions, and the
+Branch flow section via the existing `branchFlowSection()` (M9d3, built at M8f).
+Includes an inherited **§0 Working Process** section — Plan Mode / Code Mode, the
+same discipline this project's own `plan.md` runs under. **Never overwrites** an
+existing `plan.md` — logs and tells the user rather than touching it; extend/revise
+is not built. M9d2 (language-adapted clean-code conventions) is not built, so the
+inherited section stops at Plan/Code Mode and does not yet include clean-code rules.
+`clarvis.planProject` writes the file once the interview reaches "enough to draft"
+and analysis didn't conclude no plan is needed, then opens it. M9e (sign-off gate,
+handoff into an agent task) is not built.
+
+**Pushback (13 Aug).** The interview no longer takes every answer at face value.
+`challengePrompt.ts` (pure, tested) judges whether an answer is specific enough to
+plan against or hides ambiguity, a risk, or a contradiction with something already
+established; `Interview.ts`'s `challengeAnswer()` runs it after every answer except
+an explicit "I don't know" (already a first-class answer, never pushed on) and asks
+at most one follow-up — the same "challenged once, then honoured" rule §4.9 already
+states for language, now applied to every topic. Declining the follow-up keeps the
+original answer; answering it appends the follow-up Q&A onto the same answer text
+rather than replacing it, so nothing already said is lost.
+
+**Claude-Code-shaped plan mode (13 Aug).** Three changes, asked for by name against
+how Claude Code's own plan mode works:
+- **Research before asking.** `workspaceResearch.ts` reads the workspace root once,
+  up front — existing manifest file, git, an existing `plan.md`, a README's first
+  line — and `workspaceSignals.ts` (pure, tested) turns it into one honest sentence,
+  only real observed facts. Folded into every prompt's "known so far" via
+  `knownFacts()` (`interviewTopics.ts`), which also replaced three duplicated copies
+  of the same known-facts-joining code in `interviewPrompt.ts` and
+  `challengePrompt.ts`.
+- **Draft, then iterate.** `extension.ts`'s `draftAndApprovePlan()` shows the
+  rendered plan as a draft rather than writing it immediately. "Keep Refining" adds
+  a free-text note (`InterviewState.notes`, rendered as `## Notes` in the plan) and
+  redraws — no re-interrogation, no re-running analysis, just a note and a redraw,
+  so refining never becomes the batched-questions interrogation M9a was built to
+  avoid.
+- **Explicit approval gate.** The draft is never written until "Approve" is chosen
+  in a modal — separate from and in addition to the per-answer challenge already
+  built; that challenge is about individual answers, this gate is about the whole
+  document.
+
+**Scoped, not built: coding-mode questions.** Asked whether the agent (M8) should
+gain a mid-run clarifying-question mechanic now — deferred to M9e (sign-off →
+agent-task handoff, not built), since that milestone already owns the boundary
+between "planning got it wrong" and "the agent hit something planning couldn't have
+known." Retrofitting M8's existing runner (used by chat and the terminal commands,
+not just planning) was explicitly not chosen.
+
+**Follow-ups were reading as a raw transcript (13 Aug).** Live: a follow-up answer
+got glued onto the original with a literal `"Follow-up — <question>\n<answer>"`
+label, and that whole block sat inside `plan.md`'s Established section — the exact
+copy-pasted-transcript look a written plan is supposed to read cleaner than.
+`synthesizePrompt.ts` (pure, tested) asks the model to rewrite the answer and its one
+follow-up as a single coherent statement, using only what either answer actually
+said — same discipline as everywhere else in this project, applied to merging two
+answers instead of to not inventing new ones. No model, no rewrite: falls back to a
+plain concatenation, honest if inelegant, rather than losing either answer.
+`Interview.ts`'s `synthesizeAnswer()` is the glue.
+
+**Existing `plan.md`: asked, not silently kept or clobbered (13 Aug).** Was an
+unconditional "never overwrite" — found live to mean a stale `plan.md` from an
+earlier test run kept getting shown back, silently, run after run.
+`okToReplaceExistingPlan()` now asks up front, **before the interview starts** — Keep
+Existing skips the interview entirely rather than running it and discovering the
+answer was "keep it" only at the very end, wasting every question and model call that
+led there. `draftAndApprovePlan()` no longer has its own existence check; it always
+writes on Approve, since the decision is already settled by the time it runs.
+
+**Chat-native planning, and the handoff to code mode (13 Aug).** Planning was a
+command-palette flow driving `vscode.window.*` directly; it now runs through
+`PlanningIO` (`src/planning/PlanningIO.ts`) — `askText`, `askChoice`, `confirm`,
+`say`, `showDocument`. `VsCodeIO` implements it exactly as the old call sites
+behaved; `PlanningChatIO` (`src/chat/`) implements it as a conversation, questions
+landing in the transcript and the next message typed being the answer. `Interview.ts`
+and `Verdicts.ts` are now `vscode`-free. The whole flow moved out of `extension.ts`
+into `PlanningFlow.ts`, which both front ends call.
+
+While planning runs, `ChatService.ask()` gets out of the way entirely — a message is
+an answer to the question just asked, and routing it (stop / action / job / question)
+would be four chances to misread "yes" or "3". `/plan` starts it; a project with no
+`plan.md` gets **one** offered line in the transcript at startup, never an interview
+launched unasked (§6).
+
+**M9e's first half is built:** an approved plan flows into code mode without the user
+restating anything. `handoff.ts` (pure, tested) assembles milestone one — what it is,
+where it runs, language, scope, and a checklist from definition-of-done plus every
+accepted/modified finding — and the prompt is **shown and editable before it runs**
+(§4.9), with Not Yet a first-class answer. From chat it goes through the same
+`RunSession.run()` a typed job takes; nothing about the build is special-cased for
+having come from planning. Still not built in M9e: ticking checklist items in
+`plan.md` as the agent completes them, and the agent's own mid-build clarifying
+questions.
+
+**Voice and clickable answers in chat (13 Aug).** Planning ran silently and answered
+by typing a number. Now: questions are **spoken** (solicited by `/plan`, so §4.4
+allows it) while drafts and menus are written only — a four-hundred-word plan read
+aloud is not an improvement. Options arrive as **clickable buttons** in the panel
+(`choices` / `choices-clear` frames, `.clarvis-choice`, labels rendered with
+`textContent` since they come from a model); typing a number or the name still works,
+so the interview is finishable from the keyboard alone. **Only the option actually
+picked is read aloud, and only once picked** — with its detail — and then confirmed
+before it counts, since a button is one click from the wrong answer and an interview
+that silently accepts a misclick is one you restart. `confirm()` is exempt: its
+buttons *are* the confirmation, and "Approve" asked twice is a dialog arguing with
+itself.
+
+**Every fixed line goes through his voice (13 Aug).** The planning flow had a dozen
+hand-written strings — "Draft plan ready.", "Pick a language", "What should be added
+or changed?" — which is exactly the drift `character.ts` was built to end: a surface
+that sounds like a form rather than like him. All of them now go through
+`phrase()` (`personality/Voice.ts`, the same module-level writer `firstRun.ts`
+already used), with the load-bearing words (`plan.md`, `/plan`, `Approve`) passed as
+`keep` so rephrasing can't rename a command. The no-plan.md offer is also **spoken**
+now rather than quietly written — it is the one line that tells someone the feature
+exists, and a notice nobody hears is a feature nobody finds.
+
+**The offer is a question, not an instruction (13 Aug).** It read "Say `/plan` when
+you want to fix that" — a command to memorise, from a butler. It now asks plainly
+("…Shall we plan something?") with **Yes / No** buttons, and the next message answers
+it: yes starts the interview, anything else falls through to a normal reply, so
+declining costs nothing and saying something unrelated still gets answered. `/plan`
+still works for anyone who wants it. The written fallbacks throughout planning were
+also rewritten with some bite to them — they are both what shows when no model is
+configured *and* the seed `phrase()` rewrites from, so a flat fallback produces a
+flat line either way.
+
+**Openings are written, not rewritten (13 Aug).** The offer still sounded like a
+template because it was one: `Voice.say()` only rewrites `report` and `aside` — a
+question comes back verbatim by design (§2.2, rewriting a plain question cost
+stiffness), so `phrase('ask', …)` was returning the fallback word for word every
+session. `originalLine.ts` (pure, tested) asks for the line *itself* from the
+situation, with no draft to improve — the same shape `liveQuip.ts` uses, and for the
+same reason. `Voice.open()` / the module-level `opening()` run it with a 5s deadline
+(nothing is blocked on an opening the way a modal is), reject rather than repair
+anything doubtful, and fall back to the written line. Applied to the two lines that
+open plan mode: the offer, and the interview's first question.
+
+
+
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent
 (M8) — it's the thing that *feeds* the agent, so it can't land earlier. Placed before
 voice because voice is explicitly a cut-without-guilt stretch and this is not.
@@ -3397,7 +3589,10 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
 - **M9e — Sign-off and handoff.** The Approve gate, then conversion of milestone one into
   an agent task (§4.6). The handoff prompt is assembled from the plan, **shown to the
   user and editable before it runs** — not a hidden prompt. Checklist items are ticked in
-  `plan.md` as the agent completes them.
+  `plan.md` as the agent completes them. **Also owns coding-mode clarifying questions**
+  (requested 13 Aug, scoped here rather than retrofitted into M8's existing runner): the
+  agent should be able to pause mid-build and ask, the same way Claude Code does, rather
+  than guessing past a real ambiguity planning didn't catch.
 
 **Exit checklist:**
 - [ ] The generated `plan.md` contains a **Branch flow** section, and the review wizard

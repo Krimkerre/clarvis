@@ -1,0 +1,112 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { renderPlan } from './PlanWriter';
+import { InterviewState } from './interviewTopics';
+import { FindingVerdict } from './verdictSummary';
+
+const state: InterviewState = {
+  answers: [
+    { topic: 'what-it-does', text: 'renames photos by EXIF date' },
+    { topic: 'who-and-where', text: 'CLI, local machine' },
+    { topic: 'language', text: 'Python', reasoning: 'fast to write, and the libraries are mature' },
+    { topic: 'scope', text: 'no GUI' },
+    { topic: 'data', text: undefined },
+    { topic: 'linter', text: 'yes' },
+  ],
+};
+
+const verdicts: FindingVerdict[] = [
+  {
+    finding: { class: 'safety', what: 'no dry-run mode', whyItMatters: 'renames are hard to undo', suggestedResolution: 'add a --dry-run flag' },
+    status: 'accepted',
+  },
+  {
+    finding: { class: 'scope', what: 'assumes JPEG only', whyItMatters: 'other formats have EXIF too', suggestedResolution: 'support common formats' },
+    status: 'rejected',
+    reasoning: 'JPEG-only is fine for v1',
+  },
+];
+
+test('the title uses the project name when there is one, the seed otherwise', () => {
+  const withName = renderPlan({ projectName: 'Snapshot', seed: 'renames photos', state, verdicts: [] });
+  assert.match(withName, /^# Snapshot/);
+  assert.match(withName, /\*renames photos\*/);
+
+  const withoutName = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(withoutName, /^# renames photos/);
+});
+
+test('established answers land in their sections', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(plan, /## 1\. Concept\n\nrenames photos by EXIF date/);
+  assert.match(plan, /## 3\. Language\n\n\*\*Python\*\* — fast to write, and the libraries are mature/);
+});
+
+test('a section with a recorded question shows what was asked, not just the answer', () => {
+  const withQuestion: InterviewState = {
+    answers: [{ topic: 'scope', text: 'no GUI', question: 'What should this explicitly not do?' }],
+  };
+  const plan = renderPlan({ seed: 'renames photos', state: withQuestion, verdicts: [] });
+  assert.match(plan, /## 4\. Scope\n\n\*\*Asked:\*\* What should this explicitly not do\?\n\nno GUI/);
+});
+
+test('an unanswered topic renders honestly, not invented', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(plan, /## 5\. Data\n\n_Not yet determined\._/);
+});
+
+test('open questions list unanswered topics', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(plan, /## 9\. Open Questions\n- data — not yet known/);
+});
+
+test('the build checklist is the steps, not the findings', () => {
+  // Found live: milestone one was the definition of done plus every finding's
+  // suggested fix — all of them clarifications — so the agent read the plan, found
+  // nothing it could build, and stopped.
+  const plan = renderPlan({
+    seed: 'renames photos',
+    state,
+    verdicts,
+    steps: ['Create the CLI entry point', 'Read EXIF dates'],
+  });
+  assert.match(plan, /\*\*Build:\*\*\n- \[ \] Create the CLI entry point\n- \[ \] Read EXIF dates/);
+  // Accepted findings are questions to settle, listed apart from the work.
+  assert.match(plan, /\*\*Settle while building:\*\*\n- add a --dry-run flag/);
+  assert.doesNotMatch(plan, /- \[ \] add a --dry-run flag/);
+});
+
+test('a plan with no steps says so rather than looking finished', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(plan, /_No steps written/);
+});
+
+test('rejected findings become decisions', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts });
+  assert.doesNotMatch(plan, /support common formats/);
+  assert.match(plan, /## 8\. Decisions\n- \*\*\[scope\]\*\* assumes JPEG only — rejected\. JPEG-only is fine for v1/);
+});
+
+test('a modified finding is settled in the user\'s own words, not the original fix', () => {
+  // Found live: modifying a finding to "ESLint" still put the original "name a
+  // linter" suggestion in the checklist, contradicting the edit sitting right above it.
+  const modified: FindingVerdict = {
+    finding: {
+      class: 'improvement',
+      what: 'no linter was named',
+      whyItMatters: 'CI cannot enforce anything without a named tool',
+      suggestedResolution: 'Name the linter in the definition of done',
+    },
+    status: 'modified',
+    reasoning: 'ESLint',
+  };
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [modified] });
+  assert.match(plan, /- ESLint/);
+  assert.doesNotMatch(plan, /Name the linter in the definition of done/);
+});
+
+test('includes the working-process section and a branch flow section', () => {
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
+  assert.match(plan, /## 0\. Working Process/);
+  assert.match(plan, /## Branch flow/);
+});

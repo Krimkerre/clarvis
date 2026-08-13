@@ -79,10 +79,63 @@ const renderInto = (row, text) => {
   });
 };
 
+// The choice row currently offered, if any. Removed as soon as one is taken, so
+// a stale set of buttons can never answer a later question.
+let choiceRow = null;
+
+const clearChoices = () => {
+  if (choiceRow) choiceRow.remove();
+  choiceRow = null;
+};
+
+// Each option is one button carrying its own explanation, rather than a list
+// of options above a row of bare labels saying the same thing twice.
+const showChoices = (items) => {
+  clearChoices();
+  if (!items.length) return;
+
+  const row = document.createElement('div');
+  // Options with an explanation stack full-width so the text has room; bare
+  // labels (Yes / No / Approve) sit side by side, where a stack looks absurd.
+  const detailed = items.some((item) => item && item.detail);
+  row.className = 'clarvis-choices' + (detailed ? ' stacked' : '');
+
+  items.forEach((item) => {
+    const label = String((item && item.label) || item);
+    const button = document.createElement('button');
+    button.className = 'clarvis-choice';
+
+    const name = document.createElement('span');
+    name.className = 'label';
+    // textContent, never innerHTML: every one of these comes from a model.
+    name.textContent = label;
+    button.appendChild(name);
+
+    if (item && item.detail) {
+      const detail = document.createElement('span');
+      detail.className = 'detail';
+      detail.textContent = String(item.detail);
+      button.appendChild(detail);
+    }
+
+    button.addEventListener('click', () => {
+      clearChoices();
+      vscode.postMessage({ type: 'ask', text: label });
+    });
+    row.appendChild(button);
+  });
+
+  choiceRow = row;
+  transcript.appendChild(row);
+  transcript.scrollTop = transcript.scrollHeight;
+};
+
 const send = () => {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
+  // Typing an answer retires the buttons offering the same question.
+  clearChoices();
   vscode.postMessage({ type: 'ask', text });
 };
 
@@ -99,6 +152,9 @@ document.getElementById('clarvis-clear')
   .addEventListener('click', () => vscode.postMessage({ type: 'clear-chat' }));
 document.getElementById('clarvis-history')
   .addEventListener('click', () => vscode.postMessage({ type: 'show-history' }));
+document
+  .getElementById('clarvis-output')
+  .addEventListener('click', () => vscode.postMessage({ type: 'show-output' }));
 
 const modelsButton = document.getElementById('clarvis-models');
 modelsButton.addEventListener('click', () => vscode.postMessage({ type: 'models' }));
@@ -133,6 +189,19 @@ window.addEventListener('message', (event) => {
 
   if (msg.type === 'chat-turn') {
     addTurn(msg.speaker, msg.text);
+    return;
+  }
+
+  // Clickable answers to a question Clarvis just asked. Typing still works —
+  // these are a shortcut, never the only way through, since an interview you
+  // can only click through is one a keyboard user cannot finish.
+  if (msg.type === 'choices') {
+    showChoices(msg.items || []);
+    return;
+  }
+
+  if (msg.type === 'choices-clear') {
+    clearChoices();
     return;
   }
 

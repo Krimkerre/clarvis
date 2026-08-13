@@ -16,8 +16,10 @@ import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
-import { Voice } from '../personality/Voice';
+import { Voice, opening } from '../personality/Voice';
 import { AgentTerminal } from '../agent/tools/commandTools';
+import { PlanningChatIO } from './PlanningChatIO';
+import { runPlanning } from '../planning/PlanningFlow';
 
 
 /**
@@ -114,6 +116,151 @@ export class ChatService {
   /** The things chat can *do*, as opposed to answer. */
   private readonly actions: ChatActions;
 
+  /** Present only while a planning interview is running in the panel. */
+  private planningIO?: PlanningChatIO;
+
+  /**
+   * True between offering to plan and the user answering.
+   *
+   * The offer is a question, so the next message is an answer to it — not something
+   * to route as a job or a question of its own. Cleared either way, so a "no" (or
+   * anything else) never leaves chat quietly intercepting later messages.
+   */
+  private awaitingPlanAnswer = false;
+
+  /**
+   * Runs the whole planning milestone through the chat panel (M9, §4.9).
+   *
+   * The same flow the command palette drives — only the `PlanningIO` differs, so
+   * questions land in the transcript and the next message typed is the answer.
+   * Guarded against re-entry: a second interview started mid-interview would have
+   * two sets of questions competing for the same replies.
+   */
+  private async startPlanning(): Promise<void> {
+    if (this.planningIO) {
+      await this.note("We're already in the middle of that one.");
+      return;
+    }
+
+    const io = new PlanningChatIO(
+      (text) => this.remark(text),
+      (text) => this.note(text),
+      (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
+      (text) => this.showPlanDocument(text),
+      this.log
+    );
+    this.planningIO = io;
+    try {
+      await runPlanning(
+        this.models,
+        io,
+        {
+          acknowledge: (task) => this.live?.acknowledge(task) ?? Promise.resolve(undefined),
+          afterTask: (task, summary) => this.live?.afterTask(task, summary) ?? Promise.resolve(undefined),
+        },
+        this.log,
+        // Plan mode hands straight to code mode — the same run path a typed job
+        // takes, so nothing about the build is special-cased for having come from
+        // planning. Cleared first: the run posts its own questions to chat, and
+        // planning must not still be intercepting them.
+        async (task) => {
+          this.planningIO = undefined;
+          // **Agent, not Auto.** Pressing Start Building is an explicit answer to
+          // "shall I build this", so the mode that follows should be the explicit
+          // one. Auto guesses whether each message is a job or a question, which is
+          // a useful default to *choose* and the wrong thing to land in by accident
+          // immediately after signing off on a plan.
+          await this.actions.setMode('agent');
+          this.runs.setStepApproval(true);
+          await this.runs.run(task, 'Plan approved — starting on milestone one.');
+        }
+      );
+    } finally {
+      this.planningIO = undefined;
+    }
+  }
+
+  /**
+   * Whether planning consumed this message — either as an answer to a question it
+   * asked, or as the reply to the offer to start.
+   */
+  private async planningTook(question: string): Promise<boolean> {
+    if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
+    if (!this.planningIO?.isWaiting) return false;
+
+    if (isStopRequest(question)) {
+      this.log('chat: planning cancelled from chat');
+      this.planningIO.cancel();
+      return true;
+    }
+    this.planningIO.supply(question);
+    return true;
+  }
+
+  /** Takes the reply to the planning offer. `true` once planning has started. */
+  private async answeredPlanOffer(question: string): Promise<boolean> {
+    this.awaitingPlanAnswer = false;
+    this.panel.post({ type: 'choices-clear' });
+
+    if (/^(y|yes|sure|go on|please|ok|okay)\b/i.test(question.trim())) {
+      await this.startPlanning();
+      return true;
+    }
+
+    this.log('chat: planning offer declined');
+    return false;
+  }
+
+  /**
+   * Shows a plan draft in the editor, rendered rather than as raw markdown.
+   *
+   * Markdown's preview is the whole point here — the draft is being *read*, by
+   * someone deciding whether to approve it, and asking them to parse hashes and
+   * asterisks while they do that is the opposite of help. Beside the editor rather
+   * than over it, so the chat panel and its question stay visible.
+   */
+  private async showPlanDocument(text: string): Promise<void> {
+    const document = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
+    await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
+    // Best effort: an editor showing the source is a fine outcome if the preview
+    // command is unavailable, and far better than an error where a plan should be.
+    await vscode.commands.executeCommand('markdown.showPreview').then(undefined, () => undefined);
+  }
+
+  /**
+   * Offers to plan, once, when a project has no `plan.md` of its own.
+   *
+   * **An offer, not an ambush.** §4.9 wants planning to be the front door, and a
+   * project with no plan is exactly who it is for — but launching a ten-minute
+   * interview because someone opened a folder would be the nagging this product is
+   * written against (§6). So: a single line in the transcript, and nothing happens
+   * unless they answer it.
+   */
+  async offerPlanningIfUnplanned(): Promise<void> {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) return;
+
+    const exists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+      () => true,
+      () => false
+    );
+    if (exists) return;
+
+    this.log('chat: no plan.md here, offered to plan');
+
+    // **A question with buttons, not an instruction to remember a command.** Spoken
+    // as well as written: it is the one line that tells someone this feature exists,
+    // and a notice nobody hears is a feature nobody finds.
+    await this.remark(
+      await opening(
+        'This project has no plan.md — nothing here has been planned. You are offering to plan one with them: an interview, then a written plan they sign off on.',
+        'No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?'
+      )
+    );
+    this.awaitingPlanAnswer = true;
+    this.panel.post({ type: 'choices', items: [{ label: 'Yes' }, { label: 'No' }] });
+  }
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,
@@ -178,6 +325,11 @@ export class ChatService {
     this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
     this.panel.onDidRequestClear(() => void this.confirmAndClear());
     this.panel.onDidRequestHistory(() => void this.showHistory());
+    // **Reveal, not a new view.** Every command and tool call already goes to the
+    // Clarvis terminal — a run's actual output has been one click away the whole
+    // time, with nothing in the panel saying so. `show(true)` keeps focus where it
+    // is: the point is seeing what is happening, not being dragged to it.
+    this.panel.onDidRequestOutput(() => this.terminal.reveal());
     // The same path a typed "stop" takes, so clicking it while nothing is running says
     // so rather than silently doing nothing — which, on an always-visible button, would
     // read as the button being broken.
@@ -268,6 +420,14 @@ export class ChatService {
   async ask(question: string): Promise<void> {
     await this.transcript.add({ speaker: 'user', text: question, at: Date.now() });
 
+    // **While planning runs, every message is an answer to the question just asked.**
+    // Routing it — stop, action, job, question — would be four chances to misread
+    // "yes" or "3" as something else entirely, so `ask()` gets out of the way.
+    // Planning owns the message when it is mid-question, or when the offer to plan
+    // is still hanging. Both are questions Clarvis just asked, and routing an answer
+    // to them as a job or a query would be several chances to misread "yes".
+    if (await this.planningTook(question)) return;
+
     // Before anything that costs a request: someone typing "stop" wants the thing to
     // stop, and asking a model about it first is both slow and beside the point.
     if (isStopRequest(question)) {
@@ -278,20 +438,56 @@ export class ChatService {
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);
+    if (action === 'planProject') {
+      await this.startPlanning();
+      return;
+    }
     if (action) {
       await this.actions.run(action, question);
       return;
     }
 
     // The matcher missed. A model may recognise it anyway — but only as a suggestion,
-    // and a declined suggestion falls through to a normal answer (M8f2).
-    if (await this.actions.offerInferred(question)) return;
+    // and a declined suggestion falls through to a normal answer (M8f2). Planning is
+    // the one action ChatActions cannot run itself: it owns the whole conversation
+    // for the next several minutes, which is ChatService's to hand over, not its.
+    const inferred = await this.actions.offerInferred(question);
+    if (inferred === 'planProject') {
+      await this.startPlanning();
+      return;
+    }
+    if (inferred) return;
 
     const mode = this.actions.mode();
     const decision = routeFor(question);
 
     const job = await this.jobIn(question, mode, decision);
     if (job) {
+      // Agent asks before each step that acts; Auto is the mode that decides for
+      // itself, which is the only thing separating the two now that both can edit.
+      this.runs.setStepApproval(mode === 'agent');
+
+      // **An answer continues the work rather than starting new work.** A run that
+      // stopped to ask "preview, or applied straight away?" gets a four-word reply
+      // that means nothing without the question it answers.
+      const pending = this.runs.takeUnanswered();
+      if (pending) {
+        this.log('chat: treating that as an answer to the run that just asked');
+        await this.runs.run(
+          [
+            `Continue this task: ${pending.task}`,
+            '',
+            `You stopped and asked:\n${pending.question}`,
+            '',
+            `They answered:\n${job.task}`,
+            '',
+            'Update plan.md with what they have just settled, then carry on building.',
+          ].join('\n'),
+          'Right — that settles it.'
+        );
+        return;
+      }
+
       await this.runs.run(job.task, job.because);
       return;
     }

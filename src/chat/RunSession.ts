@@ -63,6 +63,40 @@ export class RunSession {
    * would otherwise begin editing files with no warning — and the announcement is what
    * makes Stop a real option rather than a theoretical one.
    */
+  /**
+   * Whether this run stops and asks before each step that acts.
+   *
+   * Set by the caller from the mode: Agent asks, Auto does not. Auto's whole
+   * proposition is deciding for itself, and a mode that asked before every step
+   * would be Agent wearing a different label.
+   */
+  private stepApproval = false;
+
+  setStepApproval(on: boolean): void {
+    this.stepApproval = on;
+  }
+
+  /**
+   * The last run that ended by asking something, and what it was doing.
+   *
+   * **Because answering a question should continue the work, not restart it.** A run
+   * that stops to ask "preview, or applied straight away?" now puts that in the chat
+   * — and the reply is four words that mean nothing on their own. Without this, they
+   * arrive as a fresh task with no memory of the question they answer.
+   *
+   * Cleared once used: the second message after a run is a new request, not more
+   * answer, and treating it as context would drag a finished task through the rest
+   * of the conversation.
+   */
+  private unanswered?: { task: string; question: string };
+
+  /** The pending question, folded into a follow-up task. Consumed by reading it. */
+  takeUnanswered(): { task: string; question: string } | undefined {
+    const pending = this.unanswered;
+    this.unanswered = undefined;
+    return pending;
+  }
+
   async run(task: string, because: string): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
@@ -83,7 +117,14 @@ export class RunSession {
 
     const controller = this.busy.start('reply');
 
-    const runner = new AgentRunner(this.context, root, this.models, this.terminal, this.log);
+    const runner = new AgentRunner(
+      this.context,
+      root,
+      this.models,
+      this.terminal,
+      this.log,
+      this.stepApproval ? (description, detail) => this.askStep(description, detail) : undefined
+    );
 
 
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
@@ -135,6 +176,24 @@ export class RunSession {
   }
 
   /**
+   * Describes one step and waits for a yes.
+   *
+   * Modal, and deliberately: the run is stopped until it is answered, and a toast
+   * that timed out would either strand the run or, worse, be treated as consent.
+   * "Skip this step" rather than "No", because the run continues either way — the
+   * model is told what was declined and asked to find another route.
+   */
+  private async askStep(description: string, detail: string): Promise<boolean> {
+    const answer = await vscode.window.showInformationMessage(
+      description,
+      { modal: true, detail },
+      'Do it',
+      'Skip this step'
+    );
+    return answer === 'Do it';
+  }
+
+  /**
    * The result, and then the exhale.
    *
    * **Both of these were lost and neither was noticed.** The closing line — where the
@@ -153,10 +212,25 @@ export class RunSession {
     // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
     // crash looks, and this is the shape of a run that was refused, or that read a file
     // and correctly declined to act on it.
-    const said = summary || (changed === 0 ? await this.phrase('report', 'Nothing needed changing.') : '');
+    // **"Nothing needed changing" was a claim, and it was false.** Found live: the
+    // model stopped after reading two files and returned no summary at all, and this
+    // line reported it as a finding — rewritten in his voice into "The code was
+    // already doing what you wanted", about a project whose only file the user had
+    // just deleted. A run that ends with nothing to say has established that *he
+    // did nothing*, not that nothing needed doing, and the difference is the whole
+    // of §2.2's no-invented-facts rule.
+    const said =
+      summary ||
+      (changed === 0
+        ? await this.phrase('report', 'I stopped without changing anything, and without saying why. Ask me again if that was not what you wanted.')
+        : '');
     if (!said) return;
 
     await this.note(said);
+
+    // A run that ended on a question is waiting for an answer, and the next message
+    // is almost certainly it.
+    this.unanswered = said.includes('?') ? { task, question: said } : undefined;
 
     const aside = (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
     if (aside) await this.note(aside);

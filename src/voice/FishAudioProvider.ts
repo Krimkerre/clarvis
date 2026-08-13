@@ -108,7 +108,15 @@ export class FishAudioProvider implements VoiceProvider {
           text: utterance.text,
           reference_id: utterance.voiceId,
           format: 'mp3',
-          latency: 'normal',
+          // **Speed, at a cost nobody can hear.** `normal` is Fish's quality-first
+          // mode and was costing 1.5–3s before a word came out — long enough that a
+          // one-line remark landed after the moment it was about. `balanced` is
+          // their low-latency mode; on a dry aside about a build, the difference is
+          // inaudible and the wait is not.
+          latency: 'balanced',
+          // 128kbps is for music. Speech at 64 halves the transfer with no audible
+          // loss through a laptop speaker, which is where all of this is heard.
+          mp3_bitrate: 64,
         }),
         signal: abort.signal,
       });

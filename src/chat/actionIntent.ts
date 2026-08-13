@@ -40,6 +40,7 @@ export const ACTION_QUESTIONS: Record<ChatAction, string> = {
   switchBranch: 'Switch branch?',
   explainGit: 'Explain the repository state?',
   forgetFailure: 'Stop mentioning that failing job?',
+  planProject: 'Start planning this project — an interview, then a plan.md?',
 };
 
 /** The allow-list, derived from the questions so the two cannot drift apart. */

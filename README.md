@@ -50,14 +50,24 @@ still on the roadmap (§ Progress).
 
 <img src="media/mockup-planning.png" alt="Mockup of Clarvis in plan mode: the user says 'a maps app', Clarvis points out there are already four of those owned by companies with satellites and asks what makes this one worth existing. The user says 'surprise me', and Clarvis proposes Dead Reckoning — a maps app that routes you almost correctly so you learn the city — with Accept, Reject and Modify buttons and a note that it stays off near hospitals or on low battery." width="100%">
 
-*Mockup* — the other half of the product, before any code exists. You give it a
-sentence; it asks the questions that actually change the plan, records "no idea" as an
-open question rather than inventing an answer, and tells you what's wrong with your idea
-— safety problems, logic holes, scope that will balloon. Say "surprise me" and it will,
-in fact, surprise you. Every finding is yours to accept, reject, or modify, and your
-rejections are recorded *with your reasoning* so nothing gets re-litigated. `plan.md`
-fills in as you go, and nothing is built until you press Approve. Animated version:
+*Mockup of the eventual chat-panel version* — the questions, the pushback and the
+Accept/Reject/Modify findings shown here are real and working today (M9, below), just
+through `Clarvis: Plan This Project` rather than the chat panel yet. Animated version:
 [`media/mockup-planning.html`](./media/mockup-planning.html).
+
+**What actually runs today.** Give it one sentence — or say you don't know and it'll
+suggest a few, at least a couple of them genuinely funny. It reads the workspace first
+(an existing `package.json`, a git repo, a README) so questions are grounded in what's
+actually there. It asks in batches, never a 30-question interrogation, and "I don't know
+yet" is recorded as an honest open question rather than argued with — but a *vague*
+answer gets pushed back on once, with one specific follow-up, before it's accepted as
+given. Language gets a real shortlist — 2-4 options, each with one genuine advantage and
+one genuine cost, "you pick" a first-class answer with its own one-line reason, never a
+list where everything looks good. Once there's enough to draft, it analyses the whole
+thing for safety problems, logic contradictions and scope creep — findings you accept,
+reject (with your reasoning recorded, so it isn't re-litigated next time), or modify in
+your own words. Then it drafts `plan.md`, shows it to you, and lets you keep adding
+notes and redrawing until you explicitly approve — nothing is written until you do.
 
 ## What it does
 
@@ -306,8 +316,16 @@ the full per-milestone build notes and exit criteria.
       `Clarvis: Debug — Voice Check` now reads his lines back through the real prompts
       before a change ships. *(Full notes, including the deviations from spec and why,
       are in `plan.md`.)*
-- [ ] **M9 — Project Planning.** Not started. *(The front door: interview → analysis →
-      `plan.md` → sign-off → hand milestone one to the agent.)*
+- [ ] **M9 — Project Planning.** *In progress — the front door: interview → analysis →
+      `plan.md` → sign-off → hand milestone one to the agent.* Interview, analysis,
+      verdicts and `plan.md` generation are built and working via `Clarvis: Plan This
+      Project` — chained input boxes and QuickPicks rather than the chat panel yet, a
+      deliberate, temporary front end. Reads the workspace before asking, pushes back
+      once on a vague or risky answer, and shows the drafted plan for you to refine
+      before an explicit Approve writes it. *Not built:* the chat-panel front end
+      itself, per-language clean-code conventions in the generated plan, and sign-off
+      → agent handoff (M9e) — including a clarifying-question mechanic for the agent
+      mid-build, the coding-mode half of what this milestone is meant to do.
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
       people learning to program on a real project of their own. Opt-in per project,

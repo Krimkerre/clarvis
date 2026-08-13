@@ -1,4 +1,5 @@
 import { InterviewState, knownFacts } from './interviewTopics';
+import { FindingVerdict } from './verdictSummary';
 
 /**
  * Turning an interview into actual build steps (M9d — §4.9).
@@ -18,12 +19,36 @@ import { InterviewState, knownFacts } from './interviewTopics';
 const MIN_STEPS = 3;
 const MAX_STEPS = 6;
 
-export function milestonePrompt(state: InterviewState): string {
+export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[] = []): string {
+  // The user's own wording wins for a modified finding, same rule as everywhere else.
+  const findings = accepted.map((verdict) =>
+    verdict.status === 'modified'
+      ? (verdict.reasoning ?? verdict.finding.what)
+      : verdict.finding.suggestedResolution
+  );
+
   return [
     'Here is everything established in a project-planning interview:',
     '',
     knownFacts(state),
     '',
+    ...(findings.length > 0
+      ? [
+          'They also reviewed the plan and accepted these points:',
+          ...findings.map((finding) => `- ${finding}`),
+          '',
+          // **Some of these are work and some are questions, and the difference is
+          // the whole point.** Folding all of them in as steps is what emptied
+          // milestone one before: "Clarify whether v1 accepts user-provided words" is
+          // not something anyone can build. Dropping all of them loses the fixes the
+          // user just agreed to. Only the model reading both can tell which is which.
+          'Fold the ones that describe actual work into the steps below, in the place',
+          'they belong in the order — a fix agreed before building starts is part of',
+          'building, not a note about it. Leave out the ones that only ask a question',
+          'to be settled; those are recorded separately and are not work.',
+          '',
+        ]
+      : []),
     `Write the build steps for milestone one — ${MIN_STEPS} to ${MAX_STEPS} of them, in the order`,
     'they should be done.',
     '',

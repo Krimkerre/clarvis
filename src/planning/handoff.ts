@@ -49,7 +49,14 @@ export function handoffTask(
     ...(steps.length > 0
       ? steps.map((step) => `- ${step}`)
       : ['- (no build steps were written — work out the smallest thing that runs, and do that)']),
-    ...(settle.length > 0 ? ['', 'Open questions to settle as you go, not before you start:', ...settle.map((item) => `- ${item}`)] : []),
+    ...(settle.length > 0
+      ? [
+          '',
+          'Agreed during review. Whichever of these was work is already a step above —',
+          'the rest are questions to settle as you go, not before you start:',
+          ...settle.map((item) => `- ${item}`),
+        ]
+      : []),
     '',
     'Start with the smallest thing that runs. Do not build past milestone 1.',
   ].join('\n');

@@ -38,7 +38,7 @@ test('the build list is the steps; findings are named as questions', () => {
   // read the plan, found nothing it could do, and stopped.
   const task = handoffTask(state, 'renames photos', verdicts, ['Create the entry point']);
   assert.match(task, /Milestone 1 — build these[^]*- Create the entry point/);
-  assert.match(task, /Open questions to settle as you go[^]*- add a --dry-run flag/);
+  assert.match(task, /Agreed during review[^]*- add a --dry-run flag/);
   assert.doesNotMatch(task, /support all formats/);
 });
 

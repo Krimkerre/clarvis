@@ -124,11 +124,13 @@ export function renderPlan({ projectName, seed, state, verdicts, steps = [] }: P
     // the plan, found nothing it could do, and stopped. Found live.
     ...(steps.length > 0 ? steps.map((step) => `- [ ] ${step}`) : ['_No steps written — planning could not reach a model._']),
     '',
-    // The findings keep their own section: they are questions to settle before or
-    // during the build, and mixing them into the work is what emptied the work.
+    // The findings keep their own section — as the record of what was agreed and
+    // why, not a second checklist. Whichever of them described actual work is
+    // already above, folded into the steps in the order it belongs; the rest are
+    // questions, and mixing questions into the work is what emptied the work.
     ...(accepted.length > 0
       ? [
-          '**Settle while building:**',
+          '**Agreed during review** — the actionable ones are in the steps above; the rest are still open:',
           ...accepted.map(
             (verdict) =>
               `- ${verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution}`

@@ -71,8 +71,9 @@ test('the build checklist is the steps, not the findings', () => {
     steps: ['Create the CLI entry point', 'Read EXIF dates'],
   });
   assert.match(plan, /\*\*Build:\*\*\n- \[ \] Create the CLI entry point\n- \[ \] Read EXIF dates/);
-  // Accepted findings are questions to settle, listed apart from the work.
-  assert.match(plan, /\*\*Settle while building:\*\*\n- add a --dry-run flag/);
+  // Accepted findings are recorded as what was agreed, not as a second checklist —
+  // the actionable ones are folded into the steps by whoever wrote them.
+  assert.match(plan, /\*\*Agreed during review\*\*[^]*- add a --dry-run flag/);
   assert.doesNotMatch(plan, /- \[ \] add a --dry-run flag/);
 });
 

@@ -2,6 +2,7 @@ import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
 import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResult } from './analysisPrompt';
 import { milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
+import { FindingVerdict } from './verdictSummary';
 
 /**
  * Runs one analysis pass over a finished interview (M9b — §4.9).
@@ -72,7 +73,9 @@ export async function runAnalysis(
 export async function planMilestone(
   models: ModelService,
   state: InterviewState,
-  log: (message: string) => void
+  log: (message: string) => void,
+  /** Findings the user accepted or rewrote — the actionable ones become steps. */
+  accepted: FindingVerdict[] = []
 ): Promise<string[]> {
   if (!(await models.isReady('chat'))) {
     log('planning: milestone — no model configured, no steps written');
@@ -83,7 +86,7 @@ export async function planMilestone(
     let text = '';
     const collect = (async () => {
       for await (const fragment of models.stream(
-        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state) }] },
+        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state, accepted) }] },
         'chat'
       )) {
         text += fragment;

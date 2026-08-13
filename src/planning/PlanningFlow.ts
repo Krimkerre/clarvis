@@ -104,7 +104,13 @@ export async function runPlanning(
 
   // The build steps, written before the draft is shown — a plan whose milestone is
   // empty is not a plan anyone can approve, and it is what the agent reads next.
-  const steps = readyToDraft(state) && !noPlanNeeded ? await planMilestone(models, state, log) : [];
+  // The accepted findings go in with them: a fix the user just agreed to is part of
+  // building, not a note beside it. The model decides which are work and which are
+  // only questions — folding all of them in is what emptied milestone one before.
+  const steps =
+    readyToDraft(state) && !noPlanNeeded
+      ? await planMilestone(models, state, log, verdicts.filter((verdict) => verdict.status !== 'rejected'))
+      : [];
 
   const approved = readyToDraft(state) && !noPlanNeeded
     ? await draftAndApprovePlan(state, seed, verdicts, steps, io, lines, log)

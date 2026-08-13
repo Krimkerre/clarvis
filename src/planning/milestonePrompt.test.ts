@@ -25,6 +25,39 @@ test('the prompt refuses to invent scope that was never asked for', () => {
   assert.match(milestonePrompt(state), /no tests, no packaging, no CI unless they/);
 });
 
+test('accepted findings are offered for folding, work only', () => {
+  // Both halves matter. Folding all of them in is what emptied milestone one — a
+  // clarification is not a build step. Dropping all of them loses the fixes the user
+  // just agreed to. Only the model reading both can tell which is which.
+  const prompt = milestonePrompt(state, [
+    {
+      finding: { class: 'safety', what: 'no dry run', whyItMatters: 'x', suggestedResolution: 'add a --dry-run flag' },
+      status: 'accepted',
+    },
+  ]);
+
+  assert.match(prompt, /- add a --dry-run flag/);
+  assert.match(prompt, /Fold the ones that describe actual work/);
+  assert.match(prompt, /Leave out the ones that only ask a question/);
+});
+
+test('a modified finding is offered in the user\'s own words', () => {
+  const prompt = milestonePrompt(state, [
+    {
+      finding: { class: 'improvement', what: 'no linter', whyItMatters: 'x', suggestedResolution: 'name a linter' },
+      status: 'modified',
+      reasoning: 'set up ruff',
+    },
+  ]);
+
+  assert.match(prompt, /- set up ruff/);
+  assert.doesNotMatch(prompt, /name a linter/);
+});
+
+test('no findings means no folding instructions cluttering the prompt', () => {
+  assert.doesNotMatch(milestonePrompt(state), /Fold the ones/);
+});
+
 test('steps parse one per line', () => {
   const steps = parseMilestoneSteps('Create the entry point\nParse the arguments\nRename the file');
   assert.deepEqual(steps, ['Create the entry point', 'Parse the arguments', 'Rename the file']);

@@ -5,6 +5,7 @@ import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } fro
 import { namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
+import { synthesizeAnswerPrompt, cleanSynthesizedAnswer } from './synthesizePrompt';
 import { researchWorkspace } from './workspaceResearch';
 import { describeWorkspaceSignals } from './workspaceSignals';
 
@@ -166,10 +167,56 @@ async function challengeAnswer(
     }
 
     log(`planning: "${topic}" — follow-up answered — ${raw.trim()}`);
-    return { ...answer, text: `${answer.text}\n\nFollow-up — ${result.followUp}\n${raw.trim()}` };
+    const synthesized = await synthesizeAnswer(models, topic, answer.text!, result.followUp, raw.trim(), log);
+    return { ...answer, text: synthesized };
   } catch (error) {
     log(`planning: "${topic}" — challenge failed (${String(error)}), kept original answer`);
     return answer;
+  }
+}
+
+/**
+ * Merges an answer and its follow-up into one coherent statement, in prose.
+ *
+ * Found live: gluing them together with a "Follow-up — ..." label produced a raw
+ * transcript sitting inside `plan.md`, exactly the incoherent copy-paste this exists
+ * to avoid. No model, no rewrite: falls back to a plain concatenation, honest if
+ * inelegant, rather than losing either answer.
+ */
+async function synthesizeAnswer(
+  models: ModelService,
+  topic: TopicId,
+  original: string,
+  followUpQuestion: string,
+  followUpAnswer: string,
+  log: (message: string) => void
+): Promise<string> {
+  const fallback = `${original} ${followUpAnswer}`;
+  if (!(await models.isReady('chat'))) return fallback;
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: synthesizeAnswerPrompt(topic, original, followUpQuestion, followUpAnswer) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 500) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+
+    const cleaned = cleanSynthesizedAnswer(text);
+    if (!cleaned) {
+      log(`planning: "${topic}" — synthesis returned nothing, kept the raw combination`);
+      return fallback;
+    }
+    log(`planning: "${topic}" — synthesized — ${cleaned}`);
+    return cleaned;
+  } catch (error) {
+    log(`planning: "${topic}" — synthesis failed (${String(error)}), kept the raw combination`);
+    return fallback;
   }
 }
 

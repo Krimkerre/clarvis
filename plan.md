@@ -3459,6 +3459,17 @@ between "planning got it wrong" and "the agent hit something planning couldn't h
 known." Retrofitting M8's existing runner (used by chat and the terminal commands,
 not just planning) was explicitly not chosen.
 
+**Follow-ups were reading as a raw transcript (13 Aug).** Live: a follow-up answer
+got glued onto the original with a literal `"Follow-up — <question>\n<answer>"`
+label, and that whole block sat inside `plan.md`'s Established section — the exact
+copy-pasted-transcript look a written plan is supposed to read cleaner than.
+`synthesizePrompt.ts` (pure, tested) asks the model to rewrite the answer and its one
+follow-up as a single coherent statement, using only what either answer actually
+said — same discipline as everywhere else in this project, applied to merging two
+answers instead of to not inventing new ones. No model, no rewrite: falls back to a
+plain concatenation, honest if inelegant, rather than losing either answer.
+`Interview.ts`'s `synthesizeAnswer()` is the glue.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

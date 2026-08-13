@@ -262,16 +262,22 @@ export class ChatService {
       await opening(
         [
           looksNew
-            ? 'They have just opened what looks like a brand new project: an empty folder, nothing built yet, no plan.md.'
-            : 'This project has no plan.md — nothing here has been planned.',
+            ? 'They have just opened what looks like a brand new project: an empty folder, nothing built yet, and no plan.md.'
+            : 'They have opened a project that already has files in it — someone has been working here — but there is no plan.md, so none of it was ever written down.',
           signals ? `What is actually in the folder: ${describeWorkspaceSignals(signals)}` : '',
-          'Open by noticing what this is — a new project, or an old one nobody wrote down — then offer to plan it with them: an interview, then a written plan they sign off on.',
+          '',
+          'Two beats, in this order. First: notice what you have walked into and have a',
+          'view about it — a new project deserves a different remark from one already',
+          'full of code nobody planned, and a line that merely restates "there is no',
+          'plan.md" is a failed line.',
+          'Then: offer to plan it with them — an interview, then a written plan they',
+          'sign off on.',
         ]
           .filter(Boolean)
           .join(' '),
         looksNew
           ? 'Oh, a new project? We could sketch out what this is meant to do before the next person asks — or would you rather keep discovering it as we go?'
-          : 'No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?'
+          : 'No plan.md, and a folder full of files that presumably mean something to someone. Would you like help working out what this is?'
       )
     );
     this.awaitingPlanAnswer = true;

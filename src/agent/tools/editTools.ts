@@ -132,4 +132,31 @@ async function commit(uri: vscode.Uri, current: string | undefined, plan: EditPl
   // would see the old contents on disk.
   const document = await vscode.workspace.openTextDocument(uri);
   if (document.isDirty) await document.save();
+
+  await reveal(document);
+}
+
+/**
+ * Brings the file just changed into view, so a run can be watched rather than
+ * reconstructed from a summary afterwards.
+ *
+ * **Focus is never taken.** `preserveFocus` keeps the cursor wherever the user left
+ * it — an agent that yanked the editor mid-sentence every time it touched a file
+ * would be unusable while it works, which is precisely when you want to watch it.
+ * `preview: true` reuses the one tab as the run moves from file to file instead of
+ * leaving thirty behind.
+ *
+ * Best effort throughout: a file that cannot be shown is not a failed edit, and
+ * throwing here would undo work that has already landed on disk.
+ */
+async function reveal(document: vscode.TextDocument): Promise<void> {
+  try {
+    await vscode.window.showTextDocument(document, {
+      preview: true,
+      preserveFocus: true,
+      viewColumn: vscode.ViewColumn.One,
+    });
+  } catch {
+    // Nothing to do about it, and nothing worth failing the edit over.
+  }
 }

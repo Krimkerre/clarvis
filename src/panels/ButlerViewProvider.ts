@@ -281,9 +281,9 @@ function chatMarkup(n: string): string {
       .clarvis-turn code { font-family: var(--vscode-editor-font-family);
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
 
-      /* Clickable answers. Wraps rather than scrolls — a horizontal scrollbar
-         would hide the options that did not fit. */
-      .clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; }
+      /* Clickable answers. Wraps rather than scrolls (a scrollbar would hide the
+         options that did not fit), and sits tight under the message it answers. */
+      .clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; margin-top:-2px; }
       .clarvis-choice { font: inherit; cursor:pointer; padding:4px 10px; border-radius:4px;
         border:1px solid var(--vscode-button-border, var(--vscode-focusBorder));
         background: var(--vscode-button-secondaryBackground, transparent);

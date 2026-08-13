@@ -61,7 +61,10 @@ export class PlanningChatIO implements PlanningIO {
   }
 
   async askText(prompt: string, placeholder?: string): Promise<string | undefined> {
-    await this.speak(placeholder ? `${prompt}\n\n*${placeholder}*` : prompt);
+    // The placeholder is a hint, not part of the question — written, never spoken,
+    // and without markdown, which the panel renders as literal asterisks.
+    await this.speak(prompt);
+    if (placeholder) await this.write(placeholder);
     return this.nextMessage();
   }
 
@@ -77,13 +80,18 @@ export class PlanningChatIO implements PlanningIO {
     // five options with a clause of detail each, read aloud, is forty seconds of
     // audio nobody asked for — and the options are on screen as buttons anyway.
     // The one option they pick gets read out, at the point they pick it.
+    //
+    // **No markdown.** The panel renders plain text with `code` spans and nothing
+    // else, so `**1.**` arrived on screen as literal asterisks — found live. A blank
+    // line between options and an indented detail line do the same job in a format
+    // the panel actually has.
     const menu = items
-      .map((item, index) => `**${index + 1}.** ${item.label}${item.detail ? `\n   ${item.detail}` : ''}`)
-      .join('\n');
+      .map((item, index) => `${index + 1}.  ${item.label}${item.detail ? `\n      ${item.detail}` : ''}`)
+      .join('\n\n');
     await this.speak(prompt);
 
     for (;;) {
-      await this.write(`${menu}\n\n*Click one, or type a number or the name.*`);
+      await this.write(menu);
       this.offer(items.map((item) => item.label));
 
       const reply = (await this.nextMessage())?.trim();

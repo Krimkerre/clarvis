@@ -76,6 +76,9 @@ export async function runInterview(
 
   state.projectName = await resolveProjectName(models, io, seed.trim(), log, namedByIdea);
 
+  // Whether the "I don't know is fine" note has already been made.
+  let unknownIsFine = false;
+
   for (;;) {
     const topic = nextTopic(state);
     if (!topic || readyToDraft(state)) break;
@@ -99,7 +102,11 @@ export async function runInterview(
       resolved.question = 'Which language should this be built in?';
       answer = resolved;
     } else {
-      const raw = await io.askText(question, "Type your answer, or \"I don't know yet\" — that's a fine answer here.");
+      // **Said once, at the top.** Repeating "or say I don't know" under all six
+      // questions is a form telling you its own rules over and over; the point lands
+      // the first time and is noise every time after.
+      const raw = await io.askText(question, unknownIsFine ? undefined : "\"I don't know yet\" is a perfectly good answer here.");
+      unknownIsFine = true;
 
       // Cancelling the box (Escape) pauses the interview rather than answering "I
       // don't know" on the user's behalf — those are different things, and only one
@@ -238,12 +245,18 @@ async function synthesizeAnswer(
  * would quietly close the door this feature exists to hold open.
  */
 async function seedHint(): Promise<string> {
+  const written = 'a CLI that renames photos by their EXIF date';
   const example = await opening(
-    'Give ONE example of a small project someone might describe in a sentence — the sort of thing that goes under a question as a hint. A concrete thing that does something, under twelve words. Not a question, not a preamble, just the example itself.',
-    'a CLI that renames photos by their EXIF date',
+    'Give ONE example of a small project someone might describe in a sentence — the sort of thing that goes under a question as a hint. A concrete thing that does something, under twelve words. No joke, no second sentence, no preamble: just the example itself.',
+    written,
     false
   );
-  return `e.g. ${example}, or "I don't know" for ideas`;
+
+  // **Length enforced here, not asked for there.** Told "under twelve words" it
+  // returned two sentences with a joke in the second — found live. A hint that runs
+  // longer than the question it sits under has stopped being a hint.
+  const short = example.split(/(?<=[.!?])\s+/)[0].trim().replace(/[.]$/, '');
+  return `e.g. ${short.length <= 70 ? short : written}, or "I don't know" for ideas`;
 }
 
 /**

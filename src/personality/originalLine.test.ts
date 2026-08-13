@@ -31,7 +31,19 @@ test('a second sentence on its own line is kept, not discarded', () => {
   assert.equal(line, 'Nothing here has been planned. Shall we fix that?');
 });
 
-test('a line that forgot to ask is rejected', () => {
+test('a question that ended in a full stop is repaired, not rejected', () => {
+  // Found live, verbatim from the model: a genuinely good offer thrown away for
+  // its final punctuation mark.
+  const line = acceptOpening(
+    "I could walk you through what's supposed to happen here and write it down. Would the second one help.",
+    true
+  );
+  assert.equal(line, "I could walk you through what's supposed to happen here and write it down. Would the second one help?");
+});
+
+test('a line that asks nothing at all is still rejected', () => {
+  // Repairing punctuation is fine; inventing the question would be putting words
+  // in his mouth.
   assert.equal(acceptOpening('There is no plan in this project.', true), undefined);
 });
 
@@ -45,7 +57,13 @@ test('enthusiasm and emoji are rejected, not repaired', () => {
 });
 
 test('an overlong line is rejected rather than truncated', () => {
-  assert.equal(acceptOpening(`${'x'.repeat(260)}?`, true), undefined);
+  assert.equal(acceptOpening(`${'x'.repeat(340)}?`, true), undefined);
+});
+
+test('the real line the model wrote survives, punctuation and all', () => {
+  const real =
+    "We could continue the current arrangement, where each decision lives in someone's head until it doesn't, or I could write it down so we both know. Would the second one help.";
+  assert.match(acceptOpening(real, true) ?? '', /Would the second one help\?$/);
 });
 
 test('two real sentences fit inside the limit', () => {

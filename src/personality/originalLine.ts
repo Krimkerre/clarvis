@@ -17,10 +17,27 @@ import { character, ONLY_WHAT_YOU_WERE_GIVEN } from './character';
 
 /**
  * Long enough for two sentences with a joke in one of them, short enough to be an
- * opener. 180 was the first guess and rejected real lines that were fine — the
- * prompt asks for two sentences and two sentences do not reliably fit in 180.
+ * opener. Raised twice on evidence: 180, then 240, both of which rejected real
+ * lines that were fine. A model asked for two sentences writes two sentences, and
+ * the cap is a backstop against a paragraph, not a style rule.
  */
-export const MAX_OPENING_LENGTH = 240;
+export const MAX_OPENING_LENGTH = 320;
+
+/**
+ * How a question opens, when it forgot to close with a mark.
+ *
+ * Anchored to the *start* of the last sentence, past a leading conjunction at most
+ * ("So, shall we"). Two narrowings, both from a test that caught them: matching
+ * anywhere in the sentence turned "There is no plan in this project." into a
+ * question on its `is`, and allowing any leading word did the same via "There".
+ *
+ * Found live: "…or I could walk you through what's actually supposed to happen here.
+ * Would the second one help." — a perfectly good offer, rejected for ending in a
+ * full stop. Repairing the punctuation changes no words, which is the only reason
+ * this is repair rather than rejection.
+ */
+const INTERROGATIVE =
+  /^\W*(?:(?:so|or|and|well|right|now|then|but)[,\s]+)?(shall|would|want|should|do|does|did|can|could|are|will|how|what|why|which|who|ready)\b/i;
 
 /**
  * The instruction for one original line.
@@ -36,7 +53,7 @@ export function openingPrompt(situation: string, mustAsk: boolean): string {
     `Situation: ${situation}`,
     '',
     'Write ONE opening line for that. Rules:',
-    '- One or two short sentences. Under 180 characters.',
+    '- One or two short sentences, and no more. Under 200 characters.',
     mustAsk
       ? '- It must end by asking them, in your own words, whether they want to. A question they can answer yes or no.'
       : '- Not a question.',
@@ -79,9 +96,28 @@ export function acceptOpening(raw: string | undefined, mustAsk: boolean): string
 
   if (!text) return undefined;
   if (text.length > MAX_OPENING_LENGTH) return undefined;
-  if (mustAsk && !text.includes('?')) return undefined;
+  if (mustAsk) {
+    const asked = ensureQuestion(text);
+    if (!asked) return undefined;
+    text = asked;
+  }
   if (/[\p{Extended_Pictographic}]/u.test(text)) return undefined;
   if (text.includes('!')) return undefined;
 
   return text;
+}
+
+/**
+ * The line as a question, or `undefined` if it never was one.
+ *
+ * Only the final mark is touched — a line that asks nothing at all is still
+ * rejected, because inventing the question would be putting words in his mouth.
+ */
+function ensureQuestion(text: string): string | undefined {
+  if (text.includes('?')) return text;
+
+  const lastSentence = text.split(/(?<=[.!?])\s+/).pop() ?? text;
+  if (!INTERROGATIVE.test(lastSentence)) return undefined;
+
+  return text.replace(/\.?$/, '?');
 }

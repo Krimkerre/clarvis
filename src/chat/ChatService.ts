@@ -22,6 +22,10 @@ import { describeWorkspaceSignals } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { runPlanning } from '../planning/PlanningFlow';
+import { workspaceMemory } from '../planning/workspaceMemory';
+import { interruptedBuild } from '../planning/pendingBuild';
+import { MilestoneState } from '../planning/planUpdate';
+import { nextMilestoneTask } from '../planning/nextMilestoneTask';
 
 
 /**
@@ -188,7 +192,10 @@ export class ChatService {
           // one-off "rename this variable" has neither.
           this.runs.setFromPlan(true, steps);
           await this.runs.run(task, 'Plan approved — starting on milestone one.');
-        }
+        },
+        // An interview is two minutes of someone's attention; losing it to a window
+        // reload teaches people not to start one.
+        workspaceMemory(this.context)
       );
     } finally {
       this.planningIO = undefined;
@@ -196,6 +203,50 @@ export class ChatService {
       // them back in Plan a second after they approved one would undo the handoff.
       if (this.actions.mode() === 'plan') await this.actions.setMode(modeBefore);
     }
+  }
+
+  /**
+   * Offers to pick up a build that was already started here.
+   *
+   * **Only when work has actually begun.** A freshly approved plan with nothing
+   * ticked is not an interrupted build, and offering to continue it every time the
+   * window opens would be the nagging §6 exists to prevent. Some progress and
+   * something left is the narrow case that means "you were in the middle of this".
+   */
+  private async offerToResumeBuild(): Promise<boolean> {
+    const pending = await interruptedBuild();
+    if (!pending) return false;
+
+    this.log(`chat: build in progress — milestone ${pending.milestone.number}, ${pending.milestone.done}/${pending.milestone.total}`);
+    await this.remark(
+      await opening(
+        `They were part-way through building "${pending.projectName}": milestone ${pending.milestone.number}, ${pending.milestone.title}, ${pending.milestone.done} of ${pending.milestone.total} steps done. You are offering to pick it up where it stopped.`,
+        `Milestone ${pending.milestone.number} is ${pending.milestone.done} of ${pending.milestone.total} done. Shall I carry on with it?`
+      )
+    );
+
+    this.awaitingBuildAnswer = pending;
+    this.panel.post({ type: 'choices', items: [{ label: 'Carry on' }, { label: 'Not now' }] });
+    return true;
+  }
+
+  /** Set between offering to resume a build and the user answering. */
+  private awaitingBuildAnswer?: { milestone: MilestoneState; projectName: string; steps: string[] };
+
+  /** Takes the reply to that offer. `true` once the build has been picked up. */
+  private async answeredBuildOffer(question: string): Promise<boolean> {
+    const pending = this.awaitingBuildAnswer;
+    this.awaitingBuildAnswer = undefined;
+    this.panel.post({ type: 'choices-clear' });
+    if (!pending) return false;
+
+    if (!/^(carry on|y|yes|sure|ok|okay|go on|continue)\b/i.test(question.trim())) {
+      this.log('chat: build resume declined');
+      return false;
+    }
+
+    await this.startNextMilestone(nextMilestoneTask(pending.milestone, pending.projectName), pending.steps);
+    return true;
   }
 
   /**
@@ -217,6 +268,7 @@ export class ChatService {
    * asked, or as the reply to the offer to start.
    */
   private async planningTook(question: string): Promise<boolean> {
+    if (this.awaitingBuildAnswer) return this.answeredBuildOffer(question);
     if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
     if (!this.planningIO?.isWaiting) return false;
 
@@ -277,6 +329,11 @@ export class ChatService {
       () => false
     );
     if (exists) return;
+
+    // **A build already under way is offered before anything else.** The plan holds
+    // the progress, so a window reopened next Tuesday can pick it up — and asking
+    // "shall we plan something?" at someone mid-build would be absurd.
+    if (await this.offerToResumeBuild()) return;
 
     // What is actually here, so the line can react to *this* folder rather than to
     // the abstract fact of a missing file. An empty one deserves "oh, a new project?";

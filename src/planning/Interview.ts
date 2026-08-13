@@ -35,8 +35,19 @@ const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
 export async function runInterview(
   models: ModelService,
   io: PlanningIO,
-  log: (message: string) => void
+  log: (message: string) => void,
+  /**
+   * Saves progress after every answer, so a reload costs nothing.
+   *
+   * Optional: the command-palette route works without it, and an interview that
+   * cannot be saved is still an interview.
+   */
+  remember?: (state: InterviewState, seed: string) => Promise<void>,
+  /** An interview already under way, to carry on rather than start over. */
+  resume?: { state: InterviewState; seed: string }
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
+  if (resume) return continueInterview(models, io, log, resume.state, resume.seed, remember);
+
   // The first question of the interview, written for the moment rather than
   // rewritten from a template — it sets the tone for everything that follows.
   let seed = await io.askText(
@@ -76,6 +87,24 @@ export async function runInterview(
 
   state.projectName = await resolveProjectName(models, io, seed.trim(), log, namedByIdea);
 
+  return continueInterview(models, io, log, state, seed.trim(), remember);
+}
+
+/**
+ * The question loop, from wherever the interview currently stands.
+ *
+ * Split out so resuming is the same code as starting: a resumed interview that took
+ * a different path through the questions would drift from a fresh one, and the
+ * difference would only show up in the half of the product nobody tests twice.
+ */
+async function continueInterview(
+  models: ModelService,
+  io: PlanningIO,
+  log: (message: string) => void,
+  state: InterviewState,
+  seed: string,
+  remember?: (state: InterviewState, seed: string) => Promise<void>
+): Promise<{ state: InterviewState; seed: string } | undefined> {
   // Whether the "I don't know is fine" note has already been made.
   let unknownIsFine = false;
 
@@ -94,7 +123,7 @@ export async function runInterview(
       // on the user's behalf — same rule as the free-text path below.
       if (!resolved) {
         log(`planning: interview paused at "${topic}"`);
-        return { state, seed: seed.trim() };
+        return { state, seed };
       }
       // The raw shortlist is `Name | advantage | cost` per line — real for a
       // QuickPick, unreadable as "what was asked" in a written plan. A plain
@@ -113,7 +142,7 @@ export async function runInterview(
       // of them should get written into the plan as a recorded unknown.
       if (raw === undefined) {
         log(`planning: interview paused at "${topic}"`);
-        return { state, seed: seed.trim() };
+        return { state, seed };
       }
 
       answer = toAnswer(topic, raw);
@@ -123,10 +152,13 @@ export async function runInterview(
     answer = await challengeAnswer(models, io, topic, answer, state, log);
     log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
     state.answers.push(answer);
+    // Saved after every answer rather than at the end: the end is exactly what a
+    // reload prevents you reaching.
+    await remember?.(state, seed);
   }
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
-  return { state, seed: seed.trim() };
+  return { state, seed };
 }
 
 /**

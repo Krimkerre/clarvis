@@ -111,9 +111,15 @@ them and the editor jumps to what changed. If he needs something decided mid-bui
 stops and asks in the chat, and your answer carries on the same task rather than
 starting a new one.
 
+**Nothing is lost to a reload.** An interview is saved after every answer, so closing
+the window mid-question costs nothing — the next time you plan, he offers to carry on
+from where you stopped, throw it away and start fresh, or leave it for now. Same for a
+build: if a milestone was part-way through, he offers to pick it up when the window
+opens. Both read from what was actually saved, so they survive a restart, a new
+machine, and you ticking something off in `plan.md` by hand.
+
 *Still ahead: clean-code conventions written into the generated plan in the project's*
-*own language, ticking checklist items off in `plan.md` as he finishes them, and*
-*resuming an interview after a reload.*
+*own language.*
 
 ---
 

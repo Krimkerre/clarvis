@@ -3504,6 +3504,19 @@ having come from planning. Still not built in M9e: ticking checklist items in
 `plan.md` as the agent completes them, and the agent's own mid-build clarifying
 questions.
 
+**Voice and clickable answers in chat (13 Aug).** Planning ran silently and answered
+by typing a number. Now: questions are **spoken** (solicited by `/plan`, so §4.4
+allows it) while drafts and menus are written only — a four-hundred-word plan read
+aloud is not an improvement. Options arrive as **clickable buttons** in the panel
+(`choices` / `choices-clear` frames, `.clarvis-choice`, labels rendered with
+`textContent` since they come from a model); typing a number or the name still works,
+so the interview is finishable from the keyboard alone. **Only the option actually
+picked is read aloud, and only once picked** — with its detail — and then confirmed
+before it counts, since a button is one click from the wrong answer and an interview
+that silently accepts a misclick is one you restart. `confirm()` is exempt: its
+buttons *are* the confirmation, and "Approve" asked twice is a dialog arguing with
+itself.
+
 
 
 Turns §0's own working process into a product feature (§4.9). Depends on the full agent

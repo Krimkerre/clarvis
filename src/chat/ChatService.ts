@@ -133,7 +133,12 @@ export class ChatService {
       return;
     }
 
-    const io = new PlanningChatIO((text) => this.note(text), this.log);
+    const io = new PlanningChatIO(
+      (text) => this.remark(text),
+      (text) => this.note(text),
+      (labels) => this.panel.post(labels.length ? { type: 'choices', items: labels } : { type: 'choices-clear' }),
+      this.log
+    );
     this.planningIO = io;
     try {
       await runPlanning(

@@ -280,6 +280,15 @@ function chatMarkup(n: string): string {
       .clarvis-turn.clarvis .who { color: var(--vscode-focusBorder); opacity:.8; }
       .clarvis-turn code { font-family: var(--vscode-editor-font-family);
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
+
+      /* Clickable answers. Wraps rather than scrolls — a horizontal scrollbar
+         would hide the options that did not fit. */
+      .clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; }
+      .clarvis-choice { font: inherit; cursor:pointer; padding:4px 10px; border-radius:4px;
+        border:1px solid var(--vscode-button-border, var(--vscode-focusBorder));
+        background: var(--vscode-button-secondaryBackground, transparent);
+        color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); }
+      .clarvis-choice:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
       /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
          bottom so the icon stays level with the first line as the box grows. */
       .clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }

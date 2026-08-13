@@ -79,10 +79,45 @@ const renderInto = (row, text) => {
   });
 };
 
+// The choice row currently offered, if any. Removed as soon as one is taken, so
+// a stale set of buttons can never answer a later question.
+let choiceRow = null;
+
+const clearChoices = () => {
+  if (choiceRow) choiceRow.remove();
+  choiceRow = null;
+};
+
+const showChoices = (items) => {
+  clearChoices();
+  if (!items.length) return;
+
+  const row = document.createElement('div');
+  row.className = 'clarvis-choices';
+
+  items.forEach((item) => {
+    const button = document.createElement('button');
+    button.className = 'clarvis-choice';
+    // textContent, never innerHTML: these labels come from a model.
+    button.textContent = String(item);
+    button.addEventListener('click', () => {
+      clearChoices();
+      vscode.postMessage({ type: 'ask', text: String(item) });
+    });
+    row.appendChild(button);
+  });
+
+  choiceRow = row;
+  transcript.appendChild(row);
+  transcript.scrollTop = transcript.scrollHeight;
+};
+
 const send = () => {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
+  // Typing an answer retires the buttons offering the same question.
+  clearChoices();
   vscode.postMessage({ type: 'ask', text });
 };
 
@@ -133,6 +168,19 @@ window.addEventListener('message', (event) => {
 
   if (msg.type === 'chat-turn') {
     addTurn(msg.speaker, msg.text);
+    return;
+  }
+
+  // Clickable answers to a question Clarvis just asked. Typing still works —
+  // these are a shortcut, never the only way through, since an interview you
+  // can only click through is one a keyboard user cannot finish.
+  if (msg.type === 'choices') {
+    showChoices(msg.items || []);
+    return;
+  }
+
+  if (msg.type === 'choices-clear') {
+    clearChoices();
     return;
   }
 

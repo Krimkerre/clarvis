@@ -1,6 +1,7 @@
 import { branchFlowSection } from '../agent/branchFlow';
 import { Answer, InterviewState, TopicId } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
+import { Milestone } from './milestonePrompt';
 
 /**
  * Renders a finished interview + its analysis verdicts into `plan.md` (M9d — §4.9).
@@ -19,8 +20,8 @@ export interface PlanInput {
   seed: string;
   state: InterviewState;
   verdicts: FindingVerdict[];
-  /** The build steps for milestone one. Empty means none could be written. */
-  steps?: string[];
+  /** The milestones, in build order. Empty means none could be written. */
+  milestones?: Milestone[];
 }
 
 /**
@@ -78,7 +79,7 @@ function section(heading: string, answer: Answer | undefined): string {
   return [heading, '', ...(answer.question ? [`**Asked:** ${answer.question}`, ''] : []), answer.text].join('\n');
 }
 
-export function renderPlan({ projectName, seed, state, verdicts, steps = [] }: PlanInput): string {
+export function renderPlan({ projectName, seed, state, verdicts, milestones = [] }: PlanInput): string {
   const title = projectName ?? seed;
   const language = state.answers.find((answer) => answer.topic === 'language');
   const accepted = verdicts.filter((verdict) => verdict.status !== 'rejected');
@@ -114,21 +115,35 @@ export function renderPlan({ projectName, seed, state, verdicts, steps = [] }: P
     section('## 6. Linter', findAnswer(state, 'linter')),
     '',
     ...(state.notes && state.notes.length > 0 ? ['## Notes', '', ...state.notes.map((note) => `- ${note}`), ''] : []),
-    '## 7. Milestone 1 — v1',
+    '## 7. Milestones',
     '',
-    ...(answerText(state, 'definition-of-done') ? [`**Done when:** ${answerText(state, 'definition-of-done')}`, ''] : []),
-    '**Build:**',
-    // **Work, not decisions.** This list used to be the definition of done plus every
-    // accepted finding's suggested fix — and a fix is a clarification ("Clarify
-    // whether v1 accepts user-provided words"). Handed that as a task, the agent read
-    // the plan, found nothing it could do, and stopped. Found live.
-    ...(steps.length > 0 ? steps.map((step) => `- [ ] ${step}`) : ['_No steps written — planning could not reach a model._']),
-    '',
-    // The findings keep their own section: they are questions to settle before or
-    // during the build, and mixing them into the work is what emptied the work.
+    ...(answerText(state, 'definition-of-done') ? [`**v1 is done when:** ${answerText(state, 'definition-of-done')}`, ''] : []),
+    // **Every milestone, not only the first.** The plan used to hold exactly one, so
+    // finishing it left the project with nowhere to go — a second interview over a
+    // project that already had a plan. The numbering here is what `readMilestones`
+    // reads back to decide which one is next, so the heading shape is load-bearing.
+    //
+    // Each step carries its check and a result line, written now and saying plainly
+    // that it has not been run: a checklist with no space for the outcome is one
+    // where "done" means "someone typed something".
+    ...(milestones.length > 0
+      ? milestones.flatMap((milestone, index) => [
+          `### Milestone ${index + 1} — ${milestone.title}`,
+          '',
+          ...milestone.steps.flatMap((step) => [
+            `- [ ] ${step.step}`,
+            ...(step.check ? [`  - Check: ${step.check}`, '  - Result: not run yet'] : []),
+          ]),
+          '',
+        ])
+      : ['_No milestones written — planning could not reach a model._', '']),
+    // The findings keep their own section — as the record of what was agreed and
+    // why, not a second checklist. Whichever of them described actual work is
+    // already above, folded into the steps in the order it belongs; the rest are
+    // questions, and mixing questions into the work is what emptied the work.
     ...(accepted.length > 0
       ? [
-          '**Settle while building:**',
+          '**Agreed during review** — the actionable ones are in the steps above; the rest are still open:',
           ...accepted.map(
             (verdict) =>
               `- ${verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution}`

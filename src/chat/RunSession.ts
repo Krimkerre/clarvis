@@ -8,6 +8,7 @@ import { detectTestCommand } from '../agent/testCommand';
 import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
+import { matchStep, readStepMarkers } from '../agent/stepProgress';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -37,6 +38,9 @@ export class RunSession {
     private readonly note: (text: string) => Promise<void>,
     private readonly remark: (text: string) => Promise<void>,
     private readonly phrase: (purpose: 'report' | 'warn' | 'ask' | 'aside', fallback: string, keep?: string[]) => Promise<string>,
+    /** Shows where the run has got to. A function rather than the panel itself: this
+     * class needs one frame, not a view. */
+    private readonly showProgress: (frame: { current: number; total: number; label: string }) => void,
     private readonly log: (message: string) => void
   ) {}
 
@@ -90,6 +94,39 @@ export class RunSession {
    */
   private unanswered?: { task: string; question: string };
 
+  /**
+   * Whether this run is building an approved plan, rather than a one-off job.
+   *
+   * Only a plan run has a checklist to tick, and only a plan run has earned the
+   * pause: stopping to review after "rename this variable" would be ceremony.
+   */
+  private fromPlan = false;
+
+  /** The steps this run is working through, for the progress display. */
+  private steps: string[] = [];
+
+  /** The run in progress, while there is one. */
+  private running?: AgentRunner;
+
+  /**
+   * Hands something said mid-run to the agent, rather than answering it separately.
+   *
+   * **Not a stop.** Stopping and restarting throws away everything read so far, so
+   * "no, use the other library" would cost a whole run — and the alternative,
+   * answering it in chat while the agent carries on regardless, is worse: the user
+   * watches it keep doing the thing they just asked it not to.
+   */
+  redirect(text: string): boolean {
+    if (!this.running) return false;
+    this.running.interject(text);
+    return true;
+  }
+
+  setFromPlan(on: boolean, steps: string[] = []): void {
+    this.fromPlan = on;
+    this.steps = steps;
+  }
+
   /** The pending question, folded into a follow-up task. Consumed by reading it. */
   takeUnanswered(): { task: string; question: string } | undefined {
     const pending = this.unanswered;
@@ -125,6 +162,9 @@ export class RunSession {
       this.log,
       this.stepApproval ? (description, detail) => this.askStep(description, detail) : undefined
     );
+    // Held for the length of the run, so anything typed while it works has somewhere
+    // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
+    this.running = runner;
 
 
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
@@ -149,9 +189,15 @@ export class RunSession {
         if (!event.text) continue;
         if (event.kind === 'done') summary = event.text.trim();
 
+        // Step announcements are for the panel, not for reading: pulled out here so
+        // they never reach the terminal as stray "STEP:" lines. An event that was
+        // nothing but an announcement has nothing left to show.
+        const text = this.takeStepMarkers(event);
+        if (text === undefined) continue;
+
         // Everything, verbatim, in the place that is meant to be read line by line.
         this.terminal.write(
-          event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : event.text
+          event.kind === 'tool' ? `\r\n· ${event.detail ?? event.text}\r\n` : text
         );
 
         // The one exception to "nothing technical reaches the chat": isolation could
@@ -163,8 +209,13 @@ export class RunSession {
       }
     } finally {
       this.busy.finish();
+      this.running = undefined;
       this.avatar.setState('neutral', 'agent');
       holdingFace();
+      // A bar left at "step 3 of 5" after the run ends describes a run that is no
+      // longer happening. Cleared here rather than on success, so a stopped or
+      // failed run clears it too.
+      this.showProgress({ current: 0, total: 0, label: '' });
     }
 
     const { commits, files } = runner.result;
@@ -173,6 +224,63 @@ export class RunSession {
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
     if (files.length > 0) await this.offerReview(commits, files);
+  }
+
+  /**
+   * The event's text with any step announcement removed, or `undefined` when the
+   * announcement was all there was.
+   */
+  private takeStepMarkers(event: { kind: string; text: string }): string | undefined {
+    if (event.kind !== 'text' || this.steps.length === 0) return event.text;
+
+    const progress = readStepMarkers(event.text);
+    for (const announced of progress.announced) this.showStep(announced);
+    return progress.text.trim() ? progress.text : undefined;
+  }
+
+  /**
+   * Moves the progress display to the step just announced.
+   *
+   * An announcement matching no planned step is ignored rather than counted: the bar
+   * holding still is a smaller lie than the bar pointing at the wrong step.
+   */
+  private showStep(announced: string): void {
+    const index = matchStep(announced, this.steps);
+    if (index === undefined) {
+      this.log(`agent: announced a step that matches none in the plan — "${announced}"`);
+      return;
+    }
+
+    this.log(`agent: step ${index + 1} of ${this.steps.length} — ${this.steps[index]}`);
+    this.showProgress({ current: index + 1, total: this.steps.length, label: this.steps[index] });
+  }
+
+  /**
+   * The moment after a milestone: what changed, and whether to write it down.
+   *
+   * Offered rather than done silently. The plan is the user's document, and a tool
+   * that edits it on its own behalf — recording its own work as complete, on its own
+   * say-so — is exactly the thing sign-off exists to prevent.
+   */
+  private async settleMilestone(summary: string, changed: number): Promise<void> {
+    const answer = await vscode.window.showInformationMessage(
+      `Milestone finished — ${changed} file(s) changed.`,
+      {
+        modal: true,
+        detail: `${summary}\n\nShall I mark off what's done in plan.md and record what the checks produced?`,
+      },
+      'Update the plan',
+      'Leave it'
+    );
+
+    if (answer !== 'Update the plan') {
+      this.log('agent: milestone finished, plan left untouched');
+      return;
+    }
+
+    // Recording it also reports what is left, which is what makes the next milestone
+    // a decision rather than a thing you have to remember to go and look for.
+    await vscode.commands.executeCommand('clarvis.recordMilestone', summary);
   }
 
   /**
@@ -231,6 +339,13 @@ export class RunSession {
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.
     this.unanswered = said.includes('?') ? { task, question: said } : undefined;
+
+    // **The pause after a milestone.** §0 says the plan becomes a live checklist in
+    // Code Mode, ticked as each step lands — which had never been implemented, so a
+    // plan approved on Monday still read as entirely unbuilt on Friday. A run that
+    // came from a plan stops here, shows what it changed, and offers to write that
+    // back before anything else happens.
+    if (this.fromPlan && changed > 0) await this.settleMilestone(said, changed);
 
     const aside = (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
     if (aside) await this.note(aside);

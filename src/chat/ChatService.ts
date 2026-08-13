@@ -17,6 +17,8 @@ import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
 import { Voice, opening } from '../personality/Voice';
+import { researchWorkspace } from '../planning/workspaceResearch';
+import { describeWorkspaceSignals } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { runPlanning } from '../planning/PlanningFlow';
@@ -147,9 +149,19 @@ export class ChatService {
       (text) => this.note(text),
       (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       (text) => this.showPlanDocument(text),
+      (text) => this.panel.post({ type: 'prefill', text }),
       this.log
     );
     this.planningIO = io;
+
+    // **Plan mode, for the duration.** The interview is the one stretch where a
+    // stray "fix the tests" would be actively harmful — a half-finished plan and a
+    // half-finished edit, neither signed off — and §0's rule is that nothing but
+    // `plan.md` gets written until the plan is approved. Setting the mode makes that
+    // visible on the button rather than leaving it as a rule only the code knows.
+    const modeBefore = this.actions.mode();
+    await this.actions.setMode('plan');
+
     try {
       await runPlanning(
         this.models,
@@ -163,7 +175,7 @@ export class ChatService {
         // takes, so nothing about the build is special-cased for having come from
         // planning. Cleared first: the run posts its own questions to chat, and
         // planning must not still be intercepting them.
-        async (task) => {
+        async (task, steps) => {
           this.planningIO = undefined;
           // **Agent, not Auto.** Pressing Start Building is an explicit answer to
           // "shall I build this", so the mode that follows should be the explicit
@@ -172,12 +184,32 @@ export class ChatService {
           // immediately after signing off on a plan.
           await this.actions.setMode('agent');
           this.runs.setStepApproval(true);
+          // This run has a checklist to tick and has earned the pause afterwards; a
+          // one-off "rename this variable" has neither.
+          this.runs.setFromPlan(true, steps);
           await this.runs.run(task, 'Plan approved — starting on milestone one.');
         }
       );
     } finally {
       this.planningIO = undefined;
+      // Restored unless planning already moved on to Agent for the build — putting
+      // them back in Plan a second after they approved one would undo the handoff.
+      if (this.actions.mode() === 'plan') await this.actions.setMode(modeBefore);
     }
+  }
+
+  /**
+   * Starts the next milestone from an approved plan.
+   *
+   * Same run path as the first one — step approval on, progress showing, the pause
+   * afterwards — because nothing about the second milestone is special except which
+   * part of the plan it is building.
+   */
+  async startNextMilestone(task: string, steps: string[]): Promise<void> {
+    await this.actions.setMode('agent');
+    this.runs.setStepApproval(true);
+    this.runs.setFromPlan(true, steps);
+    await this.runs.run(task, 'Right — on to the next one.');
   }
 
   /**
@@ -246,15 +278,36 @@ export class ChatService {
     );
     if (exists) return;
 
-    this.log('chat: no plan.md here, offered to plan');
+    // What is actually here, so the line can react to *this* folder rather than to
+    // the abstract fact of a missing file. An empty one deserves "oh, a new project?";
+    // one with a year of code in it and no plan does not.
+    const signals = await researchWorkspace();
+    const looksNew = signals ? !signals.hasGit && signals.topLevelEntries.length <= 2 : false;
+    this.log(`chat: no plan.md here, offered to plan${looksNew ? ' (looks like a new project)' : ''}`);
 
     // **A question with buttons, not an instruction to remember a command.** Spoken
     // as well as written: it is the one line that tells someone this feature exists,
     // and a notice nobody hears is a feature nobody finds.
     await this.remark(
       await opening(
-        'This project has no plan.md — nothing here has been planned. You are offering to plan one with them: an interview, then a written plan they sign off on.',
-        'No plan.md here. Whatever this is, it is being held together by optimism. Shall we plan something?'
+        [
+          looksNew
+            ? 'They have just opened what looks like a brand new project: an empty folder, nothing built yet, and no plan.md.'
+            : 'They have opened a project that already has files in it — someone has been working here — but there is no plan.md, so none of it was ever written down.',
+          signals ? `What is actually in the folder: ${describeWorkspaceSignals(signals)}` : '',
+          '',
+          'Two beats, in this order. First: notice what you have walked into and have a',
+          'view about it — a new project deserves a different remark from one already',
+          'full of code nobody planned, and a line that merely restates "there is no',
+          'plan.md" is a failed line.',
+          'Then: offer to plan it with them — an interview, then a written plan they',
+          'sign off on.',
+        ]
+          .filter(Boolean)
+          .join(' '),
+        looksNew
+          ? 'Oh, a new project? We could sketch out what this is meant to do before the next person asks — or would you rather keep discovering it as we go?'
+          : 'No plan.md, and a folder full of files that presumably mean something to someone. Would you like help working out what this is?'
       )
     );
     this.awaitingPlanAnswer = true;
@@ -295,6 +348,7 @@ export class ChatService {
       (text) => this.note(text),
       (text) => this.remark(text),
       (purpose, fallback, keep) => this.phrase(purpose, fallback, keep),
+      (frame) => panel.post({ type: 'progress', ...frame }),
       log
     );
     this.replier = new Replier(
@@ -435,6 +489,16 @@ export class ChatService {
       return;
     }
 
+    // **Typing during a run redirects it.** Anything else is worse: answering it
+    // separately leaves the user watching the agent carry on doing the thing they
+    // just asked it not to, and stopping to restart throws away everything read so
+    // far — so "no, use the other library" would cost a whole run.
+    if (this.runs.redirect(question)) {
+      this.log('chat: message handed to the run in progress');
+      await this.note(await this.phrase('report', "Noted — I'll fold that in.", []));
+      return;
+    }
+
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.
     const action = chatAction(question);
@@ -466,6 +530,7 @@ export class ChatService {
       // Agent asks before each step that acts; Auto is the mode that decides for
       // itself, which is the only thing separating the two now that both can edit.
       this.runs.setStepApproval(mode === 'agent');
+      this.runs.setFromPlan(false);
 
       // **An answer continues the work rather than starting new work.** A run that
       // stopped to ask "preview, or applied straight away?" gets a four-word reply

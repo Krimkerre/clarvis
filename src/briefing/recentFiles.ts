@@ -20,8 +20,27 @@
  *
  * Everything under `.git/` goes the same way: rebase state, merge messages, hooks
  * being edited by a tool. None of it is the user's work.
+ *
+ * **And `settings.json`, which Clarvis writes himself.** Changing the chat mode,
+ * enabling voice or storing an engine all call `config.update()`, VS Code saves the
+ * file, and the save arrives here like any other. So a session where the user touched
+ * nothing at all opened with "settings.json was the last thing you touched" — his own
+ * paperwork, handed back as their work. Reported live, and the same shape as the
+ * commit-message bug: a tool's file counted as a person's.
  */
-const NEVER_RECORD = [/[\\/]\.git[\\/]/, /COMMIT_EDITMSG$/, /MERGE_MSG$/, /TAG_EDITMSG$/, /[\\/]node_modules[\\/]/];
+const NEVER_RECORD = [
+  /[\\/]\.git[\\/]/,
+  /COMMIT_EDITMSG$/,
+  /MERGE_MSG$/,
+  /TAG_EDITMSG$/,
+  /[\\/]node_modules[\\/]/,
+  // The workspace's editor config, and the global one — which lives outside any
+  // workspace, under the editor's own User directory. Deliberately not a bare
+  // `settings.json` rule: a project that ships its own config file of that name is
+  // the user's work, and excluding it would trade one wrong answer for another.
+  /[\\/]\.vscode[\\/]/,
+  /[\\/]Code[\\/]User[\\/]/,
+];
 
 /** Whether a saved file is the user's work rather than a tool's paperwork. */
 export function isWorthRemembering(path: string): boolean {

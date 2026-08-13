@@ -98,7 +98,11 @@ const showChoices = (items) => {
   // Options with an explanation stack full-width so the text has room; bare
   // labels (Yes / No / Approve) sit side by side, where a stack looks absurd.
   const detailed = items.some((item) => item && item.detail);
-  row.className = 'clarvis-choices' + (detailed ? ' stacked' : '');
+  // Two bare labels is a yes-or-no, and those get pushed to opposite ends and made
+  // bigger. They arrive mid-conversation, right where you were about to type, and a
+  // misclick on one of those is a decision you never made.
+  const binary = !detailed && items.length === 2;
+  row.className = 'clarvis-choices' + (detailed ? ' stacked' : '') + (binary ? ' binary' : '');
 
   items.forEach((item) => {
     const label = String((item && item.label) || item);
@@ -200,8 +204,32 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  // Where the build has got to. Hidden entirely when nothing is running — an idle
+  // progress bar reading 0/0 is furniture.
+  if (msg.type === 'progress') {
+    var box = document.getElementById('clarvis-progress');
+    if (!msg.total) {
+      box.setAttribute('data-active', 'false');
+      return;
+    }
+    box.setAttribute('data-active', 'true');
+    box.querySelector('.count').textContent = 'Step ' + msg.current + ' of ' + msg.total;
+    box.querySelector('.step').textContent = String(msg.label || '');
+    box.querySelector('.bar i').style.width = Math.round((msg.current / msg.total) * 100) + '%';
+    return;
+  }
+
   if (msg.type === 'choices-clear') {
     clearChoices();
+    return;
+  }
+
+  // Text handed back for editing — a rewrite starts from what is there, rather
+  // than from a blank box next to something you have to copy by hand.
+  if (msg.type === 'prefill') {
+    input.value = String(msg.text || '');
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
     return;
   }
 

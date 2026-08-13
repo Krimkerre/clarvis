@@ -1,7 +1,8 @@
 import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
 import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResult } from './analysisPrompt';
-import { milestonePrompt, parseMilestoneSteps } from './milestonePrompt';
+import { Milestone, milestonePrompt, parseMilestones } from './milestonePrompt';
+import { FindingVerdict } from './verdictSummary';
 
 /**
  * Runs one analysis pass over a finished interview (M9b — §4.9).
@@ -72,8 +73,10 @@ export async function runAnalysis(
 export async function planMilestone(
   models: ModelService,
   state: InterviewState,
-  log: (message: string) => void
-): Promise<string[]> {
+  log: (message: string) => void,
+  /** Findings the user accepted or rewrote — the actionable ones become steps. */
+  accepted: FindingVerdict[] = []
+): Promise<Milestone[]> {
   if (!(await models.isReady('chat'))) {
     log('planning: milestone — no model configured, no steps written');
     return [];
@@ -83,7 +86,7 @@ export async function planMilestone(
     let text = '';
     const collect = (async () => {
       for await (const fragment of models.stream(
-        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state) }] },
+        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state, accepted) }] },
         'chat'
       )) {
         text += fragment;
@@ -93,10 +96,15 @@ export async function planMilestone(
 
     await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, ANALYSIS_TIMEOUT_MS))]);
 
-    const steps = parseMilestoneSteps(text);
-    log(`planning: milestone — ${steps.length} step(s)`);
-    for (const step of steps) log(`planning: milestone step — ${step}`);
-    return steps;
+    const milestones = parseMilestones(text);
+    log(`planning: ${milestones.length} milestone(s) planned`);
+    for (const [index, milestone] of milestones.entries()) {
+      log(`planning: milestone ${index + 1} — ${milestone.title} (${milestone.steps.length} step(s))`);
+      for (const step of milestone.steps) {
+        log(`planning:   step — ${step.step}${step.check ? ` (check: ${step.check})` : ' (no check given)'}`);
+      }
+    }
+    return milestones;
   } catch (error) {
     log(`planning: milestone failed (${String(error)})`);
     return [];

@@ -9,8 +9,15 @@
  * change for the interview to become chat-native; only where its questions land did.
  */
 export interface PlanningIO {
-  /** A free-text question. `undefined` means cancelled/paused, never an empty answer. */
-  askText(prompt: string, placeholder?: string): Promise<string | undefined>;
+  /**
+   * A free-text question. `undefined` means cancelled/paused, never an empty answer.
+   *
+   * `prefill` is text to hand back for editing, as opposed to `placeholder`, which is
+   * only a hint. The difference matters: "Rewrite this finding" was passing the
+   * finding as a placeholder, so changing three words of a two-line sentence meant
+   * retyping the whole thing.
+   */
+  askText(prompt: string, placeholder?: string, prefill?: string): Promise<string | undefined>;
 
   /** A menu. Returns the chosen item's label, or `undefined` if none was chosen. */
   askChoice(prompt: string, items: { label: string; detail?: string }[]): Promise<string | undefined>;

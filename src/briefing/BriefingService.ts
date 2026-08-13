@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { existsSync } from 'fs';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
-import { RecentFiles } from './recentFiles';
+import { isWorthRemembering, RecentFiles } from './recentFiles';
 import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLines';
 import { readGitSummary } from './gitSummary';
 import { activeFailure, foldOutcome, parseRecord, FailureRecord, FAILURE_KEY } from './lastFailure';
@@ -58,7 +58,11 @@ export class BriefingService {
     // saved anything, so an empty start would mean the line never appears.
     const stored = context.workspaceState.get<unknown>(RECENT_FILES_KEY);
     const restored = Array.isArray(stored) ? stored.filter((p): p is string => typeof p === 'string') : [];
-    this.recentFiles = new RecentFiles(5, restored);
+    // **Filtered on the way in as well as the way out.** The list outlives the
+    // session, so a path that should never have been recorded keeps being reported
+    // long after the rule excluding it ships — settings.json sat at the top of a
+    // stored list written before Clarvis stopped recording his own writes.
+    this.recentFiles = new RecentFiles(5, restored.filter(isWorthRemembering));
   }
 
   /**

@@ -68,17 +68,37 @@ test('the build checklist is the steps, not the findings', () => {
     seed: 'renames photos',
     state,
     verdicts,
-    steps: ['Create the CLI entry point', 'Read EXIF dates'],
+    milestones: [
+      {
+        title: 'A CLI that renames one file',
+        steps: [
+          { step: 'Create the CLI entry point', check: 'run `photoname --help`, see the usage text' },
+          { step: 'Read EXIF dates' },
+        ],
+      },
+      { title: 'Batch renaming', steps: [{ step: 'Accept a folder' }] },
+    ],
   });
-  assert.match(plan, /\*\*Build:\*\*\n- \[ \] Create the CLI entry point\n- \[ \] Read EXIF dates/);
-  // Accepted findings are questions to settle, listed apart from the work.
-  assert.match(plan, /\*\*Settle while building:\*\*\n- add a --dry-run flag/);
+  // Every milestone is written down, numbered — the numbering is what readMilestones
+  // reads back to decide which one is next.
+  assert.match(plan, /### Milestone 1 — A CLI that renames one file/);
+  assert.match(plan, /### Milestone 2 — Batch renaming/);
+  assert.match(plan, /- \[ \] Create the CLI entry point/);
+  // The check and a place to put its result, written before there is a result.
+  assert.match(plan, /- Check: run `photoname --help`, see the usage text/);
+  assert.match(plan, /- Result: not run yet/);
+  // A step the model gave no check for still appears; a step is worth more with its
+  // test and far more than nothing.
+  assert.match(plan, /- \[ \] Read EXIF dates/);
+  // Accepted findings are recorded as what was agreed, not as a second checklist —
+  // the actionable ones are folded into the steps by whoever wrote them.
+  assert.match(plan, /\*\*Agreed during review\*\*[^]*- add a --dry-run flag/);
   assert.doesNotMatch(plan, /- \[ \] add a --dry-run flag/);
 });
 
-test('a plan with no steps says so rather than looking finished', () => {
+test('a plan with no milestones says so rather than looking finished', () => {
   const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
-  assert.match(plan, /_No steps written/);
+  assert.match(plan, /_No milestones written/);
 });
 
 test('rejected findings become decisions', () => {

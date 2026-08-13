@@ -234,6 +234,23 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
  * stylesheet in there is already at the linter's ceiling, and these rules have
  * nothing to say to the transcript's beyond sitting underneath it.
  */
+const PROGRESS_STYLES = `
+      /* Where a build has got to, while it is getting there. A file is the checklist;
+         this is the part you can see without opening it. */
+      .clarvis-progress { display:none; flex:0 0 auto; padding:4px 8px; border-radius:4px;
+        background: var(--vscode-editorWidget-background, transparent);
+        border:1px solid var(--vscode-widget-border, transparent); font-size:11px; }
+      .clarvis-progress[data-active="true"] { display:block; }
+      .clarvis-progress .count { opacity:.6; letter-spacing:.04em; }
+      .clarvis-progress .step { display:block; margin-top:2px; }
+      /* A bar rather than a spinner: a spinner says "something is happening", which
+         was never in doubt. The question is how much is left. */
+      .clarvis-progress .bar { display:block; height:2px; margin-top:5px; border-radius:2px;
+        background: var(--vscode-widget-border, var(--vscode-descriptionForeground)); }
+      .clarvis-progress .bar i { display:block; height:100%; border-radius:2px;
+        background: var(--vscode-focusBorder); transition: width .3s ease; }
+`;
+
 const CHOICE_STYLES = `
       /* Each option is a button carrying its own explanation, rather than a list
          above a row of bare labels repeating it. */
@@ -250,6 +267,16 @@ const CHOICE_STYLES = `
       .clarvis-choice .label { font-weight:600; }
       /* The explanation is why you would pick it, not the thing you are picking. */
       .clarvis-choice .detail { font-size:11px; line-height:1.35; opacity:.75; white-space:normal; }
+
+      /* A yes-or-no, pushed apart. These arrive mid-conversation, exactly where the
+         cursor already was, and a misclick is a decision nobody made — so the two
+         answers are as far apart as the panel allows and large enough to aim at.
+         Not colour-coded: which of the two is the "safe" one changes with the
+         question, and a green button that sometimes means stop is worse than none. */
+      .clarvis-choices.binary { justify-content: space-between; gap:16px; padding:2px 8px 0; }
+      .clarvis-choices.binary .clarvis-choice { flex:0 1 45%; padding:10px 14px; font-size:13px;
+        justify-content:center; text-align:center; }
+      .clarvis-choices.binary .clarvis-choice .label { font-weight:600; }
 `;
 
 function chatMarkup(n: string): string {
@@ -312,6 +339,7 @@ function chatMarkup(n: string): string {
         background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
 
       ${CHOICE_STYLES}
+      ${PROGRESS_STYLES}
       /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
          bottom so the icon stays level with the first line as the box grows. */
       .clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }
@@ -337,6 +365,10 @@ function chatMarkup(n: string): string {
       <!-- Controls sit between the history and the prompt: pinned to the bottom with
            the input, where the hand already is, rather than at the top where reaching
            them means looking away from what you were typing. -->
+      <div id="clarvis-progress" class="clarvis-progress" data-active="false">
+        <span class="count"></span><span class="step"></span>
+        <span class="bar"><i style="width:0%"></i></span>
+      </div>
       <div class="clarvis-chat-head">
         <button id="clarvis-mode" class="clarvis-mute clarvis-mode"
                 title="What Clarvis is allowed to do">Auto</button>

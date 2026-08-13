@@ -30,6 +30,8 @@ export class PlanningChatIO implements PlanningIO {
     private readonly offer: (items: { label: string; detail?: string }[]) => void,
     /** Opens a document in the editor, where a long one can actually be read. */
     private readonly openDocument: (text: string) => Promise<void>,
+    /** Puts text in the prompt box for editing, rather than for copying by hand. */
+    private readonly fill: (text: string) => void,
     private readonly log: (message: string) => void
   ) {}
 
@@ -62,11 +64,14 @@ export class PlanningChatIO implements PlanningIO {
     waiting(undefined);
   }
 
-  async askText(prompt: string, placeholder?: string): Promise<string | undefined> {
+  async askText(prompt: string, placeholder?: string, prefill?: string): Promise<string | undefined> {
     // The placeholder is a hint, not part of the question — written, never spoken,
     // and without markdown, which the panel renders as literal asterisks.
     await this.speak(prompt);
     if (placeholder) await this.write(placeholder);
+    // Text to edit goes into the prompt box itself. Written into the transcript, it
+    // would be something to copy by hand — which is what "Modify" asked for until now.
+    if (prefill) this.fill(prefill);
     return this.nextMessage();
   }
 

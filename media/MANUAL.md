@@ -226,10 +226,17 @@ can get around it.
 
 | Mode | He can | Use it when |
 |---|---|---|
-| **Plan** | Read, and describe what he *would* change | You want the plan before the work |
-| **Chat** | Read and answer | You are asking, not asking for |
+| **Plan** | Read, and describe what he *would* change — staying on the project | You want the plan before the work |
+| **Chat** | Read, answer, and talk about anything else | You are asking, not asking for |
 | **Agent** | Read, edit, run commands — asking before each step that changes anything | You want the work done, and want to see it coming |
 | **Auto** | Decides per message, and gets on with it | Most of the time |
+
+**Chat wanders, Plan does not.** In Chat he'll answer a question about anything —
+how something works, an opinion, ordinary conversation — because an assistant that
+can only discuss your codebase is a worse assistant. Plan mode is the opposite on
+purpose: it is a working session with a document at the end of it, so he answers a
+digression in a sentence and brings it back. **Starting an interview switches to Plan
+by itself**, and switches back when it finishes.
 
 **Agent asks, Auto acts.** That is the whole difference between the two now: in Agent
 mode he describes each step that would change something and waits for a yes, and

@@ -24,6 +24,9 @@ import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
 import { runPlanning } from './planning/PlanningFlow';
 import { VsCodeIO } from './planning/VsCodeIO';
+import { recordMilestone } from './planning/recordMilestone';
+import { MilestoneState, milestoneSteps, nextMilestone } from './planning/planUpdate';
+import { nextMilestoneTask } from './planning/nextMilestoneTask';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -133,6 +136,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
   registerPlanningCommand(context, models, logger, liveLines);
+  registerRecordMilestone(context, models, logger, () => chat);
 
   chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
@@ -643,6 +647,78 @@ function startBranchFlow(
  * `note()`; the lines themselves come from the same `LiveQuips` instance everything
  * else uses, not a second copy.
  */
+/**
+ * Writing a finished run back into `plan.md` (§0's live checklist).
+ *
+ * A command rather than a direct call because the run session raises it — it knows a
+ * milestone just finished, and knows nothing about plans, models or files.
+ */
+function registerRecordMilestone(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  logger: ClarvisLog,
+  /** Late-bound: chat is built after this is registered, and owns the run session. */
+  chatOf: () => ChatService | undefined
+): void {
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.recordMilestone', async (summary: string) => {
+      const outcome = await recordMilestone(models, summary ?? '', (message: string) => logger.write(message));
+      if (!outcome) return;
+
+      // **Finishing one milestone has somewhere to go.** The plan holds all of them,
+      // so the next is already written down — offered rather than started, because
+      // "keep going" is a decision and a build that rolls straight into the next
+      // milestone is one nobody agreed to.
+      const next = await pendingMilestone();
+      if (!next) {
+        void vscode.window.showInformationMessage(outcome);
+        return;
+      }
+
+      const go = await vscode.window.showInformationMessage(
+        outcome,
+        { modal: true, detail: `Milestone ${next.milestone.number} — ${next.milestone.title}. Shall I carry on?` },
+        'Build it',
+        'Not now'
+      );
+      if (go !== 'Build it') {
+        logger.write('planning: next milestone left for later');
+        return;
+      }
+
+      await chatOf()?.startNextMilestone(nextMilestoneTask(next.milestone, next.projectName), next.steps);
+    })
+  );
+}
+
+/**
+ * The next unfinished milestone in this workspace's `plan.md`, if there is one.
+ *
+ * Read from the file every time rather than remembered: the plan outlives the window,
+ * and the user may have ticked something off by hand since the last run.
+ */
+async function pendingMilestone(): Promise<
+  { milestone: MilestoneState; projectName: string; steps: string[] } | undefined
+> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return undefined;
+
+  const planText = await vscode.workspace.fs.readFile(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+    (bytes) => Buffer.from(bytes).toString('utf8'),
+    () => undefined
+  );
+  if (!planText) return undefined;
+
+  const milestone = nextMilestone(planText);
+  if (!milestone) return undefined;
+
+  return {
+    milestone,
+    projectName: /^#\s+(.+)$/m.exec(planText)?.[1]?.trim() ?? 'this project',
+    steps: milestoneSteps(planText, milestone.number),
+  };
+}
+
 function registerPlanningCommand(
   context: vscode.ExtensionContext,
   models: ModelService,

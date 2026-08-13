@@ -76,6 +76,27 @@ export class RunSession {
     this.stepApproval = on;
   }
 
+  /**
+   * The last run that ended by asking something, and what it was doing.
+   *
+   * **Because answering a question should continue the work, not restart it.** A run
+   * that stops to ask "preview, or applied straight away?" now puts that in the chat
+   * — and the reply is four words that mean nothing on their own. Without this, they
+   * arrive as a fresh task with no memory of the question they answer.
+   *
+   * Cleared once used: the second message after a run is a new request, not more
+   * answer, and treating it as context would drag a finished task through the rest
+   * of the conversation.
+   */
+  private unanswered?: { task: string; question: string };
+
+  /** The pending question, folded into a follow-up task. Consumed by reading it. */
+  takeUnanswered(): { task: string; question: string } | undefined {
+    const pending = this.unanswered;
+    this.unanswered = undefined;
+    return pending;
+  }
+
   async run(task: string, because: string): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 
@@ -206,6 +227,10 @@ export class RunSession {
     if (!said) return;
 
     await this.note(said);
+
+    // A run that ended on a question is waiting for an answer, and the next message
+    // is almost certainly it.
+    this.unanswered = said.includes('?') ? { task, question: said } : undefined;
 
     const aside = (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
     if (aside) await this.note(aside);

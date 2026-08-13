@@ -466,6 +466,28 @@ export class ChatService {
       // Agent asks before each step that acts; Auto is the mode that decides for
       // itself, which is the only thing separating the two now that both can edit.
       this.runs.setStepApproval(mode === 'agent');
+
+      // **An answer continues the work rather than starting new work.** A run that
+      // stopped to ask "preview, or applied straight away?" gets a four-word reply
+      // that means nothing without the question it answers.
+      const pending = this.runs.takeUnanswered();
+      if (pending) {
+        this.log('chat: treating that as an answer to the run that just asked');
+        await this.runs.run(
+          [
+            `Continue this task: ${pending.task}`,
+            '',
+            `You stopped and asked:\n${pending.question}`,
+            '',
+            `They answered:\n${job.task}`,
+            '',
+            'Update plan.md with what they have just settled, then carry on building.',
+          ].join('\n'),
+          'Right — that settles it.'
+        );
+        return;
+      }
+
       await this.runs.run(job.task, job.because);
       return;
     }

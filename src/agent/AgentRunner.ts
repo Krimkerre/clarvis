@@ -226,9 +226,18 @@ export class AgentRunner {
       this.tidied = await branch.discardIfEmpty();
     }
 
+    // **What he actually said, in the conversation.** Narration went to the terminal
+    // only, and the chat got the branch note — so a run that ended by asking four
+    // questions ("Suggestions shown as a preview, or applied straight away?") put
+    // them where nobody was looking, and the panel showed a line about branches.
+    // Questions the agent needs answered are the whole point of it asking.
+    const closing = this.closingNote(branch);
+    const said = [narration.trim(), closing].filter(Boolean).join('\n\n');
+    if (!readOnly) this.log(`agent: finished with ${narration.trim() ? 'a message' : 'nothing to say'}`);
+
     return {
       kind: 'done',
-      text: readOnly ? '' : this.closingNote(branch),
+      text: readOnly ? '' : said,
       files: [...this.touched],
     };
   }

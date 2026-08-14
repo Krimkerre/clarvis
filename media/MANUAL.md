@@ -456,3 +456,8 @@ Clarvis is under construction, and this manual describes what exists today. The 
 and **project planning** (above) both work end to end — that list used to say
 otherwise, twice. Still to come: **voice input**, and
 **Tutor Mode** for people learning to program. See the README for progress.
+
+One thing worth knowing about what *is* here: commands he runs are held to the same
+boundary as the files he edits — they cannot change anything outside your project.
+That is enforced by your operating system on macOS and Linux. On Windows there is no
+such mechanism, so he asks once per project whether to run them without it.

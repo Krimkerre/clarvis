@@ -3717,25 +3717,70 @@ when checked, and one was worse than reported. Recorded because the pattern is n
 consistent: the defects in this project are found by people using or reading it, not
 by its own test suite.
 
-**1. `runCommand` uses `shell: true`, so the workspace boundary does not apply to it.**
-True, and the important part is the framing. The file tools *are* confined —
-`resolveInWorkspace` refuses anything resolving outside, symlinks included — so the
-README's "can only touch the workspace it was born in" was true of files and false of
-commands. `cat ~/.ssh/id_rsa` was on no list. **Fixed by being honest**: the README and
-manual now say which boundary applies to what, because a claimed guarantee that does
-not hold is worse than an admitted gap. The real containment answer is M9f below.
+**1 and 2 are one problem, and were fixed as one.** `shell: true` gives a command the
+user's full authority; the deny-list is what compensates; compensating means
+inspecting; inspecting a shell is a game you lose eventually. The first attempt at
+this was to document the gap accurately, which was correctly rejected — editing a
+README is not a fix for a security problem.
 
-**2. The deny-list is string matching and therefore bypassable.** True —
-`python -c "shutil.rmtree(...)"` matches nothing, and no amount of regex fixes that.
-**The sharper version, found while checking it:** every write through the edit tools
-calls `Checkpoint.capture` with the path it is about to change, and a command names no
-paths — so deleting a file with the edit tool was undoable and deleting it with `rm`
-was not. The deny-list had to be perfect *because it was the only thing standing
-there*. A run now snapshots everything git has no copy of before anything executes, so
-the question stops being "can this be prevented" and becomes "can this be undone",
-which is the trade the rest of the product already makes. Approval was also welded to
-`mode === 'agent'`, meaning the default mode asked nothing; `asksFirst` is now the
-mode's own property, Auto asks, and Unattended is the one mode that does not.
+`sandboxProfile.ts` and `sandbox.ts`: commands run under `sandbox-exec` on macOS and
+`bwrap` on Linux, with **one guarantee stated exactly** — a command cannot modify
+anything outside the project folder and its build caches. Enforced by the kernel,
+which does not care which interpreter asked, so the reported bypass dies with
+everything else in its class. Verified against the real profile builder rather than a
+hand-written profile:
+
+| | |
+|---|---|
+| write inside workspace | ran |
+| `rm -rf` outside | refused |
+| `python3 -c "shutil.rmtree(…)"` | refused |
+| append to `~/.zshrc` | refused |
+| `> /dev/null` | ran |
+| `git init` / `git status` in the workspace | ran |
+
+**Two limits, stated rather than glossed.** Reads stay allowed, because toolchains
+read from `/usr`, `/opt/homebrew`, `~/.nvm` and everywhere else, and a read-allowlist
+would break builds constantly and confusingly. The network stays open because
+`npm install` needs it. So destruction and persistence are stopped and exfiltration is
+not, and the documents say so.
+
+**Two details decided whether it worked at all**, both found by trying rather than
+reasoning. `/dev/null` had to be explicitly writable — the first profile denied it and
+every command redirecting output failed, and a sandbox that breaks `>/dev/null` is one
+that gets switched off within a day and protects nobody. And paths must be resolved
+before reaching the profile: `/tmp` is a symlink to `/private/tmp`, and a rule written
+against the symlink silently matches nothing, which is indistinguishable from the
+sandbox working.
+
+Windows has no equivalent without native code, so it asks once per workspace and
+remembers, like the `git init` offer. Declining refuses commands and leaves reading,
+answering, planning and editing intact — refusing outright would have made Clarvis
+useless there while pushing people to run the same command in a terminal, with no
+gate, no snapshot and no log.
+
+The workspace path is escaped into the profile: it is wherever someone keeps their
+code, and a boundary a folder name can break is not a boundary.
+
+**Inside the project, the answer is recoverability rather than prevention.** The
+sandbox stops a command escaping the workspace; it deliberately does not stop a
+command deleting the workspace's own files, because that is what a build does. So the
+second half of finding 2: every write through the edit tools calls
+`Checkpoint.capture` with the path it is about to change, and a command names no paths
+— deleting a file with the edit tool was undoable and deleting it with `rm` was not. A
+run now snapshots everything git has no copy of before anything executes.
+
+Approval was also welded to `mode === 'agent'`, so the *default* mode asked nothing.
+`asksFirst` is the mode's own property now: Auto asks, Unattended is the one mode that
+does not, and it is named for the situation you would choose it in rather than for
+being more capable, because "Full Auto" reads as an upgrade and people pick upgrades.
+
+**A fourth finding, self-inflicted, found by being asked whether the review was fully
+addressed.** `package.json` declared that an untrusted folder gets no commands and no
+edits. VS Code enforces the `restrictedConfigurations` half; the rest was a sentence
+nothing implemented, and no code anywhere read `vscode.workspace.isTrusted`. Precisely
+the failure criticised two paragraphs above, and worse for living in the file that
+grants the permissions. `requireTrust` now enforces it in the tool layer.
 
 **3. A workspace could redirect the API base URL and collect the key.** The serious
 one. `clarvis.chat.baseUrl.*` was window-scoped, so a `.vscode/settings.json` in any
@@ -3749,11 +3794,20 @@ loopback, keyless ones (Ollama, LM Studio) keep any http host, because a model s
 on the machine under the desk is exactly what the setting was added for and banning it
 would cost a real setup to prevent nothing.
 
-### M9f — Container isolation *(optional stretch, not scheduled)*
+### M9f — Container isolation *(superseded, kept for the reasoning)*
 
-Run `runCommand` inside a container instead of on the host. Assessed 13 Aug and
-deliberately deferred — recorded here so the reasoning survives rather than being
-rediscovered.
+**Largely answered by the OS sandbox above, and at a fraction of the cost.** Assessed
+13 Aug, deferred, and then overtaken on 14 Aug when the security review forced the
+question properly: `sandbox-exec` and `bwrap` deliver the containment a container was
+wanted for, with no daemon to install, no image to pull, no bind-mount performance
+cost and no breaking of native or hardware projects.
+
+What a container would still add over the sandbox is network isolation — and that is
+the part which cannot be turned on, because `npm install` needs the network in every
+milestone one anyone would plan. Which leaves it buying very little.
+
+The original assessment follows, unchanged, because the reasoning about what
+containers do and do not buy is still correct and still worth not rediscovering.
 
 **What it buys.** The deny-list (M8d) is a blocklist, and a blocklist is leaky by
 construction: `curl … | sh` inside an approved step runs on the user's actual

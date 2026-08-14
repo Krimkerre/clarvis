@@ -6,7 +6,7 @@
  * agent path is a guarantee, not a preference, because the code never calls it rather
  * than the prompt asking it not to.
  */
-export type ChatMode = 'auto' | 'chat' | 'plan' | 'agent';
+export type ChatMode = 'auto' | 'unattended' | 'chat' | 'plan' | 'agent';
 
 export interface ModeSpec {
   id: ChatMode;
@@ -16,6 +16,15 @@ export interface ModeSpec {
   detail: string;
   /** Whether this mode may ever change files. The whole point of the setting. */
   canEdit: boolean;
+  /**
+   * Whether he stops and asks before each step that changes something.
+   *
+   * **Separated from routing, which it used to be welded to.** Step approval hung off
+   * `mode === 'agent'` because Agent was the mode it was built in — so Auto, the
+   * default, ran destructive commands with no prompt at all. Nothing about "work out
+   * whether this is a question" implies "and do not check before writing files".
+   */
+  asksFirst: boolean;
 }
 
 export const MODES: ModeSpec[] = [
@@ -23,8 +32,21 @@ export const MODES: ModeSpec[] = [
     id: 'auto',
     label: 'Auto',
     short: 'Auto',
-    detail: 'I decide: questions get answered, jobs get done, and I get on with it without asking at each step.',
+    detail: 'I decide whether you asked a question or gave me a job — and check with you before each step that changes anything.',
     canEdit: true,
+    asksFirst: true,
+  },
+  {
+    id: 'unattended',
+    label: 'Unattended',
+    short: 'Unattended',
+    // **Named for when you would choose it, not for how much it can do.** "Full Auto"
+    // reads as an upgrade, and people pick the upgrade. This is the mode for a job you
+    // would be happy to come back and find finished — which is the honest description
+    // and also the warning.
+    detail: 'The same, but I get on with it without checking. For work you are happy to walk away from.',
+    canEdit: true,
+    asksFirst: false,
   },
   {
     id: 'chat',
@@ -32,6 +54,7 @@ export const MODES: ModeSpec[] = [
     short: 'Chat',
     detail: 'Answer, read the project, or talk about anything else. I will not change a thing, whatever you ask.',
     canEdit: false,
+    asksFirst: false,
   },
   {
     id: 'plan',
@@ -39,6 +62,7 @@ export const MODES: ModeSpec[] = [
     short: 'Plan',
     detail: 'Work out what to do and write it down. No edits, and no wandering off the project — the plan is the output.',
     canEdit: false,
+    asksFirst: false,
   },
   {
     id: 'agent',
@@ -46,6 +70,7 @@ export const MODES: ModeSpec[] = [
     short: 'Agent',
     detail: 'Treat everything as a job — and check with you before each step that changes anything.',
     canEdit: true,
+    asksFirst: true,
   },
 ];
 
@@ -56,6 +81,17 @@ export function modeSpec(id: string): ModeSpec {
 /** Whether a mode is allowed to run the agent at all. */
 export function canEdit(id: string): boolean {
   return modeSpec(id).canEdit;
+}
+
+/**
+ * Whether this mode stops before each step that changes something.
+ *
+ * Read-only modes answer `false` because there is nothing to approve, not because
+ * they are permissive — `canEdit` is what makes them safe, and it is checked first
+ * everywhere it matters.
+ */
+export function asksFirst(id: string): boolean {
+  return modeSpec(id).asksFirst;
 }
 
 /**

@@ -3,6 +3,7 @@ import { join } from 'path';
 import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
+import { atRiskPaths } from './atRisk';
 
 /** What `begin()` managed, and what the user needs told about it. */
 export interface Isolation {
@@ -88,6 +89,19 @@ export class AgentBranch {
    * world they are in — an agent editing your working branch is a different proposition
    * from one editing its own, and quietly doing the former would be a betrayal.
    */
+  /**
+   * The files a command could destroy irrecoverably: modified, staged and untracked.
+   *
+   * Everything else in the repository is already in git and can be restored from it.
+   * Empty when there is no repository at all — in which case nothing here can tell
+   * what is at risk, and the caller says so rather than implying cover it does not
+   * have.
+   */
+  atRisk(): string[] {
+    const repository = this.repository();
+    return repository ? atRiskPaths(repository.state) : [];
+  }
+
   async begin(task: string): Promise<Isolation> {
     const repository = this.repository();
 

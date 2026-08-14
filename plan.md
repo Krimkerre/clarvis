@@ -3710,6 +3710,45 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   watches the agent start building it — with the plan file as the shared source of truth
   for both scope and progress.
 
+### Security review (14 Aug) — three findings, all real
+
+An outside reader went through the code and raised three things. All three held up
+when checked, and one was worse than reported. Recorded because the pattern is now
+consistent: the defects in this project are found by people using or reading it, not
+by its own test suite.
+
+**1. `runCommand` uses `shell: true`, so the workspace boundary does not apply to it.**
+True, and the important part is the framing. The file tools *are* confined —
+`resolveInWorkspace` refuses anything resolving outside, symlinks included — so the
+README's "can only touch the workspace it was born in" was true of files and false of
+commands. `cat ~/.ssh/id_rsa` was on no list. **Fixed by being honest**: the README and
+manual now say which boundary applies to what, because a claimed guarantee that does
+not hold is worse than an admitted gap. The real containment answer is M9f below.
+
+**2. The deny-list is string matching and therefore bypassable.** True —
+`python -c "shutil.rmtree(...)"` matches nothing, and no amount of regex fixes that.
+**The sharper version, found while checking it:** every write through the edit tools
+calls `Checkpoint.capture` with the path it is about to change, and a command names no
+paths — so deleting a file with the edit tool was undoable and deleting it with `rm`
+was not. The deny-list had to be perfect *because it was the only thing standing
+there*. A run now snapshots everything git has no copy of before anything executes, so
+the question stops being "can this be prevented" and becomes "can this be undone",
+which is the trade the rest of the product already makes. Approval was also welded to
+`mode === 'agent'`, meaning the default mode asked nothing; `asksFirst` is now the
+mode's own property, Auto asks, and Unattended is the one mode that does not.
+
+**3. A workspace could redirect the API base URL and collect the key.** The serious
+one. `clarvis.chat.baseUrl.*` was window-scoped, so a `.vscode/settings.json` in any
+cloned repository could point it at another server, and `resolveBaseUrl` had **no
+validation at all** — the key went wherever it said, in a header, with whatever code
+context accompanied the question. Fixed in three layers: the settings are
+`scope: machine` so a project cannot write them, `capabilities.untrustedWorkspaces`
+declares them restricted, and `acceptableOverride` validates what is left. The rule
+follows the credential rather than the protocol — keyed providers get https or
+loopback, keyless ones (Ollama, LM Studio) keep any http host, because a model server
+on the machine under the desk is exactly what the setting was added for and banning it
+would cost a real setup to prevent nothing.
+
 ### M9f — Container isolation *(optional stretch, not scheduled)*
 
 Run `runCommand` inside a container instead of on the host. Assessed 13 Aug and

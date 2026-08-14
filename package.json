@@ -162,15 +162,17 @@
           "default": "auto",
           "enum": [
             "auto",
+            "unattended",
             "chat",
             "plan",
             "agent"
           ],
           "enumDescriptions": [
-            "Questions get answered, jobs get done, ambiguity gets answered.",
-            "Answer and read only. Clarvis will not change a thing.",
-            "Describe what would need doing. Still no edits.",
-            "Treat every message as a job."
+            "I decide whether you asked a question or gave me a job, and check before each step that changes anything.",
+            "The same, but without checking. For work you are happy to walk away from.",
+            "Answer and read only. Nothing gets changed, whatever you ask.",
+            "Work out what to do and write it down. No edits.",
+            "Treat everything as a job, and check before each step that changes anything."
           ],
           "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all \u2014 the code never calls it, rather than the prompt being asked not to."
         },
@@ -227,17 +229,23 @@
         "clarvis.chat.baseUrl.ollama": {
           "type": "string",
           "default": "",
-          "description": "Override the Ollama endpoint. Empty means http://localhost:11434."
+          "description": "Override the Ollama endpoint. Empty means http://localhost:11434.",
+          "scope": "machine",
+          "markdownDescription": "Send Ollama requests somewhere other than the default. Leave empty unless you are pointing at your own server. **Machine-scoped on purpose:** a project you open cannot set this, because your API key travels with every request."
         },
         "clarvis.chat.baseUrl.lmstudio": {
           "type": "string",
           "default": "",
-          "description": "Override the LM Studio endpoint. Empty means http://localhost:1234."
+          "description": "Override the LM Studio endpoint. Empty means http://localhost:1234.",
+          "scope": "machine",
+          "markdownDescription": "Send LM Studio requests somewhere other than the default. Leave empty unless you are pointing at your own server. **Machine-scoped on purpose:** a project you open cannot set this, because your API key travels with every request."
         },
         "clarvis.chat.baseUrl.openai": {
           "type": "string",
           "default": "",
-          "description": "Override the OpenAI endpoint, for a proxy or gateway. Empty means the official API."
+          "description": "Override the OpenAI endpoint, for a proxy or gateway. Empty means the official API.",
+          "scope": "machine",
+          "markdownDescription": "Send OpenAI requests somewhere other than the default. Leave empty unless you are pointing at your own server. **Machine-scoped on purpose:** a project you open cannot set this, because your API key travels with every request."
         },
         "clarvis.voice.enabled": {
           "type": "boolean",
@@ -274,6 +282,18 @@
           "type": "number",
           "default": 200,
           "description": "Fish Audio requests per day before dropping to the system voice. A butler should not run up a bill while you're at lunch."
+        },
+        "clarvis.chat.baseUrl.anthropic": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Send Anthropic requests somewhere other than the default. Leave empty unless you are pointing at your own server. **Machine-scoped on purpose:** a project you open cannot set this, because your API key travels with every request."
+        },
+        "clarvis.chat.baseUrl.openrouter": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Send OpenRouter requests somewhere other than the default. Leave empty unless you are pointing at your own server. **Machine-scoped on purpose:** a project you open cannot set this, because your API key travels with every request."
         }
       }
     }
@@ -296,5 +316,18 @@
     "eslint": "^9.39.5",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.67.0"
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "In an untrusted folder Clarvis reads and answers, but never runs commands or edits files.",
+      "restrictedConfigurations": [
+        "clarvis.chat.baseUrl.anthropic",
+        "clarvis.chat.baseUrl.openai",
+        "clarvis.chat.baseUrl.openrouter",
+        "clarvis.chat.baseUrl.ollama",
+        "clarvis.chat.baseUrl.lmstudio"
+      ]
+    }
   }
 }

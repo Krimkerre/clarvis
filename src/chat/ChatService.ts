@@ -15,7 +15,7 @@ import { ChatActions } from './ChatActions';
 import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
-import { canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
+import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
 import { Voice, opening } from '../personality/Voice';
 import { researchWorkspace } from '../planning/workspaceResearch';
 import { describeWorkspaceSignals } from '../planning/workspaceSignals';
@@ -651,9 +651,11 @@ export class ChatService {
 
     const job = await this.jobIn(question, mode, decision);
     if (job) {
-      // Agent asks before each step that acts; Auto is the mode that decides for
-      // itself, which is the only thing separating the two now that both can edit.
-      this.runs.setStepApproval(mode === 'agent');
+      // **The mode says whether to ask, not which mode it is.** This used to read
+      // `mode === 'agent'`, which meant Auto — the default — ran destructive commands
+      // with no prompt. Routing and approval are separate questions and are asked
+      // separately now.
+      this.runs.setStepApproval(asksFirst(mode));
       this.runs.setFromPlan(false);
 
       // **An answer continues the work rather than starting new work.** A run that

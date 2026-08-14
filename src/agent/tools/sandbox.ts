@@ -28,13 +28,21 @@ let detected: Sandbox | undefined | null = null;
  * Homebrew both depend on it. If it ever goes, this returns undefined and the
  * unconfined path takes over, which is the same as any Linux box without bubblewrap.
  */
-export async function availableSandbox(): Promise<Sandbox | undefined> {
+export async function availableSandbox(log?: (message: string) => void): Promise<Sandbox | undefined> {
   if (detected !== null) return detected;
 
   const candidate: Sandbox | undefined =
     process.platform === 'darwin' ? 'sandbox-exec' : process.platform === 'linux' ? 'bwrap' : undefined;
 
   detected = candidate && (await canRun(candidate)) ? candidate : undefined;
+  // Said once per session, because "no sandbox on macOS" means `which` did not
+  // resolve in the extension host rather than the machine lacking one, and that is
+  // worth being able to see rather than deduce.
+  log?.(
+    detected
+      ? `sandbox: using ${detected} on ${process.platform}`
+      : `sandbox: none available on ${process.platform}${candidate ? ` — \`${candidate}\` did not resolve` : ''}`
+  );
   return detected;
 }
 
@@ -83,6 +91,8 @@ export interface Spawn {
   file: string;
   args: string[];
   confined: boolean;
+  /** Which mechanism, for the log — "confined" alone does not say by what. */
+  via?: Sandbox;
 }
 
 /**
@@ -93,9 +103,15 @@ export interface Spawn {
  * Clarvis useless on Windows while pushing people to run the same command in a
  * terminal, with no gate, no snapshot and no log.
  */
-export async function spawnFor(command: string, root: string, storageDir: string): Promise<Spawn> {
-  const sandbox = await availableSandbox();
+export async function spawnFor(
+  command: string,
+  root: string,
+  storageDir: string,
+  log?: (message: string) => void
+): Promise<Spawn> {
+  const sandbox = await availableSandbox(log);
   if (!sandbox) return { file: command, args: [], confined: false };
+  
 
   const [workspace] = await resolveAll([root]);
   const caches = await resolveAll(buildCaches());
@@ -110,7 +126,7 @@ export async function spawnFor(command: string, root: string, storageDir: string
   }
 
   const { file, args } = sandboxArgv(sandbox, profilePath, workspace, caches, command);
-  return { file, args, confined: true };
+  return { file, args, confined: true, via: sandbox };
 }
 
 /**

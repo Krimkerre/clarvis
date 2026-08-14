@@ -597,14 +597,28 @@ export class AgentRunner {
     // already been asked, once for this workspace, whether unconfined commands are
     // acceptable — declining leaves reading, answering, planning and editing intact,
     // which is most of the product.
-    const spawnAs = await spawnFor(command, this.root ?? '', path.join(this.context.globalStorageUri.fsPath, 'sandbox'));
+    const spawnAs = await spawnFor(
+      command,
+      this.root ?? '',
+      path.join(this.context.globalStorageUri.fsPath, 'sandbox'),
+      this.log
+    );
     if (!spawnAs.confined && !(await mayRunUnconfined(this.context, this.log))) {
       this.log(`sandbox: refused "${command}" — no sandbox and unconfined commands declined here`);
       return "I can't run commands in this folder: there's no sandbox on this machine and you asked me not to run them unconfined. Everything else still works.";
     }
 
     this.terminal.announce(command);
-    if (!spawnAs.confined) this.log('sandbox: running unconfined (allowed for this workspace)');
+    // **Both paths logged, not just the bad one.** The first version logged only when
+    // a command ran unconfined, so a confined run said nothing — and silence is also
+    // what "the sandbox code never executed" looks like. The first live run could not
+    // be told apart from the feature being absent. Exactly the mistake the briefing
+    // made when it logged "from the bank" for three different reasons.
+    this.log(
+      spawnAs.confined
+        ? `sandbox: confined by ${spawnAs.via} — writes limited to the workspace`
+        : 'sandbox: running unconfined (allowed for this workspace)'
+    );
 
     const result = await runCommand(
       this.root,

@@ -194,6 +194,14 @@ export class AgentRunner {
     task: string
   ): AsyncGenerator<AgentEvent> {
     await checkpoint.begin(task);
+
+    // **Before the branch, and before anything runs.** Isolation protects committed
+    // history; this protects what git has no copy of — the files you had open and
+    // half-edited. Commands are why: an edit tool snapshots the path it is about to
+    // write, and `rm -rf src` names no path at all, so it was the one thing the agent
+    // could do that undo could not reverse.
+    await checkpoint.captureAll(branch.atRisk());
+
     const isolation = await branch.begin(task);
 
     // Where to put the user back if they undo. Recorded after branching, because that is

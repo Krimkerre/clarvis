@@ -4231,6 +4231,29 @@ write, the result carries a note saying so, telling the model not to repeat the
 diagnosis and not to suggest `sudo` or `chown`. Matched rather than always attached,
 because a note on every failure teaches it to blame the sandbox for its own bugs.
 
+**Two things follow from it, both built the same day.**
+
+*The escape at the gate.* `brew install go` was gated as a dependency, approved, and
+then denied by the sandbox — an approval that could not be honoured. Confinement is
+the actual obstacle for an install, so that gate now offers a second button:
+*Run it unconfined*. Deliberately narrow, and narrow in a way that is checkable
+(`mayEscapeConfinement`): installs and privileged commands only, never `rm -rf`, never
+a force-push, because the sandbox was not what stood in their way. Per command, never
+remembered — a remembered yes is an unconfined agent with extra steps. The dialog
+spells out both buttons, since two that read "run it" teach people to click the right
+one.
+
+*Bubblewrap on Linux.* macOS ships `sandbox-exec`; Linux ships nothing, so the Linux
+path was "no sandbox here, shall I run unconfined?" — a security question asked of
+someone one `apt-get install` away from not having to answer it. Now it offers to
+install it first, for the five package managers that cover the desktop distributions.
+**The command is handed over, not run**: a terminal opens with the line in it,
+unexecuted, and the user presses Enter so their own shell asks for the password. An
+extension that runs `sudo` on your behalf has become the thing the sandbox exists to
+prevent. That makes a third answer necessary — neither yes nor no but *ask me again in
+a minute* — because reporting it as a refusal would have the model looking for a way
+round a door being unlocked.
+
 **Also found, same run:**
 
 - `listFiles` was called with `"."` — quotes included — and the path resolved to

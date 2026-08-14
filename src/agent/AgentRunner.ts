@@ -6,7 +6,7 @@ import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
 import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
 import { phrase } from '../personality/Voice';
-import { approveLabel, classifyCommand, explainGate } from './Gate';
+import { approveLabel, classifyCommand, ESCAPE_LABEL, explainGate, GateVerdict, mayEscapeConfinement } from './Gate';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
@@ -576,38 +576,105 @@ export class AgentRunner {
    * code obtained. A refusal comes back as an ordinary tool result so the model can
    * pick a different approach rather than stalling.
    */
+  /**
+   * The gate dialog, and what came back.
+   *
+   * Separate from `runGated` because the sandbox escape adds a third answer, and three
+   * answers plus the spawn decision plus the run itself put one method four branches
+   * over the complexity ceiling — the sort of growth that is invisible until something
+   * measures it.
+   */
+  private async askGate(
+    command: string,
+    verdict: GateVerdict,
+    confined: boolean
+  ): Promise<'approved' | 'unconfined' | 'refused'> {
+    const label = approveLabel(verdict);
+    // Offered only where the sandbox is the actual obstacle, and only while there is
+    // one to step out of.
+    const escape = confined && mayEscapeConfinement(verdict) ? ESCAPE_LABEL : undefined;
+
+    const approved = await vscode.window.showWarningMessage(
+      explainGate(command, verdict, Boolean(escape)),
+      { modal: true },
+      ...(escape ? [label, escape] : [label])
+    );
+
+    if (approved !== label && approved !== escape) {
+      this.log(`gate: refused "${command}" (${verdict.category})`);
+      return 'refused';
+    }
+
+    this.log(`gate: approved "${command}" (${verdict.category})`);
+    if (approved !== escape) return 'approved';
+
+    // Per command, never stored: the next install asks again from scratch. A
+    // remembered "yes, unconfined" is an unconfined agent with extra steps.
+    this.log(`sandbox: "${command}" allowed out of the sandbox for this one run`);
+    return 'unconfined';
+  }
+
+  /**
+   * Why an unconfined command is not going to run, if it is not.
+   *
+   * Three outcomes rather than two, because "go and install the sandbox" is neither a
+   * yes nor a no — it is a request to ask again shortly, and reporting it as a refusal
+   * would have the model looking for another way round a door that is being unlocked.
+   */
+  private async unconfinedRefusal(command: string): Promise<string | undefined> {
+    const answer = await mayRunUnconfined(this.context, this.log);
+
+    if (answer === 'installing') {
+      this.log(`sandbox: holding "${command}" while bubblewrap is installed`);
+      return [
+        "I've opened a terminal with the bubblewrap install line ready — press Enter there and give your password.",
+        'Once it finishes, tell me and I will try again with commands properly confined.',
+        "Don't retry this command in the meantime.",
+      ].join(' ');
+    }
+
+    if (answer === 'refused') {
+      this.log(`sandbox: refused "${command}" — no sandbox and unconfined commands declined here`);
+      return "I can't run commands in this folder: there's no sandbox on this machine and you asked me not to run them unconfined. Everything else still works.";
+    }
+
+    return undefined;
+  }
+
   private async runGated(command: string, signal: AbortSignal): Promise<string> {
     const verdict = classifyCommand(command);
 
-    if (verdict) {
-      const label = approveLabel(verdict);
-      const approved = await vscode.window.showWarningMessage(
-        explainGate(command, verdict),
-        { modal: true },
-        label
-      );
-
-      if (approved !== label) {
-        this.log(`gate: refused "${command}" (${verdict.category})`);
-        return `The user declined that command. Don't retry it — find another way, or ask.`;
-      }
-      this.log(`gate: approved "${command}" (${verdict.category})`);
-    }
-
-    // **Confined where the machine can confine it.** Without a sandbox the user has
-    // already been asked, once for this workspace, whether unconfined commands are
-    // acceptable — declining leaves reading, answering, planning and editing intact,
-    // which is most of the product.
-    const spawnAs = await spawnFor(
+    // **Confined where the machine can confine it.** Worked out before the gate rather
+    // than after it, because whether the sandbox is standing there changes what the
+    // gate can offer — an install it is about to confine has a second answer worth
+    // giving. Without a sandbox the user has already been asked, once for this
+    // workspace, whether unconfined commands are acceptable; declining leaves reading,
+    // answering, planning and editing intact, which is most of the product.
+    let escaped = false;
+    let spawnAs = await spawnFor(
       command,
       this.root ?? '',
       path.join(this.context.globalStorageUri.fsPath, 'sandbox'),
       this.log
     );
-    if (!spawnAs.confined && !(await mayRunUnconfined(this.context, this.log))) {
-      this.log(`sandbox: refused "${command}" — no sandbox and unconfined commands declined here`);
-      return "I can't run commands in this folder: there's no sandbox on this machine and you asked me not to run them unconfined. Everything else still works.";
+
+    if (verdict) {
+      const answer = await this.askGate(command, verdict, spawnAs.confined);
+      if (answer === 'refused') {
+        return `The user declined that command. Don't retry it — find another way, or ask.`;
+      }
+      if (answer === 'unconfined') {
+        escaped = true;
+        spawnAs = { file: command, args: [], confined: false };
+      }
     }
+
+    // Not asked when the user just chose this at the gate — "there's no sandbox on
+    // this machine, run anyway?" is a strange thing to say to someone who has this
+    // second stepped out of the one that is plainly working.
+    const refusal =
+      spawnAs.confined || escaped ? undefined : await this.unconfinedRefusal(command);
+    if (refusal) return refusal;
 
     this.terminal.announce(command);
     // **Both paths logged, not just the bad one.** The first version logged only when
@@ -618,7 +685,9 @@ export class AgentRunner {
     this.log(
       spawnAs.confined
         ? `sandbox: confined by ${spawnAs.via} — writes limited to the workspace`
-        : 'sandbox: running unconfined (allowed for this workspace)'
+        : escaped
+          ? 'sandbox: running unconfined — approved for this command only'
+          : 'sandbox: running unconfined (allowed for this workspace)'
     );
 
     const result = await runCommand(

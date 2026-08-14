@@ -5,6 +5,7 @@ import * as fs from 'fs/promises';
 import { realpath } from 'fs/promises';
 import { execFile } from 'child_process';
 import { macProfile, Sandbox, sandboxArgv } from './sandboxProfile';
+import { installCommand, packageManagers } from './bwrapInstall';
 
 /**
  * Finding a sandbox, writing its profile, and asking once when there isn't one.
@@ -130,6 +131,61 @@ export async function spawnFor(
 }
 
 /**
+ * Offers to install bubblewrap, on a Linux box that has a package manager but no
+ * sandbox.
+ *
+ * **The command is handed over, not run.** Installing it needs root, and an extension
+ * that runs `sudo` on your behalf has quietly become the thing the sandbox exists to
+ * prevent — quite apart from having nowhere to type a password. So it opens a terminal
+ * with the line already in it, unexecuted: the user reads it, presses Enter, and their
+ * own shell asks for the password, exactly as it would have if they had typed it.
+ *
+ * Returns true when they went to install, which means the answer to "may I run
+ * unconfined" is neither yes nor no — it is "ask me again in a minute", so nothing is
+ * remembered and the next command re-probes.
+ */
+async function offerSandboxInstall(log: (message: string) => void): Promise<boolean> {
+  const manager = await firstAvailable(packageManagers());
+  const command = installCommand(manager);
+  if (!command) {
+    log('sandbox: no known package manager here — cannot offer to install bubblewrap');
+    return false;
+  }
+
+  const answer = await vscode.window.showWarningMessage('I can\'t confine commands on this machine — yet.', {
+    modal: true,
+    detail:
+      'Everywhere else, a command I run can only change files inside this project. ' +
+      'On Linux that needs bubblewrap, which is a small standard package and is not installed here.\n\n' +
+      `I can open a terminal with the install line ready:\n    ${command}\n\n` +
+      'You press Enter and give your password — I never run it myself. ' +
+      'Then ask me again and commands will be confined.',
+  }, 'Open a terminal with it ready');
+
+  if (answer !== 'Open a terminal with it ready') return false;
+
+  const terminal = vscode.window.createTerminal('Install bubblewrap');
+  terminal.show();
+  // `false`: no newline, so it sits at the prompt waiting to be read and run rather
+  // than executing a sudo command nobody had the chance to look at.
+  terminal.sendText(command, false);
+  log(`sandbox: offered \`${command}\` in a terminal`);
+
+  // The probe is cached for the session, and the whole point is that the answer has
+  // just changed.
+  detected = null;
+  return true;
+}
+
+/** The first of these binaries that resolves, or undefined if none do. */
+async function firstAvailable(binaries: string[]): Promise<string | undefined> {
+  for (const binary of binaries) {
+    if (await canRun(binary)) return binary;
+  }
+  return undefined;
+}
+
+/**
  * Whether running commands unconfined is acceptable here.
  *
  * **Asked once per workspace and remembered**, the same shape as the `git init`
@@ -137,12 +193,20 @@ export async function spawnFor(
  * one has a real answer that does not change. Declining leaves commands refused,
  * which still leaves reading, answering, planning and editing files.
  */
+export type UnconfinedAnswer = 'allowed' | 'refused' | 'installing';
+
 export async function mayRunUnconfined(
   context: vscode.ExtensionContext,
   log: (message: string) => void
-): Promise<boolean> {
+): Promise<UnconfinedAnswer> {
   const remembered = context.workspaceState.get<boolean>(UNCONFINED_KEY);
-  if (remembered !== undefined) return remembered;
+  if (remembered !== undefined) return remembered ? 'allowed' : 'refused';
+
+  // **Offer the fix before asking them to live without it.** Asking "shall I run
+  // unconfined?" on a machine where one apt-get away is a working sandbox is a
+  // security question with a better answer that was never mentioned. Nothing is
+  // remembered either way: they either install it, or they get asked properly below.
+  if (process.platform === 'linux' && (await offerSandboxInstall(log))) return 'installing';
 
   const answer = await vscode.window.showWarningMessage(
     'I can\'t confine commands on this machine.',
@@ -162,7 +226,7 @@ export async function mayRunUnconfined(
   const allowed = answer === 'Run them anyway';
   await context.workspaceState.update(UNCONFINED_KEY, allowed);
   log(`sandbox: none available, unconfined commands ${allowed ? 'allowed' : 'refused'} for this workspace`);
-  return allowed;
+  return allowed ? 'allowed' : 'refused';
 }
 
 /** Forgets the answer, for the command that lets someone change their mind. */

@@ -258,10 +258,11 @@ can get around it.
 
 | Mode | He can | Use it when |
 |---|---|---|
+| **Auto** *(default)* | Works out whether you asked a question or gave him a job — and checks before each step that changes anything | Most of the time |
+| **Unattended** | The same, without checking | A job you're happy to walk away from |
+| **Agent** | Everything is a job, and he checks before each change | You know it's work, and want to see it coming |
+| **Chat** | Read, answer, and talk about anything else | You're asking, not asking for |
 | **Plan** | Read, and describe what he *would* change — staying on the project | You want the plan before the work |
-| **Chat** | Read, answer, and talk about anything else | You are asking, not asking for |
-| **Agent** | Read, edit, run commands — asking before each step that changes anything | You want the work done, and want to see it coming |
-| **Auto** | Decides per message, and gets on with it | Most of the time |
 
 **Chat wanders, Plan does not.** In Chat he'll answer a question about anything —
 how something works, an opinion, ordinary conversation — because an assistant that
@@ -270,11 +271,19 @@ purpose: it is a working session with a document at the end of it, so he answers
 digression in a sentence and brings it back. **Starting an interview switches to Plan
 by itself**, and switches back when it finishes.
 
-**Agent asks, Auto acts.** That is the whole difference between the two now: in Agent
-mode he describes each step that would change something and waits for a yes, and
-"Skip this step" keeps the run going — he is told what you refused and finds another
-way. Reading files is never gated in either mode; approving a file *read* six times
-teaches you to click yes without looking, which is worse than not asking.
+**Two of these change files without asking you first, and only one of them is
+supposed to.** In **Auto** and **Agent** he describes each step that would change
+something and waits for a yes; "Skip this step" keeps the run going, and he's told
+what you refused so he can find another way. **Unattended** is the one that doesn't
+ask — pick it when you want to hand over a job and leave. He says so once when you
+choose it.
+
+Reading files is never gated in any mode. Approving a file *read* six times teaches
+you to click yes without looking, which is worse than not asking at all.
+
+**Whatever the mode, the gates on irreversible things stay.** Deleting, publishing,
+installing — those are a separate layer from per-step approval, and there is no
+setting that turns them off.
 
 **Ask for work in a read-only mode and he says so**, naming the mode and what to switch
 to, then answers the question anyway. Before, he would answer and mention in passing

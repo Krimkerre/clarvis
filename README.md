@@ -111,10 +111,10 @@ the plan is signed off — and a rule the code knows should be one the interface
   going until it's done.
 
   You watch it happen. Files open as he writes them, scrolled to the bit that
-  changed, and everything he touches is listed as you go. Choose **Agent** and he
-  describes each step that changes anything and waits for you to say yes; choose
-  **Auto** and he just gets on with it. Type while he's working and he takes it as a
-  correction rather than making you wait.
+  changed, and everything he touches is listed as you go. By default he describes each
+  step that changes anything and waits for you to say yes — **Unattended** is the one
+  mode that doesn't ask, for a job you're happy to walk away from. Type while he's
+  working and he takes it as a correction rather than making you wait.
 
   **Nothing you haven't saved is at risk.** He works on a copy of your project's
   history, kept separate from your own unsaved changes, and the whole thing undoes
@@ -212,7 +212,9 @@ stays unsaved and yours. Whether any of it becomes part of your project for good
 your decision.
 
 **One command undoes all of it.** Before touching anything he takes a copy of every
-file he's about to change. **Undo Last Agent Run** puts them all back and returns you
+file he's about to change — and, before the run starts, of everything your version
+history has no copy of yet, since a command he runs could destroy that and nothing
+else could give it back. **Undo Last Agent Run** puts them all back and returns you
 to where you were. Ordinary undo (`Cmd+Z`) works too, because he edits files the same
 way you do. **Stop** halts him at the next step.
 

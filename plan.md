@@ -4181,7 +4181,100 @@ Clarvis works when a user:
 9. Never once finds that Clarvis changed something they didn't ask him to change.
 
 
-## 10. The codebase, measured
+## 10. First-run verification — M9 and the sandbox
+
+Written 14 Aug, before running any of it. Everything below is built and unit-tested
+and **none of it has been through a single sitting end to end**. Almost every real
+defect in this document was found by using the thing rather than by the suite — the
+truncated shortlist, the empty milestone, the briefing that invented a test suite,
+`settings.json` reported as the user's own work. 641 tests caught the arithmetic and
+almost none of that. So this is a list to *run*, and to record results against.
+
+### Order matters: the sandbox first
+
+`sandboxProfile.ts` was verified directly from Node against a real `sandbox-exec`.
+The path that has **never executed** is the one inside the extension: `spawnFor`
+resolving the caches, writing the profile into global storage, and wrapping the spawn.
+Two failure modes, both quiet:
+
+- **`which` not resolving in the extension host's environment.** `availableSandbox()`
+  returns undefined, and a Mac that obviously has `sandbox-exec` gets asked whether to
+  run commands unconfined. A silent downgrade, not a crash, and therefore easy to miss.
+- **A confined command failing for the wrong reason**, which looks exactly like a
+  command that legitimately failed.
+
+**What to look for:** `sandbox:` lines in the log. `running unconfined (allowed for
+this workspace)` on macOS or Linux means detection is broken and nothing below is
+worth running yet.
+
+### The projects, and what each one forces
+
+Chosen so the interesting path cannot be avoided rather than merely being available.
+
+**1. "A tool that renames my photos by the date they were taken." (Python)**
+Forces: PEP 8 conventions, a `pip install` under the sandbox, and — the point — a
+program whose whole job is *moving and overwriting files*. If the checkpoint or the
+sandbox is wrong, this is where it shows. Big enough for three or four milestones.
+Answer "somewhere on my machine" to *where does it run* to trigger the pushback.
+
+**2. "A command-line tool that fetches the weather and caches it." (Rust or Go)**
+Forces the build-cache allowlist, which is the sandbox's most likely real-world
+break: `cargo build` writes to `~/.cargo/registry`, `go build` to `~/go/pkg`. If
+those are missing from the profile the build fails under confinement and works
+outside it — the exact "sandbox breaks the toolchain" failure that gets sandboxes
+switched off. Also exercises the non-Python conventions lookup.
+
+**3. "A script that prints a different compliment each time you run it."**
+Forces the **no-plan-needed** outcome, which nothing else reaches — a 30-line
+throwaway should be told it doesn't need a plan rather than handed four milestones of
+ceremony. Also the fastest way to see whether the analysis over-produces.
+
+**4. Anything at all, in Elixir, Zig or Ruby.**
+Forces the honest conventions fallback: no entry exists, so the plan must say the
+specifics were never written down rather than inventing four plausible idioms. The
+failure to look for is confident invention.
+
+### Conditions to run them under
+
+Each of these changes a code path rather than a project, so pair them with any of the
+above:
+
+- **A folder with no git**, for the `git init` offer and checkpoint-only protection.
+- **A folder opened as untrusted** (Restricted Mode), for `requireTrust` — commands
+  and edits refused, reading and answering still working.
+- **A folder that already has a `plan.md`**, for keep-or-replace being asked *before*
+  the interview rather than after it.
+
+### The loop itself, in one sitting
+
+Never done. Each piece works alone; the seams between them are untested.
+
+- [ ] Plan → approve → build milestone one → it stops with what changed and the check
+      results → offers to write them into `plan.md`
+- [ ] `plan.md` is ticked correctly, results recorded beside the steps
+- [ ] The next milestone is offered, not started
+- [ ] Mid-build, say "use a different library" — folded in as a correction
+- [ ] Mid-build, say "it should also email me the results" — **stops**, names it as new
+      scope, offers to write it into the plan first
+- [ ] Close the window mid-interview, reopen — offered carry on / start again / leave it
+- [ ] Close the window mid-build, reopen — offered to pick the milestone up
+- [ ] The panel shows "Step 2 of 4" and clears when the run ends
+- [ ] Auto asks before each change; Unattended does not, and says so once when chosen
+
+### The two M9d2 items that have never run
+
+- [ ] The comment-style question is asked once, in the final round, both options
+      presented as legitimate
+- [ ] Build a file under each setting — `explanatory` produces comments throughout,
+      `lean` only where something is surprising
+
+### Older debts, not to be lost
+
+The M6 dogfood pass has been outstanding since M6, and roughly 45 finer-grained M8
+checklist items remain unverified — mute mid-sentence, avatar strobing, transcript
+persistence, Ollama. Both predate M9 and neither is closed by anything above.
+
+## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged to `main`. Kept because §0's clean-code rules are argued
 about in the abstract otherwise, and because the M8 linter report — "too much

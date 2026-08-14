@@ -90,6 +90,55 @@ export function providerSpec(id: string): ProviderSpec | undefined {
  * that some gateways accept and others reject with an unhelpful 404.
  */
 export function resolveBaseUrl(spec: ProviderSpec, override?: string): string {
-  const url = override?.trim() || spec.baseUrl;
+  const url = acceptableOverride(override, spec.needsKey) ?? spec.baseUrl;
   return url.replace(/\/+$/, '');
 }
+
+/**
+ * Whether a base-URL override is safe to use, given whether a key travels with it.
+ *
+ * **The rule follows the credential, not the protocol.** Every request to a
+ * key-bearing provider carries that key in a header, so anything able to change this
+ * URL could collect it along with whatever code context went with the question.
+ * Raised in a security review, and it was worse than reported: there was no
+ * validation at all.
+ *
+ * So the two kinds of provider get different rules, because they are exposed to
+ * different things:
+ *
+ *  - **Keyed providers (Anthropic, OpenAI, OpenRouter): https, or this machine.**
+ *    Plain http to somewhere else would put the key on the wire in clear text, and
+ *    the loopback exception exists only because a proxy on your own machine is a
+ *    normal thing to run.
+ *  - **Keyless providers (Ollama, LM Studio): any http host.** There is no credential
+ *    to leak, and `http://box:1234` — a model server on the machine under the desk —
+ *    is exactly what this setting was added for. Banning it would cost a real setup
+ *    to prevent nothing.
+ *
+ * `localhost` means `localhost`, not "contains localhost", which
+ * `https://localhost.evil.example` would otherwise satisfy.
+ *
+ * A rejected value is ignored rather than raised: the request still goes to the real
+ * provider, which is the safe outcome, and a setting nobody remembers writing should
+ * not break the extension.
+ */
+export function acceptableOverride(override: string | undefined, needsKey = true): string | undefined {
+  const value = override?.trim();
+  if (!value) return undefined;
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return undefined;
+  }
+
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return undefined;
+  if (!needsKey) return value;
+
+  if (url.protocol === 'https:') return value;
+  return LOOPBACK.has(url.hostname) ? value : undefined;
+}
+
+/** The only hosts allowed to receive a key over plain http. Exact matches only. */
+const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);

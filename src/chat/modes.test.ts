@@ -4,10 +4,11 @@ import { MODES, modeSpec, canEdit, PLAN_ADDENDUM } from './modes';
 import { isStopRequest } from './chatCommands';
 import { chatAction, forgetTarget } from './chatCommands';
 
-test('only auto and agent may change files', () => {
+test('only the three working modes may change files', () => {
   // The reason the setting exists. If this ever inverts, a "chat only" mode starts
   // editing a codebase — the exact failure the user asked to be able to prevent.
   assert.equal(canEdit('auto'), true);
+  assert.equal(canEdit('unattended'), true);
   assert.equal(canEdit('agent'), true);
   assert.equal(canEdit('chat'), false);
   assert.equal(canEdit('plan'), false);
@@ -21,9 +22,31 @@ test('an unknown mode falls back to auto rather than to nothing', () => {
 
 test('every mode says plainly what it will and will not do', () => {
   for (const mode of MODES) {
-    assert.ok(mode.short.length > 0 && mode.short.length <= 6, mode.id);
+    // Ten rather than six, for "Unattended". The button is the only place you would
+    // notice you are in the mode that does not ask, so the name carrying the warning
+    // beats four characters of width — and an abbreviation would carry neither.
+    assert.ok(mode.short.length > 0 && mode.short.length <= 10, mode.id);
     assert.ok(mode.detail.length > 20, mode.id);
   }
+});
+
+test('exactly the editing modes decide whether to ask first', () => {
+  // Approval used to hang off `mode === 'agent'`, so Auto — the default — ran
+  // destructive commands with no prompt at all. Routing and approval are separate
+  // questions, and a read-only mode has nothing to approve.
+  for (const mode of MODES) {
+    if (!mode.canEdit) assert.equal(mode.asksFirst, false, mode.id);
+  }
+  assert.equal(modeSpec('auto').asksFirst, true, 'the default asks');
+  assert.equal(modeSpec('agent').asksFirst, true);
+  assert.equal(modeSpec('unattended').asksFirst, false, 'the one mode that does not');
+});
+
+test('unattended is named for when you would pick it, not for being more powerful', () => {
+  // "Full Auto" reads as an upgrade, and people pick the upgrade.
+  const unattended = modeSpec('unattended');
+  assert.match(unattended.detail, /walk away/);
+  assert.equal(unattended.canEdit, true);
 });
 
 test('a bare "stop" is an abort, and a stop with an object is not', () => {

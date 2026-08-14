@@ -12,6 +12,8 @@ import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
+import { mayRunUnconfined, spawnFor } from './tools/sandbox';
+import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
 import { ANSWER_SHAPE, characterWith } from '../personality/character';
@@ -194,6 +196,14 @@ export class AgentRunner {
     task: string
   ): AsyncGenerator<AgentEvent> {
     await checkpoint.begin(task);
+
+    // **Before the branch, and before anything runs.** Isolation protects committed
+    // history; this protects what git has no copy of — the files you had open and
+    // half-edited. Commands are why: an edit tool snapshots the path it is about to
+    // write, and `rm -rf src` names no path at all, so it was the one thing the agent
+    // could do that undo could not reverse.
+    await checkpoint.captureAll(branch.atRisk());
+
     const isolation = await branch.begin(task);
 
     // Where to put the user back if they undo. Recorded after branching, because that is
@@ -583,8 +593,26 @@ export class AgentRunner {
       this.log(`gate: approved "${command}" (${verdict.category})`);
     }
 
+    // **Confined where the machine can confine it.** Without a sandbox the user has
+    // already been asked, once for this workspace, whether unconfined commands are
+    // acceptable — declining leaves reading, answering, planning and editing intact,
+    // which is most of the product.
+    const spawnAs = await spawnFor(command, this.root ?? '', path.join(this.context.globalStorageUri.fsPath, 'sandbox'));
+    if (!spawnAs.confined && !(await mayRunUnconfined(this.context, this.log))) {
+      this.log(`sandbox: refused "${command}" — no sandbox and unconfined commands declined here`);
+      return "I can't run commands in this folder: there's no sandbox on this machine and you asked me not to run them unconfined. Everything else still works.";
+    }
+
     this.terminal.announce(command);
-    const result = await runCommand(this.root, command, (chunk) => this.terminal.write(chunk), signal);
+    if (!spawnAs.confined) this.log('sandbox: running unconfined (allowed for this workspace)');
+
+    const result = await runCommand(
+      this.root,
+      command,
+      (chunk) => this.terminal.write(chunk),
+      signal,
+      spawnAs
+    );
 
     return [
       `exit ${result.exitCode ?? 'killed'}${result.timedOut ? ' (timed out)' : ''}`,

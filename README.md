@@ -2,7 +2,7 @@
 
 > Clippy's presence. Jarvis's competence. A butler's disdain.
 
-**He can only see, and only touch, the project folder you opened him in.**
+**He works in the project folder you opened him in, and nowhere else.**
 
 Clarvis is a sarcastic butler who lives in your code editor. He watches your builds so
 you don't have to, remembers the mistake you keep making, occasionally judges you for
@@ -111,10 +111,10 @@ the plan is signed off — and a rule the code knows should be one the interface
   going until it's done.
 
   You watch it happen. Files open as he writes them, scrolled to the bit that
-  changed, and everything he touches is listed as you go. Choose **Agent** and he
-  describes each step that changes anything and waits for you to say yes; choose
-  **Auto** and he just gets on with it. Type while he's working and he takes it as a
-  correction rather than making you wait.
+  changed, and everything he touches is listed as you go. By default he describes each
+  step that changes anything and waits for you to say yes — **Unattended** is the one
+  mode that doesn't ask, for a job you're happy to walk away from. Type while he's
+  working and he takes it as a correction rather than making you wait.
 
   **Nothing you haven't saved is at risk.** He works on a copy of your project's
   history, kept separate from your own unsaved changes, and the whole thing undoes
@@ -212,7 +212,9 @@ stays unsaved and yours. Whether any of it becomes part of your project for good
 your decision.
 
 **One command undoes all of it.** Before touching anything he takes a copy of every
-file he's about to change. **Undo Last Agent Run** puts them all back and returns you
+file he's about to change — and, before the run starts, of everything your version
+history has no copy of yet, since a command he runs could destroy that and nothing
+else could give it back. **Undo Last Agent Run** puts them all back and returns you
 to where you were. Ordinary undo (`Cmd+Z`) works too, because he edits files the same
 way you do. **Stop** halts him at the next step.
 
@@ -226,9 +228,27 @@ kind of thing is risky, what could go wrong *this time*, and — the important p
 **whether it can be undone**. Deleting files and publishing your work are dangerous in
 completely different ways, and the warnings look different too.
 
-Anything that would reach outside your project folder is refused outright. There's
-deliberately no setting to switch this off, because a safety feature with an off switch
-is one that gets switched off.
+**Reading and writing files is confined to your project folder**, symlinks included —
+anything resolving outside it is refused outright. There's deliberately no setting to
+switch that off, because a safety feature with an off switch is one that gets switched
+off.
+
+**Commands are confined too, by the operating system rather than by reading them.**
+Running `npm test` means running a shell, and inspecting a shell command to decide
+whether it's safe is a game you lose eventually — `python -c "shutil.rmtree(...)"`
+doesn't look like `rm -rf`. So the command runs with reduced authority instead: **it
+cannot modify anything outside your project and its build caches.** Not because a list
+recognised it, but because the kernel refuses, and the kernel doesn't care which
+language asked.
+
+Two honest limits. **Reading is still allowed** — toolchains genuinely need to read
+from all over your machine, and blocking that breaks every build — so a command can
+still read a file you'd rather it didn't. **The network is still open**, because
+`npm install` needs it. Destruction and persistence are stopped; exfiltration is not.
+
+macOS and Linux have the machinery for this. **Windows doesn't**, so there he asks
+once per project whether to run commands unconfined, and remembers the answer. Say no
+and commands are refused — reading, answering, planning and editing all still work.
 
 **The warnings are written by us, never by the AI.** An AI that has just been reading
 your files could be persuaded — by something written *in* those files — to describe a

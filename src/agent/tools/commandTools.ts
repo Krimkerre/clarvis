@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { requireTrust } from './trust';
 import { spawn } from 'child_process';
 
 /**
@@ -41,9 +42,20 @@ export async function runCommand(
   root: string | undefined,
   command: string,
   echo: (chunk: string) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /**
+   * How to spawn it — confined where the machine can, plainly where it cannot.
+   *
+   * Passed in rather than worked out here so this function keeps no opinion about
+   * sandboxes, and so the tests can drive both paths without one installed.
+   */
+  spawnAs?: { file: string; args: string[]; confined: boolean }
 ): Promise<CommandResult> {
   if (!root) throw new Error('There is no folder open, so there is nowhere to run that.');
+
+  // A shell command is the most powerful thing here and the least contained — see the
+  // note on `shell: true` below. An untrusted folder does not get one.
+  requireTrust('run commands');
 
   const startedAt = Date.now();
   let output = '';
@@ -63,12 +75,24 @@ export async function runCommand(
     // Through a shell because real commands contain pipes and &&. This is exactly why
     // the deny-list in M8d matters: shell syntax is expressive, and the tool layer
     // does not get to assume anything about what it was handed.
-    const child = spawn(command, {
-      cwd: root,
-      shell: true,
-      // A pipe rather than inherit: the extension host has no console to inherit.
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // **Confined at the kernel, not by reading the command.** A security review
+    // raised two things — `shell: true` gives a command the user's full authority,
+    // and the deny-list is string matching that `python -c` walks straight past. The
+    // second is a consequence of the first: a command with full authority has to be
+    // inspected to be made safe, and inspecting a shell is a game you lose eventually.
+    //
+    // Under the sandbox the command still runs through a shell, because real commands
+    // contain pipes and `&&`; it simply cannot write outside the project. The
+    // deny-list stays, demoted to explaining *why* something is dangerous rather than
+    // being the only thing standing there.
+    const child = spawnAs?.confined
+      ? spawn(spawnAs.file, spawnAs.args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
+      : spawn(command, {
+          cwd: root,
+          shell: true,
+          // A pipe rather than inherit: the extension host has no console to inherit.
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
 
     const timer = setTimeout(() => {
       timedOut = true;

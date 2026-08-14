@@ -97,6 +97,24 @@ export class Checkpoint {
    * checkpoint holds the state at the *start* of the run, so the second edit to a file
    * must not overwrite the copy made before the first.
    */
+  /**
+   * Snapshots several files at once, before anything the agent runs.
+   *
+   * **Because a command is not a file edit.** Every write through the edit tools
+   * calls `capture` with the path it is about to change, so an edit has always been
+   * undoable. A shell command names no paths — `rm -rf src` goes through
+   * `runCommand`, touches nothing the checkpoint knows about, and was therefore the
+   * one thing the agent could do that undo could not reverse. Which is also why the
+   * deny-list had to be perfect, and why it never could be.
+   *
+   * Taken once at the start of a run, matching how the rest of this class works: the
+   * question after a bad run is "put it back how it was", not "unwind step six".
+   */
+  async captureAll(absolutePaths: readonly string[]): Promise<void> {
+    for (const file of absolutePaths) await this.capture(file);
+    if (absolutePaths.length > 0) this.log(`checkpoint: snapshotted ${absolutePaths.length} at-risk file(s) before the run`);
+  }
+
   async capture(absolutePath: string): Promise<void> {
     if (!this.record || !this.root) return;
 

@@ -6,6 +6,7 @@ import { branchFromRequest, ChatAction, forgetTarget } from './chatCommands';
 import { switchBranch } from '../agent/switchBranch';
 import { describeGitPlainly } from '../agent/gitStatusPlain';
 import { MODES, ChatMode, modeSpec } from './modes';
+import { phrase } from '../personality/Voice';
 import { ACTION_QUESTIONS, worthInferring } from './actionIntent';
 import { classifyAction } from './intentModel';
 import { FAILURE_KEY, parseRecord } from '../briefing/lastFailure';
@@ -51,7 +52,10 @@ export class ChatActions {
     const picked = await vscode.window.showQuickPick(
       MODES.map((mode) => ({
         label: `${mode.id === current ? '$(check) ' : ''}${mode.label}`,
-        description: mode.canEdit ? 'can change files' : 'read-only',
+        // Three states rather than two: "can change files" said the same thing about
+        // the mode that asks first and the mode that does not, which is the one
+        // difference worth seeing before choosing.
+        description: !mode.canEdit ? 'read-only' : mode.asksFirst ? 'asks before each change' : "doesn't ask",
         detail: mode.detail,
         id: mode.id,
       })),
@@ -68,6 +72,20 @@ export class ChatActions {
         : vscode.ConfigurationTarget.Global;
 
     await config.update('chat.mode', picked.id, scope);
+
+    // **Said once, when chosen, and never again.** Not a warning dialog — they picked
+    // it deliberately and it is their business — but the one mode where things happen
+    // without a prompt should say so out loud rather than being discovered later.
+    if (picked.id === 'unattended' && current !== 'unattended') {
+      this.log('chat: switched to unattended — no per-step approval');
+      await this.note(
+        await phrase(
+          'report',
+          "Unattended it is. I won't check with you before each step — the gates on anything irreversible still stand.",
+          []
+        )
+      );
+    }
     this.log(`chat: mode set to ${picked.id}`);
     this.postMode();
   }

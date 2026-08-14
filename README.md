@@ -2,7 +2,7 @@
 
 > Clippy's presence. Jarvis's competence. A butler's disdain.
 
-**He can only see, and only touch, the project folder you opened him in.**
+**He works in the project folder you opened him in, and nowhere else.**
 
 Clarvis is a sarcastic butler who lives in your code editor. He watches your builds so
 you don't have to, remembers the mistake you keep making, occasionally judges you for
@@ -228,9 +228,18 @@ kind of thing is risky, what could go wrong *this time*, and — the important p
 **whether it can be undone**. Deleting files and publishing your work are dangerous in
 completely different ways, and the warnings look different too.
 
-Anything that would reach outside your project folder is refused outright. There's
-deliberately no setting to switch this off, because a safety feature with an off switch
-is one that gets switched off.
+**Reading and writing files is confined to your project folder**, symlinks included —
+anything resolving outside it is refused outright. There's deliberately no setting to
+switch that off, because a safety feature with an off switch is one that gets switched
+off.
+
+**Commands are the honest exception.** Running `npm test` means running a shell, and a
+shell has whatever access you do — so the file boundary above does not apply to it.
+What protects you there is different: he asks before each command that changes
+anything, refuses the dangerous shapes outright, and everything your version history
+has no copy of is snapshotted before the run so it can be put back. That is a real set
+of guarantees and it is not the same guarantee, and pretending otherwise would be the
+most dangerous sentence in this file.
 
 **The warnings are written by us, never by the AI.** An AI that has just been reading
 your files could be persuaded — by something written *in* those files — to describe a

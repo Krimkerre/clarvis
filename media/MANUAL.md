@@ -285,6 +285,13 @@ you to click yes without looking, which is worse than not asking at all.
 installing — those are a separate layer from per-step approval, and there is no
 setting that turns them off.
 
+**One thing worth understanding.** When he reads or writes a file, he cannot leave
+your project folder — that is enforced, and there is no way around it. When he runs a
+*command*, he is running a shell, and a shell can do whatever you can do. Different
+protections apply there: he asks first, refuses the obviously destructive shapes, and
+takes a copy of anything your version history could not restore before the run starts.
+Worth knowing which of the two you are looking at.
+
 **Ask for work in a read-only mode and he says so**, naming the mode and what to switch
 to, then answers the question anyway. Before, he would answer and mention in passing
 that he could not edit anything, which left you guessing why.

@@ -2,7 +2,8 @@
 
 > Clippy's presence. Jarvis's competence. A butler's disdain.
 
-**He works in the project folder you opened him in, and nowhere else.**
+**He works in the project folder you opened him in, and cannot change anything
+outside it — not with the file tools, and not with the commands he runs.**
 
 Clarvis is a sarcastic butler who lives in your code editor. He watches your builds so
 you don't have to, remembers the mistake you keep making, occasionally judges you for
@@ -364,8 +365,9 @@ section that assumes you know the jargon.* Full notes for each milestone are in
       are both offered back after a reload.
       The plan also carries a **Conventions** section in your project's own language,
       so the code stays consistent when you come back to it in three months.
-      *Not built:* container isolation for commands (M9f — assessed, deliberately
-      deferred).
+      *Not built:* nothing outstanding — the container isolation once listed here was
+      answered by the OS-level command sandbox instead (see *Keeping an agent
+      honest*), at a fraction of the cost.
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
       people learning to program on a real project of their own. Opt-in per project,

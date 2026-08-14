@@ -77,6 +77,15 @@ function scenes(): Scene[] {
       messages: [{ role: 'user', content: 'why does that build keep failing?' }],
     },
     {
+      name: 'conversation, not a task',
+      looksFor:
+        'Him, all the way down. This is the one that failed live: asked over a break whether he trusts his own unattended mode, he wrote four sincere paragraphs on attention and testing with one dry line at the end. Every rule was satisfied and it still read as somebody else\'s essay. A long answer here should be dry *inside*, not sincere with a jab stapled on.',
+      system: answerSystem,
+      messages: [
+        { role: 'user', content: 'break time... quick question.. would you trust your own unattended mode?' },
+      ],
+    },
+    {
       name: 'a question about something he was given no numbers for',
       looksFor:
         'No invented duration, count or frequency. He may say a linter is complaining — he cannot say for how long, because nothing measures that.',

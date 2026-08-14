@@ -3611,7 +3611,12 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   `{ class, what, whyItMatters, suggestedResolution }` so the panel can render them
   individually and record a per-finding verdict. Includes the "this project doesn't need
   a plan" outcome as a legitimate result.
-- **M9c — Verdicts.** Per-finding accept / reject / modify in the panel. **Rejections are
+- **M9c — Verdicts.** Each finding's fixes are the buttons — one to three genuinely
+  different ways to settle it, plus *Something else* for the answer Clarvis didn't
+  think of and *No, drop this*. Found live: fixes arrived phrased "Either tie the reset
+  to a manual trigger, or establish how the system learns when rent has been paid" —
+  two options behind one Accept button, with the alternative something the user had to
+  notice and retype. **Rejections are
   written into the generated plan along with the user's reasoning** — the decision record
   is the point, so a later session doesn't re-raise a settled question.
 - **M9d — Generation.** `src/planning/PlanWriter.ts` — renders `plan.md` in the §4.9
@@ -3693,7 +3698,8 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
       **All three classes must be caught** — this is the feature's whole value.
 - [ ] Reject a finding with a reason — the reason appears in the generated plan, and
       re-running planning later does not re-raise it.
-- [ ] Modify a finding — the plan reflects the user's version, not Clarvis's original.
+- [ ] Pick the *second* fix on a finding — the plan carries that one, not the first.
+- [ ] *Something else* on a finding — the plan reflects the user's version, not Clarvis's.
 - [ ] Generated `plan.md` has milestones with real exit checklists, not vague prose.
 - [ ] Run planning in a folder that already has a `plan.md` — it is not overwritten;
       extend/revise is offered.

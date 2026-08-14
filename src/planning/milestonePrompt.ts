@@ -1,5 +1,5 @@
 import { InterviewState, knownFacts } from './interviewTopics';
-import { FindingVerdict } from './verdictSummary';
+import { agreedResolution, FindingVerdict } from './verdictSummary';
 
 /**
  * Turning an interview into actual build steps (M9d — §4.9).
@@ -30,11 +30,7 @@ const MAX_MILESTONES = 4;
 
 export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[] = []): string {
   // The user's own wording wins for a modified finding, same rule as everywhere else.
-  const findings = accepted.map((verdict) =>
-    verdict.status === 'modified'
-      ? (verdict.reasoning ?? verdict.finding.what)
-      : verdict.finding.suggestedResolution
-  );
+  const findings = accepted.map(agreedResolution);
 
   return [
     'Here is everything established in a project-planning interview:',

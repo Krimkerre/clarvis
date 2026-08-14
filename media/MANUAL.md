@@ -98,9 +98,11 @@ advantage and one genuine cost, never a list where everything looks good. Say
 `You pick` and he will, with a reason — and a remark about the trade you just made.
 
 **Then he tells you what's wrong with it.** Safety problems, logic contradictions,
-scope quietly bigger than you described. Each finding is yours to **Accept**,
-**Reject** (say why — it's recorded, not dropped) or **Modify** (your words replace
-his).
+scope quietly bigger than you described. Each one comes with the ways to settle it as
+buttons — "hash the passwords" and "drop accounts from v1 entirely" are both answers
+to the same finding, and they are different projects, so you pick rather than approve.
+**Something else** takes your own answer instead, and **No, drop this** turns the
+finding down (say why — it's recorded, not dropped).
 
 **The draft opens in the editor**, rendered rather than raw, while the approval
 question stays in the chat. Add anything missing and he redraws; nothing is written

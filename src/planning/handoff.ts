@@ -1,5 +1,5 @@
 import { InterviewState, TopicId } from './interviewTopics';
-import { FindingVerdict } from './verdictSummary';
+import { agreedResolution, FindingVerdict } from './verdictSummary';
 import { Milestone } from './milestonePrompt';
 
 /**
@@ -32,11 +32,7 @@ export function handoffTask(
   // **The steps are the work; the findings are questions.** Handing over a list of
   // "Clarify whether…" items produced a run that read the plan, found nothing to do,
   // and stopped — found live. They are still passed on, named for what they are.
-  const settle = verdicts
-    .filter((verdict) => verdict.status !== 'rejected')
-    .map((verdict) =>
-      verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution
-    );
+  const settle = verdicts.filter((verdict) => verdict.status !== 'rejected').map(agreedResolution);
 
   return [
     `Start building ${name}, following the approved plan.md in this workspace.`,

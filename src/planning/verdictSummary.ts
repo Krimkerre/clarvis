@@ -14,6 +14,28 @@ export interface FindingVerdict {
   status: VerdictStatus;
   /** The rejection reason, or the user's replacement text for a modified finding. */
   reasoning?: string;
+  /**
+   * Which of the finding's fixes was clicked.
+   *
+   * Only meaningful when accepted, and absent when the finding offered one fix and it
+   * was taken by default — `agreedResolution` falls back to the first for exactly that
+   * case, so nothing has to record "the obvious one" explicitly.
+   */
+  chosenFix?: string;
+}
+
+/**
+ * What was actually agreed for one finding, in the user's terms.
+ *
+ * **One definition, because there were four.** Plan, handoff, milestone prompt and
+ * summary each carried their own copy of "the user's wording wins for a modified
+ * finding, otherwise the suggested fix", and adding a chosen-fix case would have meant
+ * getting the same three-way rule right in four files — the sort of near-duplication
+ * that goes stale in three of them.
+ */
+export function agreedResolution(verdict: FindingVerdict): string {
+  if (verdict.status === 'modified') return verdict.reasoning ?? verdict.finding.what;
+  return verdict.chosenFix ?? verdict.finding.fixes[0] ?? verdict.finding.what;
 }
 
 /**
@@ -47,6 +69,8 @@ export function formatVerdict(verdict: FindingVerdict): string[] {
   return [
     `- **[${finding.class}]** ${finding.what}`,
     `  Why it matters: ${finding.whyItMatters}`,
-    `  Suggested fix: ${finding.suggestedResolution}`,
+    // The one that was picked, not the whole menu: the alternatives were a question,
+    // and the answer is what the plan should carry.
+    `  Fix: ${agreedResolution(verdict)}`,
   ];
 }

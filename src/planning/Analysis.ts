@@ -53,7 +53,7 @@ export async function runAnalysis(
     } else {
       log(`planning: analysis — ${result.findings.length} finding(s)`);
       for (const finding of result.findings) {
-        log(`planning: analysis [${finding.class}] ${finding.what} — ${finding.whyItMatters} — fix: ${finding.suggestedResolution}`);
+        log(`planning: analysis [${finding.class}] ${finding.what} — ${finding.whyItMatters} — fix: ${finding.fixes.join(' | ')}`);
       }
     }
     return result;

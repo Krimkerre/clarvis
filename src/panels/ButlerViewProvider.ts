@@ -264,7 +264,9 @@ const CHOICE_STYLES = `
         background: var(--vscode-button-secondaryBackground, transparent);
         color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); }
       .clarvis-choice:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
-      .clarvis-choice .label { font-weight:600; }
+      /* Wraps: a label can be a whole suggested fix, and one that runs off the edge
+         of the panel is a button you cannot read before clicking. */
+      .clarvis-choice .label { font-weight:600; white-space:normal; }
       /* The explanation is why you would pick it, not the thing you are picking. */
       .clarvis-choice .detail { font-size:11px; line-height:1.35; opacity:.75; white-space:normal; }
 

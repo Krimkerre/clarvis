@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { isInside, resolveInWorkspace, PathRefused } from './workspacePaths';
+import { isInside, resolveInWorkspace, unquote, PathRefused } from './workspacePaths';
 
 // ---------------------------------------------------------------------------
 // Containment, as pure string logic. These are the cases that must never pass,
@@ -52,6 +52,20 @@ test('a relative path resolves from the workspace, not the process cwd', async (
   const resolved = await resolveInWorkspace(root, 'src/index.ts');
 
   assert.equal(resolved, path.join(root, 'src/index.ts'));
+});
+
+test('a path a model wrapped in quotes still resolves', () => {
+  // Found live: `listFiles` was called with `"."` and scandir went looking for a
+  // directory called `"."`, losing the step to an ENOENT on the workspace root.
+  assert.equal(unquote('"."'), '.');
+  assert.equal(unquote("'src/app.ts'"), 'src/app.ts');
+});
+
+test('quotes that are part of the name are left where they are', () => {
+  assert.equal(unquote('we"ird.txt'), 'we"ird.txt');
+  assert.equal(unquote('"say "hi""'), '"say "hi""');
+  assert.equal(unquote('"'), '"');
+  assert.equal(unquote('src/app.ts'), 'src/app.ts');
 });
 
 test('traversal outside the workspace is refused', async () => {

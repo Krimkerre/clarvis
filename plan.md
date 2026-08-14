@@ -4213,6 +4213,36 @@ Two failure modes, both quiet:
 this workspace)` on macOS or Linux means detection is broken and nothing below is
 worth running yet.
 
+**Ran it. Both failure modes were wrong about what would go wrong.** Detection worked
+first time — `sandbox: using sandbox-exec on darwin`, then `confined by sandbox-exec`
+on all three commands of a Go project. What actually happened was worse than either:
+
+`brew install go` was denied its writes to `/opt/homebrew`, correctly. Homebrew cannot
+see its own sandbox, so it reported the only cause it knows for a write it cannot make
+— bad ownership — and told the user to `sudo chown -R` the tree. Clarvis passed that
+on as fact. **The directory was owned by them and perfectly writable.** Following the
+advice meant a recursive chown over a working install to fix a problem that did not
+exist.
+
+That is a sandbox producing dangerous advice by working exactly as designed, and no
+amount of testing the *profile* would have found it: the profile was right. The fix is
+`confinement.ts` — when a confined command fails on something that reads like a denied
+write, the result carries a note saying so, telling the model not to repeat the
+diagnosis and not to suggest `sudo` or `chown`. Matched rather than always attached,
+because a note on every failure teaches it to blame the sandbox for its own bugs.
+
+**Also found, same run:**
+
+- `listFiles` was called with `"."` — quotes included — and the path resolved to
+  `<workspace>/"."`. A step lost to an ENOENT on the workspace root. Models write what
+  they would type in a shell, where the quotes are the shell's to strip. Now stripped
+  at `resolveInWorkspace`, the one boundary every tool goes through.
+- The run stopped to ask a question; the user replied "retry", then "continue". Both
+  reached a model with no idea what was being retried, which asked what they meant.
+  `takeUnanswered()` was being consulted *inside* the job branch, and neither word
+  routes as a job. A reply to a stopped run is an answer to it whatever it looks like,
+  so the check now happens before routing.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

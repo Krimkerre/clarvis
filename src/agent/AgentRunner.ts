@@ -13,6 +13,7 @@ import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { mayRunUnconfined, spawnFor } from './tools/sandbox';
+import { confinementNote } from './tools/confinement';
 import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
@@ -628,9 +629,13 @@ export class AgentRunner {
       spawnAs
     );
 
+    const note = confinementNote(spawnAs.confined, result.exitCode, result.output);
+    if (note) this.log(`sandbox: "${command}" failed on a write it was not allowed to make`);
+
     return [
       `exit ${result.exitCode ?? 'killed'}${result.timedOut ? ' (timed out)' : ''}`,
       result.output.trim() || '(no output)',
+      ...(note ? ['', note] : []),
     ].join('\n');
   }
 

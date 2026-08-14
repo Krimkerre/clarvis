@@ -59,6 +59,28 @@ export function isInside(root: string, candidate: string, platform: NodeJS.Platf
 }
 
 /**
+ * Strips quotes a model wrapped around a path argument.
+ *
+ * Found live: `listFiles` was called with `"."` — quotes included — and the path
+ * resolved to `<workspace>/"."`, which does not exist. The model is writing what it
+ * would type in a shell, where the quotes are the shell's to remove; here nothing
+ * removes them, and the run loses a step to an ENOENT on a directory that is plainly
+ * there.
+ *
+ * Only a wholly-wrapped path with no inner quote is unwrapped, so a file genuinely
+ * named `we"ird` still resolves to itself.
+ */
+export function unquote(requested: string): string {
+  const trimmed = requested.trim();
+  const quote = trimmed[0];
+
+  if ((quote !== '"' && quote !== "'") || trimmed.length < 2 || !trimmed.endsWith(quote)) return requested;
+
+  const inner = trimmed.slice(1, -1);
+  return inner.includes(quote) ? requested : inner;
+}
+
+/**
  * Resolves a tool's path argument against the workspace, refusing anything outside it.
  *
  * The order matters and is the whole point:
@@ -84,7 +106,7 @@ export async function resolveInWorkspace(root: string | undefined, requested: st
   // An absolute path is allowed, but only if it lands inside; a relative one is
   // resolved from the workspace root rather than from the extension host's cwd, which
   // is somewhere nobody intended.
-  const textual = path.resolve(root, requested);
+  const textual = path.resolve(root, unquote(requested));
 
   if (!isInside(root, textual)) {
     throw new PathRefused('outside-workspace', requested, outsideMessage(requested));

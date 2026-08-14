@@ -559,6 +559,40 @@ export class ChatService {
    * word "branch" and was answered with the current branch name. A keyword match for a
    * question is not evidence that a request is one.
    */
+  /**
+   * Treats a reply as the answer to a question a run stopped on.
+   *
+   * **Whatever it looks like.** Replies to a stopped run are "retry", "continue", "the
+   * second one" — none of which route as a job, so this check used to sit inside the
+   * job branch and never fired. Found live: a run stopped for a missing Go toolchain,
+   * and both "retry" and "continue" reached a model with no idea what was being
+   * retried, which asked the user what they meant. Twice.
+   *
+   * The pending question is consumed by reading, so exactly one message is treated
+   * this way — changing the subject after a question costs nothing but the answer.
+   */
+  private async continuedTheRun(question: string, mode: ChatMode): Promise<boolean> {
+    const pending = canEdit(mode) ? this.runs.takeUnanswered() : undefined;
+    if (!pending) return false;
+
+    this.log('chat: treating that as an answer to the run that just asked');
+    this.runs.setStepApproval(asksFirst(mode));
+    this.runs.setFromPlan(false);
+    await this.runs.run(
+      [
+        `Continue this task: ${pending.task}`,
+        '',
+        `You stopped and asked:\n${pending.question}`,
+        '',
+        `They answered:\n${question}`,
+        '',
+        'Update plan.md with what they have just settled, then carry on building.',
+      ].join('\n'),
+      'Right — that settles it.'
+    );
+    return true;
+  }
+
   private async jobIn(
     question: string,
     mode: ChatMode,
@@ -647,6 +681,9 @@ export class ChatService {
     if (inferred) return;
 
     const mode = this.actions.mode();
+
+    if (await this.continuedTheRun(question, mode)) return;
+
     const decision = routeFor(question);
 
     const job = await this.jobIn(question, mode, decision);
@@ -657,28 +694,6 @@ export class ChatService {
       // separately now.
       this.runs.setStepApproval(asksFirst(mode));
       this.runs.setFromPlan(false);
-
-      // **An answer continues the work rather than starting new work.** A run that
-      // stopped to ask "preview, or applied straight away?" gets a four-word reply
-      // that means nothing without the question it answers.
-      const pending = this.runs.takeUnanswered();
-      if (pending) {
-        this.log('chat: treating that as an answer to the run that just asked');
-        await this.runs.run(
-          [
-            `Continue this task: ${pending.task}`,
-            '',
-            `You stopped and asked:\n${pending.question}`,
-            '',
-            `They answered:\n${job.task}`,
-            '',
-            'Update plan.md with what they have just settled, then carry on building.',
-          ].join('\n'),
-          'Right — that settles it.'
-        );
-        return;
-      }
-
       await this.runs.run(job.task, job.because);
       return;
     }

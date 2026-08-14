@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { requireTrust } from './trust';
 import { spawn } from 'child_process';
 
 /**
@@ -44,6 +45,10 @@ export async function runCommand(
   signal?: AbortSignal
 ): Promise<CommandResult> {
   if (!root) throw new Error('There is no folder open, so there is nowhere to run that.');
+
+  // A shell command is the most powerful thing here and the least contained — see the
+  // note on `shell: true` below. An untrusted folder does not get one.
+  requireTrust('run commands');
 
   const startedAt = Date.now();
   let output = '';

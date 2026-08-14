@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { canonicalRelative, resolveInWorkspace } from './workspacePaths';
 import { firstChangedLine } from './firstChangedLine';
+import { requireTrust } from './trust';
 import { EditPlan, planReplace, planWrite } from './editPlan';
 
 /**
@@ -39,6 +40,10 @@ export async function applyEdit(
   find: string,
   replace: string
 ): Promise<EditOutcome> {
+  // Before the path is even resolved: an untrusted folder gets no writes at all, and
+  // refusing here means every caller inherits it rather than remembering to ask.
+  requireTrust('change files');
+
   const target = await resolveInWorkspace(root, requested);
   const uri = vscode.Uri.file(target);
   const current = await currentText(uri);
@@ -65,6 +70,10 @@ export async function writeFile(
   requested: string,
   contents: string
 ): Promise<EditOutcome> {
+  // Before the path is even resolved: an untrusted folder gets no writes at all, and
+  // refusing here means every caller inherits it rather than remembering to ask.
+  requireTrust('change files');
+
   const target = await resolveInWorkspace(root, requested);
   const uri = vscode.Uri.file(target);
   const current = await currentText(uri);

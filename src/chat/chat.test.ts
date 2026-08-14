@@ -1,3 +1,4 @@
+import { capabilities, MODES } from './modes';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendTurn, MAX_TURNS, Turn } from './thread';
@@ -495,4 +496,40 @@ test('an old failure is not reported in thousands of minutes', () => {
   assert.match(recent, /12m ago/);
   assert.match(old, /3d ago/);
   assert.doesNotMatch(old, /\d{4}m ago/);
+});
+
+test('he is told what he can do, not only what this turn allows', () => {
+  // Found live, twice in one session: "I cannot run tests, execute code, attach a
+  // debugger. I cannot fix anything", and then "I do not do that. I read and I
+  // remark." He writes files, runs commands and builds whole projects; only the turn
+  // was read-only.
+  const brief = capabilities('chat');
+
+  assert.match(brief, /run commands and tests/);
+  assert.match(brief, /build it milestone/);
+});
+
+test('a read-only mode is named as a setting, with where the work happens', () => {
+  const brief = capabilities('chat');
+
+  assert.match(brief, /Chat only/);
+  assert.match(brief, /Auto/);
+  assert.match(brief, /setting they chose and can change/);
+});
+
+test('an editing mode is not told it cannot edit', () => {
+  const brief = capabilities('auto');
+
+  assert.match(brief, /allows all of it/);
+  assert.doesNotMatch(brief, /nothing gets changed/);
+});
+
+test('the modes that can work are read off MODES rather than listed by hand', () => {
+  // A hand-written list is a copy, and a copy drifts the first time a mode changes.
+  const named = capabilities('chat');
+
+  for (const spec of MODES.filter((mode) => mode.canEdit)) assert.match(named, new RegExp(spec.label));
+  for (const spec of MODES.filter((mode) => !mode.canEdit && mode.id !== 'chat')) {
+    assert.doesNotMatch(named, new RegExp(`${spec.label} is where`));
+  }
 });

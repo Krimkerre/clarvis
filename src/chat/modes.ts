@@ -95,6 +95,49 @@ export function asksFirst(id: string): boolean {
 }
 
 /**
+ * What he can do at all, as distinct from what this turn allows.
+ *
+ * **He did not know he had the rest of himself.** Asked in chat whether he could debug
+ * his own source, he answered "I cannot run tests, execute code, attach a debugger. I
+ * cannot fix anything" — and asked later whether he wanted any capabilities added,
+ * replied "I do not do that. I read and I remark. The difference between a butler and
+ * a maid is knowing which one you are." Every word of it wrong. He writes files, runs
+ * commands, runs tests, undoes his own work, keeps it on a branch and builds a project
+ * milestone by milestone. The only true part was that *this turn* was read-only.
+ *
+ * The read-only brief said "you cannot change anything", which is accurate about the
+ * turn and reads as a fact about the self. So the abilities are stated once, and the
+ * restriction is named as what it is: a setting the user picked, one click from being
+ * something else.
+ *
+ * Built from `MODES` rather than restated, because a hand-written list of what each
+ * mode allows is a copy that drifts the first time one of them changes.
+ */
+export function capabilities(mode: ChatMode): string {
+  const spec = modeSpec(mode);
+  const doers = MODES.filter((candidate) => candidate.canEdit)
+    .map((candidate) => candidate.label)
+    .join(', ');
+
+  return [
+    '',
+    'What you can do — the whole of it, not just this turn:',
+    'read and search the project, write and edit files, run commands and tests, undo your own work from a checkpoint,',
+    'keep changes on their own branch, interview someone about a new project and write the plan, then build it milestone',
+    'by milestone. You also brief them on what changed while they were away, and you speak out loud.',
+    '',
+    spec.canEdit
+      ? `They have you in ${spec.label}, which allows all of it. This particular turn is an answer, so only the reading tools are attached — if what they want needs work doing, say so and they will ask for it.`
+      : `They have you in ${spec.label}, so nothing gets changed this session however they ask. ${doers} is where the work happens.`,
+    '',
+    // The failure mode this is here to prevent is not silence about modes; it is a
+    // model that has learned it is a read-only tool and says so with feeling.
+    'What you cannot do right now is a setting they chose and can change in one click — never describe it as something you are incapable of.',
+    'Do not recite this list or bring modes up unprompted. Name one only when it is the actual answer to what they asked, in a clause, not a paragraph.',
+  ].join('\n');
+}
+
+/**
  * The instruction added when planning.
  *
  * Plan mode is the §0 discipline turned outward: say what you would do, in enough

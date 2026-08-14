@@ -779,7 +779,11 @@ export function agentSystemPrompt(readOnly = false): string {
     // here and that one clause outweighed everything the character was supposed to be.
     if (readOnly) {
       return characterWith(
-        'You can read the project — files, listings, search, diagnostics, git status and diffs — but you cannot change anything.',
+        // **Scoped to the turn, because it was being read as a self-description.** "You
+        // cannot change anything" is true of an answer and false of him, and a model
+        // told the first says the second: asked whether he could debug his own source,
+        // he replied that he could not run tests, execute code or fix anything.
+        'The tools attached to this turn read the project — files, listings, search, diagnostics, git status and diffs. Writing and running things is not part of answering a question; it happens when they hand you a job.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
         'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
         // **Not every question is about the project.** Told only about the codebase and

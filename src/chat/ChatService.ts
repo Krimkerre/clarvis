@@ -15,7 +15,7 @@ import { ChatActions } from './ChatActions';
 import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
-import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
+import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM, capabilities } from './modes';
 import { Voice, opening } from '../personality/Voice';
 import { researchWorkspace } from '../planning/workspaceResearch';
 import { describeWorkspaceSignals } from '../planning/workspaceSignals';
@@ -719,7 +719,10 @@ export class ChatService {
     const facts = await this.workspace.read();
 
     if (await this.models.isReady('chat')) {
-      const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${factsBlock(facts)}`;
+      // Capabilities before facts: what he is, then what he has seen. Without the
+      // first he answered questions about himself as a read-only tool that "reads and
+      // remarks" — a description of the mode, delivered as a description of the self.
+      const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${capabilities(mode)}${factsBlock(facts)}`;
       await this.replier.withModel(question, addendum);
       return;
     }

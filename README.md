@@ -233,13 +233,22 @@ anything resolving outside it is refused outright. There's deliberately no setti
 switch that off, because a safety feature with an off switch is one that gets switched
 off.
 
-**Commands are the honest exception.** Running `npm test` means running a shell, and a
-shell has whatever access you do — so the file boundary above does not apply to it.
-What protects you there is different: he asks before each command that changes
-anything, refuses the dangerous shapes outright, and everything your version history
-has no copy of is snapshotted before the run so it can be put back. That is a real set
-of guarantees and it is not the same guarantee, and pretending otherwise would be the
-most dangerous sentence in this file.
+**Commands are confined too, by the operating system rather than by reading them.**
+Running `npm test` means running a shell, and inspecting a shell command to decide
+whether it's safe is a game you lose eventually — `python -c "shutil.rmtree(...)"`
+doesn't look like `rm -rf`. So the command runs with reduced authority instead: **it
+cannot modify anything outside your project and its build caches.** Not because a list
+recognised it, but because the kernel refuses, and the kernel doesn't care which
+language asked.
+
+Two honest limits. **Reading is still allowed** — toolchains genuinely need to read
+from all over your machine, and blocking that breaks every build — so a command can
+still read a file you'd rather it didn't. **The network is still open**, because
+`npm install` needs it. Destruction and persistence are stopped; exfiltration is not.
+
+macOS and Linux have the machinery for this. **Windows doesn't**, so there he asks
+once per project whether to run commands unconfined, and remembers the answer. Say no
+and commands are refused — reading, answering, planning and editing all still work.
 
 **The warnings are written by us, never by the AI.** An AI that has just been reading
 your files could be persuaded — by something written *in* those files — to describe a

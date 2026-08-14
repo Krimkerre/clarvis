@@ -286,11 +286,19 @@ installing — those are a separate layer from per-step approval, and there is n
 setting that turns them off.
 
 **One thing worth understanding.** When he reads or writes a file, he cannot leave
-your project folder — that is enforced, and there is no way around it. When he runs a
-*command*, he is running a shell, and a shell can do whatever you can do. Different
-protections apply there: he asks first, refuses the obviously destructive shapes, and
-takes a copy of anything your version history could not restore before the run starts.
-Worth knowing which of the two you are looking at.
+your project folder. When he runs a *command*, the operating system holds it to the
+same rule: it can't modify anything outside your project and its build caches. That
+one isn't a list of forbidden commands — it's enforced underneath, so it works the
+same whether something was typed as `rm -rf` or hidden inside a Python one-liner.
+
+Two things it deliberately doesn't stop: **reading** (build tools need to read from
+all over your machine) and **network access** (installing packages needs it). So a
+command still can't wreck your machine, and could still read something and send it
+somewhere.
+
+**On Windows there's no such mechanism.** He asks once, per project, whether to run
+commands without it, and remembers your answer. Say no and he simply won't run
+commands — everything else still works.
 
 **Ask for work in a read-only mode and he says so**, naming the mode and what to switch
 to, then answers the question anyway. Before, he would answer and mention in passing

@@ -4335,48 +4335,58 @@ persistence, Ollama. Both predate M9 and neither is closed by anything above.
 
 ## 11. The codebase, measured
 
-As of 14 Aug, with M9 merged to `main`. Kept because §0's clean-code rules are argued
-about in the abstract otherwise, and because the M8 linter report — "too much
-cyclomatic complexity", no number attached — showed what an unmeasured claim costs.
+As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's
+clean-code rules are argued about in the abstract otherwise, and because the M8 linter
+report — "too much cyclomatic complexity", no number attached — showed what an unmeasured
+claim costs. **Re-counted rather than edited**: the previous figures were four days old
+and already 2,000 lines out.
 
-**26,764 lines of TypeScript across 189 files.**
+**28,624 lines of TypeScript across 205 files.**
 
 | | files | lines |
 |---|---|---|
-| Source | 135 | 20,919 |
-| Tests | 54 | 5,845 |
+| Source | 143 | 22,156 |
+| Tests | 62 | 6,468 |
 
-Of the 20,919 source lines, **6,840 are comments** and 2,284 are blank — so the
-executable surface is roughly **11,800 lines**. That ratio is the deliberate §0
+Of the 22,156 source lines, **7,455 are comments** and 2,391 are blank — so the
+executable surface is roughly **12,300 lines**. That ratio is the deliberate §0
 deviation, not drift: comments are used liberally because this codebase is meant to be
 read as a worked example, and a third of it being prose is what that costs.
 
 | Area | lines | files | classes |
 |---|---|---|---|
-| `agent/` (incl. `tools/`) | 5,229 | 29 | 7 |
-| `chat/` | 3,716 | 17 | 9 |
-| `planning/` | 3,279 | 28 | 1 |
-| `model/` | 1,990 | 11 | 5 |
-| `personality/` | 1,830 | 12 | 5 |
-| `voice/` | 1,584 | 14 | 3 |
-| root (`extension.ts`, wiring) | 1,202 | 8 | 3 |
+| `agent/` (incl. `tools/`) | 5,968 | 35 | 8 |
+| `chat/` | 3,838 | 17 | 9 |
+| `planning/` | 3,521 | 29 | 1 |
+| `model/` | 2,039 | 11 | 5 |
+| `personality/` | 1,889 | 12 | 5 |
+| `voice/` | 1,608 | 15 | 3 |
+| root (`extension.ts`, wiring) | 1,175 | 7 | 3 |
 | `briefing/` | 700 | 6 | 2 |
 | `memory/` | 535 | 5 | 2 |
 | `watch/` | 453 | 5 | 2 |
-| `panels/` | 428 | 1 | 1 |
+| `panels/` | 430 | 1 | 1 |
 
-**40 classes, and 232 exported functions.** The ratio is the point: classes are used
+**41 classes, and 254 exported functions.** The ratio is the point: classes are used
 where something owns state or a lifecycle — `ModelService`, `AgentRunner`,
 `VoiceService`, `BusyTracker` — and everything else is plain functions. `planning/` is
-the clearest case, 28 files and **one** class, which is exactly why M9 could be tested
+the clearest case, 29 files and **one** class, which is exactly why M9 could be tested
 as heavily as it was: almost all of it is pure, and pure code needs no extension host
-to run against. Alongside those, 73 interfaces and 31 type aliases.
+to run against. Alongside those, 100 interfaces and 38 type aliases.
 
-**604 tests**, against Node's built-in runner with no test framework — possible only
-because the logic worth testing lives in files that import nothing from `vscode`.
+**672 tests**, against Node's built-in runner with no test framework — possible only
+because the logic worth testing lives in files that import nothing from `vscode`. Up
+from 604 four days ago; every one of the 68 new ones was written for a defect found by
+using the product rather than by the suite.
+
+**Where the growth went.** `agent/` gained 739 lines in four days — the OS sandbox
+(`sandboxProfile.ts`, `sandbox.ts`), the trust gate, the confinement note, and the
+bubblewrap offer. That is the security review (above) and the first live sandbox runs,
+measured: the answer to "is a deny-list enough" cost about 700 lines and is the largest
+single addition since M9 landed.
 
 Documentation, for scale: `plan.md` itself is the largest file in the repository at
-~4,100 lines, with the manual at 432, the README at 384 and the tutor guide at 198.
+4,390 lines, with the manual at 465, the README at 408 and the tutor guide at 198.
 
 ## Special thanks
 

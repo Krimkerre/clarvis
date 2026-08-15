@@ -11,8 +11,17 @@ it — and when you ask, he does the work: writes the code, runs it, and keeps g
 until the job is done.
 
 He starts when you open a window and stops when you close it. Nothing runs in the
-background, nothing sits in your menu bar, and he cannot see your screen or any folder
-but the one you're working in.
+background, nothing sits in your menu bar, and he cannot see your screen or any other
+window.
+
+**One thing worth being precise about.** Clarvis's own tools — reading, editing,
+searching — never leave the workspace folder, and nothing he writes can land outside it.
+A *command* he runs, with your approval, has the same reach any command in your own
+terminal would: it can read files the toolchain needs and reach the network. It still
+cannot write outside the workspace or its build caches — that's enforced by the
+operating system, not by asking nicely. "Can't touch anything outside the project" is
+true. "Can't see anything outside the project" is only true of Clarvis himself, not of
+what he runs on your behalf.
 
 The name is an acronym nobody needed: **C**lippy-**L**ike, **A** **R**ather **V**ery
 **I**ntelligent **S**ystem.

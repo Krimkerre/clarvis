@@ -165,8 +165,12 @@ unmodified on VS Code and **VSCodium** because they speak the same extension API
 | Reads editor + task events, not pixels | Structured data → better answers than OCR ever gives |
 | Distributed as a `.vsix` | One-click install; Marketplace + Open VSX |
 
-The privacy story is the elevator pitch: *"It can only see — and only touch — the
-workspace it was born in."*
+The privacy story is the elevator pitch, said precisely rather than as a single
+absolute: *"His own tools only see and only touch the workspace he was born in. A
+command he runs, with approval, can read what it needs and reach the network — like any
+command in your terminal would — but still cannot write outside that workspace."* (§4.6
+*Privacy — restated honestly* has the full version and why the shorter one used to be
+wrong.)
 
 ### Goals
 
@@ -1227,8 +1231,9 @@ The old promise ("no workspace crawl, no silent file reads, only the part you po
 at") **does not survive an agent**, and pretending otherwise would be dishonest. What
 holds now:
 
-- Everything stays inside the workspace folder that activated him. Nothing above it,
-  nothing beside it, no other repos, no `~`.
+- Everything **Clarvis's own tools** read or write stays inside the workspace folder
+  that activated him. Nothing above it, nothing beside it, no other repos, no `~` — his
+  `readFile`, `search` and edit tools cannot resolve a path that leaves it.
 - The Answer path keeps the bounded, visible context list: selection or visible range,
   active-file diagnostics, last failing command, relevant pattern hits — shown above
   each reply, each item removable before sending.
@@ -1237,8 +1242,23 @@ holds now:
 - Only what a request requires leaves the machine, and only to the user's own model
   provider.
 
-The one-sentence pitch (§1) becomes: *"It can only see — and only touch — the workspace
-it was born in."*
+**This is the sentence that used to overclaim, so it is worth being exact about it
+now.** A gated *command* — `npm install`, `go build`, anything the sandbox confines
+rather than the file tools — does not get the same containment. `sandboxProfile.ts`'s own sandbox
+profile is `(allow default)` for reads: a command can read whatever the toolchain needs,
+anywhere on the machine the user's account can reach, and the network is open. What the
+sandbox guarantees is narrower and stated exactly: **a command cannot write outside the
+workspace and its build caches.** It can read a secret; it is not stopped from sending
+one somewhere, which is that file's own documented gap and not yet closed (tracked as
+the network-confinement item below).
+
+So the one-sentence pitch is two sentences, not one: *"Clarvis himself can only see and
+only touch the workspace he was born in. A command he runs, with your approval, can read
+what it needs and reach the network — the same as if you'd typed it in your own terminal
+— but still cannot write outside that workspace."* Collapsing those into the old single
+absolute is the exact contradiction a project-review of this document caught on 15 Aug:
+the elevator pitch promised containment the threat model, two sections later, admitted
+the sandbox does not have.
 
 #### Personality under load
 
@@ -5018,6 +5038,37 @@ and every other question rule is untouched. `could you fix` joined `can you fix`
 you` was tried in the same edit and immediately broke "what would you change about this
 file", which is an opinion question — "would you" is common enough in ordinary phrasing
 that treating it as a request would misroute more than it fixed. Left out on purpose.
+
+### The privacy pitch overclaimed, and a second reviewer caught it
+
+An outside review of `README.md`, `plan.md` and `TUTOR-README.md` — run through a
+different model, not by using the product — flagged the elevator pitch, *"it can only
+see — and only touch — the workspace it was born in,"* as contradicting §4.6's own
+threat model two sections later. Checked before agreeing with it, since a review is a
+claim like any other: `sandboxProfile.ts` opens with `(allow default)`, meaning reads are
+unbounded and the network is untouched, and the file's own comment already says so.
+The claim was real. Worth recording that of the review's two "release blocker" findings,
+this was the one still open — the other, dirty-file commit isolation, had already been
+fixed in a live session (`dirtyAtStart.ts`) before the review reached us, and the
+review's own recommended fix matches what shipped almost exactly.
+
+**Fixed at three sites, all saying the same wrong thing.** The README pitch, and two
+copies in plan.md — one in §1's goals table, and, worse, one inside §4.6's *"Privacy —
+restated honestly"* section, which existed specifically to correct an earlier
+overclaim and had drifted back into making one. All three now split the claim in two:
+Clarvis's own tools (read, edit, search) are workspace-bound, provably, because the
+tools themselves cannot resolve a path that leaves it. A *command* he runs, with
+approval, reaches what the toolchain needs and the network, the same as if typed in a
+terminal — and still cannot **write** outside the workspace or its build caches, which
+is the sandbox's actual, narrower guarantee. "Can't touch anything outside the project"
+stayed true throughout; "can't see anything outside the project" was never true of a
+command, only of Clarvis himself, and the pitch didn't say which one it meant.
+
+Closing the gap the review actually points at — per-command network confinement, so a
+command that reads a secret is also stopped from sending it anywhere — is not done here.
+This is the wording fix; the mechanism is separate work, queued behind M9's remaining
+checklist rather than gating it, per the disagreement recorded with the review's
+proposed moratorium on building anything else until every item lands.
 
 ## 11. The codebase, measured
 

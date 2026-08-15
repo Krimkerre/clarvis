@@ -1,8 +1,8 @@
 # Clarvis — current state
 
-*Snapshot as of 15 Aug 2026, commit `2b845f5`. Written so a different agent, in a
+*Snapshot as of 16 Aug 2026, commit `aa460bd`. Written so a different agent, in a
 different tool, with no memory of how this project got here, can start working on it
-in five minutes instead of reading `plan.md` end to end (4,325 lines) or
+in five minutes instead of reading `plan.md` end to end (4,408 lines) or
 `docs/build-log.md` (913 lines) first. Those two remain the actual source of truth —
 this is a map of them, not a replacement. If this file and `plan.md` disagree,
 `plan.md` is right and this file is stale.*
@@ -44,8 +44,9 @@ before this file.
 | `src/memory/` | ~1,100 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,000 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~680 | Task/build watching — the walk-away feature. |
-|    `src/panels/` | ~430 | The webview host for the avatar. |
-   `src/logtailing/` | ~60 | Tailing of VS Code logs into the workspace. |
+| `src/panels/` | ~430 | The webview host for the avatar. |
+| `src/logtailing/` | ~130 | Tailing of VS Code logs into the workspace. |
+| `src/test/` | ~60 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
 ## What's built vs designed
 
@@ -58,6 +59,29 @@ checklists (261 checklist lines total). Current status:
    ledger, and item A/B from an external review — see `docs/build-log.md` for all
    four).
 - **M13 - Live VS Code Log Tailing.** A gated command to tail the VS Code extension host logs into the workspace.
+- **A macOS containment escape fixed 16 Aug**, from a second external review:
+  `isInside()` inferred filesystem case-sensitivity from `process.platform` alone,
+  which is wrong on case-sensitive APFS volumes. Now probes the real filesystem —
+  see `plan.md` for detail.
+- **README's M9 checklist self-contradiction fixed (16 Aug, same review).** README
+  said M9 (Project Planning) was both unchecked and "usable end to end / nothing
+  outstanding" in the same breath. Verified against the code — it's genuinely built
+  — and the checkbox now agrees with the prose. `media/MANUAL.md` was checked
+  against the same code and found already accurate.
+- **CI added (16 Aug).** `.github/workflows/ci.yml` runs `npm ci`, `npm run check`,
+  `npm run package` on every push/PR to `main`. Also excluded `.github/**` from the
+  `.vsix` in `.vscodeignore` — the workflow file itself would otherwise have shipped.
+- **Host-level smoke test added (16 Aug).** `@vscode/test-electron` +
+  `@vscode/test-cli`, run via `npm run test:host` (`.vscode-test.mjs` config,
+  tests under `src/test/*.spec.ts`). Two suites: extension activation (every
+  `package.json` command actually registers) and workspace containment against a
+  real `vscode.workspace.workspaceFolders`, not a stand-in string — direct coverage
+  of the Phase 1 fix. Wired into CI via `xvfb-run -a npm run test:host` (Linux CI has
+  no display). Not part of `npm run check` — needs a display, kept separate.
+- **`.vsix` trimmed (16 Aug).** `.vscodeignore`'s `*.map` never matched the nested
+  `dist/extension.js.map` — a bare `*.map` only matches at the ignore root. Now
+  `**/*.map`, plus `eslint.config.mjs` and `TUTOR-README.md`. 15 files / 1.28 MB →
+  **9 files / 903 KB**, every survivor traced to a runtime reference.
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M11** (packaging/release
   polish), **M12** (Tutor Mode).
@@ -90,10 +114,23 @@ checklists (261 checklist lines total). Current status:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 801 tests currently
+npm test               # node's built-in test runner, no framework — 802 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
+npm run test:host       # @vscode/test-electron, needs a display — see below
 ```
+
+**Manual release checklist** — what CI and `test:host` genuinely cannot cover, so it
+doesn't quietly become nobody's job (from the 16 Aug review):
+- [ ] Windows: sandbox falls back correctly (no `sandbox-exec`/`bwrap` there — see
+  `sandboxProfile.ts`), and the network-confinement asks-once dialog appears.
+- [ ] VSCodium, not just VS Code: the extension activates and the webview renders.
+- [ ] A real Fish Audio key: voice actually plays, and the system-TTS fallback works
+  when it's absent.
+- [ ] A real model provider call (at least one of the five) succeeds end to end
+  through the chat panel, not just against a mocked response.
+- [ ] Panel reload/move: dragging the avatar panel to a different position, and
+  closing/reopening the window, doesn't lose or duplicate state.
 
 Then, to actually run it: install the `.vsix` into VS Code
 (`code --install-extension clarvis.vsix --force`) and reload the window — a green

@@ -1323,6 +1323,73 @@ says plainly when nothing matches, rather than guessing at a step. Reaches the m
 path too, through `factsBlock`, for the same reason `openProblems` and `patterns` do:
 whichever path answers, it should be answering from the same facts.
 
+**A macOS containment escape closed (16 Aug, from a second external review).**
+`isInside()` — the pure function underneath `resolveInWorkspace`, the actual
+workspace-boundary enforcement — decided whether to fold path case by checking
+`process.platform === 'darwin'`. Wrong: macOS supports case-sensitive APFS volumes,
+where `/Work/project` and `/work/project` are different directories, but the old code
+folded them equal and would have treated a case-different path outside the workspace as
+inside it. `isInside()` now takes `caseSensitive: boolean` instead of a platform name;
+`resolveInWorkspace()` derives it from `isCaseSensitiveFilesystem()`, a real probe
+(write a marker file, `fs.stat` its case-flipped name, see whether the filesystem
+found it) run once against the resolved workspace root. Windows stays hard-coded
+case-insensitive — a genuine OS guarantee, not an assumption. `sandboxProfile.ts` and
+`confinement.ts` were checked and contain no case-folding logic of their own, so
+neither needed the same fix.
+
+**README's M9 checkbox corrected (16 Aug, same review).** The review's own evidence
+for "documentation overstates completion" quoted an old note in this file (around the
+M9c/M9d narrative above) saying M9d2 and M9e were not built — superseded, several
+hundred lines later in this same chronological log, by "M9d2 — Conventions" landing
+in the built-feature list and "**M9e is built**." Verified directly against the
+code (`src/planning/conventions.ts`, `src/planning/handoff.ts` both exist and are
+exercised) rather than trusting either version of the prose. The real defect was
+narrower and simpler: `README.md`'s own milestone checklist had M9 as `- [ ]`
+*unchecked* while its own prose, three lines later, said "usable end to end" and "Not
+built: nothing outstanding" — a straightforward self-contradiction, now `- [x]`.
+`media/MANUAL.md` was checked against the same code and found accurate as written; no
+change made there.
+
+**A CI workflow added (16 Aug, same review).** `npm run check` was a strong local
+gate nobody was forced to run — `.github/workflows/ci.yml` now runs `npm ci`,
+`npm run check`, and `npm run package` on every push and pull request against
+`main`, so a change can no longer merge without the 802-test suite, lint, and a
+working `vsce package` all passing. Adding it immediately surfaced its own packaging
+leak: `.vscodeignore` did not exclude `.github/**`, so the workflow file itself was
+about to ship inside the `.vsix` — fixed in the same change. The host-level smoke
+test half of this review item was checked next: no `@vscode/test-electron` or
+equivalent seam exists in `devDependencies` today, so per the review's own
+instruction that part stops here rather than pulling in a new test framework
+unasked — see the chat handoff for the proposed minimal design, pending approval.
+Approved, then built: `@vscode/test-electron` + `@vscode/test-cli` added as
+devDependencies, configured via `.vscode-test.mjs` against a fixture workspace at
+`src/test/fixture-workspace/`. Two suites: activation (the extension activates and
+every command `package.json` declares is actually registered — checked with the real
+`vscode.extensions`/`vscode.commands` API, not a mock) and containment (Phase 1's
+`resolveInWorkspace` accepts a path inside and refuses a path outside the real,
+live `vscode.workspace.workspaceFolders` a running host provides — the unit suite
+already covers the pure logic exhaustively, this just proves it's wired to the real
+thing). `npm run test:host` runs them locally; CI runs them via
+`xvfb-run -a npm run test:host` since the Linux runner has no display. Kept out of
+`npm run check` for the same reason — a display-dependent step doesn't belong in the
+fast local gate. Building this surfaced two more of the same packaging leak Phase 3's
+CI file caused: `.vscode-test.mjs` was about to ship in the `.vsix` too, until added
+to `.vscodeignore` alongside `.github/**`.
+
+**The `.vsix` trimmed (16 Aug, last item of the same review).** The review reported
+`dist/extension.js.map` (1.29 MB) shipping despite `.vscodeignore` listing `*.map`,
+and it was right: a bare `*.map` matches only at the ignore root, never a nested
+`dist/extension.js.map`, so the pattern had been silently doing nothing since it was
+written. Now `**/*.map`, plus `eslint.config.mjs` and `TUTOR-README.md` — the latter
+safe to drop because `vsce` rewrites README's relative link to it into an absolute
+GitHub URL at package time, verified by unzipping the built `.vsix` and reading the
+rewritten link rather than assuming the behavior. Package went from 15 files / 1.28 MB
+to **9 files / 903 KB**. Every remaining file was checked to a runtime reference
+before being kept: `media/bowtie.svg` is the view-container icon in `package.json`,
+`media/planning.png` is the README screenshot the marketplace page renders,
+`avatar.html`/`chat.js`/`MANUAL.md` are all read at runtime by
+`ButlerViewProvider.ts` and `ChatActions.ts`.
+
 #### Personality under load
 
 The butler voice (§2) governs chat too — dry, brief, helps first. Rule 1 (*helps first*)

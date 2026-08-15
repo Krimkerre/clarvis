@@ -88,3 +88,32 @@ test('a message with nothing waiting is dropped, not queued', async () => {
 
   assert.equal(await answer, 'Skip this step');
 });
+
+test('a question with nothing to nudge about stays silent', async () => {
+  // Not every caller blocks a build, and the ones that do not have no business
+  // talking to an empty room.
+  const spoken: string[] = [];
+  const pending = new PendingChoice(() => {}, (line) => spoken.push(line));
+
+  const answer = pending.ask(YES_NO);
+  pending.supply('Do it');
+  await answer;
+
+  assert.deepEqual(spoken, []);
+});
+
+test('answering stops the reminders that were queued', async () => {
+  // The timer outlives the question otherwise, and a nudge about a step that already
+  // ran is worse than no nudge at all.
+  const spoken: string[] = [];
+  const pending = new PendingChoice(() => {}, (line) => spoken.push(line));
+
+  const answer = pending.ask(YES_NO, 'Write main.go');
+  pending.supply('Do it');
+  await answer;
+
+  // Nothing pending means nothing left to fire; verified by the process exiting rather
+  // than hanging on a stray timer, which node:test will fail on.
+  assert.equal(pending.isWaiting, false);
+  assert.deepEqual(spoken, []);
+});

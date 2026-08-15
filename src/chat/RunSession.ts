@@ -47,7 +47,10 @@ export class RunSession {
     offer: (items: { label: string; detail?: string }[]) => void,
     private readonly log: (message: string) => void
   ) {
-    this.pending = new PendingChoice(offer);
+    // The nudge speaks; it does not write. Someone who has not answered is not
+    // reading the panel, so another line in the panel is the one thing guaranteed not
+    // to reach them.
+    this.pending = new PendingChoice(offer, (line) => void this.remark(line));
   }
 
   /**
@@ -102,8 +105,25 @@ export class RunSession {
    */
   private stepApproval = false;
 
-  setStepApproval(on: boolean): void {
+  /**
+   * Whether the mode *currently* asks, checked at each step rather than at the start.
+   *
+   * **Because a mode change mid-run did nothing.** Set once when the run began, the
+   * flag went on asking after someone switched to Unattended precisely to stop being
+   * asked — found live, part-way through the second checklist project. Switching is
+   * something people do *because* the run is going well and they no longer want to
+   * shepherd it; a setting that only applies to the next run is the setting they were
+   * not reaching for.
+   *
+   * Read through a function so the answer comes from the mode as it is now. Note that
+   * Auto still asks: `asksFirst` is true for it by design, and Unattended is the one
+   * that does not (§4.6).
+   */
+  private asksNow?: () => boolean;
+
+  setStepApproval(on: boolean, live?: () => boolean): void {
     this.stepApproval = on;
+    this.asksNow = live;
   }
 
   /**
@@ -191,7 +211,11 @@ export class RunSession {
       this.models,
       this.terminal,
       this.log,
-      this.stepApproval ? (step) => this.askStep(step) : undefined
+      // **Always handed over, decided per step.** Passing `undefined` here for a run
+      // that started in Unattended would freeze that choice for the whole run, which
+      // is the bug this replaced — `askStep` answers immediately when the mode says
+      // not to ask, so the decision is made at the step rather than at the start.
+      (step) => this.askStep(step)
     );
     // Held for the length of the run, so anything typed while it works has somewhere
     // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
@@ -323,16 +347,24 @@ export class RunSession {
    * model is told what was declined and asked to find another route.
    */
   private async askStep(step: StepExplanation): Promise<boolean> {
+    // Switching to Unattended mid-run means the *next* step stops asking, not the
+    // next run. Falls back to the flag the run started with when nothing live was
+    // supplied — the command-palette path has no mode button to read.
+    if (!(this.asksNow?.() ?? this.stepApproval)) return true;
+
     // Written, never spoken. The step title is short and the question is solicited,
     // but a run has a dozen of these in it and hearing each one read aloud is how a
     // voice gets switched off (§4.4's rationing, applied to the surface that would
     // break it fastest).
     await this.note([step.title, '', step.what, ...(step.exact ? ['', step.exact] : [])].join('\n'));
 
-    const answer = await this.pending.ask([
-      { label: 'Do it' },
-      { label: 'Skip this step' },
-    ]);
+    const answer = await this.pending.ask(
+      [{ label: 'Do it' }, { label: 'Skip this step' }],
+      // What the nudge will be about, if it comes to that. The step title rather than
+      // the whole explanation: this gets spoken aloud, and a paragraph read out to
+      // someone who has walked away is not a reminder, it is a monologue.
+      step.title
+    );
 
     // No answer means the run was stopped or the panel went away — not consent.
     return answer === 'Do it';

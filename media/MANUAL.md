@@ -283,6 +283,18 @@ choose it.
 Reading files is never gated in any mode. Approving a file *read* six times teaches
 you to click yes without looking, which is worse than not asking at all.
 
+**Switching mode mid-run takes effect at the next step**, so if a run is going well
+and you would rather stop shepherding it, switch to Unattended and it stops asking
+from there on. Switching to Auto does *not* stop the asking — Auto checks before each
+change by design, and Unattended is the one that doesn't.
+
+**If you don't answer, he'll say so out loud.** A question waiting on you parks the
+whole run, and the panel may not be the window you're looking at — so after about
+forty-five seconds he speaks up, again a minute and a half later, and once more after
+that. Then he stops: three reminders is a nudge, and anything beyond it is a voice
+repeating itself into an empty room. The question stays open the whole time, so
+answering ten minutes later works exactly as well.
+
 **Whatever the mode, the gates on irreversible things stay.** Deleting, publishing,
 installing — those are a separate layer from per-step approval, and there is no
 setting that turns them off.

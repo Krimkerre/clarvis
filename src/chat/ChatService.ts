@@ -202,7 +202,7 @@ export class ChatService {
           // a useful default to *choose* and the wrong thing to land in by accident
           // immediately after signing off on a plan.
           await this.actions.setMode('agent');
-          this.runs.setStepApproval(true);
+          this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
           // This run has a checklist to tick and has earned the pause afterwards; a
           // one-off "rename this variable" has neither.
           this.runs.setFromPlan(true, steps);
@@ -383,7 +383,7 @@ export class ChatService {
    */
   async startNextMilestone(task: string, steps: string[]): Promise<void> {
     await this.actions.setMode('agent');
-    this.runs.setStepApproval(true);
+    this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
     this.runs.setFromPlan(true, steps);
     await this.runs.run(task, 'Right — on to the next one.');
   }
@@ -638,7 +638,7 @@ export class ChatService {
     if (!pending) return false;
 
     this.log('chat: treating that as an answer to the run that just asked');
-    this.runs.setStepApproval(asksFirst(mode));
+    this.runs.setStepApproval(asksFirst(mode), () => asksFirst(this.actions.mode()));
     this.runs.setFromPlan(false);
     await this.runs.run(
       [
@@ -751,7 +751,7 @@ export class ChatService {
       // `mode === 'agent'`, which meant Auto — the default — ran destructive commands
       // with no prompt. Routing and approval are separate questions and are asked
       // separately now.
-      this.runs.setStepApproval(asksFirst(mode));
+      this.runs.setStepApproval(asksFirst(mode), () => asksFirst(this.actions.mode()));
       this.runs.setFromPlan(false);
       await this.runs.run(job.task, job.because);
       return;

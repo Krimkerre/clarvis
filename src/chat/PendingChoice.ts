@@ -1,3 +1,5 @@
+import { nudgeDelay, nudgeLine } from './waitingNudge';
+
 /**
  * One question in the chat panel, waiting for the next thing the user says.
  *
@@ -19,10 +21,18 @@
 export class PendingChoice {
   private waiting?: (answer: string | undefined) => void;
   private offered: string[] = [];
+  private timer?: ReturnType<typeof setTimeout>;
 
   constructor(
     /** Puts the buttons in the panel, and clears them with an empty list. */
-    private readonly offer: (items: { label: string; detail?: string }[]) => void
+    private readonly offer: (items: { label: string; detail?: string }[]) => void,
+    /**
+     * Says something out loud when the question has gone unanswered.
+     *
+     * Optional, because not every caller of this is blocking a build — and the ones
+     * that are not have no business talking to an empty room.
+     */
+    private readonly nudge?: (line: string) => void
   ) {}
 
   /** Whether an answer is expected right now. Chat checks this before routing. */
@@ -37,15 +47,40 @@ export class PendingChoice {
    * someone answering "no, do the other thing" is saying something the buttons could
    * not have offered.
    */
-  ask(options: { label: string; detail?: string }[]): Promise<string | undefined> {
+  ask(options: { label: string; detail?: string }[], about?: string): Promise<string | undefined> {
     // A second question while one is pending would leave the first hanging forever.
     this.cancel();
     this.offered = options.map((option) => option.label);
     this.offer(options);
+    if (about && this.nudge) this.startNudging(about);
 
     return new Promise((resolve) => {
       this.waiting = resolve;
     });
+  }
+
+  /**
+   * Speaks up while nobody answers, then stops.
+   *
+   * Chained rather than repeating on an interval: each delay is longer than the last,
+   * and the chain ends itself once `nudgeDelay` runs out of attempts.
+   */
+  private startNudging(about: string, attempt = 1): void {
+    const delay = nudgeDelay(attempt);
+    if (delay === undefined) return;
+
+    this.timer = setTimeout(() => {
+      // Answered between the timer firing and this running: say nothing.
+      if (!this.waiting) return;
+      this.nudge?.(nudgeLine(attempt, about));
+      this.startNudging(about, attempt + 1);
+    }, delay);
+  }
+
+  /** Stops the reminders — on an answer, on a cancel, and on the way to a new question. */
+  private stopNudging(): void {
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = undefined;
   }
 
   /** Hands the user's message to the question waiting for it. */
@@ -54,6 +89,7 @@ export class PendingChoice {
     if (!waiting) return;
 
     this.waiting = undefined;
+    this.stopNudging();
     this.offer([]);
     waiting(this.match(answer));
   }
@@ -69,6 +105,7 @@ export class PendingChoice {
     if (!waiting) return;
 
     this.waiting = undefined;
+    this.stopNudging();
     this.offer([]);
     waiting(undefined);
   }

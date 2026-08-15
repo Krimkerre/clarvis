@@ -4391,6 +4391,21 @@ answer it with. The probe, the decline and the action are split out of `offerGit
 both surfaces share them — one answer per workspace, whichever collected it, so the run
 that follows an accepted offer does not ask again.
 
+**Two more from project 2, both about attention.** A mode change mid-run did nothing:
+step approval was read once when the run started, so switching to Unattended — which
+people do precisely *because* a run is going well and they want to stop shepherding it
+— went on asking until the run ended. The decision is per step now, taken from the mode
+as it is at that moment. (Auto still asks; `asksFirst` is true for it by design, and
+Unattended is the mode that does not.)
+
+And a question nobody notices parks the whole build. So an unanswered one is now
+**spoken**, at 45s, then 90s, then 180s, escalating in what it says rather than in
+temper — a nudge, then what is stuck, then the consequence — and stopping after three.
+Someone who has not answered in five minutes has left the desk, and a voice repeating
+itself into an empty room is what gets a product uninstalled. Spoken rather than
+written for the obvious reason: another line in the panel is the one thing guaranteed
+not to reach someone who is not reading the panel.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

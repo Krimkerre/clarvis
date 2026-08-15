@@ -146,6 +146,14 @@
       {
         "command": "clarvis.chooseEngine",
         "title": "Clarvis: Choose Voice Engine"
+      },
+      {
+        "command": "clarvis.startLogTailing",
+        "title": "Clarvis: Start Tailing VS Code Logs"
+      },
+      {
+        "command": "clarvis.stopLogTailing",
+        "title": "Clarvis: Stop Tailing VS Code Logs"
       }
     ],
     "configuration": {

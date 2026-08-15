@@ -42,6 +42,8 @@ import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
+import { startTailing, stopTailing } from './logtailing/logTailing';
+
 
 // Held at module scope only because deactivate() has no way to receive anything
 // from activate() — VS Code calls the two independently. Everything else lives
@@ -163,6 +165,13 @@ export function activate(context: vscode.ExtensionContext): void {
   // ...and is spoken. Only remarks that already survived the interruption budget get
   // here, so the budget is what limits how much talking happens — not the scope.
   announcer.onAnnounce((message, occasion) => voice.say(message, occasion));
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.startLogTailing', () => startTailing(logger))
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.stopLogTailing', () => stopTailing(logger))
+  );
 }
 
 /**
@@ -591,6 +600,9 @@ function startPersonality(
  * (from M4 onward) is written synchronously via workspace.fs, never via the log.
  */
 export function deactivate(): void {
+  if (log) {
+    stopTailing(log);
+  }
   log?.write('Clarvis deactivated.');
 }
 

@@ -3791,6 +3791,22 @@ front of it. Both misses are the prompt's boundaries working rather than failing
 - [x] A finding written into the plan arrives as a milestone with a falsifiable check —
       the four findings render as four steps, each checked by "no longer true; prove it
       with a run whose output would differ".
+
+### M13 - Live VS Code Log Tailing
+
+**Build.**
+- **M13a - Gated Command.** Create a new command `Clarvis: Start Tailing VS Code Logs`. This command will be handled by the security `Gate`, clearly stating the risks of exposing logs.
+- **M13b - Log Tailing Implementation.** On approval, the extension will locate the VS Code log file for the current OS and start a process to continuously copy new lines to `.clarvis/vscode.log`.
+- **M13c - Stop Command.** Create a corresponding `Clarvis: Stop Tailing VS Code Logs` command to terminate the tailing process.
+
+**Exit checklist:**
+- [ ] `Clarvis: Start Tailing VS Code Logs` command appears in the command palette.
+- [ ] The command is properly gated and displays a warning.
+- [ ] Approving the gate starts the log tailing process and creates `.clarvis/vscode.log`.
+- [ ] New log entries in the VS Code log file appear in `.clarvis/vscode.log`.
+- [ ] `Clarvis: Stop Tailing VS Code Logs` command stops the tailing process.
+- [ ] The feature works on all supported operating systems (macOS, Linux, Windows).
+
 - [ ] A review that fails or times out does not fail the milestone that already landed.
 
 ### M9g — Project notes, written by the user *(next, after the checklist)*

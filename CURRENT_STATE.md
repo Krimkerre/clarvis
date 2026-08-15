@@ -44,7 +44,8 @@ before this file.
 | `src/memory/` | ~1,100 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,000 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~680 | Task/build watching — the walk-away feature. |
-| `src/panels/` | ~430 | The webview host for the avatar. |
+|    `src/panels/` | ~430 | The webview host for the avatar. |
+   `src/logtailing/` | ~60 | Tailing of VS Code logs into the workspace. |
 
 ## What's built vs designed
 
@@ -54,8 +55,9 @@ checklists (261 checklist lines total). Current status:
 - **Built and shipped: M0 through M9**, plus M9d2 (per-language conventions), M9d3
   (the agent reads its own code back after a milestone — see below), and the four
   fixes landed 15 Aug (sensitive-file gate, network-deny-by-default sandbox, the run
-  ledger, and item A/B from an external review — see `docs/build-log.md` for all
-  four).
+   ledger, and item A/B from an external review — see `docs/build-log.md` for all
+   four).
+- **M13 - Live VS Code Log Tailing.** A gated command to tail the VS Code extension host logs into the workspace.
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M11** (packaging/release
   polish), **M12** (Tutor Mode).

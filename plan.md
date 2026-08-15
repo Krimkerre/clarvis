@@ -3611,7 +3611,12 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
   `{ class, what, whyItMatters, suggestedResolution }` so the panel can render them
   individually and record a per-finding verdict. Includes the "this project doesn't need
   a plan" outcome as a legitimate result.
-- **M9c — Verdicts.** Per-finding accept / reject / modify in the panel. **Rejections are
+- **M9c — Verdicts.** Each finding's fixes are the buttons — one to three genuinely
+  different ways to settle it, plus *Something else* for the answer Clarvis didn't
+  think of and *No, drop this*. Found live: fixes arrived phrased "Either tie the reset
+  to a manual trigger, or establish how the system learns when rent has been paid" —
+  two options behind one Accept button, with the alternative something the user had to
+  notice and retype. **Rejections are
   written into the generated plan along with the user's reasoning** — the decision record
   is the point, so a later session doesn't re-raise a settled question.
 - **M9d — Generation.** `src/planning/PlanWriter.ts` — renders `plan.md` in the §4.9
@@ -3693,7 +3698,8 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
       **All three classes must be caught** — this is the feature's whole value.
 - [ ] Reject a finding with a reason — the reason appears in the generated plan, and
       re-running planning later does not re-raise it.
-- [ ] Modify a finding — the plan reflects the user's version, not Clarvis's original.
+- [ ] Pick the *second* fix on a finding — the plan carries that one, not the first.
+- [ ] *Something else* on a finding — the plan reflects the user's version, not Clarvis's.
 - [ ] Generated `plan.md` has milestones with real exit checklists, not vague prose.
 - [ ] Run planning in a folder that already has a `plan.md` — it is not overwritten;
       extend/revise is offered.
@@ -4207,6 +4213,117 @@ Two failure modes, both quiet:
 this workspace)` on macOS or Linux means detection is broken and nothing below is
 worth running yet.
 
+**Ran it. Both failure modes were wrong about what would go wrong.** Detection worked
+first time — `sandbox: using sandbox-exec on darwin`, then `confined by sandbox-exec`
+on all three commands of a Go project. What actually happened was worse than either:
+
+`brew install go` was denied its writes to `/opt/homebrew`, correctly. Homebrew cannot
+see its own sandbox, so it reported the only cause it knows for a write it cannot make
+— bad ownership — and told the user to `sudo chown -R` the tree. Clarvis passed that
+on as fact. **The directory was owned by them and perfectly writable.** Following the
+advice meant a recursive chown over a working install to fix a problem that did not
+exist.
+
+That is a sandbox producing dangerous advice by working exactly as designed, and no
+amount of testing the *profile* would have found it: the profile was right. The fix is
+`confinement.ts` — when a confined command fails on something that reads like a denied
+write, the result carries a note saying so, telling the model not to repeat the
+diagnosis and not to suggest `sudo` or `chown`. Matched rather than always attached,
+because a note on every failure teaches it to blame the sandbox for its own bugs.
+
+**Two things follow from it, both built the same day.**
+
+*The escape at the gate.* `brew install go` was gated as a dependency, approved, and
+then denied by the sandbox — an approval that could not be honoured. Confinement is
+the actual obstacle for an install, so that gate now offers a second button:
+*Run it unconfined*. Deliberately narrow, and narrow in a way that is checkable
+(`mayEscapeConfinement`): installs and privileged commands only, never `rm -rf`, never
+a force-push, because the sandbox was not what stood in their way. Per command, never
+remembered — a remembered yes is an unconfined agent with extra steps. The dialog
+spells out both buttons, since two that read "run it" teach people to click the right
+one.
+
+*Bubblewrap on Linux.* macOS ships `sandbox-exec`; Linux ships nothing, so the Linux
+path was "no sandbox here, shall I run unconfined?" — a security question asked of
+someone one `apt-get install` away from not having to answer it. Now it offers to
+install it first, for the five package managers that cover the desktop distributions.
+**The command is handed over, not run**: a terminal opens with the line in it,
+unexecuted, and the user presses Enter so their own shell asks for the password. An
+extension that runs `sudo` on your behalf has become the thing the sandbox exists to
+prevent. That makes a third answer necessary — neither yes nor no but *ask me again in
+a minute* — because reporting it as a refusal would have the model looking for a way
+round a door being unlocked.
+
+**Also found, same run:**
+
+- `listFiles` was called with `"."` — quotes included — and the path resolved to
+  `<workspace>/"."`. A step lost to an ENOENT on the workspace root. Models write what
+  they would type in a shell, where the quotes are the shell's to strip. Now stripped
+  at `resolveInWorkspace`, the one boundary every tool goes through.
+- The run stopped to ask a question; the user replied "retry", then "continue". Both
+  reached a model with no idea what was being retried, which asked what they meant.
+  `takeUnanswered()` was being consulted *inside* the job branch, and neither word
+  routes as a job. A reply to a stopped run is an answer to it whatever it looks like,
+  so the check now happens before routing.
+
+### Project 1 — run 15 Aug, and what it showed
+
+**Worked, first time:** the vague answer pushed back on exactly once; the language and
+comment-style questions both landed; three findings, the safety one carrying *two*
+fixes as separate buttons; three milestones; the checkpoint capturing each new file;
+branch isolation; and `sandbox: confined by sandbox-exec` on all ten commands.
+
+**The confinement note earned its place immediately.** Step 8 was
+`mkdir -p /tmp/photochrono_test && python3 -c …` — building a test fixture outside the
+project. The sandbox refused it, the note said so, and step 9 was the same fixture
+written to `tests/fixtures` *inside* the workspace. No sudo advice, no misdiagnosis,
+recovered in one step. That is the whole design working in the order it was designed in.
+
+**The defect: a path repeating the workspace folder's own name.** The workspace was
+`1-photo-renamer`, and the model asked for `1-photo-renamer/plan.md`, which resolves to
+`…/1-photo-renamer/1-photo-renamer/plan.md`. Three tool calls across two turns, and the
+run stopped mid-milestone having read nothing — it reported the first three steps done
+and gave up on the fourth.
+
+The mistake is structural, not careless: absolute paths appear in command output, in
+`pwd`, and in the ENOENT from the previous attempt, so everything the model can see
+about where it is contains the folder name it must not repeat. Repaired at
+`resolveInWorkspace`, and only where the evidence is unambiguous — the doubled path
+must not exist and the shortened one must. A project whose root and package share a
+name (`mytool` containing `mytool/`) is normal, and there the doubled path *does*
+exist. The ENOENT message now also says paths are workspace-relative, since the old one
+quoted an absolute path and was therefore an argument for repeating the mistake.
+
+**And five editor tabs for one plan.** The verdict summary opened an untitled
+document, each refinement round opened another, `markdown.showPreview` doubled every
+one of them, and the approved `plan.md` arrived alongside the lot. Two tabs read
+`# Photochrono` — an untitled markdown document is named after its own first heading —
+so the pair that looked identical were a scratch draft and a rendered view of that same
+scratch draft, neither of them the file. One `DraftDocument` now owns a single tab,
+redrawn in place through a `WorkspaceEdit`, and closed the moment `plan.md` exists: a
+draft sitting next to the file it became is ten minutes spent improving the copy that
+gets thrown away.
+
+**Also confirmed working from the previous round:** `listFiles: .` arrived unquoted.
+
+**What project 1 verified, and what it only looked like it verified.** 42 tool calls,
+ten of them commands, all confined. Proven: the interview end to end, the push-back
+firing exactly once, multiple fixes offered as buttons, three milestones planned, the
+checkpoint capturing five new files, branch isolation onto
+`clarvis/start-building-photochrono-…`, and undo restoring the lot on request.
+
+Not proven, and worth not claiming: **no dependency was installed.** The agent ran
+`pip3 show` four times — checking, not installing — because Pillow and piexif were
+already present, so the dependency gate never fired and a `pip install` has still never
+run under the sandbox. The git-init offer did not fire either, this folder having been
+`git init`-ed during setup. Both were things project 1 was chosen to force, and neither
+happened; project 2 is where they get another chance.
+
+The milestone never completed, so everything in *The loop itself* below is still open —
+the run stopped at step 4 of 5 on the path defect and the work was undone deliberately.
+That is one defect away from a finished milestone rather than a failed design, but the
+distinction is exactly what a checklist is for and the boxes stay empty.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.
@@ -4263,8 +4380,10 @@ Never done. Each piece works alone; the seams between them are untested.
 
 ### The two M9d2 items that have never run
 
-- [ ] The comment-style question is asked once, in the final round, both options
-      presented as legitimate
+- [x] The comment-style question is asked once, in the final round, both options
+      presented as legitimate — **verified, project 1.** Asked last, pushed back once
+      on a vague answer ("either works here"), and synthesised into the plan's
+      Conventions section.
 - [ ] Build a file under each setting — `explanatory` produces comments throughout,
       `lean` only where something is surprising
 
@@ -4276,48 +4395,58 @@ persistence, Ollama. Both predate M9 and neither is closed by anything above.
 
 ## 11. The codebase, measured
 
-As of 14 Aug, with M9 merged to `main`. Kept because §0's clean-code rules are argued
-about in the abstract otherwise, and because the M8 linter report — "too much
-cyclomatic complexity", no number attached — showed what an unmeasured claim costs.
+As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's
+clean-code rules are argued about in the abstract otherwise, and because the M8 linter
+report — "too much cyclomatic complexity", no number attached — showed what an unmeasured
+claim costs. **Re-counted rather than edited**: the previous figures were four days old
+and already 2,000 lines out.
 
-**26,764 lines of TypeScript across 189 files.**
+**28,624 lines of TypeScript across 205 files.**
 
 | | files | lines |
 |---|---|---|
-| Source | 135 | 20,919 |
-| Tests | 54 | 5,845 |
+| Source | 143 | 22,156 |
+| Tests | 62 | 6,468 |
 
-Of the 20,919 source lines, **6,840 are comments** and 2,284 are blank — so the
-executable surface is roughly **11,800 lines**. That ratio is the deliberate §0
+Of the 22,156 source lines, **7,455 are comments** and 2,391 are blank — so the
+executable surface is roughly **12,300 lines**. That ratio is the deliberate §0
 deviation, not drift: comments are used liberally because this codebase is meant to be
 read as a worked example, and a third of it being prose is what that costs.
 
 | Area | lines | files | classes |
 |---|---|---|---|
-| `agent/` (incl. `tools/`) | 5,229 | 29 | 7 |
-| `chat/` | 3,716 | 17 | 9 |
-| `planning/` | 3,279 | 28 | 1 |
-| `model/` | 1,990 | 11 | 5 |
-| `personality/` | 1,830 | 12 | 5 |
-| `voice/` | 1,584 | 14 | 3 |
-| root (`extension.ts`, wiring) | 1,202 | 8 | 3 |
+| `agent/` (incl. `tools/`) | 5,968 | 35 | 8 |
+| `chat/` | 3,838 | 17 | 9 |
+| `planning/` | 3,521 | 29 | 1 |
+| `model/` | 2,039 | 11 | 5 |
+| `personality/` | 1,889 | 12 | 5 |
+| `voice/` | 1,608 | 15 | 3 |
+| root (`extension.ts`, wiring) | 1,175 | 7 | 3 |
 | `briefing/` | 700 | 6 | 2 |
 | `memory/` | 535 | 5 | 2 |
 | `watch/` | 453 | 5 | 2 |
-| `panels/` | 428 | 1 | 1 |
+| `panels/` | 430 | 1 | 1 |
 
-**40 classes, and 232 exported functions.** The ratio is the point: classes are used
+**41 classes, and 254 exported functions.** The ratio is the point: classes are used
 where something owns state or a lifecycle — `ModelService`, `AgentRunner`,
 `VoiceService`, `BusyTracker` — and everything else is plain functions. `planning/` is
-the clearest case, 28 files and **one** class, which is exactly why M9 could be tested
+the clearest case, 29 files and **one** class, which is exactly why M9 could be tested
 as heavily as it was: almost all of it is pure, and pure code needs no extension host
-to run against. Alongside those, 73 interfaces and 31 type aliases.
+to run against. Alongside those, 100 interfaces and 38 type aliases.
 
-**604 tests**, against Node's built-in runner with no test framework — possible only
-because the logic worth testing lives in files that import nothing from `vscode`.
+**672 tests**, against Node's built-in runner with no test framework — possible only
+because the logic worth testing lives in files that import nothing from `vscode`. Up
+from 604 four days ago; every one of the 68 new ones was written for a defect found by
+using the product rather than by the suite.
+
+**Where the growth went.** `agent/` gained 739 lines in four days — the OS sandbox
+(`sandboxProfile.ts`, `sandbox.ts`), the trust gate, the confinement note, and the
+bubblewrap offer. That is the security review (above) and the first live sandbox runs,
+measured: the answer to "is a deny-list enough" cost about 700 lines and is the largest
+single addition since M9 landed.
 
 Documentation, for scale: `plan.md` itself is the largest file in the repository at
-~4,100 lines, with the manual at 432, the README at 384 and the tutor guide at 198.
+4,390 lines, with the manual at 465, the README at 408 and the tutor guide at 198.
 
 ## Special thanks
 

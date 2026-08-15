@@ -132,12 +132,12 @@ the plan is signed off — and a rule the code knows should be one the interface
   normal option, not buried in advanced settings — and give it a name to keep it. How
   *often* he speaks is governed by the same one-a-minute limit as everything else.
   **Mute** stops him mid-sentence; the setting turns him off for good.
-- **You can speak to him** *(optional, off by default)* — hold a button and talk
-  instead of typing, in English or Flemish Dutch, including the habit of mixing
-  English jargon into a Dutch sentence. It never sends on its own: what you said turns
-  into text you can edit first. It needs one extra program installed, and if it's
-  missing he tells you which and hands you the command rather than running anything
-  himself.
+- **You can speak to him** *(planned — not built yet)* — hold a button and talk
+  instead of typing, in English or Flemish Dutch, including the habit of mixing English
+  jargon into a Dutch sentence. It will never send on its own: what you said turns into
+  text you can edit first. Designed in full in [`plan.md`](./plan.md) §4.7; the only part
+  that exists today is a microphone check. Everything else on this list is built and
+  installed.
 
 - **Version control, without needing to understand it.** Git is the thing that keeps
   a history of your project, and it is famously unfriendly. Clarvis doesn't talk like

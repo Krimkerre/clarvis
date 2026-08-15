@@ -4919,6 +4919,25 @@ Worth noting what worked untouched: the budget did exactly what §6 promises, th
 threshold fired independently on the same file (`surfaced 70a274db635c8571 (3×)`), and
 the pre-existing errors from the previous session were correctly skipped as not-ours.
 
+### "Three times this week" was the whole line
+
+Reported on sight as too vague, and it was. The pattern-hit surface said *"That's 3
+times this week. No fix on record yet — I'm watching."* — a count and nothing else. No
+error text, no file, no line. A recurring error you cannot locate is a recurring error
+you cannot fix, and the only fact in the sentence was the number.
+
+Worse than useless: with nothing specific to carry, the rewrite filled the gap. What
+reached the user attributed a *motive* — that they knew about the problem and had chosen
+not to fix it — which the store cannot know and §2 rule 4 does not allow. Give the model
+a sentence made only of mood and it will supply the substance.
+
+It now carries the error, the file and the gutter line, all measured: the count from the
+store, the sample from the editor, the location from the diagnostic just confirmed, and
+the remembered fix labelled as the guess it is. All of it in the `keep` list, since
+every one of those is a thing a paraphrase could send someone to the wrong line with.
+
+> That's 3 times this week — nanocode.py line 19: Expected expression. No fix on record yet.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

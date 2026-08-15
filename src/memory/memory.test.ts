@@ -1,10 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fingerprint, normalizeError } from './fingerprint';
-import {
-  recordOccurrence, recordResolution, topPattern, parseState, emptyState,
-  WINDOW_MS, THRESHOLD,
-} from './patterns';
+import { recordOccurrence, recordResolution, topPattern, parseState, emptyState, WINDOW_MS, THRESHOLD, patternHitLine } from './patterns';
 import { beginPending, noteOutcome } from './resolution';
 import { forgetMatching } from './patterns';
 
@@ -215,4 +212,42 @@ test('a pattern seen twice is not yet worth a briefing line', () => {
   };
 
   assert.equal(topPattern(thrice, now)?.count, 3);
+});
+
+test('a pattern hit says what the error was and where it is', () => {
+  // "That's 3 times this week. No fix on record yet." was the whole line — a count and
+  // nothing else, so the only fact delivered was a number and the rewrite filled the
+  // silence with whatever sounded plausible. Reported as too vague on first sight.
+  const line = patternHitLine('Expected ":"', { file: 'nanocode.py', line: 24 });
+
+  assert.match(line.text, /Expected ":"/);
+  assert.match(line.text, /nanocode\.py line 24/);
+  assert.match(line.text, /3 times this week/);
+});
+
+test('everything specific in it is protected from the rewrite', () => {
+  // The parts that could send someone to the wrong line are the parts a paraphrase
+  // must not touch.
+  const line = patternHitLine('Expected ":"', { file: 'nanocode.py', line: 24 }, 'pnpm store prune');
+
+  assert.ok(line.keep.includes('Expected ":"'));
+  assert.ok(line.keep.includes('nanocode.py'));
+  assert.ok(line.keep.includes('line 24'));
+  assert.ok(line.keep.includes('pnpm store prune'));
+});
+
+test('an error with no file still names the error', () => {
+  // Terminal failures have no line to point at, and a count on its own is what this
+  // was fixing.
+  const line = patternHitLine('ENOENT: no such file');
+
+  assert.match(line.text, /ENOENT: no such file/);
+  assert.doesNotMatch(line.text, /line \d/);
+});
+
+test('a remembered fix is offered as a record, never as a promise', () => {
+  const line = patternHitLine('x', undefined, 'pnpm store prune');
+
+  assert.match(line.text, /pnpm store prune/);
+  assert.match(line.text, /make no promises/);
 });

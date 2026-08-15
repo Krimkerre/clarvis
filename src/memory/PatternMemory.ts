@@ -3,7 +3,15 @@ import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { fingerprint } from './fingerprint';
 import { LINGER_MS, lingeringLine } from './lingering';
 import { PatternStore } from './PatternStore';
-import { forgetMatching, recordOccurrence, recordResolution, topPattern, THRESHOLD, Pattern } from './patterns';
+import {
+  forgetMatching,
+  patternHitLine,
+  recordOccurrence,
+  recordResolution,
+  topPattern,
+  THRESHOLD,
+  Pattern,
+} from './patterns';
 import { PendingFix, beginPending, noteOutcome } from './resolution';
 
 /**
@@ -209,7 +217,15 @@ export class PatternMemory {
         return;
       }
 
-      void this.count(fingerprint(message), message);
+      const at = vscode.languages
+        .getDiagnostics(uri)
+        .find((entry) => entry.message === message && entry.severity === vscode.DiagnosticSeverity.Error);
+
+      void this.count(fingerprint(message), message, {
+        file: vscode.workspace.asRelativePath(uri),
+        // 1-based, to match the gutter rather than the array index.
+        line: (at?.range.start.line ?? 0) + 1,
+      });
       // Confirmed present. Whether it is still present in three minutes is a different
       // question, and the one that decides whether it is worth saying anything about.
       this.watchForLingering(uri, message, identity);
@@ -284,7 +300,7 @@ export class PatternMemory {
   }
 
   /** Records one occurrence and speaks up if it just hit the threshold. */
-  private async count(key: string, sample: string): Promise<void> {
+  private async count(key: string, sample: string, where?: { file: string; line: number }): Promise<void> {
     const result = recordOccurrence(this.store.current, key, sample, Date.now());
     await this.store.save(result.state);
 
@@ -297,13 +313,9 @@ export class PatternMemory {
 
     if (!result.shouldSurface) return;
 
-    const fix = result.pattern.resolvedBy;
-    this.surface(
-      fix
-        ? `That's ${THRESHOLD} times this week. Last time, \`${fix}\` sorted it. I make no promises, but I do keep records.`
-        : `That's ${THRESHOLD} times this week. No fix on record yet — I'm watching.`
-    );
-    this.log(`pattern: surfaced ${key} (${THRESHOLD}×)`);
+    const line = patternHitLine(excerpt(sample), where, result.pattern.resolvedBy);
+    this.surface(line.text, line.keep);
+    this.log(`pattern: surfaced ${key} (${THRESHOLD}×) — ${line.text}`);
   }
 
 }

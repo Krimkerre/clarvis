@@ -11,6 +11,9 @@ import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
 import { StepExplanation } from '../agent/stepExplanation';
 import { PendingChoice } from './PendingChoice';
+import { reviewMilestone } from '../agent/readBack';
+import { reviewSummary } from '../agent/milestoneReview';
+import { Finding } from '../planning/analysisPrompt';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -44,13 +47,13 @@ export class RunSession {
      * class needs one frame, not a view. */
     private readonly showProgress: (frame: { current: number; total: number; label: string }) => void,
     /** Puts the answers in the panel as buttons. Typing still works regardless. */
-    offer: (items: { label: string; detail?: string }[]) => void,
+    private readonly offer: (items: { label: string; detail?: string }[]) => void,
     private readonly log: (message: string) => void
   ) {
     // The nudge speaks; it does not write. Someone who has not answered is not
     // reading the panel, so another line in the panel is the one thing guaranteed not
     // to reach them.
-    this.pending = new PendingChoice(offer, (line) => void this.remark(line));
+    this.pending = new PendingChoice(this.offer, (line) => void this.remark(line));
   }
 
   /**
@@ -360,6 +363,49 @@ export class RunSession {
     // Recording it also reports what is left, which is what makes the next milestone
     // a decision rather than a thing you have to remember to go and look for.
     await vscode.commands.executeCommand('clarvis.recordMilestone', summary);
+
+    // **And then he reads his own code back.** The plan gets analysed before a line is
+    // written; nothing looked at what was written afterwards, so a milestone was
+    // finished on the strength of its own checks passing. Found by reading a finished
+    // project by hand: "Chance of rain: 0%", always, past five checks that asked only
+    // whether output appeared.
+    await this.readBackWhatIWrote(summary);
+  }
+
+  /**
+   * Reviews the milestone's own diff, and offers what to do about it.
+   *
+   * Offered, never applied — rule 3 holds at the end of a build exactly as it does at
+   * the start of one. Writing the findings into the plan is the option worth having:
+   * they become a milestone like any other, with steps and checks, rather than a list
+   * in a transcript that scrolls away.
+   */
+  private async readBackWhatIWrote(summary: string): Promise<void> {
+    const findings = await reviewMilestone(this.models, summary, this.log);
+    if (findings.length === 0) return;
+
+    await this.note(reviewSummary(findings));
+    await this.note(findings.map((finding) => `- **[${finding.class}]** ${finding.what}`).join('\n'));
+
+    this.reviewFindings = findings;
+    this.offer([
+      { label: 'Fix them now', detail: 'A run that does nothing else, before the next milestone' },
+      { label: 'Add to the plan', detail: 'A milestone of their own, to build when you choose' },
+      { label: 'Leave them', detail: 'Recorded in the log and nowhere else' },
+    ]);
+  }
+
+  /** Findings waiting on an answer about what to do with them. Read once. */
+  private reviewFindings?: Finding[];
+
+  get hasReviewFindings(): boolean {
+    return this.reviewFindings !== undefined;
+  }
+
+  takeReviewFindings(): Finding[] | undefined {
+    const findings = this.reviewFindings;
+    this.reviewFindings = undefined;
+    return findings;
   }
 
   /**

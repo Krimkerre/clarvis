@@ -27,6 +27,7 @@ import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
+import { addFindingsToPlan, fixFindingsTask } from '../planning/reviewFollowUp';
 import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
@@ -473,6 +474,40 @@ export class ChatService {
   }
 
   /**
+   * What to do about what the read-back found.
+   *
+   * Three answers, and the middle one is the reason this is worth building: findings
+   * written into the plan become a milestone with steps and checks, which is a thing
+   * that gets built. Findings in a transcript are a thing that scrolls away.
+   */
+  private async answeredReviewOffer(question: string): Promise<boolean> {
+    const findings = this.runs.takeReviewFindings();
+    this.panel.post({ type: 'choices-clear' });
+    if (!findings) return false;
+
+    const answer = question.trim().toLowerCase();
+
+    if (/^(fix|fix them|fix them now|yes|do it)\b/.test(answer)) {
+      this.log(`review: fixing ${findings.length} finding(s) now`);
+      await this.runs.run(fixFindingsTask(findings), 'Right — before anything else, then.');
+      return true;
+    }
+
+    if (/^(add|add to the plan|plan|write)\b/.test(answer)) {
+      const added = await addFindingsToPlan(findings, this.log);
+      await this.note(
+        added
+          ? `Written into plan.md as milestone ${added}. It gets built when you say so, like any other.`
+          : "I couldn't write those into the plan — they are in the log."
+      );
+      return true;
+    }
+
+    this.log(`review: ${findings.length} finding(s) left alone`);
+    return true;
+  }
+
+  /**
    * Starts the next milestone from an approved plan.
    *
    * Same run path as the first one — step approval on, progress showing, the pause
@@ -491,6 +526,7 @@ export class ChatService {
    * asked, or as the reply to the offer to start.
    */
   private async planningTook(question: string): Promise<boolean> {
+    if (this.runs.hasReviewFindings) return this.answeredReviewOffer(question);
     if (this.awaitingResume) return this.answeredResumeOffer(question);
     if (this.awaitingScopeAnswer) return this.answeredScopeOffer(question);
     if (this.awaitingBuildAnswer) return this.answeredBuildOffer(question);

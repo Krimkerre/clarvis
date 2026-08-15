@@ -3885,6 +3885,57 @@ step-result line landing in the wrong place, a normaliser that turned "There is 
 in this project." into a question on its `is`. Both halves were necessary; neither
 would have been enough.
 
+### M9d3 — Reading the code back *(built 15 Aug, from project 2's own output)*
+
+**The plan gets analysed; the code never was.** §4.9's analysis pass picks holes in the
+*idea* before a line is written, and it is the most valuable thing in planning. Nothing
+did the equivalent for what got written afterwards, so a milestone was finished on the
+strength of its own checks passing.
+
+Reading project 2's 327 lines by hand afterwards found six things. One was live and
+wrong: `forecast Berlin` printed **"Chance of rain: 0%"** — always. The code matched
+`current.time` (`12:30`) against hourly timestamps (`12:00`), never matched, and fell
+back to `return 0`. **Five checks passed over it**, twice against the live API, because
+every one of them asked whether output *appeared*. Alongside it: `http.Get` with no
+timeout in a tool whose entire purpose is coping with an unreachable server; five
+parallel arrays indexed on an unchecked assumption; an error cause discarded by
+`fmt.Errorf("%w", ErrServerUnreachable)`; a cache with no age; and a green
+`go test ./...` over zero test files.
+
+None of it is exotic. It needed *someone to look at the diff*, once.
+
+**Two changes, at the two ends of the problem.**
+
+*A check has to be able to fail.* The milestone prompt now says so: "It prints the
+temperature" is satisfied by a program that prints a constant, so a check must name
+what would make the output wrong — a value that must change with the input, a number
+that must match something knowable, two runs that must differ. If the only way to fail
+it is a crash, it is testing that the program runs, which was never in doubt.
+
+*And the diff gets read back.* When a milestone's results are recorded, the run's own
+diff goes back to the model with the steps, their checks and what was claimed, and two
+questions: **is any of this wrong**, and **would that check have caught it if it were**.
+Findings come back in the same shape as the plan analysis, so the existing parser and
+buttons take them unchanged.
+
+Three answers, and the middle one is the point:
+
+- **Fix them now** — a run that does nothing else, with each defect and its "why"
+  attached, and the instruction to prove each fix with output that would have differed
+  before it.
+- **Add to the plan** — they become a milestone with steps and checks. Findings in a
+  transcript scroll away; findings in `plan.md` get built.
+- **Leave them** — recorded in the log, which is more than they had before.
+
+Offered, never applied. Rule 3 holds at the end of a build exactly as it does at the
+start.
+
+**Exit checklist:**
+- [ ] A milestone whose code is fine produces "found nothing worth raising", not silence.
+- [ ] The rain-constant defect is found when the read-back runs against that same diff.
+- [ ] A finding written into the plan arrives as a milestone with a falsifiable check.
+- [ ] A review that fails or times out does not fail the milestone that already landed.
+
 ### M9g — Project notes, written by the user *(next, after the checklist)*
 
 **The direction that does not exist yet.** Clarvis already keeps per-project memory —

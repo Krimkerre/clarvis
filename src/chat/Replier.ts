@@ -5,7 +5,7 @@ import { VoiceService } from '../voice/VoiceService';
 import { ModelService, explain } from '../model/ModelService';
 import { AgentRunner } from '../agent/AgentRunner';
 import { AgentTerminal } from '../agent/tools/commandTools';
-import { characterWith } from '../personality/character';
+import { ANSWER_SHAPE, characterWith } from '../personality/character';
 import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { Transcript } from './Transcript';
 import { Turn } from './thread';
@@ -84,7 +84,12 @@ export class Replier {
 
     try {
       for await (const fragment of this.models.stream({
-        system: `${this.systemPrompt() + addendum}\n\n${STATE_TAG_INSTRUCTION}`,
+        // The answer shape goes after the addendum, last before the reply, for the same
+        // reason the tool path puts it there. **This path did not have it at all** —
+        // the required closing line of his own is what makes a reply his rather than an
+        // assistant's, and a model without tool support was getting the character
+        // described to it and never asked for one. Ollama users had a politer Clarvis.
+        system: `${this.systemPrompt() + addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`,
         messages: this.transcript.forModel(),
         signal: controller.signal,
       })) {

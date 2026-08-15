@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'path';
-import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch } from './branchNames';
+import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch, stackedAdvice } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
 import { atRiskPaths } from './atRisk';
@@ -13,23 +13,6 @@ export interface Isolation {
   advice?: string;
 }
 
-/**
- * The sentence for a run built on top of another run.
- *
- * **Does not claim a specific cause.** The first version asserted "you have unsaved
- * changes to a file that differs between the two" unconditionally — true for the dirty-
- * tree case this was written for, and flatly wrong the day a fresh `git init` had never
- * had a first commit: the real reason was an unborn base ref, not a file conflict, and
- * the message stated the wrong one as fact. It says what is actually known — the switch
- * did not work — and ends with the remedy rather than a diagnosis nobody verified.
- */
-function stackedAdvice(base: string | undefined, stacked: string): string {
-  return (
-    `I couldn't start cleanly from \`${base ?? 'your branch'}\`, so this run sits on top of ` +
-    `\`${stacked}\` and carries that run's changes as well as its own. If something there needs ` +
-    `committing or stashing, doing that will let the next run start clean.`
-  );
-}
 
 /** The branch runs start from, remembered so a second run does not stack on the first. */
 const BASE_BRANCH_KEY = 'clarvis.agent.baseBranch';

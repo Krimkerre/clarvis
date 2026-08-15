@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { isInside, resolveInWorkspace, PathRefused } from './workspacePaths';
+import { isInside, realpathOfNearestExisting, resolveInWorkspace, unquote, PathRefused } from './workspacePaths';
 
 // ---------------------------------------------------------------------------
 // Containment, as pure string logic. These are the cases that must never pass,
@@ -52,6 +52,70 @@ test('a relative path resolves from the workspace, not the process cwd', async (
   const resolved = await resolveInWorkspace(root, 'src/index.ts');
 
   assert.equal(resolved, path.join(root, 'src/index.ts'));
+});
+
+test('a path a model wrapped in quotes still resolves', () => {
+  // Found live: `listFiles` was called with `"."` and scandir went looking for a
+  // directory called `"."`, losing the step to an ENOENT on the workspace root.
+  assert.equal(unquote('"."'), '.');
+  assert.equal(unquote("'src/app.ts'"), 'src/app.ts');
+});
+
+test('quotes that are part of the name are left where they are', () => {
+  assert.equal(unquote('we"ird.txt'), 'we"ird.txt');
+  assert.equal(unquote('"say "hi""'), '"say "hi""');
+  assert.equal(unquote('"'), '"');
+  assert.equal(unquote('src/app.ts'), 'src/app.ts');
+});
+
+test('a path that repeats the workspace folder name still finds the file', async () => {
+  // Found live on the first checklist project: workspace `1-photo-renamer`, and the
+  // model asked for `1-photo-renamer/plan.md`. Three tool calls across two turns, and
+  // the run ended mid-milestone having read nothing.
+  const root = await workspace();
+  const name = path.basename(root);
+  await fs.writeFile(path.join(root, 'plan.md'), '# plan');
+
+  assert.equal(await resolveInWorkspace(root, `${name}/plan.md`), path.join(root, 'plan.md'));
+});
+
+test('a package sharing the project name is left exactly where it is', async () => {
+  // `mytool` containing `mytool/` is entirely normal. The doubled path exists here,
+  // so nothing is stripped — which is the condition that makes the repair safe.
+  const root = await workspace();
+  const name = path.basename(root);
+  await fs.mkdir(path.join(root, name), { recursive: true });
+  await fs.writeFile(path.join(root, name, 'cli.py'), 'x = 1');
+
+  assert.equal(await resolveInWorkspace(root, `${name}/cli.py`), path.join(root, name, 'cli.py'));
+});
+
+test('writing a genuinely new nested file means what it says', async () => {
+  // Neither path exists, so there is no evidence to act on and the argument is taken
+  // literally. Creating a new package folder named after the project must stay possible.
+  const root = await workspace();
+  const name = path.basename(root);
+
+  assert.equal(await resolveInWorkspace(root, `${name}/new.py`), path.join(root, name, 'new.py'));
+});
+
+test('a missing file is reported with what to do about it', async () => {
+  // The raw ENOENT names an absolute path — the one form the argument must not take —
+  // so the error after a path mistake was itself an argument for repeating it.
+  const root = await workspace();
+
+  await assert.rejects(() => readFile(root, 'nope.md'), /relative to the workspace root/);
+});
+
+test('a cache directory that does not exist yet still resolves to a usable path', async () => {
+  // The sandbox needs a rule for `~/go` *before* Go creates it. Dropping missing paths
+  // quietly meant every toolchain's first confined build failed — verified by running a
+  // real `go build` against the profile: "could not create module cache: mkdir
+  // /Users/…/go: operation not permitted".
+  const root = await workspace();
+  const missing = path.join(root, 'not', 'there', 'yet');
+
+  assert.equal(await realpathOfNearestExisting(missing), missing);
 });
 
 test('traversal outside the workspace is refused', async () => {
@@ -357,4 +421,21 @@ test('replacement is literal, so regex characters are not special', () => {
   const plan = planReplace(source, '$5', '$6');
 
   assert.equal(plan.next, 'if (a || b) { cost = $6; }\n');
+});
+
+test('a virtualenv is skipped whether or not it has a dot', async () => {
+  // `python3 -m venv venv` is what every Python tutorial types; `.venv` is what some
+  // tools prefer. Only the dotted one was skipped, and a fresh virtualenv holds around
+  // 3,000 files — three times the listing cap — so one listFiles would have come back
+  // full of library code and none of the user's own.
+  const root = await workspace();
+  await fs.mkdir(path.join(root, 'venv', 'lib'), { recursive: true });
+  await fs.writeFile(path.join(root, 'venv', 'lib', 'vendored.py'), 'x = 1');
+  await fs.mkdir(path.join(root, '.pytest_cache'), { recursive: true });
+  await fs.writeFile(path.join(root, '.pytest_cache', 'junk'), 'x');
+  await fs.writeFile(path.join(root, 'nanocode.py'), 'print("hi")');
+
+  const files = await listFiles(root, { recursive: true });
+
+  assert.deepEqual(files, ['nanocode.py']);
 });

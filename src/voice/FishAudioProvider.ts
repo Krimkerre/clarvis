@@ -2,22 +2,10 @@ import * as vscode from 'vscode';
 import { Utterance, VoiceProvider } from './VoiceProvider';
 import { cacheKey, selectForEviction, CacheEntry } from './voiceCache';
 import { playFile } from './nativePlayer';
+import { renderTimeout } from './renderTimeout';
 
 /** Where the key lives: the OS keychain, never settings.json, never logged. */
 export const FISH_KEY_SECRET = 'clarvis.fishAudio.key';
-
-/**
- * How long to wait for rendered speech before giving up and using the plain voice.
- *
- * §4.4 originally specified 3s, on the reasoning that "waiting is worse than a plainer
- * voice arriving now". Measured against the real API that was wrong twice over: a
- * two-line briefing routinely takes longer than 3s to render, and **nothing is blocked
- * while we wait** — the notification has already been shown, and speech is
- * fire-and-forget. Late audio costs nothing; the wrong voice costs the feature.
- *
- * Only first-time lines pay this at all, since anything repeated comes from cache.
- */
-const REQUEST_TIMEOUT_MS = 15_000;
 
 const TTS_ENDPOINT = 'https://api.fish.audio/v1/tts';
 
@@ -93,7 +81,7 @@ export class FishAudioProvider implements VoiceProvider {
     // Bounded wait: past a few seconds, a plainer voice arriving now is the better
     // outcome, so the timeout aborts rather than letting the briefing arrive late.
     const abort = new AbortController();
-    const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => abort.abort(), renderTimeout(utterance.text.length));
     const startedAt = Date.now();
 
     try {

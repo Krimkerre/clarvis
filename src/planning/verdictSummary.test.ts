@@ -7,7 +7,7 @@ const finding: Finding = {
   class: 'safety',
   what: 'Passwords are stored in plaintext.',
   whyItMatters: 'A leak exposes every password.',
-  suggestedResolution: 'Hash and salt before storing.',
+  fixes: ['Hash and salt before storing.'],
 };
 
 test('an accepted finding renders as the original finding', () => {

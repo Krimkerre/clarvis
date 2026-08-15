@@ -1,3 +1,4 @@
+import { capabilities, MODES, canEdit, modeSpec } from './modes';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendTurn, MAX_TURNS, Turn } from './thread';
@@ -237,6 +238,22 @@ test('thinking out loud is not an instruction', () => {
   ]) {
     assert.equal(routeFor(message).route, 'answer', message);
   }
+});
+
+test('a polite request is a request, question mark and all', () => {
+  // Found live: "can you fix my code?" hit the trailing-? rule and was answered — a
+  // list of what was wrong, and a note that files could not be written in Chat mode,
+  // for a message whose entire point was to have it fixed.
+  for (const message of ['can you fix my code?', 'could you fix this?', 'can you refactor this file?']) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('a genuine opinion question survives the polite-request check', () => {
+  // "would you" was tried in the same list and broke this: "what would you change" is
+  // asking for an opinion, and every instance of "would you X" in ordinary phrasing is
+  // closer to that than to a request. Left out for exactly this sentence.
+  assert.equal(routeFor('what would you change about this file').route, 'answer');
 });
 
 test('ambiguity resolves toward answering', () => {
@@ -495,4 +512,108 @@ test('an old failure is not reported in thousands of minutes', () => {
   assert.match(recent, /12m ago/);
   assert.match(old, /3d ago/);
   assert.doesNotMatch(old, /\d{4}m ago/);
+});
+
+test('he is told what he can do, not only what this turn allows', () => {
+  // Found live, twice in one session: "I cannot run tests, execute code, attach a
+  // debugger. I cannot fix anything", and then "I do not do that. I read and I
+  // remark." He writes files, runs commands and builds whole projects; only the turn
+  // was read-only.
+  const brief = capabilities('chat');
+
+  assert.match(brief, /run commands and tests/);
+  assert.match(brief, /build it milestone/);
+});
+
+test('a read-only mode is named as a setting, with where the work happens', () => {
+  const brief = capabilities('chat');
+
+  assert.match(brief, /Chat only/);
+  assert.match(brief, /Auto/);
+  assert.match(brief, /setting they chose and can change/);
+});
+
+test('an editing mode is not told it cannot edit', () => {
+  const brief = capabilities('auto');
+
+  assert.match(brief, /allows all of it/);
+  assert.doesNotMatch(brief, /nothing gets changed/);
+});
+
+test('the modes that can work are read off MODES rather than listed by hand', () => {
+  // A hand-written list is a copy, and a copy drifts the first time a mode changes.
+  const named = capabilities('chat');
+
+  for (const spec of MODES.filter((mode) => mode.canEdit)) assert.match(named, new RegExp(spec.label));
+  for (const spec of MODES.filter((mode) => !mode.canEdit && mode.id !== 'chat')) {
+    assert.doesNotMatch(named, new RegExp(`${spec.label} is where`));
+  }
+});
+
+test('"anything wrong in here?" is answered about the open file, not the last build', () => {
+  // "broken" and "wrong" both used to land on the failure answer, which talks about the
+  // last red build — a different question, answered confidently.
+  const facts = {
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+    activeFile: 'nanocode.py',
+    openProblems: {
+      file: 'nanocode.py',
+      items: [{ line: 19, message: 'unterminated string literal', severity: 'error' as const }],
+      more: 0,
+    },
+    lastFailure: { label: 'npm test', exitCode: 1, at: Date.now() },
+  };
+
+  const reply = localAnswer('anything wrong in here?', facts);
+
+  assert.match(reply!.text, /line 19/);
+  assert.doesNotMatch(reply!.text, /npm test/);
+});
+
+test('asked about a clean file, he says so rather than saying nothing', () => {
+  const reply = localAnswer('anything wrong in here?', {
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+    activeFile: 'nanocode.py',
+  });
+
+  assert.match(reply!.text, /Nothing in nanocode\.py/);
+});
+
+test('the open file problems reach the model too, not just the counts', () => {
+  // The model path wins whenever a key exists, so detail that only reached the no-key
+  // fallback would never be seen by the person who has one.
+  const block = factsBlock({
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+    problems: { errors: 1, warnings: 0, worstFile: 'nanocode.py' },
+    openProblems: {
+      file: 'nanocode.py',
+      items: [{ line: 19, message: 'unterminated string literal', severity: 'error' as const }],
+      more: 0,
+    },
+  });
+
+  assert.match(block, /line 19: unterminated string literal/);
+});
+
+test('a read-only mode is named in the offer, and it is the mode returned to', () => {
+  // The wording has to say which mode is being borrowed *from*, because "back to Chat
+  // only" and "back to Plan only" are different promises and only one of them is true.
+  for (const mode of ['chat', 'plan'] as const) {
+    assert.equal(canEdit(mode), false, mode);
+    assert.ok(modeSpec(mode).label.length > 0, mode);
+  }
+
+  // And the modes that can already edit must never see the offer at all.
+  for (const mode of ['agent', 'auto', 'unattended'] as const) {
+    assert.equal(canEdit(mode), true, mode);
+  }
 });

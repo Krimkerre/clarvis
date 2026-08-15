@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { branchNameFor, isAgentBranch, adviseOnGit } from '../branchNames';
+import { branchNameFor, isAgentBranch, adviseOnGit, stackedAdvice } from '../branchNames';
 
 test('a task becomes a readable, prefixed branch name', () => {
   assert.equal(branchNameFor('Fix the failing test'), 'clarvis/fix-the-failing-test');
@@ -125,4 +125,18 @@ test('an accepted offer has a button, and a binary problem never gets one', () =
   assert.equal(adviseOnGit('no-repository').action, 'Run git init');
   assert.equal(adviseOnGit('no-extension').action, 'Show me the extension');
   assert.equal(adviseOnGit('no-binary').action, undefined);
+});
+
+test('an unknown base is described, not quoted as if it were a branch name', () => {
+  // Shown live: "I couldn't start cleanly from `your branch`" — a placeholder in
+  // backticks reads as the name of a branch that does not exist.
+  const advice = stackedAdvice(undefined, 'clarvis/carry-on');
+
+  assert.doesNotMatch(advice, /`your branch`/);
+  assert.match(advice, /from where you were/);
+  assert.match(advice, /clarvis\/carry-on/);
+});
+
+test('a known base is named exactly', () => {
+  assert.match(stackedAdvice('main', 'clarvis/carry-on'), /from `main`/);
 });

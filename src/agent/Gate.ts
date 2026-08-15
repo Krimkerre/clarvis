@@ -131,7 +131,12 @@ const RULES: Rule[] = [
   },
   {
     category: 'dependency',
-    pattern: /\b(npm|yarn|pnpm|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\bcargo\s+add\b|\bgem\s+install\b|\bbrew\s+install\b/i,
+    // `go install` and `go get` belong here for a reason beyond tidiness: the gate is
+    // what offers the way out of the sandbox (see `mayEscapeConfinement`), and
+    // `go install` writes to `~/go/bin`, which is outside it. Without a rule here the
+    // command was refused by the sandbox with no escape offered and no explanation
+    // that installing is what it was.
+    pattern: /\b(npm|yarn|pnpm|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\bcargo\s+add\b|\bgem\s+install\b|\bbrew\s+install\b|\bgo\s+(install|get)\b/i,
     what: 'installs a package and its dependencies',
     why: 'A package runs install scripts on your machine, and pulls in code you did not choose directly.',
     worstCase: 'A compromised or typo-squatted package executes as you during install.',
@@ -196,7 +201,7 @@ function toVerdict(rule: Rule, matched: string): GateVerdict {
  * Written out here rather than at the UI, so every surface that asks — the agent, a
  * debug command, a future planning step — asks in the same words.
  */
-export function explainGate(command: string, verdict: GateVerdict): string {
+export function explainGate(command: string, verdict: GateVerdict, offeringEscape = false): string {
   return [
     verdict.reversible ? 'Clarvis wants to run:' : 'CANNOT BE UNDONE — Clarvis wants to run:',
     `  ${command}`,
@@ -207,8 +212,41 @@ export function explainGate(command: string, verdict: GateVerdict): string {
     // Said twice for the irreversible ones, at the top and at the bottom, because the
     // top line is what someone reads and the button is what they look at last.
     verdict.reversible ? 'This one can be undone afterwards.' : 'There is no undo for this.',
+    ...(offeringEscape
+      ? [
+          '',
+          'Run it: confined to this project, so an installer that puts files in ' +
+            '/opt or /usr will fail — usually while blaming your permissions.',
+          'Run it unconfined: full access, like running it in your own terminal. ' +
+            'This command only, never remembered.',
+        ]
+      : []),
   ].join('\n');
 }
+
+/**
+ * Whether this command may be offered a way out of the sandbox.
+ *
+ * **Installing a toolchain is the one thing confinement makes impossible.** A package
+ * manager writes to `/opt`, `/usr/local` or the system Python — outside the workspace
+ * by definition — so under the sandbox it cannot work, no matter how the command is
+ * phrased. Found live: `brew install go` was denied, Homebrew blamed the user's file
+ * ownership because that is the only cause it knows for a write it cannot make, and
+ * Clarvis passed that on as advice. Refusing forever is not the answer either: the
+ * project genuinely needed Go.
+ *
+ * So the escape exists, and is deliberately narrow. Installs and privileged commands
+ * only — the categories where confinement is the actual obstacle. `rm -rf` and
+ * `git push --force` do not get an unconfined button, because the sandbox was never
+ * what stood in their way. It is per-command and never remembered: a remembered
+ * "yes, unconfined" is an unconfined agent with extra steps.
+ */
+export function mayEscapeConfinement(verdict: GateVerdict): boolean {
+  return verdict.category === 'dependency' || verdict.category === 'privilege';
+}
+
+/** What the button that skips the sandbox says. Spells out what is being skipped. */
+export const ESCAPE_LABEL = 'Run it unconfined';
 
 /**
  * What the approve button says.

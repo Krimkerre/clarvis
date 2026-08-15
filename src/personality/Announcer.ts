@@ -56,7 +56,16 @@ export class Announcer {
     state: ButlerState,
     occasion: SpeechOccasion,
     priority: Priority = 'routine',
-    now = Date.now()
+    now = Date.now(),
+    /**
+     * Literals the rewrite must not paraphrase away.
+     *
+     * Found live: a lingering-error notice went in as `nanocode.py line 18 has been
+     * unhappy for a few minutes now: "(" was not closed` and came out as "nanocode.py
+     * line 18 is waiting for you to tell it what comes next" — charming, and it had
+     * dropped the one part that says what to fix.
+     */
+    keep?: string[]
   ): boolean {
     if (!mayInterrupt(this.lastSurfaceAt, now, priority)) {
       this.log(`suppressed (interruption budget, ${priority}): ${message}`);
@@ -68,7 +77,7 @@ export class Announcer {
     // Phrased here rather than at each caller: completion notices, pattern hits and
     // bank quips all arrive through this door, and the character should not depend on
     // which of them it was.
-    void phrase('report', message).then((said) => this.deliver(said, state, occasion));
+    void phrase('report', message, keep).then((said) => this.deliver(said, state, occasion));
     return true;
   }
 

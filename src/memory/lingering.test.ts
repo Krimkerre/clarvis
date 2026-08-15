@@ -1,0 +1,69 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { LINGER_MS, lingeringLine, lingeringSituation } from './lingering';
+
+test('the wait is minutes — long enough to not be a linter, short enough to matter', () => {
+  // On the keystroke it is a linter. In ten minutes it is a historian. Anything fixed
+  // inside the window was work in progress, and work in progress is nobody's business.
+  assert.ok(LINGER_MS >= 60_000, 'a minute is still mid-thought');
+  assert.ok(LINGER_MS <= 5 * 60_000, 'past five minutes it has stopped being help');
+});
+
+test('the line names the file, the gutter line, and what the editor said', () => {
+  const line = lingeringLine('nanocode.py', 19, 'unterminated string literal');
+
+  assert.match(line, /nanocode\.py/);
+  assert.match(line, /line 19/);
+  assert.match(line, /unterminated string literal/);
+});
+
+test('the duration is vague, because only the vague version is true', () => {
+  // We started the clock, so "a few minutes" is measured. Nothing reports when a
+  // diagnostic first appeared, so anything more precise would be the invented
+  // "for the past six minutes" that produced §2's rule in the first place.
+  const line = lingeringLine('a.py', 1, 'x');
+
+  assert.match(line, /a few minutes/);
+  assert.doesNotMatch(line, /\b\d+ (minutes|seconds)\b/);
+});
+
+test('it is about the file, not about the person', () => {
+  // Rule 4. The file has a problem; the reader is not being told off for it.
+  const line = lingeringLine('nanocode.py', 19, 'unterminated string literal');
+
+  assert.doesNotMatch(line, /\byou\b|\byour\b/i);
+});
+
+test('other problems in the same file are counted, not repeated', () => {
+  // Three errors in one file means three timers landing together; the budget lets one
+  // through and drops the rest. Counting them is the difference between one useful
+  // remark and one remark plus two silently lost.
+  assert.match(lingeringLine('a.py', 18, '"(" was not closed', 2), /and 2 more like it/);
+  assert.match(lingeringLine('a.py', 18, 'x', 1), /and one more like it/);
+  assert.doesNotMatch(lingeringLine('a.py', 18, 'x', 0), /more like it/);
+});
+
+test('the error text is the last thing in the line, so a trim cannot eat it', () => {
+  // It is the only part that says what to fix, and it survived a live rewrite only
+  // because it is now passed as a literal to keep.
+  const line = lingeringLine('a.py', 18, '"(" was not closed');
+
+  assert.ok(line.endsWith('"(" was not closed'));
+});
+
+test('the situation carries what has to survive rewriting', () => {
+  // The literals a written line must keep, expressed as facts rather than a sentence
+  // to paraphrase — the difference between "write about this" and "rewrite this".
+  const situation = lingeringSituation('a.py', 18, '"(" was not closed');
+
+  assert.match(situation, /a\.py/);
+  assert.match(situation, /line 18/);
+  assert.match(situation, /"\(" was not closed/);
+  assert.match(situation, /once, in passing/);
+});
+
+test('other errors in the file are named in the situation too', () => {
+  const situation = lingeringSituation('a.py', 18, 'x', 2);
+
+  assert.match(situation, /2 more like it/);
+});

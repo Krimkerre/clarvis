@@ -17,11 +17,11 @@ const state: InterviewState = {
 
 const verdicts: FindingVerdict[] = [
   {
-    finding: { class: 'safety', what: 'no dry-run mode', whyItMatters: 'renames are hard to undo', suggestedResolution: 'add a --dry-run flag' },
+    finding: { class: 'safety', what: 'no dry-run mode', whyItMatters: 'renames are hard to undo', fixes: ['add a --dry-run flag'] },
     status: 'accepted',
   },
   {
-    finding: { class: 'scope', what: 'assumes JPEG only', whyItMatters: 'other formats have EXIF too', suggestedResolution: 'support common formats' },
+    finding: { class: 'scope', what: 'assumes JPEG only', whyItMatters: 'other formats have EXIF too', fixes: ['support common formats'] },
     status: 'rejected',
     reasoning: 'JPEG-only is fine for v1',
   },
@@ -115,7 +115,7 @@ test('a modified finding is settled in the user\'s own words, not the original f
       class: 'improvement',
       what: 'no linter was named',
       whyItMatters: 'CI cannot enforce anything without a named tool',
-      suggestedResolution: 'Name the linter in the definition of done',
+      fixes: ['Name the linter in the definition of done'],
     },
     status: 'modified',
     reasoning: 'ESLint',

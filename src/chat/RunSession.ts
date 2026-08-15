@@ -9,6 +9,11 @@ import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
+import { StepExplanation } from '../agent/stepExplanation';
+import { PendingChoice } from './PendingChoice';
+import { reviewMilestone } from '../agent/readBack';
+import { reviewSummary } from '../agent/milestoneReview';
+import { Finding } from '../planning/analysisPrompt';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -41,8 +46,35 @@ export class RunSession {
     /** Shows where the run has got to. A function rather than the panel itself: this
      * class needs one frame, not a view. */
     private readonly showProgress: (frame: { current: number; total: number; label: string }) => void,
+    /** Puts the answers in the panel as buttons. Typing still works regardless. */
+    private readonly offer: (items: { label: string; detail?: string }[]) => void,
     private readonly log: (message: string) => void
-  ) {}
+  ) {
+    // The nudge speaks; it does not write. Someone who has not answered is not
+    // reading the panel, so another line in the panel is the one thing guaranteed not
+    // to reach them.
+    this.pending = new PendingChoice(this.offer, (line) => void this.remark(line));
+  }
+
+  /**
+   * The step-approval question, when one is on screen.
+   *
+   * **In the chat, not in a modal.** Approval used to be a `showInformationMessage`
+   * with `modal: true`, which greys out the editor, cannot be scrolled back to, and
+   * puts the one decision that matters somewhere other than the conversation it
+   * belongs to. Found live during the first-run checklist.
+   */
+  private readonly pending: PendingChoice;
+
+  /** Whether a step is waiting on an answer. Chat checks before routing a message. */
+  get awaitingStep(): boolean {
+    return this.pending.isWaiting;
+  }
+
+  /** Hands a typed message to the step waiting for it. */
+  answerStep(text: string): void {
+    this.pending.supply(text);
+  }
 
   /** The written bank, for the closing aside when no model is available. */
   private readonly closers = new QuipPicker();
@@ -76,8 +108,43 @@ export class RunSession {
    */
   private stepApproval = false;
 
-  setStepApproval(on: boolean): void {
+  /**
+   * Whether the mode *currently* asks, checked at each step rather than at the start.
+   *
+   * **Because a mode change mid-run did nothing.** Set once when the run began, the
+   * flag went on asking after someone switched to Unattended precisely to stop being
+   * asked — found live, part-way through the second checklist project. Switching is
+   * something people do *because* the run is going well and they no longer want to
+   * shepherd it; a setting that only applies to the next run is the setting they were
+   * not reaching for.
+   *
+   * Read through a function so the answer comes from the mode as it is now. Note that
+   * Auto still asks: `asksFirst` is true for it by design, and Unattended is the one
+   * that does not (§4.6).
+   */
+  private asksNow?: () => boolean;
+
+  /**
+   * Lets go of a step question when the mode has just stopped asking.
+   *
+   * Switching to Unattended is done *because* answering has become the annoyance, and
+   * most often while looking at the question that made it one. Leaving that one
+   * pending means the switch appears not to have worked — found live on milestone 3,
+   * where the mode changed and the button still had to be pressed.
+   *
+   * Only ever releases a *step* question. The deny-list gate is a different thing and
+   * is not a mode setting: `rm -rf` stops and asks in every mode, including this one.
+   */
+  modeStoppedAsking(): void {
+    if (this.asksNow?.() !== false || !this.pending.isWaiting) return;
+
+    this.log('agent: mode no longer asks — releasing the step that was waiting');
+    this.pending.supply('Do it');
+  }
+
+  setStepApproval(on: boolean, live?: () => boolean): void {
     this.stepApproval = on;
+    this.asksNow = live;
   }
 
   /**
@@ -165,7 +232,11 @@ export class RunSession {
       this.models,
       this.terminal,
       this.log,
-      this.stepApproval ? (description, detail) => this.askStep(description, detail) : undefined
+      // **Always handed over, decided per step.** Passing `undefined` here for a run
+      // that started in Unattended would freeze that choice for the whole run, which
+      // is the bug this replaced — `askStep` answers immediately when the mode says
+      // not to ask, so the decision is made at the step rather than at the start.
+      (step) => this.askStep(step)
     );
     // Held for the length of the run, so anything typed while it works has somewhere
     // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
@@ -188,11 +259,17 @@ export class RunSession {
 
     // What the run ended up saying, which is the only part the chat gets.
     let summary = '';
+    // Where it left them — kept apart from the summary, because a note about branches
+    // is not the run having said something.
+    let closing = '';
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
-        if (event.kind === 'done') summary = event.text.trim();
+        if (event.kind === 'done') {
+          summary = event.text.trim();
+          closing = event.closing ?? '';
+        }
 
         // Step announcements are for the panel, not for reading: pulled out here so
         // they never reach the terminal as stray "STEP:" lines. An event that was
@@ -224,7 +301,7 @@ export class RunSession {
     }
 
     const { commits, files } = runner.result;
-    await this.close(task, summary, files.length);
+    await this.close(task, summary, files.length, closing, runner.branches);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
@@ -286,6 +363,90 @@ export class RunSession {
     // Recording it also reports what is left, which is what makes the next milestone
     // a decision rather than a thing you have to remember to go and look for.
     await vscode.commands.executeCommand('clarvis.recordMilestone', summary);
+
+    // **And then he reads his own code back.** The plan gets analysed before a line is
+    // written; nothing looked at what was written afterwards, so a milestone was
+    // finished on the strength of its own checks passing. Found by reading a finished
+    // project by hand: "Chance of rain: 0%", always, past five checks that asked only
+    // whether output appeared.
+    await this.readBackWhatIWrote(summary);
+  }
+
+  /**
+   * Offers to put the run's work where it belongs, once the run is over.
+   *
+   * **Only when there is something to land** — a run that committed nothing has no
+   * branch worth discussing, and asking anyway is the nagging §6 exists to prevent.
+   *
+   * Merging is first and named, because it is what someone means by "that's fine, keep
+   * it": the work ends up on the branch they were on, and the *next* run starts from
+   * there rather than stacking on this one.
+   */
+  private async offerToLandTheWork(changed: number, branch?: string, home?: string): Promise<void> {
+    if (changed === 0 || !branch || !home || branch === home) return;
+
+    this.log(`review: offering to land ${branch} on ${home}`);
+    await this.note(
+      await this.phrase(
+        'ask',
+        `That work is on \`${branch}\`. Shall I fold it into \`${home}\` and put you back there?`,
+        [branch, home]
+      )
+    );
+
+    const answer = await this.pending.ask(
+      [
+        { label: `Merge into ${home}`, detail: 'Puts the work, and you, back where you were' },
+        { label: 'Show me what changed', detail: 'Opens the diff. Nothing moves.' },
+        { label: 'Leave it there', detail: `Stays on \`${branch}\` — decide later` },
+      ],
+      `where ${branch} should go`
+    );
+
+    if (!answer || answer === 'Leave it there') {
+      this.log(`review: ${branch} left where it is`);
+      return;
+    }
+
+    await vscode.commands.executeCommand(
+      'clarvis.reviewRun',
+      answer === 'Show me what changed' ? 'diff' : 'merge-origin'
+    );
+  }
+  /**
+   * Reviews the milestone's own diff, and offers what to do about it.
+   *
+   * Offered, never applied — rule 3 holds at the end of a build exactly as it does at
+   * the start of one. Writing the findings into the plan is the option worth having:
+   * they become a milestone like any other, with steps and checks, rather than a list
+   * in a transcript that scrolls away.
+   */
+  private async readBackWhatIWrote(summary: string): Promise<void> {
+    const findings = await reviewMilestone(this.models, summary, this.log);
+    if (findings.length === 0) return;
+
+    await this.note(reviewSummary(findings));
+    await this.note(findings.map((finding) => `- **[${finding.class}]** ${finding.what}`).join('\n'));
+
+    this.reviewFindings = findings;
+    this.offer([
+      { label: 'Fix them now', detail: 'A run that does nothing else, before the next milestone' },
+      { label: 'Add to the plan', detail: 'A milestone of their own, to build when you choose' },
+      { label: 'Leave them', detail: 'Recorded in the log and nowhere else' },
+    ]);
+  }
+
+  /** Findings waiting on an answer about what to do with them. Read once. */
+  private reviewFindings?: Finding[];
+
+  get hasReviewFindings(): boolean {
+    return this.reviewFindings !== undefined;
+  }
+
+  takeReviewFindings(): Finding[] | undefined {
+    const findings = this.reviewFindings;
+    this.reviewFindings = undefined;
+    return findings;
   }
 
   /**
@@ -296,13 +457,27 @@ export class RunSession {
    * "Skip this step" rather than "No", because the run continues either way — the
    * model is told what was declined and asked to find another route.
    */
-  private async askStep(description: string, detail: string): Promise<boolean> {
-    const answer = await vscode.window.showInformationMessage(
-      description,
-      { modal: true, detail },
-      'Do it',
-      'Skip this step'
+  private async askStep(step: StepExplanation): Promise<boolean> {
+    // Switching to Unattended mid-run means the *next* step stops asking, not the
+    // next run. Falls back to the flag the run started with when nothing live was
+    // supplied — the command-palette path has no mode button to read.
+    if (!(this.asksNow?.() ?? this.stepApproval)) return true;
+
+    // Written, never spoken. The step title is short and the question is solicited,
+    // but a run has a dozen of these in it and hearing each one read aloud is how a
+    // voice gets switched off (§4.4's rationing, applied to the surface that would
+    // break it fastest).
+    await this.note([step.title, '', step.what, ...(step.exact ? ['', step.exact] : [])].join('\n'));
+
+    const answer = await this.pending.ask(
+      [{ label: 'Do it' }, { label: 'Skip this step' }],
+      // What the nudge will be about, if it comes to that. The step title rather than
+      // the whole explanation: this gets spoken aloud, and a paragraph read out to
+      // someone who has walked away is not a reminder, it is a monologue.
+      step.title
     );
+
+    // No answer means the run was stopped or the panel went away — not consent.
     return answer === 'Do it';
   }
 
@@ -319,7 +494,13 @@ export class RunSession {
    * and has to be trustworthy; the aside is comic relief after it. A summary trying to
    * be funny is a summary nobody can rely on.
    */
-  private async close(task: string, summary: string, changed: number): Promise<void> {
+  private async close(
+    task: string,
+    summary: string,
+    changed: number,
+    closing = '',
+    landing?: { working?: string; startedFrom?: string }
+  ): Promise<void> {
     // **A run that changed nothing still ends.** There is no closing line in that case —
     // "your own work is untouched" is meaningless when nothing was touched at all — so
     // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
@@ -337,9 +518,20 @@ export class RunSession {
       (changed === 0
         ? await this.phrase('report', 'I stopped without changing anything, and without saying why. Ask me again if that was not what you wanted.')
         : '');
-    if (!said) return;
+    if (!said && !closing) return;
 
-    await this.note(said);
+    // The branch note goes after whatever was said, and never instead of it. Joined
+    // upstream it counted as a summary, so a run that narrated nothing looked like a
+    // run that had reported — and the honest line above never fired.
+    await this.note([said, closing].filter(Boolean).join('\n\n'));
+
+    // **Where the work should live, asked once, at the end.** The review wizard has
+    // always had merge, return and discard — behind a command nobody runs, so every
+    // run left the user on its temp branch and the next one branched off *that*. Found
+    // live: eight `clarvis/*` branches stacked in a straight line, each announcing "I
+    // couldn't start cleanly from where you were", and a request to merge to main that
+    // created a branch called `clarvis/merge-to-main`.
+    await this.offerToLandTheWork(changed, landing?.working, landing?.startedFrom);
 
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.

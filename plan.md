@@ -4787,6 +4787,238 @@ The M6 dogfood pass has been outstanding since M6, and roughly 45 finer-grained 
 checklist items remain unverified — mute mid-sentence, avatar strobing, transcript
 persistence, Ollama. Both predate M9 and neither is closed by anything above.
 
+### The M6 pass, first afternoon — and what a deliberate error proved
+
+A syntax error was left in `nanocode.py` on purpose, to see what he would say. He said
+nothing, and **that is the specification working**: `PatternMemory` consumes the
+diagnostic, waits to see whether it survives, records it as occurrence *one of three*,
+and §4.2's threshold means nothing is said until the third in seven days.
+
+So the answer to "will he point out my mistakes while I type" is **no, and by design**.
+He notices immediately and mentions it only when it becomes a pattern. That is right for
+a working developer who does not want a second linter, and it is an open question for
+someone following a book, who has no idea whether silence means approval.
+
+**Two defects fell out of looking, though, and both are the same defect this project
+keeps finding.**
+
+*Occurrences one and two logged nothing.* A log with no `pattern:` lines meant either
+"seen twice, waiting" or "diagnostics never arrived", and there was no way to tell them
+apart — the identical mistake the sandbox made, fixed there a day earlier for the
+identical reason. Every occurrence is logged now, with its count and the threshold it is
+counting towards.
+
+*Declining the planning offer was not an answer.* "No" cleared the flag, logged the
+decline, and then **fell through to a normal reply**, so the answer to his own question
+was met with "That is not a question. I remain here, unimpressed but ready." Three times
+in one afternoon, because the decline was also never remembered — the offer returned on
+every window open in a folder where it had just been turned down, which is §6's nagging
+with a straight face. It is now consumed as the answer it is, acknowledged in one line,
+and remembered per workspace; `Clarvis: Forget branch answers` clears it along with the
+git offer, both being "you said no once, here".
+
+### Asking is now a way to find out — §4.2's threshold, answered from the other side
+
+The M6 afternoon left an open question rather than a defect: pattern memory speaks at
+the third occurrence in seven days, which is right for a colleague and leaves a learner
+unable to tell "fine" from "not looking". Lowering the threshold would have made him a
+second linter, which §6 exists to prevent.
+
+So the threshold is untouched and the question is answerable instead. *"Anything wrong
+in here?"* now reads the diagnostics of the **file on screen** — line numbers, messages,
+errors before warnings, five listed and the rest counted — and says so plainly when
+there are none, naming the file, because a silent answer is the ambiguity this was meant
+to remove.
+
+Three details worth keeping:
+
+- **The active editor, not the workspace.** "In here" means here. A project can carry
+  forty problems in files nobody has open, and answering with those answers a different
+  question.
+- **1-based lines.** The editor counts from zero and displays from one; the number said
+  out loud has to match the gutter or it sends someone to the wrong line.
+- **Both paths, not just the free one.** The detail goes into the facts block as well as
+  the no-model answer — the model path wins whenever a key exists, so anything reaching
+  only the fallback would never be seen by someone who has one.
+
+§4.6 already listed active-file diagnostics among the bounded context a reply may draw
+on. Nothing had ever supplied them; the facts carried counts, so the best answer
+available was how many things were wrong rather than which.
+
+### Lingering errors — the trigger §4.2 was missing
+
+Asking works, but it still required knowing to ask. **The third occurrence is the wrong
+trigger for a first mistake**: §4.2 answers "is this a pattern", and the person staring
+past a missing colon needs "this file is broken now", which nothing answered.
+
+So an error confirmed present is watched, and if it is *still* there three minutes later
+it is mentioned — once, with the file, the gutter line and the editor's own words.
+
+Three properties keep it from being the linter §6 exists to prevent:
+
+- **Three minutes, not a keystroke.** A half-typed line, a paste being tidied, a rename
+  the language server has not caught up with — all produce errors that mean nothing, and
+  all are gone inside the window. Anything fixed while working never surfaces.
+- **Once, ever, per error.** Still broken twenty minutes on is a decision, not news.
+- **Through the same budget.** It goes out via the Announcer like every other
+  unsolicited surface, so it queues behind a failing build rather than talking over one,
+  and mute silences it with everything else.
+
+The wording earns a note of its own. "Has been unhappy for a few minutes now" is a
+*measured* duration — we watched it arrive and re-checked three minutes later — where
+§4.2 is explicit that the editor cannot say when a diagnostic first appeared. It is the
+honest version of the invented "for the past six minutes" that produced rule 6, and the
+vagueness is what makes it true: we know it is minutes, not how many.
+
+### An offer has three answers, not two
+
+The decline fix shipped and broke something within the minute. Declining used to fall
+through to a normal reply — "No" met with *"That is not a question. I remain here,
+unimpressed but ready"* — so the fix consumed everything that was not a yes. Seconds
+later, in the same session, *"anything wrong in here?"* arrived while the offer was up,
+was filed as a decline, and got *"Noted. I will not bring it up again here."* The
+question had to be asked twice.
+
+Both versions treated one question as two possible answers. There are three: yes, no,
+and **they have moved on** — and the third is the common one, because an unprompted
+offer appears while someone is already typing something else.
+
+`offerAnswer` is deliberately conservative. Only a recognisable yes or no counts;
+anything containing a question mark is never an answer, however it starts ("no idea,
+what is wrong here?" opens with a refusal and is plainly a question); and a refusal
+inside a longer sentence is not a refusal, or "there is nothing wrong with it" files
+itself as a decline. Everything else drops the offer without recording a decision
+nobody made, and the message routes normally.
+
+### The lingering mention fired, and the first firing found two defects
+
+14:38:58, three minutes after three errors were confirmed in `nanocode.py`. The whole
+chain is legible in one log burst: three timers landing together, §6's budget letting
+**one** through and suppressing the other two, and the survivor rewritten in character.
+
+Both defects are in that sentence.
+
+**The rewrite paraphrased away the useful half.** In went `nanocode.py line 18 has been
+unhappy for a few minutes now: "(" was not closed`. Out came *"nanocode.py line 18 is
+waiting for you to tell it what comes next"* — charming, in character, and no longer
+saying what to fix. `Announcer.announce` had no `keep` list, so the one part that is a
+fact rather than a mood was the part the model felt free to lose. It now passes the
+file, the line and the editor's own words as literals.
+
+**And the two suppressed remarks were recorded as said.** `mentionedLingering` was
+written before delivery was known, and the rule is once-ever — so lines 18 and 24 were
+marked mentioned by a remark nobody heard, and would never have been raised again. The
+surface now reports whether the budget let it through, and only a delivered remark
+counts.
+
+While fixing it, the better shape for a burst: other unmentioned errors in the same file
+are **counted rather than queued** — "and 2 more like it" — so one remark carries what
+three timers knew, instead of one remark and two losses.
+
+Worth noting what worked untouched: the budget did exactly what §6 promises, the pattern
+threshold fired independently on the same file (`surfaced 70a274db635c8571 (3×)`), and
+the pre-existing errors from the previous session were correctly skipped as not-ours.
+
+### "Three times this week" was the whole line
+
+Reported on sight as too vague, and it was. The pattern-hit surface said *"That's 3
+times this week. No fix on record yet — I'm watching."* — a count and nothing else. No
+error text, no file, no line. A recurring error you cannot locate is a recurring error
+you cannot fix, and the only fact in the sentence was the number.
+
+Worse than useless: with nothing specific to carry, the rewrite filled the gap. What
+reached the user attributed a *motive* — that they knew about the problem and had chosen
+not to fix it — which the store cannot know and §2 rule 4 does not allow. Give the model
+a sentence made only of mood and it will supply the substance.
+
+It now carries the error, the file and the gutter line, all measured: the count from the
+store, the sample from the editor, the location from the diagnostic just confirmed, and
+the remembered fix labelled as the guess it is. All of it in the `keep` list, since
+every one of those is a thing a paraphrase could send someone to the wrong line with.
+
+> That's 3 times this week — nanocode.py line 19: Expected expression. No fix on record yet.
+
+### Borrowing Agent for one job
+
+"Fix my code" in Chat only produced *"That's a job, and Chat only won't let me change
+files. Switch to Agent or Auto and ask again."* Correct, and it set homework: change the
+mode, retype the request, to reach a thing Clarvis could plainly see was wanted. The
+restriction is worth keeping. Making someone re-ask for it is not.
+
+He offers instead — **do it in Agent mode**, **tell me what you would change**, or
+**leave it** — and on the first, switches, runs the one job, and hands the mode back in
+a `finally`. Borrowed, not moved: someone in Chat only chose that deliberately, and one
+fix is not a decision to leave the safety catch off.
+
+**Unless they moved it themselves mid-run**, in which case the newer choice is theirs
+and stands. Same rule planning already follows when it hands off to a build, and the
+same reasoning: a method that overrules the user about their own editor is worse than
+the inconvenience it saves.
+
+Two structural notes. The offer uses `PendingChoice` — the mechanism the interview and
+step approval already share — rather than a sixth `awaiting…` flag on `ChatService`,
+which is the drift that made that file hard to follow. And the reply to it is taken
+*after* the stop check, never before: "stop" has to mean stop even when something is
+waiting on an answer, or the one word that must always work becomes the one word that
+does not.
+
+### Every lingering and pattern notice opened the same way
+
+"Line X has been unhappy" every time — reported live, correctly. Both surfaces called
+`phrase()`, which *rewrites*: handed a finished sentence and a list of literals to keep,
+the model paraphrases the same opening rather than writing one. With a strong template
+and a tight `keep`, "line 18 has been unhappy for a few minutes" came back as a
+variation on itself, three sessions running.
+
+`opening()` is the other path this project already has — the one the briefing uses —
+and it takes facts, not a sentence: `lingeringSituation()` and `patternHitSituation()`
+describe what happened, and the model writes an original line about it, exactly as it
+does for "welcome back" each morning. Both went through `announceWith` rather than
+`announce`, so the model is asked only when §6's budget will actually let the answer
+through — no request spent on a remark nobody hears.
+
+**The literal-preservation rule needed a second pass, found by checking against a real
+model rather than trusting the design.** The first version asked for the whole error
+message verbatim and rejected three of four genuinely good lines — models naturally
+paraphrase message text ("not closed" for "was not closed"), and requiring it exactly
+defeated the entire point of asking for variety. Loosened to what actually matters: the
+**file and the line number** are required, because those are what send someone to the
+wrong place if wrong; the message itself is free to be said differently, being where
+the variety was wanted in the first place.
+
+The instruction format needed a second look too. Literals joined by `·` in the prompt
+were echoed back verbatim, format and all — three sessions in a row, before the fix.
+Quoted, one per line, with an explicit "weave these into your sentence" instruction,
+and the model stopped copying the shape of the instruction as if it were the answer.
+
+Four real lines from one situation, after both fixes:
+
+> nanocode.py, line 18, "(" not closed for about three minutes now — I've seen slower crimes solved.
+> Three minutes on line 18, and "(" still hasn't found its match in nanocode.py.
+> nanocode.py, line 18, three minutes now — "(" was not closed and neither, it seems, is the matter.
+> nanocode.py's had an open "(" since line 18 for three minutes now — I've seen turtles close faster.
+
+Falls back to the written line when there is no model, the attempt times out, or the
+file and line do not survive — the same fallback that was always correct, now the floor
+rather than the ceiling.
+
+### "Can you fix my code?" was answered, not agreed to
+
+The Agent-borrowing offer was never reached. "Can you fix my code?" ends in a question
+mark, and `routeFor`'s first rule was `message.endsWith('?')` → answer — checked before
+`WORK_PHRASES`, which already recognised `can you fix` as work and has since `WORK_VERBS`
+first went in. The offer built to solve exactly this sat downstream of a routing decision
+that never let the message reach it: he read the file, listed three real defects, and
+signed off with "they're all yours to fix through the editor; I can't write files in this
+mode" — correct about the mode, and a non-answer to what was asked.
+
+`WORK_PHRASES` now runs before the blanket question-mark rule. Not a general reordering —
+this is the one shape of question that is unambiguously a job wearing a "?" as a courtesy,
+and every other question rule is untouched. `could you fix` joined `can you fix`; `would
+you` was tried in the same edit and immediately broke "what would you change about this
+file", which is an opinion question — "would you" is common enough in ordinary phrasing
+that treating it as a request would misroute more than it fixed. Left out on purpose.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

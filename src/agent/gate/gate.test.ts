@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyCommand, shellSegments, explainGate } from '../Gate';
+import { classifyCommand, shellSegments, explainGate, mayEscapeConfinement } from '../Gate';
 
 test('a chained destructive command is caught, not hidden by a safe prefix', () => {
   // The failure a naive gate has: checking only the start means
@@ -86,4 +86,54 @@ test('the explanation carries all four parts', () => {
 
 test('segments are trimmed and empties dropped', () => {
   assert.deepEqual(shellSegments('  npm test &&  rm -rf x  ;; '), ['npm test', 'rm -rf x']);
+});
+
+test('an install may be offered a way out of the sandbox', () => {
+  // Confinement is the actual obstacle for these: a package manager writes to /opt or
+  // /usr by definition, so under the sandbox it cannot work however it is phrased.
+  const install = classifyCommand('brew install go');
+  const privileged = classifyCommand('sudo make install');
+
+  assert.ok(install && mayEscapeConfinement(install));
+  assert.ok(privileged && mayEscapeConfinement(privileged));
+});
+
+test('destruction is not offered a way out of the sandbox', () => {
+  // The sandbox was never what stood in the way of `rm -rf` or a force-push, so an
+  // unconfined button there is an escape hatch with no reason to exist.
+  for (const command of ['rm -rf build', 'git push --force', 'git reset --hard', 'npm publish']) {
+    const verdict = classifyCommand(command);
+    assert.ok(verdict, command);
+    assert.equal(mayEscapeConfinement(verdict), false, command);
+  }
+});
+
+test('the escape is explained in the dialog, not just offered', () => {
+  // Two buttons that both say "run it" teach people to click the one on the right.
+  const verdict = classifyCommand('brew install go')!;
+  const offered = explainGate('brew install go', verdict, true);
+
+  assert.match(offered, /confined to this project/);
+  assert.match(offered, /never remembered/);
+  assert.doesNotMatch(explainGate('brew install go', verdict), /never remembered/);
+});
+
+test('go install and go get are dependency installs like any other', () => {
+  // Not tidiness: the gate is what offers the way out of the sandbox, and `go install`
+  // writes to ~/go/bin, outside it. With no rule here the command was refused by the
+  // sandbox with no escape offered and no hint that installing was what it was doing.
+  for (const command of ['go install golang.org/x/tools/cmd/goimports@latest', 'go get github.com/x/y']) {
+    const verdict = classifyCommand(command);
+    assert.ok(verdict, command);
+    assert.equal(verdict.category, 'dependency', command);
+    assert.ok(mayEscapeConfinement(verdict), command);
+  }
+});
+
+test('go build and go test are not gated', () => {
+  // Building and testing are the work, not an install. A gate on those would fire on
+  // every step of a Go project and teach the reflex the gates exist to prevent.
+  for (const command of ['go build ./...', 'go test ./...', 'go run main.go']) {
+    assert.equal(classifyCommand(command), undefined, command);
+  }
 });

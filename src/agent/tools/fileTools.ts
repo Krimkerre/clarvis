@@ -17,7 +17,27 @@ export const MAX_READ_BYTES = 512 * 1024;
 export const MAX_SEARCH_RESULTS = 200;
 
 /** Directories never worth walking into, and expensive to walk. */
-const ALWAYS_SKIP = new Set(['.git', 'node_modules', 'dist', 'out', '.next', 'build', '.venv', '__pycache__']);
+/**
+ * Directories never worth walking into.
+ *
+ * `venv` without the dot is the one that was missing, and Python's own tooling is why:
+ * `python3 -m venv venv` is what every tutorial types, `.venv` is the convention some
+ * tools prefer, and both are ordinary. Caught before it bit — a fresh virtualenv here
+ * holds about 3,000 files, which is three times the listing cap, so a single
+ * `listFiles` would have returned library code and nothing the user wrote.
+ */
+const ALWAYS_SKIP = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'out',
+  '.next',
+  'build',
+  'venv',
+  '.venv',
+  '__pycache__',
+  '.pytest_cache',
+]);
 
 export interface ReadResult {
   text: string;
@@ -36,7 +56,16 @@ export interface ReadResult {
  */
 export async function readFile(root: string | undefined, requested: string): Promise<ReadResult> {
   const target = await resolveInWorkspace(root, requested);
-  const stat = await fs.stat(target);
+  // **A missing file says what to do about it.** The raw ENOENT names an absolute
+  // path, which is the one form the argument must not take — so the error that
+  // arrives after a path mistake is itself an argument for repeating it. Said once
+  // here rather than in the prompt: a rule read at the start loses to the evidence in
+  // front of the model at the time.
+  const stat = await fs.stat(target).catch(() => {
+    throw new Error(
+      `\`${requested}\` isn't there. Paths are relative to the workspace root — no leading folder name for the project itself. Use listFiles to see what is.`
+    );
+  });
 
   if (stat.isDirectory()) {
     throw new Error(`\`${requested}\` is a directory. Use listFiles for that.`);

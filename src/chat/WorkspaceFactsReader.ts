@@ -5,6 +5,7 @@ import type { Pattern } from '../memory/patterns';
 import { activeFailure, parseRecord, FailureRecord, FAILURE_KEY } from '../briefing/lastFailure';
 import { readGitSummary } from '../briefing/gitSummary';
 import { WorkspaceFacts } from './localAnswer';
+import { summariseProblems } from './openProblems';
 
 /**
  * Everything Clarvis knows about the project right now, gathered in one place.
@@ -66,6 +67,7 @@ export class WorkspaceFactsReader {
       git: await readGitSummary(),
       patterns: this.patterns(),
       problems: countProblems(),
+      ...activeFileProblems(),
     };
   }
 }
@@ -76,6 +78,41 @@ export class WorkspaceFactsReader {
  * The file with the most problems is named because it is the one worth mentioning, and
  * because naming a real file is what stops a plausible-sounding invented one.
  */
+/**
+ * What is wrong in the file on screen, rather than how much is wrong overall.
+ *
+ * **The active editor, not the workspace**, because "anything wrong in here?" means
+ * *here*. A project can carry forty problems in files nobody has open, and answering
+ * with those would be answering a different question.
+ *
+ * The file is reported even when it is clean: "nothing wrong in nanocode.py" needs the
+ * name to be worth anything, and it is the answer that stops silence being ambiguous.
+ */
+function activeFileProblems(): Pick<WorkspaceFacts, 'openProblems' | 'activeFile'> {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) return {};
+
+  const file = vscode.workspace.asRelativePath(editor.document.uri);
+  const problems = vscode.languages
+    .getDiagnostics(editor.document.uri)
+    .filter(
+      (diagnostic) =>
+        diagnostic.severity === vscode.DiagnosticSeverity.Error ||
+        diagnostic.severity === vscode.DiagnosticSeverity.Warning
+    )
+    .map((diagnostic) => ({
+      // The editor counts lines from zero and shows them from one. The number said out
+      // loud has to be the one in the gutter, or it is a number that sends someone to
+      // the wrong line.
+      line: diagnostic.range.start.line + 1,
+      message: diagnostic.message,
+      severity:
+        diagnostic.severity === vscode.DiagnosticSeverity.Error ? ('error' as const) : ('warning' as const),
+    }));
+
+  return { activeFile: file, openProblems: summariseProblems(file, problems) };
+}
+
 function countProblems(): WorkspaceFacts['problems'] {
   let errors = 0;
   let warnings = 0;

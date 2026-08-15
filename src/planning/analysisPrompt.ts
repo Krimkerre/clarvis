@@ -16,7 +16,16 @@ export interface Finding {
   class: FindingClass;
   what: string;
   whyItMatters: string;
-  suggestedResolution: string;
+  /**
+   * Ways to resolve it — one to three, most obvious first.
+   *
+   * **Plural because a finding usually has more than one honest answer.** "Passwords
+   * are stored in plaintext" can be fixed by hashing them or by dropping accounts
+   * from v1 entirely, and those are different projects. Offering one and a free-text
+   * box made the second option something the user had to think of and type, which
+   * favours whichever answer the model happened to name first.
+   */
+  fixes: string[];
 }
 
 export interface AnalysisResult {
@@ -70,7 +79,13 @@ export function analysisPrompt(state: InterviewState): string {
     'class: safety|logic|scope|improvement',
     'what: <one concrete sentence>',
     'why: <one concrete sentence, grounded in what was actually said>',
-    'fix: <one concrete sentence>',
+    'fix: <one way to resolve it, as a short instruction — "Hash the passwords before storing">',
+    'fix: <a genuinely different way, if there is one — "Drop accounts from v1 entirely">',
+    '',
+    'One to three `fix:` lines, most obvious first. Give a second only when it is a',
+    'real alternative rather than the first one reworded — the point is a choice',
+    'between different answers, and two lines saying the same thing is a false one.',
+    'Keep each under about twelve words: they are shown as buttons to click.',
     '',
     'Zero findings is a legitimate result too — output nothing rather than pad the list.',
   ]
@@ -111,14 +126,21 @@ export function parseAnalysisResult(text: string): AnalysisResult {
 
 function parseFindingBlock(block: string): Finding | undefined {
   const fields: Record<string, string> = {};
+  // Every `fix:` line, not the last one to arrive — the single-value map below would
+  // otherwise keep only the final alternative and silently drop the obvious one.
+  const fixes: string[] = [];
+
   for (const line of block.split('\n')) {
     const match = /^(class|what|why|fix):\s*(.+)$/i.exec(line.trim());
-    if (match) fields[match[1].toLowerCase()] = match[2].trim();
+    if (!match) continue;
+
+    if (match[1].toLowerCase() === 'fix') fixes.push(match[2].trim());
+    else fields[match[1].toLowerCase()] = match[2].trim();
   }
 
   const findingClass = fields.class?.toLowerCase() as FindingClass | undefined;
   if (!findingClass || !VALID_CLASSES.includes(findingClass)) return undefined;
-  if (!fields.what || !fields.why || !fields.fix) return undefined;
+  if (!fields.what || !fields.why || fixes.length === 0) return undefined;
 
-  return { class: findingClass, what: fields.what, whyItMatters: fields.why, suggestedResolution: fields.fix };
+  return { class: findingClass, what: fields.what, whyItMatters: fields.why, fixes };
 }

@@ -1,6 +1,6 @@
 import { branchFlowSection } from '../agent/branchFlow';
 import { Answer, InterviewState, TopicId } from './interviewTopics';
-import { FindingVerdict } from './verdictSummary';
+import { agreedResolution, FindingVerdict } from './verdictSummary';
 import { Milestone } from './milestonePrompt';
 import { conventionsSection, parseCommentStyle } from './conventions';
 
@@ -151,10 +151,7 @@ export function renderPlan({ projectName, seed, state, verdicts, milestones = []
     ...(accepted.length > 0
       ? [
           '**Agreed during review** — the actionable ones are in the steps above; the rest are still open:',
-          ...accepted.map(
-            (verdict) =>
-              `- ${verdict.status === 'modified' ? (verdict.reasoning ?? verdict.finding.what) : verdict.finding.suggestedResolution}`
-          ),
+          ...accepted.map((verdict) => `- ${agreedResolution(verdict)}`),
           '',
         ]
       : []),

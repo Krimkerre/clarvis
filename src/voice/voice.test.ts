@@ -315,3 +315,29 @@ test('collapsed markup never leaves a stutter of commas', () => {
   assert.ok(!/,\s*,/.test(spoken), spoken);
   assert.ok(!spoken.startsWith(','), spoken);
 });
+
+import { renderTimeout } from './renderTimeout';
+
+test('a long line is given longer to render than a short one', () => {
+  // Measured: ~900ms for a one-liner, ~5s for a paragraph. A flat ceiling is either
+  // too tight for the long one or pointlessly patient with the short one.
+  assert.ok(renderTimeout(1400) > renderTimeout(80));
+});
+
+test('the reply that actually failed would now be waited for', () => {
+  // Found live: a four-paragraph answer aborted at exactly 15s and dropped to the
+  // system voice — the one time he had something worth saying at length.
+  assert.ok(renderTimeout(1400) > 15_000);
+});
+
+test('the wait is bounded however long the text is', () => {
+  // Nothing is blocked while we wait, but a minute of silence after a remark is its
+  // own kind of broken.
+  assert.equal(renderTimeout(100_000), renderTimeout(50_000));
+  assert.ok(renderTimeout(100_000) <= 45_000);
+});
+
+test('an empty line still gets a real wait', () => {
+  // A short line is short text, not zero work: the request still has to go out.
+  assert.ok(renderTimeout(0) >= 5_000);
+});

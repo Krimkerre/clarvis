@@ -16,11 +16,11 @@ const state: InterviewState = {
 
 const verdicts: FindingVerdict[] = [
   {
-    finding: { class: 'safety', what: 'no dry-run', whyItMatters: 'renames are hard to undo', suggestedResolution: 'add a --dry-run flag' },
+    finding: { class: 'safety', what: 'no dry-run', whyItMatters: 'renames are hard to undo', fixes: ['add a --dry-run flag'] },
     status: 'accepted',
   },
   {
-    finding: { class: 'scope', what: 'JPEG only', whyItMatters: 'other formats have EXIF', suggestedResolution: 'support all formats' },
+    finding: { class: 'scope', what: 'JPEG only', whyItMatters: 'other formats have EXIF', fixes: ['support all formats'] },
     status: 'rejected',
     reasoning: 'fine for v1',
   },
@@ -51,7 +51,7 @@ test('the build list is the steps; findings are named as questions', () => {
 
 test('a modified finding is settled in the user\'s own wording', () => {
   const modified: FindingVerdict = {
-    finding: { class: 'improvement', what: 'no linter named', whyItMatters: 'x', suggestedResolution: 'name a linter' },
+    finding: { class: 'improvement', what: 'no linter named', whyItMatters: 'x', fixes: ['name a linter'] },
     status: 'modified',
     reasoning: 'use ruff',
   };

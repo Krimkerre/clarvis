@@ -1,4 +1,5 @@
 import type { Pattern } from '../memory/patterns';
+import { nothingWrong, OpenProblems, problemLines } from './openProblems';
 
 /**
  * Everything Clarvis knows without asking anyone.
@@ -34,6 +35,16 @@ export interface WorkspaceFacts {
    * is therefore one he must never use.
    */
   problems?: { errors: number; warnings: number; worstFile?: string };
+  /**
+   * The complaints in the file currently open, with their lines and messages.
+   *
+   * Separate from `problems` because the counts answer "is anything wrong" and these
+   * answer "what". §4.6 lists active-file diagnostics among the bounded context a reply
+   * may draw on; until now nothing supplied them.
+   */
+  openProblems?: OpenProblems;
+  /** The file being looked at, named even when it is clean. */
+  activeFile?: string;
 }
 
 /** A local reply, plus the face to wear while giving it. */
@@ -58,6 +69,12 @@ export function localAnswer(question: string, facts: WorkspaceFacts): LocalReply
 
   // Order matters below: the more specific intents are tested first, because
   // "is the build still broken" matches both the failure and the running check.
+  // **Before the failure answer**, which matches "broken" too: "anything wrong in here"
+  // is about the file on screen, not about the last build that went red.
+  if (matches(q, /\b(in here|this file|anything wrong|what.s wrong|look (at )?this|check this)\b/)) {
+    return problemsAnswer(facts);
+  }
+
   if (matches(q, /\b(broken|failing|failed|red|still bad|what broke)\b/)) {
     return failureAnswer(facts);
   }
@@ -88,6 +105,21 @@ export function localAnswer(question: string, facts: WorkspaceFacts): LocalReply
 /** Whether a pattern hits, kept as a named helper so the intent list above stays readable. */
 function matches(question: string, pattern: RegExp): boolean {
   return pattern.test(question);
+}
+
+/**
+ * What the editor is complaining about in the file on screen.
+ *
+ * `judging` when there is something and `neutral` when there is not — the one place a
+ * fixed mood is honest, since being asked to look and finding nothing is not an
+ * achievement worth an expression.
+ */
+function problemsAnswer(facts: WorkspaceFacts): LocalReply {
+  if (!facts.openProblems) {
+    return { text: nothingWrong(facts.activeFile), state: 'neutral' };
+  }
+
+  return { text: problemLines(facts.openProblems).join('\n'), state: 'judging' };
 }
 
 function failureAnswer(facts: WorkspaceFacts): LocalReply {
@@ -303,6 +335,10 @@ export function factsBlock(facts: WorkspaceFacts): string {
         (pattern.resolvedBy ? ` — last fixed by "${pattern.resolvedBy}"` : ' — never yet fixed')
     );
   }
+
+  // The open file's own complaints, verbatim. Counts alone let him say how many things
+  // were wrong and never which, which reads like an answer and is not one.
+  if (facts.openProblems) lines.push(...problemLines(facts.openProblems));
 
   if (lines.length === 0) return '';
 

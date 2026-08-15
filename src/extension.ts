@@ -19,6 +19,7 @@ import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
+import { ReviewAction } from './agent/runReview';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
@@ -27,12 +28,13 @@ import { VsCodeIO } from './planning/VsCodeIO';
 import { recordMilestone } from './planning/recordMilestone';
 import { pendingBuild } from './planning/pendingBuild';
 import { nextMilestoneTask } from './planning/nextMilestoneTask';
+import { finishedLines, finishedProject } from './planning/projectFinished';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { LiveQuips } from './personality/LiveQuips';
 import { Voice } from './personality/Voice';
-import { phrase, setVoice } from './personality/Voice';
+import { opening, phrase, setVoice } from './personality/Voice';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
@@ -256,7 +258,20 @@ function startPatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
     // A suggestion, never an action (rule 3), and subject to the shared budget.
-    (message) => void announcer.announce(message, 'judging', 'patternHit', 'important')
+    // **`announceWith`, not `announce`.** The producer runs only if the budget will let
+    // the line through, and it *writes* rather than rewrites: handed a finished sentence
+    // and a list of literals to preserve, the model returned a variation on the same
+    // opening every time. Given the situation instead, it writes for the moment — and
+    // anything that drops the file or the line number is rejected back to the written
+    // line, so variety never costs a fact.
+    (line) =>
+      announcer.announceWith(
+        () => opening(line.situation, line.fallback, false, line.keep),
+        line.fallback,
+        'judging',
+        'patternHit',
+        'important'
+      )
   );
 
   void memory.start(tracker, context);
@@ -624,6 +639,10 @@ function startBranchFlow(
     // until someone changes their mind or is testing.
     vscode.commands.registerCommand('clarvis.forgetGitOfferAnswer', async () => {
       await forgetGitOfferAnswer(context);
+      // The planning offer is remembered the same way and forgotten by the same
+      // command: both are "you said no once, here, about this project", and having two
+      // commands for one intention is how a setting becomes undiscoverable.
+      await context.workspaceState.update('clarvis.planning.offerDeclined', undefined);
       logger.write('git offer: forgot the answer, will ask again next run');
       void vscode.window.showInformationMessage(await phrase('report', 'Asking again, next time it comes up.'));
     })
@@ -671,7 +690,12 @@ function registerRecordMilestone(
       // milestone is one nobody agreed to.
       const next = await pendingBuild();
       if (!next) {
-        void vscode.window.showInformationMessage(outcome);
+        // **The end of a project is news, and news goes in the conversation.** This
+        // was a notification and nothing else — the one place a finished project was
+        // guaranteed not to be mentioned by the butler who built it.
+        const finished = await finishedProject(await planTextOf());
+        if (finished) await chatOf()?.announceProjectFinished(finishedLines(finished));
+        else void vscode.window.showInformationMessage(outcome);
         return;
       }
 
@@ -686,8 +710,22 @@ function registerRecordMilestone(
         return;
       }
 
-      await chatOf()?.startNextMilestone(nextMilestoneTask(next.milestone, next.projectName), next.steps);
+      await chatOf()?.startNextMilestone(
+        nextMilestoneTask(next.milestone, next.projectName, next.milestones),
+        next.steps
+      );
     })
+  );
+}
+
+/** The plan as text, or an empty string when there is none to read. */
+async function planTextOf(): Promise<string> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return '';
+
+  return vscode.workspace.fs.readFile(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+    (bytes) => Buffer.from(bytes).toString('utf8'),
+    () => ''
   );
 }
 
@@ -771,13 +809,14 @@ function registerAgentCommands(
 
     // Available any time, not only after a run — the question "what is this branch and
     // what do I do with it" outlives the run that created it.
-    vscode.commands.registerCommand('clarvis.reviewRun', () =>
+    vscode.commands.registerCommand('clarvis.reviewRun', (decided?: ReviewAction) =>
       reviewRun(
         [],
         [],
         (message) => logger.write(message),
         context.workspaceState.get('clarvis.agent.baseBranch'),
-        toTranscriptSpoken
+        toTranscriptSpoken,
+        decided
       )
     ),
 

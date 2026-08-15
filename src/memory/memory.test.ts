@@ -1,10 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { fingerprint, normalizeError } from './fingerprint';
-import {
-  recordOccurrence, recordResolution, topPattern, parseState, emptyState,
-  WINDOW_MS, THRESHOLD,
-} from './patterns';
+import { recordOccurrence, recordResolution, topPattern, parseState, emptyState, WINDOW_MS, THRESHOLD, patternHitLine, patternHitSituation } from './patterns';
 import { beginPending, noteOutcome } from './resolution';
 import { forgetMatching } from './patterns';
 
@@ -215,4 +212,60 @@ test('a pattern seen twice is not yet worth a briefing line', () => {
   };
 
   assert.equal(topPattern(thrice, now)?.count, 3);
+});
+
+test('a pattern hit says what the error was and where it is', () => {
+  // "That's 3 times this week. No fix on record yet." was the whole line — a count and
+  // nothing else, so the only fact delivered was a number and the rewrite filled the
+  // silence with whatever sounded plausible. Reported as too vague on first sight.
+  const line = patternHitLine('Expected ":"', { file: 'nanocode.py', line: 24 });
+
+  assert.match(line.text, /Expected ":"/);
+  assert.match(line.text, /nanocode\.py line 24/);
+  assert.match(line.text, /3 times this week/);
+});
+
+test('the location and the fix are protected from the rewrite; the error text is not', () => {
+  // File and line send someone to the wrong place if wrong. The error message is free
+  // text a model naturally paraphrases ("not closed" for "was not closed"), and
+  // requiring it verbatim rejected three of four genuinely good original lines in a
+  // live check — for saying the same thing differently, which defeats the purpose.
+  const line = patternHitLine('Expected ":"', { file: 'nanocode.py', line: 24 }, 'pnpm store prune');
+
+  assert.equal(line.keep.includes('Expected ":"'), false);
+  assert.ok(line.keep.includes('nanocode.py'));
+  assert.ok(line.keep.includes('line 24'));
+  assert.ok(line.keep.includes('pnpm store prune'));
+});
+
+test('an error with no file still names the error', () => {
+  // Terminal failures have no line to point at, and a count on its own is what this
+  // was fixing.
+  const line = patternHitLine('ENOENT: no such file');
+
+  assert.match(line.text, /ENOENT: no such file/);
+  assert.doesNotMatch(line.text, /line \d/);
+});
+
+test('a remembered fix is offered as a record, never as a promise', () => {
+  const line = patternHitLine('x', undefined, 'pnpm store prune');
+
+  assert.match(line.text, /pnpm store prune/);
+  assert.match(line.text, /make no promises/);
+});
+
+test('the pattern situation carries what has to survive rewriting', () => {
+  const situation = patternHitSituation('Expected ":"', { file: 'nanocode.py', line: 24 });
+
+  assert.match(situation, /Expected ":"/);
+  assert.match(situation, /nanocode\.py/);
+  assert.match(situation, /line 24/);
+  assert.match(situation, /once/);
+});
+
+test('a remembered fix is named as a correlation, not a promise, in the situation too', () => {
+  const situation = patternHitSituation('x', undefined, 'pnpm store prune');
+
+  assert.match(situation, /pnpm store prune/);
+  assert.match(situation, /correlation you noticed, not a promise/);
 });

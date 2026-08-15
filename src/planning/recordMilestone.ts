@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { analysisSystemPrompt } from './analysisPrompt';
-import { markSteps, milestoneComplete, nextMilestone } from './planUpdate';
+import { appendMilestone, markSteps, milestoneComplete, nextMilestone } from './planUpdate';
+import { Finding } from './analysisPrompt';
+import { findingSteps } from './reviewFollowUp';
 import { MAX_RESPONSE_CHARS, parseStepResults, recordMilestonePrompt, TIMEOUT_MS } from './milestoneReport';
 
 /**
@@ -99,4 +101,29 @@ export async function recordMilestone(
     log(`planning: recording the milestone failed (${String(error)})`);
     return undefined;
   }
+}
+
+/** Writes them into `plan.md` as a milestone of their own. Returns its number. */
+export async function addFindingsToPlan(
+  findings: readonly Finding[],
+  log: (message: string) => void
+): Promise<number | undefined> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder || findings.length === 0) return undefined;
+
+  const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
+  const existing = await vscode.workspace.fs.readFile(planUri).then(
+    (bytes) => Buffer.from(bytes).toString('utf8'),
+    () => undefined
+  );
+  if (existing === undefined) return undefined;
+
+  const updated = appendMilestone(existing, 'Fix what the read-back found', findingSteps(findings));
+  if (updated === existing) return undefined;
+
+  await vscode.workspace.fs.writeFile(planUri, Buffer.from(updated, 'utf8'));
+
+  const number = (updated.match(/^#{2,4}\s*Milestone\s+(\d+)/gim) ?? []).length;
+  log(`review: written into plan.md as milestone ${number}`);
+  return number;
 }

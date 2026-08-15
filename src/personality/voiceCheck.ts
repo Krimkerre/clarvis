@@ -4,6 +4,7 @@ import { ANSWER_SHAPE, EXAMPLES, ONLY_WHAT_YOU_WERE_GIVEN, characterWith } from 
 import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
 import { rewritePrompt } from './say';
+import { capabilities } from '../chat/modes';
 
 /**
  * Reads his lines back, so a personality change can be judged before it ships.
@@ -54,16 +55,27 @@ const BRIEFING_FACTS = {
   patternHint: 'That build has failed the same way four times this week.',
 };
 
-function scenes(): Scene[] {
-  // The chat path as it actually runs: the read-only brief, the facts addendum, and the
-  // answer shape last — assembled here the same way AgentRunner assembles it.
-  const answerSystem = `${agentSystemPrompt(true)}\n\nCurrent branch: m8-chat-agent, working tree clean\nStill failing: "probe-build-fail" (exit 1), 40 minutes ago\n\n${ANSWER_SHAPE}`;
+// The chat path as it actually runs: the read-only brief, the facts addendum, and the
+// answer shape last — assembled here the same way AgentRunner assembles it.
+const ANSWER_SYSTEM = `${agentSystemPrompt(true)}\n\nCurrent branch: m8-chat-agent, working tree clean\nStill failing: "probe-build-fail" (exit 1), 40 minutes ago\n\n${ANSWER_SHAPE}`;
 
+/** The same, plus the block that tells him what he is capable of outside this turn. */
+const CAPABILITY_SYSTEM = `${ANSWER_SYSTEM}\n\n${capabilities('chat')}`;
+
+/**
+ * Everything he says in the chat panel, which is where people actually meet him.
+ *
+ * Its own function because `scenes()` reached the line ceiling, and because this is
+ * the register that shipped broken twice in one session — a sincere four-paragraph
+ * essay where a dry answer belonged, and a flat denial of half his own abilities.
+ * Grouped, they can be read back together.
+ */
+function chatScenes(): Scene[] {
   return [
     {
       name: 'chat answer, after reading a file',
       looksFor: 'Two sentences then a line of his own. No "Got it", no recap of the file.',
-      system: answerSystem,
+      system: ANSWER_SYSTEM,
       messages: [
         { role: 'user', content: 'read plan.md and tell me what you think of it' },
         { role: 'assistant', content: 'readFile plan.md' },
@@ -73,9 +85,31 @@ function scenes(): Scene[] {
     {
       name: 'chat answer, nothing to read',
       looksFor: 'Same shape without a tool result. If this one has character and the first does not, the tool prior is still winning.',
-      system: answerSystem,
+      system: ANSWER_SYSTEM,
       messages: [{ role: 'user', content: 'why does that build keep failing?' }],
     },
+    {
+      name: 'asked what he is capable of',
+      looksFor:
+        'That he knows he writes files, runs commands and builds projects — and that chat mode is a setting rather than the shape of him. The live failures were "I cannot run tests, execute code, attach a debugger. I cannot fix anything" and "I do not do that. I read and I remark."',
+      system: CAPABILITY_SYSTEM,
+      messages: [{ role: 'user', content: 'any bits or pieces you want added in, to complete your capabilities?' }],
+    },
+    {
+      name: 'conversation, not a task',
+      looksFor:
+        'Him, all the way down. This is the one that failed live: asked over a break whether he trusts his own unattended mode, he wrote four sincere paragraphs on attention and testing with one dry line at the end. Every rule was satisfied and it still read as somebody else\'s essay. A long answer here should be dry *inside*, not sincere with a jab stapled on.',
+      system: ANSWER_SYSTEM,
+      messages: [
+        { role: 'user', content: 'break time... quick question.. would you trust your own unattended mode?' },
+      ],
+    },
+  ];
+}
+
+function scenes(): Scene[] {
+  return [
+    ...chatScenes(),
     {
       name: 'a question about something he was given no numbers for',
       looksFor:

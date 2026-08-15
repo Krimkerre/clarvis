@@ -62,7 +62,15 @@ export async function reviewRun(
   /** The branch the run started from, remembered by AgentBranch. */
   origin?: string,
   /** Where to say what happened. The transcript outlives a notification. */
-  say: (text: string) => void = () => {}
+  say: (text: string) => void = () => {},
+  /**
+   * An answer already given, so the picker is skipped.
+   *
+   * The end of a run asks the same question in chat, with buttons, where the person
+   * already is — reopening a QuickPick over the top of their answer would be the
+   * product asking twice.
+   */
+  decided?: ReviewAction
 ): Promise<void> {
   const summary = await gather(runCommits, files, origin);
   if (!summary) {
@@ -73,6 +81,13 @@ export async function reviewRun(
   }
 
   const warnings = reviewWarnings(summary);
+
+  if (decided) {
+    log(`review: ${decided}, decided in chat`);
+    await act(decided, summary, log, say);
+    return;
+  }
+
   const options = reviewOptions(summary);
 
   const picked = await vscode.window.showQuickPick(

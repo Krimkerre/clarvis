@@ -97,7 +97,9 @@ const showChoices = (items) => {
   const row = document.createElement('div');
   // Options with an explanation stack full-width so the text has room; bare
   // labels (Yes / No / Approve) sit side by side, where a stack looks absurd.
-  const detailed = items.some((item) => item && item.detail);
+  // A long label needs the same full width an explained option does — four fixes
+  // phrased as sentences, laid out side by side, are four slivers of text.
+  const detailed = items.some((item) => (item && item.detail) || String((item && item.label) || item).length > 28);
   // Two bare labels is a yes-or-no, and those get pushed to opposite ends and made
   // bigger. They arrive mid-conversation, right where you were about to type, and a
   // misclick on one of those is a decision you never made.

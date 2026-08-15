@@ -98,9 +98,64 @@ advantage and one genuine cost, never a list where everything looks good. Say
 `You pick` and he will, with a reason — and a remark about the trade you just made.
 
 **Then he tells you what's wrong with it.** Safety problems, logic contradictions,
-scope quietly bigger than you described. Each finding is yours to **Accept**,
-**Reject** (say why — it's recorded, not dropped) or **Modify** (your words replace
-his).
+scope quietly bigger than you described. Each one comes with the ways to settle it as
+buttons — "hash the passwords" and "drop accounts from v1 entirely" are both answers
+to the same finding, and they are different projects, so you pick rather than approve.
+**Something else** takes your own answer instead, and **No, drop this** turns the
+finding down (say why — it's recorded, not dropped).
+
+**When a job is done he asks where the work should go.** His changes live on a branch
+of their own while he works; at the end he offers to fold them into the branch you were
+on and put you back there. Take it and the next job starts from your branch as well —
+decline and it stays put, which is fine, but a week of declining leaves you with a
+branch per request.
+
+**Ask for a job in Chat only and he offers to borrow Agent for it.** "Fix my code" in a
+mode that cannot change files used to get you a note telling you to switch modes and ask
+again — the mode change *and* retyping the request, to reach something he could plainly
+see you wanted. Now he offers: do it in Agent mode, tell you what he would change, or
+leave it. Take the first and he switches, does the one job, and **hands the mode back**
+when it finishes. Change the mode yourself while he works and your choice stands; he
+won't undo it.
+
+**Ask "anything wrong in here?" and he reads the file you're looking at.** Not the last
+build, not the whole project — the errors and warnings the editor is reporting for the
+open file, with line numbers, worst first, five at a time. If there is nothing, he says
+so and names the file, because silence is what "not looking" looks like. Costs nothing
+and needs no key: the editor already knows.
+
+**And when connected to a model, each notice is written for the moment rather than a
+variation on the last one.** With no model, or if the attempt is rejected, the written
+line stands — same wording every time, and always correct.
+
+**And an error that just sits there gets mentioned.** If something is still broken about
+three minutes after it appeared, he says so once — the file, the line, and what the
+editor said. Once, ever: if it is still there twenty minutes later that is a decision,
+not news. Anything you fix while working never surfaces at all, which is the difference
+between this and a linter shouting on every keystroke.
+
+Separately, when the *same* error has turned up three times in a week he mentions the
+pattern and what fixed it last time. Three triggers, then: ask him and he answers now, a
+lingering mistake gets one word, and a recurring one gets its history.
+
+**He knows when the project is finished.** Each milestone is handed over as "4 of 4",
+with the later ones named so the code being written now can accommodate them, and the
+last one is told it is the last. When the final step is ticked he says so in the
+conversation — the project by name, its milestones, the step count, and a pointer to
+the results recorded beside each step in `plan.md`.
+
+**Close the window mid-build and he picks that up too.** Reopen and he says where the
+plan stands — "Milestone 4 is next: Finalize the user-facing interface. Shall I start on
+it?" if the last one finished, or "Milestone 3 is 2 of 5 done, shall I carry on?" if you
+stopped part-way. He reads that out of `plan.md` every time rather than remembering it,
+so ticking something off by hand counts. A plan with nothing built yet gets no offer —
+that is not work in progress, it is a plan you have not started.
+
+**Close the window mid-interview and he picks it up.** Reopen the folder and the first
+thing he says is where you got to — *"Forecast — 3 questions in. Carry on from there?"*
+— with **Carry on**, **Start again** and **Leave it**. Answers are saved after every
+question, not at the end, since the end is exactly what a closed window prevents you
+reaching. After a week an unfinished interview is dropped rather than offered.
 
 **The draft opens in the editor**, rendered rather than raw, while the approval
 question stays in the chat. Add anything missing and he redraws; nothing is written
@@ -280,6 +335,19 @@ choose it.
 
 Reading files is never gated in any mode. Approving a file *read* six times teaches
 you to click yes without looking, which is worse than not asking at all.
+
+**Switching mode mid-run takes effect immediately**, including for the question already
+on screen: switch to Unattended while he is waiting on you and he takes that as the
+answer and carries on. The gates on irreversible things are not affected — those stop
+and ask in every mode. Switching to Auto does *not* stop the asking — Auto checks before each
+change by design, and Unattended is the one that doesn't.
+
+**If you don't answer, he'll say so out loud.** A question waiting on you parks the
+whole run, and the panel may not be the window you're looking at — so after about
+forty-five seconds he speaks up, again a minute and a half later, and once more after
+that. Then he stops: three reminders is a nudge, and anything beyond it is a voice
+repeating itself into an empty room. The question stays open the whole time, so
+answering ten minutes later works exactly as well.
 
 **Whatever the mode, the gates on irreversible things stay.** Deleting, publishing,
 installing — those are a separate layer from per-step approval, and there is no

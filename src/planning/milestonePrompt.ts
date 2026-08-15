@@ -1,5 +1,5 @@
 import { InterviewState, knownFacts } from './interviewTopics';
-import { FindingVerdict } from './verdictSummary';
+import { agreedResolution, FindingVerdict } from './verdictSummary';
 
 /**
  * Turning an interview into actual build steps (M9d — §4.9).
@@ -30,11 +30,7 @@ const MAX_MILESTONES = 4;
 
 export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[] = []): string {
   // The user's own wording wins for a modified finding, same rule as everywhere else.
-  const findings = accepted.map((verdict) =>
-    verdict.status === 'modified'
-      ? (verdict.reasoning ?? verdict.finding.what)
-      : verdict.finding.suggestedResolution
-  );
+  const findings = accepted.map(agreedResolution);
 
   return [
     'Here is everything established in a project-planning interview:',
@@ -80,6 +76,18 @@ export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[
     'For each step, also give the check that proves it works: a command to run and what',
     'it should print, or a specific thing to do and what should happen. Concrete enough',
     'that someone else could run it and agree. Not "verify it works".',
+    '',
+    // **A check has to be able to fail.** Found by reading the code from a finished
+    // project: the step "call the API and parse the response" carried the check "it
+    // prints temperature, chance of rain, windspeed and direction". It printed all
+    // four. The rain figure was a hard 0 every time — a fallback that never matched —
+    // and the check passed five separate times, including twice against the live API,
+    // because it asked whether output appeared rather than whether it was right.
+    'A check that only says output appears is not a check. "It prints the temperature"',
+    'is satisfied by a program that prints a constant. Say what would make the output',
+    'wrong: a value that must change when the input changes, a number that must match',
+    'something knowable, two runs that must differ. If the only way to fail it is a',
+    'crash, it is testing that the program runs, which you already know.',
     '',
     'Output nothing but the milestones and their steps, in exactly this shape — no',
     'numbering, no markdown, no blank-line rules to interpret:',

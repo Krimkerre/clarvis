@@ -41,7 +41,7 @@ test('accepted findings are offered for folding, work only', () => {
   // just agreed to. Only the model reading both can tell which is which.
   const prompt = milestonePrompt(state, [
     {
-      finding: { class: 'safety', what: 'no dry run', whyItMatters: 'x', suggestedResolution: 'add a --dry-run flag' },
+      finding: { class: 'safety', what: 'no dry run', whyItMatters: 'x', fixes: ['add a --dry-run flag'] },
       status: 'accepted',
     },
   ]);
@@ -54,7 +54,7 @@ test('accepted findings are offered for folding, work only', () => {
 test('a modified finding is offered in the user\'s own words', () => {
   const prompt = milestonePrompt(state, [
     {
-      finding: { class: 'improvement', what: 'no linter', whyItMatters: 'x', suggestedResolution: 'name a linter' },
+      finding: { class: 'improvement', what: 'no linter', whyItMatters: 'x', fixes: ['name a linter'] },
       status: 'modified',
       reasoning: 'set up ruff',
     },

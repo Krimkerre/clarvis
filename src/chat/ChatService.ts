@@ -15,18 +15,28 @@ import { ChatActions } from './ChatActions';
 import { ModelService } from '../model/ModelService';
 import { isDoItNow, needsClassification, routeFor } from './routing';
 import { classifyIntent } from './intentModel';
-import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM } from './modes';
+import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM, capabilities } from './modes';
 import { Voice, opening } from '../personality/Voice';
 import { researchWorkspace } from '../planning/workspaceResearch';
 import { describeWorkspaceSignals } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
+import { DraftDocument } from '../planning/DraftDocument';
+import { acceptGitOffer, declineGitOffer, gitOffer } from '../agent/gitOffer';
 import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
-import { interruptedBuild } from '../planning/pendingBuild';
+import { describeProgress, worthResuming } from '../planning/interviewStore';
+import { startupOffer } from './startupOffer';
+import { offerAnswer } from './offerAnswer';
+import { PendingChoice } from './PendingChoice';
+
+/** Set when someone turns the planning offer down, so it is asked once per project. */
+const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
+import { fixFindingsTask } from '../planning/reviewFollowUp';
+import { addFindingsToPlan } from '../planning/recordMilestone';
+import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
-import { MilestoneState } from '../planning/planUpdate';
 import { nextMilestoneTask } from '../planning/nextMilestoneTask';
 
 
@@ -144,7 +154,7 @@ export class ChatService {
    * Guarded against re-entry: a second interview started mid-interview would have
    * two sets of questions competing for the same replies.
    */
-  private async startPlanning(): Promise<void> {
+  private async startPlanning(decided?: 'carry-on'): Promise<void> {
     if (this.planningIO) {
       await this.note("We're already in the middle of that one.");
       return;
@@ -154,7 +164,8 @@ export class ChatService {
       (text) => this.remark(text),
       (text) => this.note(text),
       (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
-      (text) => this.showPlanDocument(text),
+      (text) => this.draft.show(text),
+      () => this.draft.close(),
       (text) => this.panel.post({ type: 'prefill', text }),
       this.log
     );
@@ -167,6 +178,16 @@ export class ChatService {
     // visible on the button rather than leaving it as a rule only the code knows.
     const modeBefore = this.actions.mode();
     await this.actions.setMode('plan');
+
+    // **Before the interview, not before the first run.** The offer used to fire only
+    // from `RunSession.run()`, which meant a folder with no repository was interviewed,
+    // planned and had `plan.md` written into it without git being mentioned once —
+    // found live on the second checklist project, where the whole point of the folder
+    // was that it had none. Planning is the better moment anyway: it is about to write
+    // the first artifact, and the question is whether that artifact will be
+    // recoverable. Asked through the chat rather than a modal, because here there is a
+    // conversation to put it in and buttons the interview already uses.
+    await this.offerGitInChat(io);
 
     try {
       await runPlanning(
@@ -189,7 +210,7 @@ export class ChatService {
           // a useful default to *choose* and the wrong thing to land in by accident
           // immediately after signing off on a plan.
           await this.actions.setMode('agent');
-          this.runs.setStepApproval(true);
+          this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
           // This run has a checklist to tick and has earned the pause afterwards; a
           // one-off "rename this variable" has neither.
           this.runs.setFromPlan(true, steps);
@@ -197,7 +218,8 @@ export class ChatService {
         },
         // An interview is two minutes of someone's attention; losing it to a window
         // reload teaches people not to start one.
-        workspaceMemory(this.context)
+        workspaceMemory(this.context),
+        decided
       );
     } finally {
       this.planningIO = undefined;
@@ -205,6 +227,54 @@ export class ChatService {
       // them back in Plan a second after they approved one would undo the handoff.
       if (this.actions.mode() === 'plan') await this.actions.setMode(modeBefore);
     }
+  }
+
+  /**
+   * Whether the run in progress consumed this message.
+   *
+   * Two ways it can, and the order matters. **A run waiting on step approval is not a
+   * run to redirect**: "do it" handed to `handleMidRun` would be sent to a model to be
+   * judged as possible new scope, while the step sat there waiting for an answer that
+   * had already been given. Everything else typed during a run is a correction.
+   */
+  private async runTook(question: string): Promise<boolean> {
+    if (this.runs.awaitingStep) {
+      this.runs.answerStep(question);
+      return true;
+    }
+
+    if (this.runs.isRunning) {
+      await this.handleMidRun(question);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * The `git init` offer, asked as a question in the conversation.
+   *
+   * Declining is remembered the same way the modal's decline is, so the run that
+   * follows does not ask a second time — one answer per workspace, whichever surface
+   * collected it.
+   */
+  private async offerGitInChat(io: PlanningChatIO): Promise<void> {
+    const offer = await gitOffer(this.context, this.log);
+    if (!offer) return;
+
+    const answer = await io.confirm(
+      offer.message,
+      'Declining is fine — I snapshot files before every run either way, so the work can still be undone.',
+      [offer.action, 'Not now']
+    );
+
+    if (answer !== offer.action) {
+      await declineGitOffer(this.context, offer.problem, this.log);
+      return;
+    }
+
+    await acceptGitOffer(offer.problem, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, this.log);
+    this.log('git offer: accepted during planning');
   }
 
   /**
@@ -279,23 +349,91 @@ export class ChatService {
    */
   private async offerToResumeBuild(): Promise<boolean> {
     const pending = await interruptedBuild();
+    // Already decided by `startupOffer`; re-read here because the offer needs the
+    // milestone itself, not just the fact that there is one.
     if (!pending) return false;
 
-    this.log(`chat: build in progress — milestone ${pending.milestone.number}, ${pending.milestone.done}/${pending.milestone.total}`);
-    await this.remark(
-      await opening(
-        `They were part-way through building "${pending.projectName}": milestone ${pending.milestone.number}, ${pending.milestone.title}, ${pending.milestone.done} of ${pending.milestone.total} steps done. You are offering to pick it up where it stopped.`,
-        `Milestone ${pending.milestone.number} is ${pending.milestone.done} of ${pending.milestone.total} done. Shall I carry on with it?`
-      )
-    );
+    const { number, title, done, total } = pending.milestone;
+    this.log(`chat: build in progress — milestone ${number}, ${done}/${total}`);
+
+    // **Two different situations, and one line for both was wrong.** Mid-milestone is
+    // "carry on where it stopped"; a milestone finished with the next one untouched is
+    // "shall I start the next one" — and reading "milestone 4 is 0 of 2 done" back to
+    // someone who just finished milestone 3 describes their progress as nothing.
+    const [context, fallback] =
+      done > 0
+        ? [
+            `They were part-way through building "${pending.projectName}": milestone ${number}, ${title}, ${done} of ${total} steps done. You are offering to pick it up where it stopped.`,
+            `Milestone ${number} is ${done} of ${total} done. Shall I carry on with it?`,
+          ]
+        : [
+            `They have been building "${pending.projectName}" and the milestone they were on is finished. Milestone ${number} — ${title} — is the next one, ${total} step(s), not started. You are offering to begin it.`,
+            `Milestone ${number} is next: ${title}. Shall I start on it?`,
+          ];
+
+    await this.remark(await opening(context, fallback));
 
     this.awaitingBuildAnswer = pending;
-    this.panel.post({ type: 'choices', items: [{ label: 'Carry on' }, { label: 'Not now' }] });
+    this.panel.post({
+      type: 'choices',
+      items: [{ label: done > 0 ? 'Carry on' : 'Start it' }, { label: 'Not now' }],
+    });
     return true;
   }
 
+  /**
+   * Offers to pick up an interview that was interrupted, with its progress named.
+   *
+   * The three answers are the same three `runPlanning` would have asked, and the
+   * choice is passed through so it is not asked twice.
+   */
+  private async offerToResumeInterview(): Promise<boolean> {
+    const snapshot = workspaceMemory(this.context).load();
+    if (!snapshot || !worthResuming(snapshot, Date.now())) return false;
+
+    this.log(`chat: unfinished interview here — ${describeProgress(snapshot)}`);
+    await this.remark(
+      await opening(
+        `They closed the window part-way through planning a project and have just come back. ${describeProgress(snapshot)}.`,
+        `We were part-way through planning this. ${describeProgress(snapshot)}. Carry on from there?`
+      )
+    );
+
+    this.awaitingResume = true;
+    this.panel.post({
+      type: 'choices',
+      items: [{ label: 'Carry on' }, { label: 'Start again' }, { label: 'Leave it' }],
+    });
+    return true;
+  }
+
+  /** Set between offering to resume an interview and the user answering. */
+  private awaitingResume = false;
+
+  /** Takes the reply to that offer. */
+  private async answeredResumeOffer(question: string): Promise<boolean> {
+    this.awaitingResume = false;
+    this.panel.post({ type: 'choices-clear' });
+
+    const answer = question.trim().toLowerCase();
+    if (/^(start again|fresh|start over)/.test(answer)) {
+      await workspaceMemory(this.context).clear();
+      this.log('planning: unfinished interview thrown away, starting fresh');
+      await this.startPlanning();
+      return true;
+    }
+
+    if (/^(carry on|y|yes|continue|go on|ok|okay|sure)\b/.test(answer)) {
+      await this.startPlanning('carry-on');
+      return true;
+    }
+
+    this.log('planning: unfinished interview left for now');
+    return false;
+  }
+
   /** Set between offering to resume a build and the user answering. */
-  private awaitingBuildAnswer?: { milestone: MilestoneState; projectName: string; steps: string[] };
+  private awaitingBuildAnswer?: PendingBuild;
 
   /** Takes the reply to that offer. `true` once the build has been picked up. */
   private async answeredBuildOffer(question: string): Promise<boolean> {
@@ -304,15 +442,184 @@ export class ChatService {
     this.panel.post({ type: 'choices-clear' });
     if (!pending) return false;
 
-    if (!/^(carry on|y|yes|sure|ok|okay|go on|continue)\b/i.test(question.trim())) {
+    if (!/^(carry on|start it|y|yes|sure|ok|okay|go on|continue)\b/i.test(question.trim())) {
       this.log('chat: build resume declined');
       return false;
     }
 
-    await this.startNextMilestone(nextMilestoneTask(pending.milestone, pending.projectName), pending.steps);
+    await this.startNextMilestone(
+      nextMilestoneTask(pending.milestone, pending.projectName, pending.milestones),
+      pending.steps
+    );
     return true;
   }
 
+  /**
+   * Says a project is finished, in the conversation, with what it consists of.
+   *
+   * **Spoken as well as written**, and one of the few things that earns it: the end of
+   * a project is the single most useful thing he will say all week, and §4.4's ration
+   * exists to protect moments like this rather than to rule them out.
+   *
+   * The aside afterwards is separate and written by the model, the same split every
+   * other report uses — the facts stay a report, and the remark stays a remark.
+   */
+  async announceProjectFinished(lines: string[]): Promise<void> {
+    const [headline, ...rest] = lines;
+    this.log(`planning: project finished — ${headline}`);
+
+    await this.remark(headline);
+    if (rest.length) await this.note(rest.join('\n'));
+
+    const aside = await this.phrase(
+      'aside',
+      'I would say it was a pleasure, but you were here for most of it.',
+      []
+    );
+    if (aside) await this.note(aside);
+  }
+
+  /**
+   * What to do about what the read-back found.
+   *
+   * Three answers, and the middle one is the reason this is worth building: findings
+   * written into the plan become a milestone with steps and checks, which is a thing
+   * that gets built. Findings in a transcript are a thing that scrolls away.
+   */
+  private async answeredReviewOffer(question: string): Promise<boolean> {
+    const findings = this.runs.takeReviewFindings();
+    this.panel.post({ type: 'choices-clear' });
+    if (!findings) return false;
+
+    const answer = question.trim().toLowerCase();
+
+    if (/^(fix|fix them|fix them now|yes|do it)\b/.test(answer)) {
+      this.log(`review: fixing ${findings.length} finding(s) now`);
+      await this.runs.run(fixFindingsTask(findings), 'Right — before anything else, then.');
+      return true;
+    }
+
+    if (/^(add|add to the plan|plan|write)\b/.test(answer)) {
+      const added = await addFindingsToPlan(findings, this.log);
+      await this.note(
+        added
+          ? `Written into plan.md as milestone ${added}. It gets built when you say so, like any other.`
+          : "I couldn't write those into the plan — they are in the log."
+      );
+      return true;
+    }
+
+    this.log(`review: ${findings.length} finding(s) left alone`);
+    return true;
+  }
+
+  /**
+   * The action a matcher missed but a model recognised.
+   *
+   * Only ever a suggestion, and a declined one falls through to a normal answer (M8f2).
+   * Planning is the exception it has to handle itself: it owns the conversation for the
+   * next several minutes, which is ChatService's to hand over rather than an action's
+   * to start.
+   */
+  private async inferredActionTook(question: string): Promise<boolean> {
+    const inferred = await this.actions.offerInferred(question);
+
+    if (inferred === 'planProject') {
+      await this.startPlanning();
+      return true;
+    }
+
+    return Boolean(inferred);
+  }
+  /**
+   * The two things that must happen before a message is routed at all.
+   *
+   * Stop first, always: "stop" means stop even when something is waiting on an answer,
+   * and an offer that swallowed it would make the one word that must always work the
+   * one word that did not. Then a pending offer, because a reply to a question just
+   * asked is an answer to it rather than a new request.
+   */
+  private async stoppedOrAnswered(question: string): Promise<boolean> {
+    if (isStopRequest(question)) {
+      await this.stopFromChat();
+      return true;
+    }
+
+    if (this.offers.isWaiting) {
+      this.offers.supply(question);
+      return true;
+    }
+
+    return false;
+  }
+  /**
+   * Offers to step into Agent for one job, then step back.
+   *
+   * **The old answer was homework.** "That's a job, and Chat only won't let me change
+   * files. Switch to Agent or Auto and ask again" — correct, and it made the user do
+   * the mode change *and* retype the request, to reach a thing Clarvis could plainly
+   * see they wanted. The restriction is worth keeping; making them re-ask for it is not.
+   *
+   * **Borrowed, not moved.** The mode goes back afterwards, because someone in Chat
+   * only chose that on purpose and one fix is not a decision to leave the safety catch
+   * off. Unless they changed it themselves during the run, in which case the newer
+   * choice is theirs and stands — the same rule planning already follows on handoff.
+   */
+  private async offerToBorrowAgent(question: string, mode: ChatMode): Promise<boolean> {
+    this.log(`chat: job blocked by ${mode} mode, offering to borrow Agent`);
+
+    await this.note(
+      await this.phrase(
+        'ask',
+        `That's a job, and ${modeSpec(mode).label} won't let me change files. I can borrow Agent for this one and hand it straight back.`,
+        [modeSpec(mode).label]
+      )
+    );
+
+    const answer = await this.offers.ask([
+      { label: 'Do it in Agent mode', detail: `One job, then back to ${modeSpec(mode).label}` },
+      { label: 'Tell me what you would change', detail: 'No edits — just the answer' },
+      { label: 'Leave it', detail: 'Nothing happens' },
+    ]);
+
+    if (answer === 'Leave it') {
+      this.log('chat: job declined, mode unchanged');
+      return true;
+    }
+
+    // Anything that is not a yes falls through to the ordinary answer, which is what
+    // the second button asks for and what an unrelated reply deserves anyway.
+    if (answer !== 'Do it in Agent mode') return false;
+
+    await this.actions.setMode('agent');
+    this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
+    this.runs.setFromPlan(false);
+
+    try {
+      await this.runs.run(question, 'Borrowing Agent for this one.');
+    } finally {
+      // Only if they have not moved it themselves in the meantime: switching to
+      // Unattended mid-run is a decision, and undoing it here would be this method
+      // overruling the user about their own editor.
+      if (this.actions.mode() === 'agent') {
+        await this.actions.setMode(mode);
+        this.log(`chat: handed Agent back, returned to ${mode}`);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * One-shot offers made from `ask` itself, as opposed to the ones a run makes.
+   *
+   * The same mechanism the interview uses: a promise resolved by the next message,
+   * with buttons alongside. Checked before routing, since a reply to a question is not
+   * a new request.
+   */
+  private readonly offers = new PendingChoice((items: { label: string; detail?: string }[]) =>
+    this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' })
+  );
   /**
    * Starts the next milestone from an approved plan.
    *
@@ -322,7 +629,7 @@ export class ChatService {
    */
   async startNextMilestone(task: string, steps: string[]): Promise<void> {
     await this.actions.setMode('agent');
-    this.runs.setStepApproval(true);
+    this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
     this.runs.setFromPlan(true, steps);
     await this.runs.run(task, 'Right — on to the next one.');
   }
@@ -332,6 +639,8 @@ export class ChatService {
    * asked, or as the reply to the offer to start.
    */
   private async planningTook(question: string): Promise<boolean> {
+    if (this.runs.hasReviewFindings) return this.answeredReviewOffer(question);
+    if (this.awaitingResume) return this.answeredResumeOffer(question);
     if (this.awaitingScopeAnswer) return this.answeredScopeOffer(question);
     if (this.awaitingBuildAnswer) return this.answeredBuildOffer(question);
     if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
@@ -351,13 +660,31 @@ export class ChatService {
     this.awaitingPlanAnswer = false;
     this.panel.post({ type: 'choices-clear' });
 
-    if (/^(y|yes|sure|go on|please|ok|okay)\b/i.test(question.trim())) {
+    const answer = offerAnswer(question);
+
+    // **Changing the subject is not declining.** Found live seconds after the previous
+    // fix shipped: "anything wrong in here?" arrived while the offer was up, was filed
+    // as a decline, and was answered with "Noted. I will not bring it up again here."
+    // The offer goes away — they have plainly moved on — but the message is theirs and
+    // routes normally, and nothing is remembered about a refusal that never happened.
+    if (answer === 'unrelated') {
+      this.log('chat: planning offer dropped, that message was about something else');
+      return false;
+    }
+
+    if (answer === 'yes') {
       await this.startPlanning();
       return true;
     }
 
-    this.log('chat: planning offer declined');
-    return false;
+    // **"No" is an answer, and it used to fall through to a fresh reply.** Found live:
+    // three windows in a row where declining produced "That is not a question. I remain
+    // here, unimpressed but ready" — him being baffled by the answer to his own
+    // question. Returning true consumes the message; the offer was the question.
+    this.log('chat: planning offer declined, remembered for this workspace');
+    await this.context.workspaceState.update(PLAN_OFFER_DECLINED, true);
+    await this.note(await this.phrase('report', 'Noted. I will not bring it up again here.', []));
+    return true;
   }
 
   /**
@@ -368,13 +695,13 @@ export class ChatService {
    * asterisks while they do that is the opposite of help. Beside the editor rather
    * than over it, so the chat panel and its question stay visible.
    */
-  private async showPlanDocument(text: string): Promise<void> {
-    const document = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
-    await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
-    // Best effort: an editor showing the source is a fine outcome if the preview
-    // command is unavailable, and far better than an error where a plan should be.
-    await vscode.commands.executeCommand('markdown.showPreview').then(undefined, () => undefined);
-  }
+  /**
+   * The single editor tab the interview draws in.
+   *
+   * Held here rather than made per interview so a second `/plan` in the same window
+   * reuses it too.
+   */
+  private readonly draft = new DraftDocument();
 
   /**
    * Offers to plan, once, when a project has no `plan.md` of its own.
@@ -389,16 +716,40 @@ export class ChatService {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) return;
 
-    const exists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+    const planExists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
       () => true,
       () => false
     );
-    if (exists) return;
 
-    // **A build already under way is offered before anything else.** The plan holds
-    // the progress, so a window reopened next Tuesday can pick it up — and asking
-    // "shall we plan something?" at someone mid-build would be absurd.
-    if (await this.offerToResumeBuild()) return;
+    // **The order lives in one pure function, because it has been wrong twice.** The
+    // resume-build offer was written to fire "before anything else" and sat *after* a
+    // guard returning when `plan.md` exists — and a build in progress always has one,
+    // so it never ran. Found live: milestones 1 to 3 finished, window reopened, nothing
+    // offered, build restarted by hand.
+    // **Asked once per workspace, not once per window.** Declining is a decision about
+    // this project, and re-asking every time the window opens is the nagging §6 exists
+    // to prevent — observed three times in one afternoon, with the same answer each time.
+    if (this.context.workspaceState.get<boolean>(PLAN_OFFER_DECLINED)) {
+      this.log('chat: planning already declined here, not offering again');
+      return;
+    }
+
+    const snapshot = workspaceMemory(this.context).load();
+    const offer = startupOffer({
+      planExists,
+      buildInProgress: Boolean(await interruptedBuild()),
+      interviewInProgress: Boolean(snapshot && worthResuming(snapshot, Date.now())),
+    });
+
+    if (offer === 'nothing') return;
+    if (offer === 'resume-build') {
+      await this.offerToResumeBuild();
+      return;
+    }
+    if (offer === 'resume-interview') {
+      await this.offerToResumeInterview();
+      return;
+    }
 
     // What is actually here, so the line can react to *this* folder rather than to
     // the abstract fact of a missing file. An empty one deserves "oh, a new project?";
@@ -471,6 +822,7 @@ export class ChatService {
       (text) => this.remark(text),
       (purpose, fallback, keep) => this.phrase(purpose, fallback, keep),
       (frame) => panel.post({ type: 'progress', ...frame }),
+      (items) => panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       log
     );
     this.replier = new Replier(
@@ -520,6 +872,13 @@ export class ChatService {
         if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
           this.actions.postModelInfo();
           this.actions.postMode();
+          // **A switch to Unattended answers the question already on the table.**
+          // Found live: someone switched mid-run with a step waiting, and still had
+          // to press the button — the mode took effect from the *next* step, which
+          // is not what "stop asking me" means when a question is sitting there. A
+          // config listener rather than a hook on the picker, so it fires however the
+          // mode was changed.
+          this.runs.modeStoppedAsking();
         }
       })
     );
@@ -559,6 +918,40 @@ export class ChatService {
    * word "branch" and was answered with the current branch name. A keyword match for a
    * question is not evidence that a request is one.
    */
+  /**
+   * Treats a reply as the answer to a question a run stopped on.
+   *
+   * **Whatever it looks like.** Replies to a stopped run are "retry", "continue", "the
+   * second one" — none of which route as a job, so this check used to sit inside the
+   * job branch and never fired. Found live: a run stopped for a missing Go toolchain,
+   * and both "retry" and "continue" reached a model with no idea what was being
+   * retried, which asked the user what they meant. Twice.
+   *
+   * The pending question is consumed by reading, so exactly one message is treated
+   * this way — changing the subject after a question costs nothing but the answer.
+   */
+  private async continuedTheRun(question: string, mode: ChatMode): Promise<boolean> {
+    const pending = canEdit(mode) ? this.runs.takeUnanswered() : undefined;
+    if (!pending) return false;
+
+    this.log('chat: treating that as an answer to the run that just asked');
+    this.runs.setStepApproval(asksFirst(mode), () => asksFirst(this.actions.mode()));
+    this.runs.setFromPlan(false);
+    await this.runs.run(
+      [
+        `Continue this task: ${pending.task}`,
+        '',
+        `You stopped and asked:\n${pending.question}`,
+        '',
+        `They answered:\n${question}`,
+        '',
+        'Update plan.md with what they have just settled, then carry on building.',
+      ].join('\n'),
+      'Right — that settles it.'
+    );
+    return true;
+  }
+
   private async jobIn(
     question: string,
     mode: ChatMode,
@@ -606,10 +999,7 @@ export class ChatService {
 
     // Before anything that costs a request: someone typing "stop" wants the thing to
     // stop, and asking a model about it first is both slow and beside the point.
-    if (isStopRequest(question)) {
-      await this.stopFromChat();
-      return;
-    }
+    if (await this.stoppedOrAnswered(question)) return;
 
     // **Typing during a run redirects it.** Anything else is worse: answering it
     // separately leaves the user watching the agent carry on doing the thing they
@@ -618,10 +1008,7 @@ export class ChatService {
     //
     // Unless it is not a correction at all. §0: scope discovered mid-build kicks
     // back to Plan Mode rather than growing silently inside Code Mode.
-    if (this.runs.isRunning) {
-      await this.handleMidRun(question);
-      return;
-    }
+    if (await this.runTook(question)) return;
 
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.
@@ -639,14 +1026,12 @@ export class ChatService {
     // and a declined suggestion falls through to a normal answer (M8f2). Planning is
     // the one action ChatActions cannot run itself: it owns the whole conversation
     // for the next several minutes, which is ChatService's to hand over, not its.
-    const inferred = await this.actions.offerInferred(question);
-    if (inferred === 'planProject') {
-      await this.startPlanning();
-      return;
-    }
-    if (inferred) return;
+    if (await this.inferredActionTook(question)) return;
 
     const mode = this.actions.mode();
+
+    if (await this.continuedTheRun(question, mode)) return;
+
     const decision = routeFor(question);
 
     const job = await this.jobIn(question, mode, decision);
@@ -655,30 +1040,8 @@ export class ChatService {
       // `mode === 'agent'`, which meant Auto — the default — ran destructive commands
       // with no prompt. Routing and approval are separate questions and are asked
       // separately now.
-      this.runs.setStepApproval(asksFirst(mode));
+      this.runs.setStepApproval(asksFirst(mode), () => asksFirst(this.actions.mode()));
       this.runs.setFromPlan(false);
-
-      // **An answer continues the work rather than starting new work.** A run that
-      // stopped to ask "preview, or applied straight away?" gets a four-word reply
-      // that means nothing without the question it answers.
-      const pending = this.runs.takeUnanswered();
-      if (pending) {
-        this.log('chat: treating that as an answer to the run that just asked');
-        await this.runs.run(
-          [
-            `Continue this task: ${pending.task}`,
-            '',
-            `You stopped and asked:\n${pending.question}`,
-            '',
-            `They answered:\n${job.task}`,
-            '',
-            'Update plan.md with what they have just settled, then carry on building.',
-          ].join('\n'),
-          'Right — that settles it.'
-        );
-        return;
-      }
-
       await this.runs.run(job.task, job.because);
       return;
     }
@@ -689,10 +1052,7 @@ export class ChatService {
     // was the reason. Said before the answer rather than instead of it: the answer is
     // still useful, and the note is what makes the refusal make sense.
     if (decision.route === 'agent' && !canEdit(mode)) {
-      this.log(`chat: job blocked by ${mode} mode`);
-      await this.note(
-        `That's a job, and ${modeSpec(mode).label} won't let me change files. Switch to Agent or Auto and ask again.`
-      );
+      if (await this.offerToBorrowAgent(question, mode)) return;
     }
 
     // **The model phrases it; local state supplies the facts.** Canned answers are
@@ -704,7 +1064,10 @@ export class ChatService {
     const facts = await this.workspace.read();
 
     if (await this.models.isReady('chat')) {
-      const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${factsBlock(facts)}`;
+      // Capabilities before facts: what he is, then what he has seen. Without the
+      // first he answered questions about himself as a read-only tool that "reads and
+      // remarks" — a description of the mode, delivered as a description of the self.
+      const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${capabilities(mode)}${factsBlock(facts)}`;
       await this.replier.withModel(question, addendum);
       return;
     }

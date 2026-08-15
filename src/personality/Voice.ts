@@ -70,16 +70,16 @@ export class Voice {
    * A longer deadline than `say()`: nothing is waiting on this the way a modal is,
    * and it is worth a moment to not sound the same twice.
    */
-  async open(situation: string, fallback: string, mustAsk = true): Promise<string> {
+  async open(situation: string, fallback: string, mustAsk = true, keep: readonly string[] = []): Promise<string> {
     try {
       if (!(await this.models.isReady('chat'))) return fallback;
 
       const raw = await Promise.race([
-        this.collect(openingPrompt(situation, mustAsk)),
+        this.collect(openingPrompt(situation, mustAsk, keep)),
         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), OPENING_DEADLINE_MS)),
       ]);
 
-      const line = acceptOpening(raw, mustAsk);
+      const line = acceptOpening(raw, mustAsk, keep);
       // **The rejected text, verbatim.** "Rejected" on its own says a rule fired and
       // not which one — and every guess about which costs a rebuild and a live run.
       this.log(
@@ -141,7 +141,12 @@ export async function phrase(purpose: Purpose, fallback: string, keep?: string[]
 }
 
 /** An original line for a moment, from anywhere. See `Voice.open`. */
-export async function opening(situation: string, fallback: string, mustAsk = true): Promise<string> {
+export async function opening(
+  situation: string,
+  fallback: string,
+  mustAsk = true,
+  keep: readonly string[] = []
+): Promise<string> {
   if (!writer) return fallback;
-  return writer.open(situation, fallback, mustAsk);
+  return writer.open(situation, fallback, mustAsk, keep);
 }

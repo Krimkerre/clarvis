@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { DraftDocument } from './DraftDocument';
 import { PlanningIO } from './PlanningIO';
 
 /**
@@ -34,8 +35,13 @@ export class VsCodeIO implements PlanningIO {
     void vscode.window.showInformationMessage(text);
   }
 
+  private readonly draft = new DraftDocument();
+
   async showDocument(text: string): Promise<void> {
-    const document = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
-    await vscode.window.showTextDocument(document, { preview: false });
+    await this.draft.show(text);
+  }
+
+  async closeDocument(): Promise<void> {
+    await this.draft.close();
   }
 }

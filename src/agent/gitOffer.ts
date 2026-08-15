@@ -20,6 +20,51 @@ import { runCommand } from './tools/commandTools';
 /** Remembered per workspace, so a decline does not ask again next session. */
 const DECLINED_KEY = 'clarvis.agent.gitOfferDeclined';
 
+/**
+ * What there is to offer here, if anything — without asking.
+ *
+ * Split out because the offer now has two moments and two surfaces. A run asks in a
+ * modal, because a run starts from a typed instruction and there is no conversation to
+ * put a question into. Planning asks **in the chat**, through the same buttons every
+ * other interview question uses, because there plainly is one.
+ */
+export async function gitOffer(
+  context: vscode.ExtensionContext,
+  log: (message: string) => void
+): Promise<{ problem: GitProblem; message: string; action: string } | undefined> {
+  if (context.workspaceState.get<boolean>(DECLINED_KEY)) {
+    log('git offer: already declined, not asking again');
+    return undefined;
+  }
+
+  const problem = await probeGitProblem();
+  if (!problem) return undefined; // a real repository — nothing to offer
+
+  const advice = adviseOnGit(problem);
+  if (!advice.action) return undefined;
+
+  return { problem, message: advice.message, action: advice.action };
+}
+
+/** Records the decline, so neither surface asks again in this workspace. */
+export async function declineGitOffer(
+  context: vscode.ExtensionContext,
+  problem: GitProblem,
+  log: (message: string) => void
+): Promise<void> {
+  await context.workspaceState.update(DECLINED_KEY, true);
+  log(`git offer: declined (${problem})`);
+}
+
+/** Does the thing that was offered. */
+export async function acceptGitOffer(
+  problem: GitProblem,
+  root: string | undefined,
+  log: (message: string) => void
+): Promise<void> {
+  await act(problem, root, log);
+}
+
 export async function offerGitFix(
   context: vscode.ExtensionContext,
   root: string | undefined,
@@ -29,36 +74,24 @@ export async function offerGitFix(
   // to tell "already declined" apart from "something else stopped it", which cost a
   // grep across every session file this project has ever written to answer a question
   // one log line should have settled on its own.
-  if (context.workspaceState.get<boolean>(DECLINED_KEY)) {
-    log('git offer: already declined, not asking again');
-    return;
-  }
-
-  const problem = await probeGitProblem();
-  if (!problem) return; // a real repository — nothing to offer, nothing worth logging
-
-  // No binary means no button that would work — `adviseOnGit` already omits `.action`
-  // for it, and `protect()`'s plain-text explanation (now reaching the chat) is the
-  // whole of what there is to say.
-  const advice = adviseOnGit(problem);
-  if (!advice.action) return;
+  const offer = await gitOffer(context, log);
+  if (!offer) return;
 
   const choice = await vscode.window.showInformationMessage(
-    advice.message,
+    offer.message,
     {
       modal: true,
       detail: 'Declining is fine — I will snapshot files instead, and the run can still be undone.',
     },
-    advice.action
+    offer.action
   );
 
-  if (choice !== advice.action) {
-    await context.workspaceState.update(DECLINED_KEY, true);
-    log(`git offer: declined (${problem})`);
+  if (choice !== offer.action) {
+    await declineGitOffer(context, offer.problem, log);
     return;
   }
 
-  await act(problem, root, log);
+  await act(offer.problem, root, log);
 }
 
 async function act(problem: GitProblem, root: string | undefined, log: (message: string) => void): Promise<void> {

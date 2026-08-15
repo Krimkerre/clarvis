@@ -157,3 +157,54 @@ export function forgetMatching(state: PatternState, needle: string): { state: Pa
 
   return { state: { ...state, patterns: kept }, removed };
 }
+
+/**
+ * What he says when an error hits the threshold.
+ *
+ * **"That's 3 times this week" was the whole line.** No error text, no file, no line —
+ * so the one fact it delivered was a count, and the rewrite filled the silence with
+ * whatever sounded plausible. Reported as too vague on first sight, which it was: a
+ * recurring error you cannot locate is a recurring error you cannot fix.
+ *
+ * Everything specific here is measured. The count comes from the store, the sample from
+ * the editor, the location from the diagnostic that has just been confirmed, and the
+ * fix from what actually followed it last time — labelled as the guess it is, since
+ * "the command that ran next" is correlation wearing a lab coat.
+ */
+export function patternHitLine(
+  sample: string,
+  where?: { file: string; line: number },
+  resolvedBy?: string
+): { text: string; keep: string[] } {
+  const at = where ? `${where.file} line ${where.line}: ` : '';
+  const fix = resolvedBy ? ` Last time, \`${resolvedBy}\` sorted it — I make no promises, but I do keep records.` : ' No fix on record yet.';
+
+  return {
+    text: `That's ${THRESHOLD} times this week — ${at}${sample}.${fix}`,
+    // The parts a rewrite must not paraphrase away, which is all of the parts that
+    // could send someone to the wrong line.
+    // The location and the remembered fix, not the error text — that is free text a
+    // model naturally paraphrases, and requiring it verbatim rejects good original
+    // lines for saying the same thing differently. File and line send someone to the
+    // wrong place if wrong; the fix command is a literal, not prose, so it stays.
+    keep: [...(where ? [where.file, `line ${where.line}`] : []), ...(resolvedBy ? [resolvedBy] : [])],
+  };
+}
+
+/** The pattern hit as a situation, for the same reason `lingeringSituation` exists. */
+export function patternHitSituation(
+  sample: string,
+  where?: { file: string; line: number },
+  resolvedBy?: string
+): string {
+  return [
+    `The same error has now happened ${THRESHOLD} times in the last seven days: ${sample}.`,
+    where ? `It is in ${where.file} at line ${where.line} right now.` : '',
+    resolvedBy
+      ? `Last time it went away after \`${resolvedBy}\` ran — which is a correlation you noticed, not a promise.`
+      : 'Nothing on record has fixed it yet.',
+    'You are mentioning the pattern once. Not a question.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}

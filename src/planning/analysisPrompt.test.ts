@@ -51,6 +51,27 @@ test('parses a well-formed multi-finding response', () => {
   assert.equal(result.noPlanNeeded, undefined);
 });
 
+test('every fix line is kept, in the order they were offered', () => {
+  // A single-value field map kept only the last one, which silently dropped the
+  // obvious fix and left the afterthought as the finding's answer.
+  const text = [
+    'class: safety',
+    'what: passwords are stored in plaintext',
+    'why: a leak exposes every real password',
+    'fix: hash and salt before storing',
+    'fix: drop accounts from v1 entirely',
+  ].join('\n');
+
+  const [finding] = parseAnalysisResult(text).findings;
+  assert.deepEqual(finding.fixes, ['hash and salt before storing', 'drop accounts from v1 entirely']);
+});
+
+test('the prompt asks for alternatives that are actually different', () => {
+  // Two rewordings of one answer is a false choice, and a menu of those is worse
+  // than a single suggestion — it looks like a decision was offered.
+  assert.match(analysisPrompt(state), /real alternative rather than the first one reworded/);
+});
+
 test('recognises NO-PLAN-NEEDED and returns no findings', () => {
   const result = parseAnalysisResult('NO-PLAN-NEEDED: this is a 30-line throwaway script');
   assert.equal(result.findings.length, 0);

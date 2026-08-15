@@ -172,3 +172,35 @@ test('a new milestone goes above the sections that end the plan', () => {
 
   assert.ok(updated.indexOf('### Milestone 3') < updated.indexOf('## 8. Decisions'));
 });
+
+test('a plan with a finished milestone counts as started, even if the next is untouched', () => {
+  // Found live: milestones 1–3 done, 4 untouched, and reopening the window offered
+  // nothing. Finishing a milestone is the most likely moment to close a window, and it
+  // was the one moment "is this in progress" could not see.
+  const plan = [
+    '# Forecast',
+    '',
+    '### Milestone 1 — Fetch weather',
+    '- [x] Call the API',
+    '- [x] Print it',
+    '',
+    '### Milestone 2 — Cache it',
+    '- [ ] Write the cache',
+    '- [ ] Read it back',
+  ].join('\n');
+
+  const milestones = readMilestones(plan);
+
+  assert.equal(milestones.some((entry) => entry.done > 0), true);
+  // The milestone offered is the next one, and it has no progress of its own.
+  assert.equal(nextMilestone(plan)?.number, 2);
+  assert.equal(nextMilestone(plan)?.done, 0);
+});
+
+test('a plan with nothing ticked anywhere is not work in progress', () => {
+  // Offering to continue a freshly approved plan every time the window opens is the
+  // nagging §6 exists to prevent.
+  const plan = ['# Forecast', '', '### Milestone 1 — Fetch weather', '- [ ] Call the API'].join('\n');
+
+  assert.equal(readMilestones(plan).some((entry) => entry.done > 0), false);
+});

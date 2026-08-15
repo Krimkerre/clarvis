@@ -82,6 +82,10 @@ export function handoffTask(
     'Before you begin each step above, output a line on its own containing exactly:',
     'STEP: <the step, copied from the list>',
     'Nothing else on that line. It is read by the editor, not by them.',
+    // Found live: the model called a tool named STEP, spent a step on
+    // `unknown tool "STEP"`, and recovered. It is a line of text, and saying so
+    // costs a clause where not saying so cost a step.
+    'That is a line of ordinary text in your reply, not a tool call — there is no tool called STEP.',
     '',
     'Start with the smallest thing that runs.',
   ].join('\n');

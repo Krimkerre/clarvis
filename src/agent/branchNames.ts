@@ -110,3 +110,28 @@ export function adviseOnGit(problem: GitProblem, platform: NodeJS.Platform = pro
 
   return { problem, message: 'Git is available.' };
 }
+
+/**
+ * The sentence for a run built on top of another run.
+ *
+ * **Does not claim a specific cause.** The first version asserted "you have unsaved
+ * changes to a file that differs between the two" unconditionally — true for the dirty-
+ * tree case this was written for, and flatly wrong the day a fresh `git init` had never
+ * had a first commit: the real reason was an unborn base ref, not a file conflict, and
+ * the message stated the wrong one as fact. It says what is actually known — the switch
+ * did not work — and ends with the remedy rather than a diagnosis nobody verified.
+ */
+export function stackedAdvice(base: string | undefined, stacked: string): string {
+  // **Not `your branch` in backticks.** The fallback was written as a stand-in for a
+  // branch name and reads as one: "I couldn't start cleanly from `your branch`" was
+  // shown live, and quoting a phrase that is not a branch name makes it look like one
+  // that is. When the name is unknown, the sentence says so instead of quoting a
+  // placeholder.
+  const from = base ? `from \`${base}\`` : 'from where you were';
+
+  return (
+    `I couldn't start cleanly ${from}, so this run sits on top of ` +
+    `\`${stacked}\` and carries that run's changes as well as its own. If something there needs ` +
+    `committing or stashing, doing that will let the next run start clean.`
+  );
+}

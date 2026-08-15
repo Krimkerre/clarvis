@@ -4448,6 +4448,34 @@ the same three answers `runPlanning` would have given. The choice is handed down
 is not asked twice — two identical questions in a row reads as the product not
 listening.
 
+### Project 2 finished milestone 1 — the first end-to-end success
+
+15 Aug, third attempt, and the first time this product has taken a sentence to working
+committed code: interview resumed from a closed window, four milestones planned, the
+plan approved, and 20 steps producing `main.go` and `internal/weather/weather.go`,
+built with `go build`, run against the live open-meteo API, `gofmt` and `go vet` clean,
+and committed to its own branch. The results went back into `plan.md` with each check's
+*real* output — including a deliberately invalid host used to prove the
+unreachable-server path, then reverted. Milestone 2 followed on request; milestone 3
+started from a typed instruction.
+
+**Everything the sandbox work was for held up**: every command confined, two `rm -f`
+lines stopped at the destructive gate and approved by hand, and the Go build wrote to
+`~/go` without complaint.
+
+**The nudge earned its place on the day it shipped.** Five questions went unanswered
+long enough to be spoken about — "Still waiting on you: Edit main.go" — during a
+twenty-minute milestone. Without it each of those was a build parked behind a panel
+nobody was looking at.
+
+**Two defects, both small.** The model called a tool named `STEP`, having read the
+step-marker instruction as a tool contract rather than a request for a line of text;
+it cost a step and it recovered. Both handoff prompts now say plainly that there is no
+such tool. And `stackedAdvice` printed **"I couldn't start cleanly from `your branch`"**
+— a placeholder quoted in backticks, which reads as the name of a branch that does not
+exist. It now describes the unknown case instead of quoting a stand-in, and moved to
+`branchNames.ts` so the wording can be tested at all.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.
@@ -4503,14 +4531,18 @@ above:
 
 Never done. Each piece works alone; the seams between them are untested.
 
-- [ ] Plan → approve → build milestone one → it stops with what changed and the check
-      results → offers to write them into `plan.md`
-- [ ] `plan.md` is ticked correctly, results recorded beside the steps
-- [ ] The next milestone is offered, not started
+- [x] Plan → approve → build milestone one → it stops with what changed and the check
+      results → offers to write them into `plan.md` — **project 2, 15 Aug.** 20 steps,
+      3 files, real Go built and run against the live API.
+- [x] `plan.md` is ticked correctly, results recorded beside the steps — each with the
+      command's actual output, including the deliberately sabotaged host used to test
+      the unreachable-server path.
+- [x] The next milestone is offered, not started
 - [ ] Mid-build, say "use a different library" — folded in as a correction
 - [ ] Mid-build, say "it should also email me the results" — **stops**, names it as new
       scope, offers to write it into the plan first
-- [ ] Close the window mid-interview, reopen — offered carry on / start again / leave it
+- [x] Close the window mid-interview, reopen — offered carry on / start again / leave it
+      — after the offer was moved to where someone reopening a window actually is.
 - [ ] Close the window mid-build, reopen — offered to pick the milestone up
 - [ ] The panel shows "Step 2 of 4" and clears when the run ends
 - [ ] Auto asks before each change; Unattended does not, and says so once when chosen

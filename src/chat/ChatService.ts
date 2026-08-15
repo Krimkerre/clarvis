@@ -22,6 +22,7 @@ import { describeWorkspaceSignals } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { DraftDocument } from '../planning/DraftDocument';
+import { acceptGitOffer, declineGitOffer, gitOffer } from '../agent/gitOffer';
 import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { interruptedBuild } from '../planning/pendingBuild';
@@ -170,6 +171,16 @@ export class ChatService {
     const modeBefore = this.actions.mode();
     await this.actions.setMode('plan');
 
+    // **Before the interview, not before the first run.** The offer used to fire only
+    // from `RunSession.run()`, which meant a folder with no repository was interviewed,
+    // planned and had `plan.md` written into it without git being mentioned once —
+    // found live on the second checklist project, where the whole point of the folder
+    // was that it had none. Planning is the better moment anyway: it is about to write
+    // the first artifact, and the question is whether that artifact will be
+    // recoverable. Asked through the chat rather than a modal, because here there is a
+    // conversation to put it in and buttons the interview already uses.
+    await this.offerGitInChat(io);
+
     try {
       await runPlanning(
         this.models,
@@ -229,6 +240,32 @@ export class ChatService {
     }
 
     return false;
+  }
+
+  /**
+   * The `git init` offer, asked as a question in the conversation.
+   *
+   * Declining is remembered the same way the modal's decline is, so the run that
+   * follows does not ask a second time — one answer per workspace, whichever surface
+   * collected it.
+   */
+  private async offerGitInChat(io: PlanningChatIO): Promise<void> {
+    const offer = await gitOffer(this.context, this.log);
+    if (!offer) return;
+
+    const answer = await io.confirm(
+      offer.message,
+      'Declining is fine — I snapshot files before every run either way, so the work can still be undone.',
+      [offer.action, 'Not now']
+    );
+
+    if (answer !== offer.action) {
+      await declineGitOffer(this.context, offer.problem, this.log);
+      return;
+    }
+
+    await acceptGitOffer(offer.problem, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, this.log);
+    this.log('git offer: accepted during planning');
   }
 
   /**

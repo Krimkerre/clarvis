@@ -4377,6 +4377,20 @@ the run stopped at step 4 of 5 on the path defect and the work was undone delibe
 That is one defect away from a finished milestone rather than a failed design, but the
 distinction is exactly what a checklist is for and the boxes stay empty.
 
+### Project 2 — the git offer fired too late to be an offer
+
+Reported live, part-way through the interview: no `git init` prompt in a folder chosen
+precisely because it had no repository. It was not missing — `offerGitFix` runs from
+`RunSession.run()`, so it would have appeared before the first build. But that is after
+the interview, after the analysis, and **after `plan.md` has been written into a folder
+with no history**, which is the one artifact the offer exists to protect.
+
+Moved to the start of planning, and asked *in the chat* rather than in a modal: at that
+point there is a conversation to put the question in and the interview's own buttons to
+answer it with. The probe, the decline and the action are split out of `offerGitFix` so
+both surfaces share them — one answer per workspace, whichever collected it, so the run
+that follows an accepted offer does not ask again.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

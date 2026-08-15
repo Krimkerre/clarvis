@@ -36,7 +36,16 @@ export interface ReadResult {
  */
 export async function readFile(root: string | undefined, requested: string): Promise<ReadResult> {
   const target = await resolveInWorkspace(root, requested);
-  const stat = await fs.stat(target);
+  // **A missing file says what to do about it.** The raw ENOENT names an absolute
+  // path, which is the one form the argument must not take — so the error that
+  // arrives after a path mistake is itself an argument for repeating it. Said once
+  // here rather than in the prompt: a rule read at the start loses to the evidence in
+  // front of the model at the time.
+  const stat = await fs.stat(target).catch(() => {
+    throw new Error(
+      `\`${requested}\` isn't there. Paths are relative to the workspace root — no leading folder name for the project itself. Use listFiles to see what is.`
+    );
+  });
 
   if (stat.isDirectory()) {
     throw new Error(`\`${requested}\` is a directory. Use listFiles for that.`);

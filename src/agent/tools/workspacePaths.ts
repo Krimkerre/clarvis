@@ -81,6 +81,45 @@ export function unquote(requested: string): string {
 }
 
 /**
+ * Undoes a path that repeats the workspace folder's own name.
+ *
+ * Found live, on the first checklist project: the workspace was `1-photo-renamer`, and
+ * the model asked for `1-photo-renamer/plan.md`. Resolved from the root that becomes
+ * `.../1-photo-renamer/1-photo-renamer/plan.md`, which does not exist. It cost three
+ * tool calls across two turns, and the run ended mid-milestone having read nothing.
+ *
+ * The mistake is structural rather than careless. Absolute paths appear in command
+ * output, in `pwd`, and — worst — in the ENOENT message from the previous attempt, so
+ * everything the model can see about where it is includes the folder name that must
+ * not be repeated.
+ *
+ * **Only ever when the evidence is unambiguous**: the doubled path must not exist and
+ * the shortened one must. A project whose root and package share a name — `mytool`
+ * containing `mytool/` — is entirely normal, and there the doubled path *does* exist,
+ * so nothing is stripped. Creating a genuinely new `mytool/cli.py` matches neither
+ * condition, so a write to a new nested folder still means exactly what it says.
+ */
+async function undoubled(root: string, requested: string): Promise<string> {
+  const first = requested.split(/[\\/]/)[0];
+  if (!first || first !== path.basename(root)) return requested;
+
+  const rest = requested.slice(first.length).replace(/^[\\/]+/, '');
+  if (!rest) return requested;
+
+  if (await exists(path.resolve(root, requested))) return requested;
+  return (await exists(path.resolve(root, rest))) ? rest : requested;
+}
+
+async function exists(target: string): Promise<boolean> {
+  try {
+    await fs.stat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolves a tool's path argument against the workspace, refusing anything outside it.
  *
  * The order matters and is the whole point:
@@ -106,7 +145,7 @@ export async function resolveInWorkspace(root: string | undefined, requested: st
   // An absolute path is allowed, but only if it lands inside; a relative one is
   // resolved from the workspace root rather than from the extension host's cwd, which
   // is somewhere nobody intended.
-  const textual = path.resolve(root, unquote(requested));
+  const textual = path.resolve(root, await undoubled(root, unquote(requested)));
 
   if (!isInside(root, textual)) {
     throw new PathRefused('outside-workspace', requested, outsideMessage(requested));

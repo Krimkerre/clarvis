@@ -68,6 +68,45 @@ test('quotes that are part of the name are left where they are', () => {
   assert.equal(unquote('src/app.ts'), 'src/app.ts');
 });
 
+test('a path that repeats the workspace folder name still finds the file', async () => {
+  // Found live on the first checklist project: workspace `1-photo-renamer`, and the
+  // model asked for `1-photo-renamer/plan.md`. Three tool calls across two turns, and
+  // the run ended mid-milestone having read nothing.
+  const root = await workspace();
+  const name = path.basename(root);
+  await fs.writeFile(path.join(root, 'plan.md'), '# plan');
+
+  assert.equal(await resolveInWorkspace(root, `${name}/plan.md`), path.join(root, 'plan.md'));
+});
+
+test('a package sharing the project name is left exactly where it is', async () => {
+  // `mytool` containing `mytool/` is entirely normal. The doubled path exists here,
+  // so nothing is stripped — which is the condition that makes the repair safe.
+  const root = await workspace();
+  const name = path.basename(root);
+  await fs.mkdir(path.join(root, name), { recursive: true });
+  await fs.writeFile(path.join(root, name, 'cli.py'), 'x = 1');
+
+  assert.equal(await resolveInWorkspace(root, `${name}/cli.py`), path.join(root, name, 'cli.py'));
+});
+
+test('writing a genuinely new nested file means what it says', async () => {
+  // Neither path exists, so there is no evidence to act on and the argument is taken
+  // literally. Creating a new package folder named after the project must stay possible.
+  const root = await workspace();
+  const name = path.basename(root);
+
+  assert.equal(await resolveInWorkspace(root, `${name}/new.py`), path.join(root, name, 'new.py'));
+});
+
+test('a missing file is reported with what to do about it', async () => {
+  // The raw ENOENT names an absolute path — the one form the argument must not take —
+  // so the error after a path mistake was itself an argument for repeating it.
+  const root = await workspace();
+
+  await assert.rejects(() => readFile(root, 'nope.md'), /relative to the workspace root/);
+});
+
 test('traversal outside the workspace is refused', async () => {
   const root = await workspace();
 

@@ -4266,6 +4266,36 @@ round a door being unlocked.
   routes as a job. A reply to a stopped run is an answer to it whatever it looks like,
   so the check now happens before routing.
 
+### Project 1 — run 15 Aug, and what it showed
+
+**Worked, first time:** the vague answer pushed back on exactly once; the language and
+comment-style questions both landed; three findings, the safety one carrying *two*
+fixes as separate buttons; three milestones; the checkpoint capturing each new file;
+branch isolation; and `sandbox: confined by sandbox-exec` on all ten commands.
+
+**The confinement note earned its place immediately.** Step 8 was
+`mkdir -p /tmp/photochrono_test && python3 -c …` — building a test fixture outside the
+project. The sandbox refused it, the note said so, and step 9 was the same fixture
+written to `tests/fixtures` *inside* the workspace. No sudo advice, no misdiagnosis,
+recovered in one step. That is the whole design working in the order it was designed in.
+
+**The defect: a path repeating the workspace folder's own name.** The workspace was
+`1-photo-renamer`, and the model asked for `1-photo-renamer/plan.md`, which resolves to
+`…/1-photo-renamer/1-photo-renamer/plan.md`. Three tool calls across two turns, and the
+run stopped mid-milestone having read nothing — it reported the first three steps done
+and gave up on the fourth.
+
+The mistake is structural, not careless: absolute paths appear in command output, in
+`pwd`, and in the ENOENT from the previous attempt, so everything the model can see
+about where it is contains the folder name it must not repeat. Repaired at
+`resolveInWorkspace`, and only where the evidence is unambiguous — the doubled path
+must not exist and the shortened one must. A project whose root and package share a
+name (`mytool` containing `mytool/`) is normal, and there the doubled path *does*
+exist. The ENOENT message now also says paths are workspace-relative, since the old one
+quoted an absolute path and was therefore an argument for repeating the mistake.
+
+**Also confirmed working from the previous round:** `listFiles: .` arrived unquoted.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

@@ -27,6 +27,7 @@ import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
+import { offerAnswer } from './offerAnswer';
 
 /** Set when someone turns the planning offer down, so it is asked once per project. */
 const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
@@ -551,7 +552,19 @@ export class ChatService {
     this.awaitingPlanAnswer = false;
     this.panel.post({ type: 'choices-clear' });
 
-    if (/^(y|yes|sure|go on|please|ok|okay)\b/i.test(question.trim())) {
+    const answer = offerAnswer(question);
+
+    // **Changing the subject is not declining.** Found live seconds after the previous
+    // fix shipped: "anything wrong in here?" arrived while the offer was up, was filed
+    // as a decline, and was answered with "Noted. I will not bring it up again here."
+    // The offer goes away — they have plainly moved on — but the message is theirs and
+    // routes normally, and nothing is remembered about a refusal that never happened.
+    if (answer === 'unrelated') {
+      this.log('chat: planning offer dropped, that message was about something else');
+      return false;
+    }
+
+    if (answer === 'yes') {
       await this.startPlanning();
       return true;
     }

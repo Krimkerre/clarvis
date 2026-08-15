@@ -4870,6 +4870,26 @@ The wording earns a note of its own. "Has been unhappy for a few minutes now" is
 honest version of the invented "for the past six minutes" that produced rule 6, and the
 vagueness is what makes it true: we know it is minutes, not how many.
 
+### An offer has three answers, not two
+
+The decline fix shipped and broke something within the minute. Declining used to fall
+through to a normal reply — "No" met with *"That is not a question. I remain here,
+unimpressed but ready"* — so the fix consumed everything that was not a yes. Seconds
+later, in the same session, *"anything wrong in here?"* arrived while the offer was up,
+was filed as a decline, and got *"Noted. I will not bring it up again here."* The
+question had to be asked twice.
+
+Both versions treated one question as two possible answers. There are three: yes, no,
+and **they have moved on** — and the third is the common one, because an unprompted
+offer appears while someone is already typing something else.
+
+`offerAnswer` is deliberately conservative. Only a recognisable yes or no counts;
+anything containing a question mark is never an answer, however it starts ("no idea,
+what is wrong here?" opens with a refusal and is plainly a question); and a refusal
+inside a longer sentence is not a refusal, or "there is nothing wrong with it" files
+itself as a decline. Everything else drops the offer without recording a decision
+nobody made, and the message routes normally.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

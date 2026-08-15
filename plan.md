@@ -3885,6 +3885,59 @@ step-result line landing in the wrong place, a normaliser that turned "There is 
 in this project." into a question on its `is`. Both halves were necessary; neither
 would have been enough.
 
+### M9g — Project notes, written by the user *(next, after the checklist)*
+
+**The direction that does not exist yet.** Clarvis already keeps per-project memory —
+the pattern store, the archived transcripts, the interview resume state — and every bit
+of it is machine-written, kept in global storage, invisible, and outside git. There is
+nowhere for the *user* to tell him something durable about this project. "Use pnpm, not
+npm." "Never touch `generated/`." "Staging is flaky; retry twice before believing a
+failure." The generated plan carries a Conventions section, but he wrote that, and it
+covers language style rather than the local facts that make a codebase itself.
+
+**Read `AGENTS.md`, else `CLAUDE.md`. Do not invent a filename.** Both are already the
+convention, and reading whichever exists costs exactly what reading `clarvis-notes.md`
+would. Someone arriving with a repository that has one gets it for free; someone who
+writes one for Clarvis gets it working in their other tools. A new name buys nothing
+and asks the ecosystem to care about us.
+
+**The split with `plan.md` has to be hard**, because §0 already needed a section about
+two documents that both look authoritative. The plan is *what and when*; the notes are
+*how and never*. A note that reads like a milestone is in the wrong file, and that is
+the review question for this milestone.
+
+- **Capped, and truncation reported** — ~2KB into the prompt, the same rule `readFile`
+  follows and for the same reason: a model quietly reasoning about a fragment it
+  believes is whole is how confident wrong answers get made.
+- **Injected above the character block**, next to the plan's Conventions section, into
+  both the agent and chat briefs.
+- **He proposes, never writes.** When something durable surfaces — a correction given
+  twice, a pattern-store entry on its third firing — he offers to write it down, with a
+  button. Rule 3, and also the only thing that keeps the file short enough to be worth
+  loading.
+- **No session dumps, no timestamps, no appending on its own.** A file that grows by
+  itself is one nobody reads and a prompt nobody can afford.
+
+**Chat logs are explicitly out of scope**, though they are the first thing anyone
+suggests putting in. They are already archived under History, they would dwarf the
+context budget, and a git-tracked verbatim transcript is a privacy hazard — people
+paste keys and customer data into chat boxes. What is wanted from a log is its
+conclusions, and a conclusion is one line in the notes file.
+
+**Exit checklist:**
+- [ ] `AGENTS.md` is read when present; `CLAUDE.md` when it is not; neither is required.
+- [ ] Over-long notes are truncated *and* the truncation is stated in the prompt.
+- [ ] A note contradicting the plan is surfaced rather than silently obeyed.
+- [ ] The offer to write something down never fires twice for the same fact.
+- [ ] Nothing is ever appended without an explicit yes.
+- [ ] A workspace with no notes file behaves exactly as it does today — no empty file
+      created, no mention of it.
+
+**Deliberately scheduled after the first-run checklist (§10).** This changes what sits
+in every prompt, and the checklist is the first end-to-end verification this product
+has had; changing the prompt surface half way through would leave run 2 not comparable
+to run 1.
+
 ### M10 — Voice Input *(stretch — independent of M7's output side)*
 
 **Build.**

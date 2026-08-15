@@ -1256,6 +1256,17 @@ absolute is the exact contradiction a project-review of this document caught on 
 the elevator pitch promised containment the threat model, two sections later, admitted
 the sandbox does not have.
 
+**A sensitive-file exception to "reads are never gated" (added 15 Aug, from the same
+review).** The workspace boundary is a location boundary, not a sensitivity one — `.env`
+is exactly as readable as `README.md` unless something says otherwise. `readFile` now
+checks the requested path against a name-based classifier before touching disk:
+ordinary files pass through untouched; likely secrets (`.env`, `.npmrc`, cloud
+credential files) stop for approval; known private-key material (`id_rsa`, `.pem`,
+`.p12`) stops for a stronger-worded approval. Fires **regardless of mode** — like the
+deny-list gate for commands, and unlike ordinary step approval, it does not go through
+`approveStep`, so Auto and Unattended cannot skip it. Reading a private key was never a
+decision either mode was meant to make unattended.
+
 #### Personality under load
 
 The butler voice (§2) governs chat too — dry, brief, helps first. Rule 1 (*helps first*)

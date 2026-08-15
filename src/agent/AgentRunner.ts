@@ -9,6 +9,7 @@ import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
 import { phrase } from '../personality/Voice';
 import { approveLabel, classifyCommand, ESCAPE_LABEL, explainGate, GateVerdict, mayEscapeConfinement } from './Gate';
+import { classifyPath } from './sensitivePath';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
@@ -553,6 +554,7 @@ export class AgentRunner {
     // there is no order to get wrong.
     const tools: Record<ToolName, () => Promise<string> | string> = {
       readFile: async () => {
+        await this.gateSensitiveRead(args.path);
         const result = await readFile(this.root, args.path);
         return result.truncated ? `${result.text}\n\n[truncated at 512KB]` : result.text;
       },
@@ -662,6 +664,42 @@ export class AgentRunner {
     }
 
     return undefined;
+  }
+
+  /**
+   * The one deliberate exception to "reads are never gated" (§4.6).
+   *
+   * The workspace boundary is a location boundary, not a sensitivity one: `.env` is
+   * exactly as readable as `README.md` unless something says otherwise. This is that
+   * something, and — like the deny-list gate for commands — it fires **regardless of
+   * mode**: Auto and Unattended both skip ordinary step approval on purpose, but
+   * neither is a decision to hand a private key to a model unattended. So this is a
+   * `showWarningMessage`, not the `approveStep` callback that mode already bypasses.
+   */
+  private async gateSensitiveRead(requestedPath: string): Promise<void> {
+    const verdict = classifyPath(requestedPath);
+    if (!verdict) return;
+
+    const strong = verdict.category === 'key';
+    const approved = await vscode.window.showWarningMessage(
+      strong
+        ? `${requestedPath} looks like ${verdict.what}. Reading it hands the actual key to the model.`
+        : `${requestedPath} looks like ${verdict.what}. Reading it may hand a live credential to the model.`,
+      {
+        modal: true,
+        detail: `Worst case: ${verdict.worstCase}.${strong ? ' Only approve this if you are certain.' : ''}`,
+      },
+      strong ? 'Read it anyway' : 'Read it'
+    );
+
+    if (approved === undefined) {
+      this.log(`agent [refused] sensitive read: ${requestedPath} (${verdict.category})`);
+      throw new Error(
+        `The user did not approve reading ${requestedPath}. Do not retry it — work around it, or ask what to do instead.`
+      );
+    }
+
+    this.log(`agent: approved sensitive read: ${requestedPath} (${verdict.category})`);
   }
 
   private async runGated(command: string, signal: AbortSignal): Promise<string> {

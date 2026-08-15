@@ -26,6 +26,7 @@ import { acceptGitOffer, declineGitOffer, gitOffer } from '../agent/gitOffer';
 import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
+import { startupOffer } from './startupOffer';
 import { interruptedBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
@@ -342,6 +343,8 @@ export class ChatService {
    */
   private async offerToResumeBuild(): Promise<boolean> {
     const pending = await interruptedBuild();
+    // Already decided by `startupOffer`; re-read here because the offer needs the
+    // milestone itself, not just the fact that there is one.
     if (!pending) return false;
 
     const { number, title, done, total } = pending.milestone;
@@ -519,24 +522,32 @@ export class ChatService {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) return;
 
-    const exists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+    const planExists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
       () => true,
       () => false
     );
-    if (exists) return;
 
-    // **A build already under way is offered before anything else.** The plan holds
-    // the progress, so a window reopened next Tuesday can pick it up — and asking
-    // "shall we plan something?" at someone mid-build would be absurd.
-    if (await this.offerToResumeBuild()) return;
+    // **The order lives in one pure function, because it has been wrong twice.** The
+    // resume-build offer was written to fire "before anything else" and sat *after* a
+    // guard returning when `plan.md` exists — and a build in progress always has one,
+    // so it never ran. Found live: milestones 1 to 3 finished, window reopened, nothing
+    // offered, build restarted by hand.
+    const snapshot = workspaceMemory(this.context).load();
+    const offer = startupOffer({
+      planExists,
+      buildInProgress: Boolean(await interruptedBuild()),
+      interviewInProgress: Boolean(snapshot && worthResuming(snapshot, Date.now())),
+    });
 
-    // **An interview left half-finished is offered before a fresh one.** The resume
-    // question lived inside `runPlanning`, which meant it only appeared *after*
-    // agreeing to plan — so someone who closed the window mid-interview was greeted
-    // with "an empty folder, nothing built yet", which was both wrong and the reason
-    // they never got as far as the offer. Found live: closed at the scope question,
-    // reopened, and was invited to start from nothing.
-    if (await this.offerToResumeInterview()) return;
+    if (offer === 'nothing') return;
+    if (offer === 'resume-build') {
+      await this.offerToResumeBuild();
+      return;
+    }
+    if (offer === 'resume-interview') {
+      await this.offerToResumeInterview();
+      return;
+    }
 
     // What is actually here, so the line can react to *this* folder rather than to
     // the abstract fact of a missing file. An empty one deserves "oh, a new project?";

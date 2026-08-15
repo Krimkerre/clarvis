@@ -4494,6 +4494,19 @@ the earlier agent-to-auto switch was a no-op and verified nothing. Nine steps as
 were answered after it, which is correct for both modes and would have looked the same
 before the fix.
 
+**And the offer was unreachable anyway.** Fixing the `done > 0` rule was necessary and
+changed nothing, because `offerToResumeBuild()` sat *after* a guard that returns when
+`plan.md` exists — and a build in progress always has one. Written with the comment "a
+build already under way is offered before anything else", placed where it could never
+run at all. Reloading with milestones 1 to 3 finished still produced silence.
+
+That is the second ordering bug in this file in two days, both one line in the wrong
+place inside a long method, and neither visible to a test because the method needs a
+workspace, a panel and a model to run. The order is now a pure function —
+`startupOffer` — taking three facts and returning which of the four things to say. A
+build in progress wins and *requires* the plan to exist, which is exactly why it cannot
+live behind a does-the-plan-exist guard.
+
 **Finishing a milestone was the one moment "in progress" could not see.** Milestones 1
 to 3 done, milestone 4 untouched, window closed — and reopening it offered nothing.
 The build had to be restarted by hand with "start milestone 3 from plan.md".

@@ -4787,6 +4787,36 @@ The M6 dogfood pass has been outstanding since M6, and roughly 45 finer-grained 
 checklist items remain unverified — mute mid-sentence, avatar strobing, transcript
 persistence, Ollama. Both predate M9 and neither is closed by anything above.
 
+### The M6 pass, first afternoon — and what a deliberate error proved
+
+A syntax error was left in `nanocode.py` on purpose, to see what he would say. He said
+nothing, and **that is the specification working**: `PatternMemory` consumes the
+diagnostic, waits to see whether it survives, records it as occurrence *one of three*,
+and §4.2's threshold means nothing is said until the third in seven days.
+
+So the answer to "will he point out my mistakes while I type" is **no, and by design**.
+He notices immediately and mentions it only when it becomes a pattern. That is right for
+a working developer who does not want a second linter, and it is an open question for
+someone following a book, who has no idea whether silence means approval.
+
+**Two defects fell out of looking, though, and both are the same defect this project
+keeps finding.**
+
+*Occurrences one and two logged nothing.* A log with no `pattern:` lines meant either
+"seen twice, waiting" or "diagnostics never arrived", and there was no way to tell them
+apart — the identical mistake the sandbox made, fixed there a day earlier for the
+identical reason. Every occurrence is logged now, with its count and the threshold it is
+counting towards.
+
+*Declining the planning offer was not an answer.* "No" cleared the flag, logged the
+decline, and then **fell through to a normal reply**, so the answer to his own question
+was met with "That is not a question. I remain here, unimpressed but ready." Three times
+in one afternoon, because the decline was also never remembered — the offer returned on
+every window open in a folder where it had just been turned down, which is §6's nagging
+with a straight face. It is now consumed as the answer it is, acknowledged in one line,
+and remembered per workspace; `Clarvis: Forget branch answers` clears it along with the
+git offer, both being "you said no once, here".
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

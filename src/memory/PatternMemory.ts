@@ -197,6 +197,13 @@ export class PatternMemory {
     const result = recordOccurrence(this.store.current, key, sample, Date.now());
     await this.store.save(result.state);
 
+    // **Every occurrence, not only the third.** Counting silently meant a log with no
+    // `pattern:` lines could equally mean "seen twice, waiting" or "diagnostics never
+    // arrived" — and the first live test of this feature could not tell them apart.
+    // Same mistake the sandbox made, fixed there a day earlier for the same reason.
+    const seen = result.pattern.occurrences.length;
+    this.log(`pattern: ${key} seen ${seen}× (surfaces at ${THRESHOLD}) — ${excerpt(sample)}`);
+
     if (!result.shouldSurface) return;
 
     const fix = result.pattern.resolvedBy;

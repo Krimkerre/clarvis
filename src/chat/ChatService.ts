@@ -27,6 +27,9 @@ import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
+
+/** Set when someone turns the planning offer down, so it is asked once per project. */
+const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
 import { fixFindingsTask } from '../planning/reviewFollowUp';
 import { addFindingsToPlan } from '../planning/recordMilestone';
 import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
@@ -553,8 +556,14 @@ export class ChatService {
       return true;
     }
 
-    this.log('chat: planning offer declined');
-    return false;
+    // **"No" is an answer, and it used to fall through to a fresh reply.** Found live:
+    // three windows in a row where declining produced "That is not a question. I remain
+    // here, unimpressed but ready" — him being baffled by the answer to his own
+    // question. Returning true consumes the message; the offer was the question.
+    this.log('chat: planning offer declined, remembered for this workspace');
+    await this.context.workspaceState.update(PLAN_OFFER_DECLINED, true);
+    await this.note(await this.phrase('report', 'Noted. I will not bring it up again here.', []));
+    return true;
   }
 
   /**
@@ -596,6 +605,14 @@ export class ChatService {
     // guard returning when `plan.md` exists — and a build in progress always has one,
     // so it never ran. Found live: milestones 1 to 3 finished, window reopened, nothing
     // offered, build restarted by hand.
+    // **Asked once per workspace, not once per window.** Declining is a decision about
+    // this project, and re-asking every time the window opens is the nagging §6 exists
+    // to prevent — observed three times in one afternoon, with the same answer each time.
+    if (this.context.workspaceState.get<boolean>(PLAN_OFFER_DECLINED)) {
+      this.log('chat: planning already declined here, not offering again');
+      return;
+    }
+
     const snapshot = workspaceMemory(this.context).load();
     const offer = startupOffer({
       planExists,

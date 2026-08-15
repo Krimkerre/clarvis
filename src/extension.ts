@@ -626,6 +626,10 @@ function startBranchFlow(
     // until someone changes their mind or is testing.
     vscode.commands.registerCommand('clarvis.forgetGitOfferAnswer', async () => {
       await forgetGitOfferAnswer(context);
+      // The planning offer is remembered the same way and forgotten by the same
+      // command: both are "you said no once, here, about this project", and having two
+      // commands for one intention is how a setting becomes undiscoverable.
+      await context.workspaceState.update('clarvis.planning.offerDeclined', undefined);
       logger.write('git offer: forgot the answer, will ask again next run');
       void vscode.window.showInformationMessage(await phrase('report', 'Asking again, next time it comes up.'));
     })

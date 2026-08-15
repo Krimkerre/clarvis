@@ -230,6 +230,29 @@ The comedy is the garnish. Ship the meal first.
    Rate-limited hard (§7). A butler who talks constantly is a parrot.
 6. **Never fake-omniscient.** If Clarvis doesn't know, he says so — dryly.
 
+> **Rule 6 has two pieces of evidence now, and they point in opposite directions.**
+>
+> The first is Clarvis's. Told to be specific and handed no facts, he reported that a
+> linter had been complaining "for the past six minutes" — a duration nothing in this
+> extension measures. That produced the absolute in §2.1: every number, duration, count
+> and filename must come from what was actually given, and "for a while now" is the
+> honest version of not knowing.
+>
+> The second is mine. Writing the Dutch explainers for a non-technical reader on 15 Aug,
+> I described this project as being in progress "since the spring", and then reasoned
+> from my own invention to "after five months". The first commit is **8 August 2026**.
+> Seven days, 406 commits. Nothing anywhere said five months; I wanted a duration, none
+> was available, and I produced a plausible one — which then survived three PDF builds,
+> a re-read, and delivery to the user, because a plausible specific does not look like a
+> question. It was caught by the one person who knew when he started.
+>
+> Worth writing down for two reasons. It is the same failure from the other side of the
+> keyboard, which means the rule is not a quirk of small models to be engineered away —
+> it is what a language model does with a gap, at any scale. And it settles how the rule
+> should be phrased: not "avoid unsupported claims", which reads as a preference, but a
+> closed set — *if you were not given it, you do not know it* — because the failure never
+> feels like guessing at the time.
+
 7. **Casually, irritatingly brilliant.** Clarvis knows more than you and doesn't
    pretend otherwise. He explains at the level the problem actually sits at rather than
    talking down, and he doesn't slow down for comfort. If you keep up, he respects it —
@@ -3885,6 +3908,81 @@ step-result line landing in the wrong place, a normaliser that turned "There is 
 in this project." into a question on its `is`. Both halves were necessary; neither
 would have been enough.
 
+### M9d3 — Reading the code back *(built 15 Aug, from project 2's own output)*
+
+**The plan gets analysed; the code never was.** §4.9's analysis pass picks holes in the
+*idea* before a line is written, and it is the most valuable thing in planning. Nothing
+did the equivalent for what got written afterwards, so a milestone was finished on the
+strength of its own checks passing.
+
+Reading project 2's 327 lines by hand afterwards found six things. One was live and
+wrong: `forecast Berlin` printed **"Chance of rain: 0%"** — always. The code matched
+`current.time` (`12:30`) against hourly timestamps (`12:00`), never matched, and fell
+back to `return 0`. **Five checks passed over it**, twice against the live API, because
+every one of them asked whether output *appeared*. Alongside it: `http.Get` with no
+timeout in a tool whose entire purpose is coping with an unreachable server; five
+parallel arrays indexed on an unchecked assumption; an error cause discarded by
+`fmt.Errorf("%w", ErrServerUnreachable)`; a cache with no age; and a green
+`go test ./...` over zero test files.
+
+None of it is exotic. It needed *someone to look at the diff*, once.
+
+**Two changes, at the two ends of the problem.**
+
+*A check has to be able to fail.* The milestone prompt now says so: "It prints the
+temperature" is satisfied by a program that prints a constant, so a check must name
+what would make the output wrong — a value that must change with the input, a number
+that must match something knowable, two runs that must differ. If the only way to fail
+it is a crash, it is testing that the program runs, which was never in doubt.
+
+*And the diff gets read back.* When a milestone's results are recorded, the run's own
+diff goes back to the model with the steps, their checks and what was claimed, and two
+questions: **is any of this wrong**, and **would that check have caught it if it were**.
+Findings come back in the same shape as the plan analysis, so the existing parser and
+buttons take them unchanged.
+
+Three answers, and the middle one is the point:
+
+- **Fix them now** — a run that does nothing else, with each defect and its "why"
+  attached, and the instruction to prove each fix with output that would have differed
+  before it.
+- **Add to the plan** — they become a milestone with steps and checks. Findings in a
+  transcript scroll away; findings in `plan.md` get built.
+- **Leave them** — recorded in the log, which is more than they had before.
+
+Offered, never applied. Rule 3 holds at the end of a build exactly as it does at the
+start.
+
+**Run against the diff it was written for, from a clean context.** The prompt was
+assembled from project 2's real diff and its nine recorded steps, checks and results,
+and answered by a model that had never seen the hand review. It returned four findings,
+no false positives, most severe first, in the exact shape the parser expects:
+
+1. *(safety)* `http.Get` with the zero-value client — no timeout, no deadline. **And it
+   noticed why the check missed it**: "the check was only exercised via an invalid
+   hostname, which fails fast on DNS and never touches this path."
+2. *(safety)* `dailyForecasts` indexing five parallel slices without checking their
+   lengths.
+3. *(logic)* `chanceOfRainNow` falling back to 0 on no match — with the check-quality
+   observation the second question was written to produce: "the milestone's own check
+   passes identically whether the matching logic works or is silently broken — a
+   constant would satisfy it."
+4. *(logic)* the `http.Get` error discarded by `fmt.Errorf("%w", …)`.
+
+Four of the six found by hand. It missed the cache having no age — never specified, so
+arguably not its business — and the green `go test ./...` over zero test files, which
+was Clarvis's own post-run check rather than a step in the plan, and so was not in
+front of it. Both misses are the prompt's boundaries working rather than failing.
+
+**Exit checklist:**
+- [ ] A milestone whose code is fine produces "found nothing worth raising", not silence.
+- [x] The rain-constant defect is found when the read-back runs against that same diff —
+      **verified 15 Aug**, along with three others, from a clean context.
+- [x] A finding written into the plan arrives as a milestone with a falsifiable check —
+      the four findings render as four steps, each checked by "no longer true; prove it
+      with a run whose output would differ".
+- [ ] A review that fails or times out does not fail the milestone that already landed.
+
 ### M9g — Project notes, written by the user *(next, after the checklist)*
 
 **The direction that does not exist yet.** Clarvis already keeps per-project memory —
@@ -4377,6 +4475,203 @@ the run stopped at step 4 of 5 on the path defect and the work was undone delibe
 That is one defect away from a finished milestone rather than a failed design, but the
 distinction is exactly what a checklist is for and the boxes stay empty.
 
+### Project 2 — the git offer fired too late to be an offer
+
+Reported live, part-way through the interview: no `git init` prompt in a folder chosen
+precisely because it had no repository. It was not missing — `offerGitFix` runs from
+`RunSession.run()`, so it would have appeared before the first build. But that is after
+the interview, after the analysis, and **after `plan.md` has been written into a folder
+with no history**, which is the one artifact the offer exists to protect.
+
+Moved to the start of planning, and asked *in the chat* rather than in a modal: at that
+point there is a conversation to put the question in and the interview's own buttons to
+answer it with. The probe, the decline and the action are split out of `offerGitFix` so
+both surfaces share them — one answer per workspace, whichever collected it, so the run
+that follows an accepted offer does not ask again.
+
+**Two more from project 2, both about attention.** A mode change mid-run did nothing:
+step approval was read once when the run started, so switching to Unattended — which
+people do precisely *because* a run is going well and they want to stop shepherding it
+— went on asking until the run ended. The decision is per step now, taken from the mode
+as it is at that moment. (Auto still asks; `asksFirst` is true for it by design, and
+Unattended is the mode that does not.)
+
+And a question nobody notices parks the whole build. So an unanswered one is now
+**spoken**, at 45s, then 90s, then 180s, escalating in what it says rather than in
+temper — a nudge, then what is stuck, then the consequence — and stopping after three.
+Someone who has not answered in five minutes has left the desk, and a voice repeating
+itself into an empty room is what gets a product uninstalled. Spoken rather than
+written for the obvious reason: another line in the panel is the one thing guaranteed
+not to reach someone who is not reading the panel.
+
+**Project 2's build: nine steps, no files, and a cheerful sign-off.** The interview and
+the plan were fine — four milestones, the git-init offer taken, the step questions
+arriving in the chat with their explanations, `Do it` answered four times, every command
+confined. Then the run read the plan, checked `go version`, called the weather API
+twice, and spent a step on `cd /Users/clarvis 2>/dev/null; pwd; find / -maxdepth 1 -name
+"*.git"` — inventing a location out of the product name and searching the filesystem
+root for it. It stopped with an empty summary having written nothing.
+
+Two defects, and the second is the worse one.
+
+**He was never told where he is.** The brief said "you can only touch files inside the
+workspace" and never named the folder. Everything the model knew about its own location
+came from command output, which is how `1-photo-renamer/plan.md` happened yesterday and
+how `/Users/clarvis` happened today. The root is now in the prompt, with the rule that
+every path is relative to it. `agentSystemPrompt` moved to its own `vscode`-free module
+to be testable at all — the prompts are the part of this codebase most worth testing,
+since nearly every behavioural regression here has been a sentence rather than a branch.
+
+**And the run reported as though it had gone well.** There is already an honest line for
+a run that changes nothing — *"I stopped without changing anything, and without saying
+why"* — and it did not fire, because the closing note about branches was being joined to
+the narration upstream. An empty narration plus a branch note looked like a summary. So
+the chat showed "your own work on `master` is untouched" followed by an aside about the
+hard part being over, about a run that had built nothing at all. They travel as separate
+fields now, and the branch note goes *after* what was said rather than instead of it.
+
+**Quit mid-interview, and he offered to start from nothing.** Closed at the scope
+question, reopened, and was greeted with "an empty folder, nothing built yet" — a
+description of a folder that had a three-answer interview saved against it.
+
+Nothing was lost: `clarvis.planning.interview` held the seed, the name and all three
+answers, written after each one. **The offer was in the wrong place.** `offerResume`
+sits inside `runPlanning`, so it only fires once someone has already agreed to plan —
+which is a question they now have no reason to say yes to, having just been told this
+was a blank folder. The resume was one accepted offer away from appearing and might as
+well not have existed.
+
+It is asked at startup now, before the new-project offer, with its progress named and
+the same three answers `runPlanning` would have given. The choice is handed down so it
+is not asked twice — two identical questions in a row reads as the product not
+listening.
+
+### Project 2 finished milestone 1 — the first end-to-end success
+
+15 Aug, third attempt, and the first time this product has taken a sentence to working
+committed code: interview resumed from a closed window, four milestones planned, the
+plan approved, and 20 steps producing `main.go` and `internal/weather/weather.go`,
+built with `go build`, run against the live open-meteo API, `gofmt` and `go vet` clean,
+and committed to its own branch. The results went back into `plan.md` with each check's
+*real* output — including a deliberately invalid host used to prove the
+unreachable-server path, then reverted. Milestone 2 followed on request; milestone 3
+started from a typed instruction.
+
+**Everything the sandbox work was for held up**: every command confined, two `rm -f`
+lines stopped at the destructive gate and approved by hand, and the Go build wrote to
+`~/go` without complaint.
+
+**The nudge earned its place on the day it shipped.** Five questions went unanswered
+long enough to be spoken about — "Still waiting on you: Edit main.go" — during a
+twenty-minute milestone. Without it each of those was a build parked behind a panel
+nobody was looking at.
+
+**Two defects, both small.** The model called a tool named `STEP`, having read the
+step-marker instruction as a tool contract rather than a request for a line of text;
+it cost a step and it recovered. Both handoff prompts now say plainly that there is no
+such tool. And `stackedAdvice` printed **"I couldn't start cleanly from `your branch`"**
+— a placeholder quoted in backticks, which reads as the name of a branch that does not
+exist. It now describes the unknown case instead of quoting a stand-in, and moved to
+`branchNames.ts` so the wording can be tested at all.
+
+**Switching to Unattended mid-run, tested on milestone 3 — and it still asked once
+more.** The switch happened at 09:58:10 with step 24 already waiting for an answer (the
+nudge had chased it 45 seconds earlier), and the button still had to be pressed. The
+run then finished, so no later step ever exercised the live check.
+
+The per-step fix was right and insufficient. Someone switches to Unattended *because*
+answering has become the annoyance, and usually while looking at the question that made
+it one; leaving that question pending means the switch appears not to have worked. A
+mode change that stops the asking now releases the step already on the table. Wired to
+a configuration listener rather than to the picker, so it fires however the mode was
+changed — and it releases *step* questions only. The deny-list gate is not a mode
+setting: `rm -rf` stops and asks in every mode, Unattended included.
+
+Also worth recording from that run: **Auto and Agent are identical for approvals**, so
+the earlier agent-to-auto switch was a no-op and verified nothing. Nine steps asked and
+were answered after it, which is correct for both modes and would have looked the same
+before the fix.
+
+**And the offer was unreachable anyway.** Fixing the `done > 0` rule was necessary and
+changed nothing, because `offerToResumeBuild()` sat *after* a guard that returns when
+`plan.md` exists — and a build in progress always has one. Written with the comment "a
+build already under way is offered before anything else", placed where it could never
+run at all. Reloading with milestones 1 to 3 finished still produced silence.
+
+That is the second ordering bug in this file in two days, both one line in the wrong
+place inside a long method, and neither visible to a test because the method needs a
+workspace, a panel and a model to run. The order is now a pure function —
+`startupOffer` — taking three facts and returning which of the four things to say. A
+build in progress wins and *requires* the plan to exist, which is exactly why it cannot
+live behind a does-the-plan-exist guard.
+
+**Finishing a milestone was the one moment "in progress" could not see.** Milestones 1
+to 3 done, milestone 4 untouched, window closed — and reopening it offered nothing.
+The build had to be restarted by hand with "start milestone 3 from plan.md".
+
+`interruptedBuild()` tested `milestone.done > 0`, meaning progress inside the *next*
+milestone, which is a different question from whether this project is being built.
+A finished milestone is the most likely moment for someone to close the window, and it
+produced the one plan state that read as untouched. It now asks whether anything
+anywhere in the plan is ticked.
+
+The offer needed two shapes as well, since one line covered both badly: mid-milestone
+is "milestone 3 is 2 of 5 done, shall I carry on with it", and a finished one is
+"milestone 4 is next: Finalize the user-facing interface. Shall I start on it?" —
+reading "milestone 4 is 0 of 2 done" back to someone who has just finished three of
+them describes their progress as nothing.
+
+### Project 2 finished — and the ending was the weakest part of it
+
+All four milestones built. The closing line was **"That's Milestone 4 finished —
+Milestone 5, if there is one, is a separate conversation."** There were four, and the
+plan he had just been told to read said so on every heading.
+
+`nextMilestoneTask` named the milestone and never its position: "Milestone 4 —
+Finalize the user-facing interface", with no total. So the build could not tell whether
+it had finished the project, which makes every "done" it reports provisional. A build
+that cannot say when it is finished is one you have to check on, and checking on it is
+the work this was supposed to remove.
+
+Three things follow, all from the same fact — the plan already knows.
+
+- **Position.** "Milestone 4 of 4", and on the last one: *the project as planned is
+  finished — say so plainly rather than wondering aloud whether there is another. There
+  is not.* The stop instruction changes with it; telling him to stop before a milestone
+  that does not exist is what produced the question.
+- **What is still coming.** The later milestones are named, with "do not build any of
+  that now. Knowing it is there is enough." A cache written in milestone 2 with no idea
+  milestone 3 is a week forecast is how a build paints itself into a corner one
+  milestone at a time.
+- **An ending.** The last step ticked used to produce a *notification* — the one place
+  a finished project was guaranteed not to be mentioned by the butler who built it —
+  and then silence. It is announced in the conversation now, with what the project
+  consists of: the milestones by name, the step count, and where the recorded results
+  are. No congratulation and no exclamation mark; the aside afterwards is written
+  separately, as every other report's is.
+
+Both call sites pass the milestone list, including the resume-build path, which is the
+one that started milestone 4 in the first place.
+
+**Eight branches, stacked in a straight line, and nothing ever offered to land them.**
+Every request made its own `clarvis/<task>` branch off the *previous* run's branch:
+`commit changes` → `clarvis/commit-changes`, then a gitignore branch on top of that,
+then — the one that gives it away — asking to merge to main produced a branch called
+`clarvis/merge-to-main`. Each run opened with "I couldn't start cleanly from where you
+were", which was true and read as an apology for a situation nothing was fixing.
+
+The review wizard has had merge, return and discard since M8, with `Merge into <branch>`
+first in the list. It is reachable only through `clarvis.reviewRun`, a command nobody
+knows exists — so the work never went home, the next run branched off the temp branch,
+and the repository grew a branch per sentence.
+
+A run that committed something now asks at the end, in chat, with buttons: **Merge into
+`<home>`** (the work and the user, back where they were), **Show me what changed**, or
+**Leave it there**. Nothing new was built for it — the command takes a decision made in
+chat and skips its own picker, because asking the same question twice in two different
+widgets is worse than not asking at all. Runs that changed nothing say nothing, and a
+run already on its home branch has nothing to ask about.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.
@@ -4386,6 +4681,19 @@ Forces: PEP 8 conventions, a `pip install` under the sandbox, and — the point 
 program whose whole job is *moving and overwriting files*. If the checkpoint or the
 sandbox is wrong, this is where it shows. Big enough for three or four milestones.
 Answer "somewhere on my machine" to *where does it run* to trigger the pushback.
+
+**Two sandbox defects found before project 2 ran, by testing the profile instead of
+waiting.** The allow-list held `.npm .cargo .rustup .gradle .m2 Library/Caches` and
+`tmpdir` — and Go keeps its module cache under `GOPATH`, so `~/go/pkg/mod` matched
+nothing. Worse, `resolveAll` *dropped paths that did not exist*, which quietly meant
+every toolchain's **first** confined build failed: Go could not create `~/go` at all,
+and a fresh machine's first `cargo build` would have hit the same wall. A real
+`go build` against a real dependency, run through the actual profile, stopped at
+`could not create module cache: mkdir /Users/…/go: operation not permitted`; with
+`~/go` added and the missing tail re-attached rather than dropped, the same build
+downloads three modules, compiles and runs. `go install` and `go get` also joined the
+dependency gate — not for tidiness, but because the gate is what offers the escape from
+confinement, and `~/go/bin` is outside it.
 
 **2. "A command-line tool that fetches the weather and caches it." (Rust or Go)**
 Forces the build-cache allowlist, which is the sandbox's most likely real-world
@@ -4398,6 +4706,14 @@ switched off. Also exercises the non-Python conventions lookup.
 Forces the **no-plan-needed** outcome, which nothing else reaches — a 30-line
 throwaway should be told it doesn't need a plan rather than handed four milestones of
 ceremony. Also the fastest way to see whether the analysis over-produces.
+
+**Pre-tested three times, and the seed is less decisive than it looks.** Twice it
+returned `NO-PLAN-NEEDED: thirty lines, one machine, one list, no state — there is
+nothing here a plan would catch that reading the file wouldn't`. Once it declined, and
+was right to: "a different one *each time*" alongside "nothing is remembered between
+runs" is a genuine contradiction, since `random.choice` repeats. Which branch fires
+depends on how the interview is answered, and both are correct — so this project tests
+that the outcome *exists*, not that it is inevitable.
 
 **4. Anything at all, in Elixir, Zig or Ruby.**
 Forces the honest conventions fallback: no entry exists, so the plan must say the
@@ -4419,14 +4735,18 @@ above:
 
 Never done. Each piece works alone; the seams between them are untested.
 
-- [ ] Plan → approve → build milestone one → it stops with what changed and the check
-      results → offers to write them into `plan.md`
-- [ ] `plan.md` is ticked correctly, results recorded beside the steps
-- [ ] The next milestone is offered, not started
+- [x] Plan → approve → build milestone one → it stops with what changed and the check
+      results → offers to write them into `plan.md` — **project 2, 15 Aug.** 20 steps,
+      3 files, real Go built and run against the live API.
+- [x] `plan.md` is ticked correctly, results recorded beside the steps — each with the
+      command's actual output, including the deliberately sabotaged host used to test
+      the unreachable-server path.
+- [x] The next milestone is offered, not started
 - [ ] Mid-build, say "use a different library" — folded in as a correction
 - [ ] Mid-build, say "it should also email me the results" — **stops**, names it as new
       scope, offers to write it into the plan first
-- [ ] Close the window mid-interview, reopen — offered carry on / start again / leave it
+- [x] Close the window mid-interview, reopen — offered carry on / start again / leave it
+      — after the offer was moved to where someone reopening a window actually is.
 - [ ] Close the window mid-build, reopen — offered to pick the milestone up
 - [ ] The panel shows "Step 2 of 4" and clears when the run ends
 - [ ] Auto asks before each change; Unattended does not, and says so once when chosen
@@ -4441,6 +4761,27 @@ Never done. Each piece works alone; the seams between them are untested.
       `lean` only where something is surprising
 
 ### Older debts, not to be lost
+
+**The M6 dogfood pass is not being closed by any of this, and it is worth saying why
+rather than assuming otherwise.** Measured across a full day of heavy use on 15 Aug:
+of the seven unsolicited triggers, exactly **one fired, twice** —
+`firstCommitAfterSilence`. `buildSlow`, `repeatFailure`, `suiteWentGreen`, `bigDiff`,
+`taskDone` and `newBranch` never fired at all.
+
+Three reasons, none of which projects 3 and 4 improve. The test projects are too small
+to trip anything — `go build` on 327 lines takes two seconds against a thirty-second
+threshold, no suite went red then green, no diff came near two hundred files. Agent runs
+*deliberately* suppress the watch surfaces, so the day was spent with them switched off
+by design. And M6's actual question — does the cadence feel right, does a line grate on
+a third viewing, does earned sass fire before it is earned — needs the same lines seen
+repeatedly across days of ordinary work, which is not a thing a scripted pass can
+produce.
+
+What §10 *has* exercised hard is §2.2's one-voice-everywhere: the briefing, gate copy,
+findings, the read-back summary, the answer about his own capabilities. That is the
+adjacent question, and confusing the two would close a debt that is still open. The M6
+pass wants Clarvis watching someone work normally in a project with slow builds and real
+failures — this repository being the obvious candidate.
 
 The M6 dogfood pass has been outstanding since M6, and roughly 45 finer-grained M8
 checklist items remain unverified — mute mid-sentence, avatar strobing, transcript

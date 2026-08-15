@@ -351,7 +351,7 @@ section that assumes you know the jargon.* Full notes for each milestone are in
       `Clarvis: Debug — Voice Check` now reads his lines back through the real prompts
       before a change ships. *(Full notes, including the deviations from spec and why,
       are in `plan.md`.)*
-- [ ] **M9 — Project Planning.** *In progress, and usable end to end — the front door:
+- [x] **M9 — Project Planning.** *Built and usable end to end — the front door:
       interview → analysis → `plan.md` → sign-off → the agent builds it.* It runs **in
       the chat panel**: questions arrive in the transcript, spoken, with the options as
       clickable buttons carrying their own explanations; typing a number or the name

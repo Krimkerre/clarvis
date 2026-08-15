@@ -7,6 +7,8 @@ esbuild.js
 tsconfig.json
 plan.md
 docs/**
+AGENTS.md
+CURRENT_STATE.md
 avatar.html
 media/previews/**
 media/states-strip.svg

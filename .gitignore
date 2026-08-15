@@ -2,5 +2,6 @@ node_modules/
 dist/
 out/
 *.vsix
+.vscode-test/
 clarvis-probe-log.jsonl
 .DS_Store

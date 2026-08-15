@@ -1,0 +1,134 @@
+/*
+ * The chat panel's stylesheet, read from disk and inlined under a nonce by
+ * `chatMarkup()` in src/panels/ButlerViewProvider.ts.
+ *
+ * **A file, not a template literal**, for the reason `media/chat.js` is one: a stray
+ * backtick in a comment ends a template literal early, which during M8 twice produced
+ * a panel that looked fine and did nothing. CSS carries the same hazard and gets no
+ * editor tooling while it is trapped in a string. Nothing here interpolates — the
+ * nonce goes on the `<style>` tag, not in the rules — so there is nothing to lose by
+ * moving it out.
+ *
+ * VS Code's own theme variables throughout: hardcoded colours look correct in exactly
+ * one theme and wrong in every other.
+ */
+/* avatar.html is a standalone demo: it centres one 320px avatar in the middle of
+   the viewport. In a side panel the shape is different — face on top, history
+   filling whatever is left, prompt pinned to the bottom — so its layout is
+   overridden here rather than edited there (§3: the file stays untouched). */
+body { justify-content: flex-start; gap: 0; padding: 0; overflow: hidden; }
+.stage { width: 100%; height: auto; flex: 0 0 auto; padding: 10px 0 4px; }
+/* Scales with the panel instead of overflowing it — a side bar can be dragged
+   much narrower than 320px, and a clipped butler looks broken rather than small. */
+svg.butler { width: clamp(130px, 62vw, 260px); height: auto; }
+.shadow { display: none; }
+
+/* The middle section owns the leftover height. min-height:0 is load-bearing:
+   without it a flex child refuses to shrink below its content, so the transcript
+   grows the page instead of scrolling and pushes the input off the bottom. */
+/* The generous bottom padding is deliberate: VS Code's notification toasts pop
+   up over the bottom-right corner of the window, which is exactly where a
+   bottom-pinned input sits when Clarvis is docked to the right — so the moment
+   he says anything, he covers his own prompt. Sitting the input higher keeps it
+   reachable while a toast is on screen. */
+.clarvis-chat { display:flex; flex-direction:column; gap:6px; padding:4px 10px 76px;
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
+  color: var(--vscode-foreground); }
+.clarvis-chat-head { display:flex; align-items:center; justify-content:flex-end;
+  flex: 0 0 auto; gap:6px; }
+.clarvis-mute { background:none; border:1px solid var(--vscode-widget-border, transparent);
+  border-radius:4px; color: var(--vscode-foreground); cursor:pointer; padding:2px 8px;
+  font-size:12px; opacity:.75; }
+.clarvis-mute:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
+.clarvis-mute[data-muted="true"] { opacity:1; color: var(--vscode-errorForeground); }
+/* The mode is a standing choice rather than a momentary one, so it reads as a
+   label with a value rather than another action button. */
+.clarvis-mode { opacity:1; font-weight:600; }
+/* A mode that cannot edit is worth seeing without reading: the colour is the
+   reassurance, the label is the detail. */
+.clarvis-mode[data-safe="true"] { color: var(--vscode-charts-green, var(--vscode-terminal-ansiGreen)); }
+#clarvis-transcript { display:flex; flex-direction:column; gap:8px;
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-right: 2px; }
+.clarvis-turn { line-height:1.45; white-space:pre-wrap; word-break:break-word;
+  padding-left:8px; border-left:2px solid transparent; }
+.clarvis-turn .who { display:block; font-size:10px; letter-spacing:.08em;
+  text-transform:uppercase; opacity:.55; margin-bottom:2px; }
+
+/* Two voices, told apart without shouting. Only VS Code's own theme variables,
+   so this reads correctly in light, dark and high-contrast rather than in the
+   one theme it was designed against.
+   The user's own words sit back a little: they already know what they typed,
+   and the reply is the thing worth reading. */
+.clarvis-turn.user { color: var(--vscode-descriptionForeground);
+  border-left-color: var(--vscode-input-border, var(--vscode-descriptionForeground)); }
+.clarvis-turn.user .who { color: var(--vscode-descriptionForeground); }
+.clarvis-turn.clarvis { color: var(--vscode-foreground);
+  border-left-color: var(--vscode-focusBorder); }
+.clarvis-turn.clarvis .who { color: var(--vscode-focusBorder); opacity:.8; }
+.clarvis-turn code { font-family: var(--vscode-editor-font-family);
+  background: var(--vscode-textCodeBlock-background); padding:0 3px; border-radius:3px; }
+
+
+/* Each option is a button carrying its own explanation, rather than a list
+   above a row of bare labels repeating it. */
+.clarvis-choices { display:flex; flex-wrap:wrap; gap:6px; padding-left:8px; margin-top:-2px; }
+/* Options with an explanation stack full-width so the text has room; bare
+   labels (Yes / No / Approve) sit side by side, where a stack looks absurd. */
+.clarvis-choices.stacked { flex-direction:column; align-items:stretch; }
+.clarvis-choice { font: inherit; cursor:pointer; text-align:left; display:flex;
+  flex-direction:column; gap:2px; padding:6px 10px; border-radius:5px;
+  border:1px solid var(--vscode-button-border, var(--vscode-focusBorder));
+  background: var(--vscode-button-secondaryBackground, transparent);
+  color: var(--vscode-button-secondaryForeground, var(--vscode-foreground)); }
+.clarvis-choice:hover { background: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground)); }
+/* Wraps: a label can be a whole suggested fix, and one that runs off the edge
+   of the panel is a button you cannot read before clicking. */
+.clarvis-choice .label { font-weight:600; white-space:normal; }
+/* The explanation is why you would pick it, not the thing you are picking. */
+.clarvis-choice .detail { font-size:11px; line-height:1.35; opacity:.75; white-space:normal; }
+
+/* A yes-or-no, pushed apart. These arrive mid-conversation, exactly where the
+   cursor already was, and a misclick is a decision nobody made — so the two
+   answers are as far apart as the panel allows and large enough to aim at.
+   Not colour-coded: which of the two is the "safe" one changes with the
+   question, and a green button that sometimes means stop is worse than none. */
+.clarvis-choices.binary { justify-content: space-between; gap:16px; padding:2px 8px 0; }
+.clarvis-choices.binary .clarvis-choice { flex:0 1 45%; padding:10px 14px; font-size:13px;
+  justify-content:center; text-align:center; }
+.clarvis-choices.binary .clarvis-choice .label { font-weight:600; }
+
+/* Where a build has got to, while it is getting there. A file is the checklist;
+   this is the part you can see without opening it. */
+.clarvis-progress { display:none; flex:0 0 auto; padding:4px 8px; border-radius:4px;
+  background: var(--vscode-editorWidget-background, transparent);
+  border:1px solid var(--vscode-widget-border, transparent); font-size:11px; }
+.clarvis-progress[data-active="true"] { display:block; }
+.clarvis-progress .count { opacity:.6; letter-spacing:.04em; }
+.clarvis-progress .step { display:block; margin-top:2px; }
+/* A bar rather than a spinner: a spinner says "something is happening", which
+   was never in doubt. The question is how much is left. */
+.clarvis-progress .bar { display:block; height:2px; margin-top:5px; border-radius:2px;
+  background: var(--vscode-widget-border, var(--vscode-descriptionForeground)); }
+.clarvis-progress .bar i { display:block; height:100%; border-radius:2px;
+  background: var(--vscode-focusBorder); transition: width .3s ease; }
+
+/* The prompt row: bowtie on the left, input taking the rest. Aligned to the
+   bottom so the icon stays level with the first line as the box grows. */
+.clarvis-prompt { display:flex; align-items:flex-end; gap:6px; }
+.clarvis-bowtie { display:flex; align-items:center; justify-content:center;
+  flex:0 0 auto; height:32px; width:28px; padding:0; cursor:pointer;
+  background:none; border:1px solid var(--vscode-input-border, transparent);
+  border-radius:4px; color: var(--vscode-foreground); opacity:.7; }
+.clarvis-bowtie:hover { opacity:1; background: var(--vscode-toolbar-hoverBackground); }
+/* Distinct from the bowtie: this one appears mid-answer and must read as an
+   interruption, not another menu. */
+/* Greyed and inert while idle; unmistakable, and clickable, while he is working. */
+.clarvis-stop[data-busy="false"] { opacity:.4; cursor:default; }
+.clarvis-stop[data-busy="false"]:hover { background:none; opacity:.4; }
+.clarvis-stop[data-busy="true"] { color: var(--vscode-errorForeground); opacity:1; }
+#clarvis-input { flex:1 1 auto; box-sizing:border-box; resize:none; padding:6px 8px;
+  font-family: inherit; font-size: inherit; border-radius:4px;
+  color: var(--vscode-input-foreground); background: var(--vscode-input-background);
+  border:1px solid var(--vscode-input-border, transparent); }
+#clarvis-input:focus { outline:1px solid var(--vscode-focusBorder); }

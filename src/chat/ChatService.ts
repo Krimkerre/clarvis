@@ -644,6 +644,13 @@ export class ChatService {
         if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
           this.actions.postModelInfo();
           this.actions.postMode();
+          // **A switch to Unattended answers the question already on the table.**
+          // Found live: someone switched mid-run with a step waiting, and still had
+          // to press the button — the mode took effect from the *next* step, which
+          // is not what "stop asking me" means when a question is sitting there. A
+          // config listener rather than a hook on the picker, so it fires however the
+          // mode was changed.
+          this.runs.modeStoppedAsking();
         }
       })
     );

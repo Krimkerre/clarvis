@@ -289,9 +289,10 @@ choose it.
 Reading files is never gated in any mode. Approving a file *read* six times teaches
 you to click yes without looking, which is worse than not asking at all.
 
-**Switching mode mid-run takes effect at the next step**, so if a run is going well
-and you would rather stop shepherding it, switch to Unattended and it stops asking
-from there on. Switching to Auto does *not* stop the asking — Auto checks before each
+**Switching mode mid-run takes effect immediately**, including for the question already
+on screen: switch to Unattended while he is waiting on you and he takes that as the
+answer and carries on. The gates on irreversible things are not affected — those stop
+and ask in every mode. Switching to Auto does *not* stop the asking — Auto checks before each
 change by design, and Unattended is the one that doesn't.
 
 **If you don't answer, he'll say so out loud.** A question waiting on you parks the

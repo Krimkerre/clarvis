@@ -117,3 +117,19 @@ test('answering stops the reminders that were queued', async () => {
   assert.equal(pending.isWaiting, false);
   assert.deepEqual(spoken, []);
 });
+
+test('a pending question can be answered from outside, as a mode change does', () => {
+  // Switching to Unattended mid-run has to release the question already on the table.
+  // Found live: the mode changed with a step waiting, and the button still had to be
+  // pressed — which looks exactly like the switch not working.
+  const pending = new PendingChoice(() => {});
+  const answered = pending.ask(YES_NO, 'Edit plan.md');
+
+  assert.equal(pending.isWaiting, true);
+  pending.supply('Do it');
+
+  return answered.then((answer) => {
+    assert.equal(answer, 'Do it');
+    assert.equal(pending.isWaiting, false);
+  });
+});

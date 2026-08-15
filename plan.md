@@ -4476,6 +4476,24 @@ such tool. And `stackedAdvice` printed **"I couldn't start cleanly from `your br
 exist. It now describes the unknown case instead of quoting a stand-in, and moved to
 `branchNames.ts` so the wording can be tested at all.
 
+**Switching to Unattended mid-run, tested on milestone 3 — and it still asked once
+more.** The switch happened at 09:58:10 with step 24 already waiting for an answer (the
+nudge had chased it 45 seconds earlier), and the button still had to be pressed. The
+run then finished, so no later step ever exercised the live check.
+
+The per-step fix was right and insufficient. Someone switches to Unattended *because*
+answering has become the annoyance, and usually while looking at the question that made
+it one; leaving that question pending means the switch appears not to have worked. A
+mode change that stops the asking now releases the step already on the table. Wired to
+a configuration listener rather than to the picker, so it fires however the mode was
+changed — and it releases *step* questions only. The deny-list gate is not a mode
+setting: `rm -rf` stops and asks in every mode, Unattended included.
+
+Also worth recording from that run: **Auto and Agent are identical for approvals**, so
+the earlier agent-to-auto switch was a no-op and verified nothing. Nine steps asked and
+were answered after it, which is correct for both modes and would have looked the same
+before the fix.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

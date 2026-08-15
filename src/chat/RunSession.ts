@@ -121,6 +121,24 @@ export class RunSession {
    */
   private asksNow?: () => boolean;
 
+  /**
+   * Lets go of a step question when the mode has just stopped asking.
+   *
+   * Switching to Unattended is done *because* answering has become the annoyance, and
+   * most often while looking at the question that made it one. Leaving that one
+   * pending means the switch appears not to have worked — found live on milestone 3,
+   * where the mode changed and the button still had to be pressed.
+   *
+   * Only ever releases a *step* question. The deny-list gate is a different thing and
+   * is not a mode setting: `rm -rf` stops and asks in every mode, including this one.
+   */
+  modeStoppedAsking(): void {
+    if (this.asksNow?.() !== false || !this.pending.isWaiting) return;
+
+    this.log('agent: mode no longer asks — releasing the step that was waiting');
+    this.pending.supply('Do it');
+  }
+
   setStepApproval(on: boolean, live?: () => boolean): void {
     this.stepApproval = on;
     this.asksNow = live;

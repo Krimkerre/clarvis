@@ -4890,6 +4890,35 @@ inside a longer sentence is not a refusal, or "there is nothing wrong with it" f
 itself as a decline. Everything else drops the offer without recording a decision
 nobody made, and the message routes normally.
 
+### The lingering mention fired, and the first firing found two defects
+
+14:38:58, three minutes after three errors were confirmed in `nanocode.py`. The whole
+chain is legible in one log burst: three timers landing together, §6's budget letting
+**one** through and suppressing the other two, and the survivor rewritten in character.
+
+Both defects are in that sentence.
+
+**The rewrite paraphrased away the useful half.** In went `nanocode.py line 18 has been
+unhappy for a few minutes now: "(" was not closed`. Out came *"nanocode.py line 18 is
+waiting for you to tell it what comes next"* — charming, in character, and no longer
+saying what to fix. `Announcer.announce` had no `keep` list, so the one part that is a
+fact rather than a mood was the part the model felt free to lose. It now passes the
+file, the line and the editor's own words as literals.
+
+**And the two suppressed remarks were recorded as said.** `mentionedLingering` was
+written before delivery was known, and the rule is once-ever — so lines 18 and 24 were
+marked mentioned by a remark nobody heard, and would never have been raised again. The
+surface now reports whether the budget let it through, and only a delivered remark
+counts.
+
+While fixing it, the better shape for a burst: other unmentioned errors in the same file
+are **counted rather than queued** — "and 2 more like it" — so one remark carries what
+three timers knew, instead of one remark and two losses.
+
+Worth noting what worked untouched: the budget did exactly what §6 promises, the pattern
+threshold fired independently on the same file (`surfaced 70a274db635c8571 (3×)`), and
+the pre-existing errors from the previous session were correctly skipped as not-ours.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

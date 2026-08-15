@@ -33,3 +33,20 @@ test('it is about the file, not about the person', () => {
 
   assert.doesNotMatch(line, /\byou\b|\byour\b/i);
 });
+
+test('other problems in the same file are counted, not repeated', () => {
+  // Three errors in one file means three timers landing together; the budget lets one
+  // through and drops the rest. Counting them is the difference between one useful
+  // remark and one remark plus two silently lost.
+  assert.match(lingeringLine('a.py', 18, '"(" was not closed', 2), /and 2 more like it/);
+  assert.match(lingeringLine('a.py', 18, 'x', 1), /and one more like it/);
+  assert.doesNotMatch(lingeringLine('a.py', 18, 'x', 0), /more like it/);
+});
+
+test('the error text is the last thing in the line, so a trim cannot eat it', () => {
+  // It is the only part that says what to fix, and it survived a live rewrite only
+  // because it is now passed as a literal to keep.
+  const line = lingeringLine('a.py', 18, '"(" was not closed');
+
+  assert.ok(line.endsWith('"(" was not closed'));
+});

@@ -258,7 +258,9 @@ function startPatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
     // A suggestion, never an action (rule 3), and subject to the shared budget.
-    (message) => void announcer.announce(message, 'judging', 'patternHit', 'important')
+    // The keep list is what stops the rewrite paraphrasing away the error text, and the
+    // return value is what stops a suppressed remark being recorded as said.
+    (message, keep) => announcer.announce(message, 'judging', 'patternHit', 'important', Date.now(), keep)
   );
 
   void memory.start(tracker, context);

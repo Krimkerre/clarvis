@@ -43,6 +43,7 @@ export const LINGER_MS = 3 * 60_000;
  * Named at the situation, never at the person (§2 rule 4): the file has a problem, the
  * reader is not being told off for it.
  */
-export function lingeringLine(file: string, line: number, message: string): string {
-  return `${file} line ${line} has been unhappy for a few minutes now: ${message}`;
+export function lingeringLine(file: string, line: number, message: string, others = 0): string {
+  const rest = others === 1 ? ', and one more like it' : others > 1 ? `, and ${others} more like it` : '';
+  return `${file} line ${line} has been unhappy for a few minutes now: ${message}${rest}`;
 }

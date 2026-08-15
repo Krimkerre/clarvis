@@ -238,11 +238,17 @@ export class RunSession {
 
     // What the run ended up saying, which is the only part the chat gets.
     let summary = '';
+    // Where it left them — kept apart from the summary, because a note about branches
+    // is not the run having said something.
+    let closing = '';
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
-        if (event.kind === 'done') summary = event.text.trim();
+        if (event.kind === 'done') {
+          summary = event.text.trim();
+          closing = event.closing ?? '';
+        }
 
         // Step announcements are for the panel, not for reading: pulled out here so
         // they never reach the terminal as stray "STEP:" lines. An event that was
@@ -274,7 +280,7 @@ export class RunSession {
     }
 
     const { commits, files } = runner.result;
-    await this.close(task, summary, files.length);
+    await this.close(task, summary, files.length, closing);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
@@ -383,7 +389,7 @@ export class RunSession {
    * and has to be trustworthy; the aside is comic relief after it. A summary trying to
    * be funny is a summary nobody can rely on.
    */
-  private async close(task: string, summary: string, changed: number): Promise<void> {
+  private async close(task: string, summary: string, changed: number, closing = ''): Promise<void> {
     // **A run that changed nothing still ends.** There is no closing line in that case —
     // "your own work is untouched" is meaningless when nothing was touched at all — so
     // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
@@ -401,9 +407,12 @@ export class RunSession {
       (changed === 0
         ? await this.phrase('report', 'I stopped without changing anything, and without saying why. Ask me again if that was not what you wanted.')
         : '');
-    if (!said) return;
+    if (!said && !closing) return;
 
-    await this.note(said);
+    // The branch note goes after whatever was said, and never instead of it. Joined
+    // upstream it counted as a summary, so a run that narrated nothing looked like a
+    // run that had reported — and the honest line above never fired.
+    await this.note([said, closing].filter(Boolean).join('\n\n'));
 
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.

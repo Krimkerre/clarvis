@@ -3,6 +3,7 @@ import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
 import { explainStep, StepExplanation } from './stepExplanation';
+import { agentSystemPrompt } from './agentPrompt';
 import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
 import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
@@ -18,7 +19,7 @@ import { confinementNote } from './tools/confinement';
 import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
-import { ANSWER_SHAPE, characterWith } from '../personality/character';
+import { ANSWER_SHAPE } from '../personality/character';
 import { STATE_TAG_INSTRUCTION } from '../chat/replyState';
 
 /**
@@ -62,6 +63,15 @@ export interface AgentEvent {
    */
   detail?: string;
   /** Files touched so far, for the commit and the summary. */
+  /**
+   * Where the run left them — branch, and what happened to it.
+   *
+   * Separate from `text` rather than appended to it: joined, an empty narration looked
+   * like a summary, and the honest "I stopped without changing anything" line never
+   * fired.
+   */
+  closing?: string;
+
   files?: string[];
   step?: number;
 }
@@ -267,13 +277,18 @@ export class AgentRunner {
     // questions ("Suggestions shown as a preview, or applied straight away?") put
     // them where nobody was looking, and the panel showed a line about branches.
     // Questions the agent needs answered are the whole point of it asking.
-    const closing = this.closingNote(branch);
-    const said = [narration.trim(), closing].filter(Boolean).join('\n\n');
     if (!readOnly) this.log(`agent: finished with ${narration.trim() ? 'a message' : 'nothing to say'}`);
 
+    // **Kept apart, because folding them together hid a silent run.** The closing note
+    // is about branches — "your own work on `master` is untouched" — and joining it to
+    // the narration made an empty narration look like a summary to the caller, which
+    // has an honest line ready for exactly that case and never got to use it. Found
+    // live: nine steps, no files, nothing said, and the chat showed a note about
+    // branches followed by an aside about the hard part being over.
     return {
       kind: 'done',
-      text: readOnly ? '' : said,
+      text: readOnly ? '' : narration.trim(),
+      closing: readOnly ? undefined : this.closingNote(branch) || undefined,
       files: [...this.touched],
     };
   }
@@ -767,7 +782,7 @@ export class AgentRunner {
    * discovering otherwise. It is not where the constraints live.
    */
   private systemPrompt(readOnly = false): string {
-    return agentSystemPrompt(readOnly);
+    return agentSystemPrompt(readOnly, this.root);
   }
 }
 
@@ -778,38 +793,6 @@ export class AgentRunner {
  * and the version that drifted is the one nobody read. So there is one definition and
  * both callers use it.
  */
-export function agentSystemPrompt(readOnly = false): string {
-    // Note what is *absent* from both: any instruction about tone. That comes from
-    // character() and nowhere else, because the last version repeated "be terse and dry"
-    // here and that one clause outweighed everything the character was supposed to be.
-    if (readOnly) {
-      return characterWith(
-        // **Scoped to the turn, because it was being read as a self-description.** "You
-        // cannot change anything" is true of an answer and false of him, and a model
-        // told the first says the second: asked whether he could debug his own source,
-        // he replied that he could not run tests, execute code or fix anything.
-        'The tools attached to this turn read the project — files, listings, search, diagnostics, git status and diffs. Writing and running things is not part of answering a question; it happens when they hand you a job.',
-        'Look before you answer: read the file rather than guessing at what it probably contains.',
-        'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
-        // **Not every question is about the project.** Told only about the codebase and
-        // handed a set of tools, the model treated "how do closures work" as something
-        // to answer by grepping — or deflected to what it could see. The person in the
-        // room asks about other things, and a butler who can only discuss the house is
-        // a worse butler.
-        'Not everything asked of you is about this project. Questions about how something works, opinions, or plain conversation are yours to answer from what you know — directly, without reaching for a tool to look something up in a codebase that has nothing to do with it.',
-        'Answer those as fully as they deserve. You are still yourself doing it: an opinion beats a survey, and you are not a reference manual.'
-      );
-    }
-
-    return characterWith(
-      'Work in small steps. Read before you edit. Verify with tests or diagnostics when you can.',
-      'You can only touch files inside the workspace; anything outside it is refused.',
-      'Destructive, outward-facing and install commands stop and ask the user — expect that, and do not try to work around it.',
-      'applyEdit needs text that appears exactly once. Include surrounding lines to make it unique.',
-      'When the task is done, stop calling tools and say what you changed — one line, in your own voice. Not a restatement of what you were asked to do: they know what they asked for, and "added a comment to the top of app.js" is the request read back to them.',
-      'Never pretend something worked when the tool said otherwise.'
-    );
-}
 
 /** One readable line per tool call, for the panel. */
 function describe(call: ToolCall): string {
@@ -818,3 +801,5 @@ function describe(call: ToolCall): string {
 
   return detail ? `${call.name}: ${String(detail)}` : call.name;
 }
+
+export { agentSystemPrompt };

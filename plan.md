@@ -4406,6 +4406,32 @@ itself into an empty room is what gets a product uninstalled. Spoken rather than
 written for the obvious reason: another line in the panel is the one thing guaranteed
 not to reach someone who is not reading the panel.
 
+**Project 2's build: nine steps, no files, and a cheerful sign-off.** The interview and
+the plan were fine — four milestones, the git-init offer taken, the step questions
+arriving in the chat with their explanations, `Do it` answered four times, every command
+confined. Then the run read the plan, checked `go version`, called the weather API
+twice, and spent a step on `cd /Users/clarvis 2>/dev/null; pwd; find / -maxdepth 1 -name
+"*.git"` — inventing a location out of the product name and searching the filesystem
+root for it. It stopped with an empty summary having written nothing.
+
+Two defects, and the second is the worse one.
+
+**He was never told where he is.** The brief said "you can only touch files inside the
+workspace" and never named the folder. Everything the model knew about its own location
+came from command output, which is how `1-photo-renamer/plan.md` happened yesterday and
+how `/Users/clarvis` happened today. The root is now in the prompt, with the rule that
+every path is relative to it. `agentSystemPrompt` moved to its own `vscode`-free module
+to be testable at all — the prompts are the part of this codebase most worth testing,
+since nearly every behavioural regression here has been a sentence rather than a branch.
+
+**And the run reported as though it had gone well.** There is already an honest line for
+a run that changes nothing — *"I stopped without changing anything, and without saying
+why"* — and it did not fire, because the closing note about branches was being joined to
+the narration upstream. An empty narration plus a branch note looked like a summary. So
+the chat showed "your own work on `master` is untouched" followed by an aside about the
+hard part being over, about a run that had built nothing at all. They travel as separate
+fields now, and the branch note goes *after* what was said rather than instead of it.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

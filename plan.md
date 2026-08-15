@@ -4306,6 +4306,24 @@ gets thrown away.
 
 **Also confirmed working from the previous round:** `listFiles: .` arrived unquoted.
 
+**What project 1 verified, and what it only looked like it verified.** 42 tool calls,
+ten of them commands, all confined. Proven: the interview end to end, the push-back
+firing exactly once, multiple fixes offered as buttons, three milestones planned, the
+checkpoint capturing five new files, branch isolation onto
+`clarvis/start-building-photochrono-…`, and undo restoring the lot on request.
+
+Not proven, and worth not claiming: **no dependency was installed.** The agent ran
+`pip3 show` four times — checking, not installing — because Pillow and piexif were
+already present, so the dependency gate never fired and a `pip install` has still never
+run under the sandbox. The git-init offer did not fire either, this folder having been
+`git init`-ed during setup. Both were things project 1 was chosen to force, and neither
+happened; project 2 is where they get another chance.
+
+The milestone never completed, so everything in *The loop itself* below is still open —
+the run stopped at step 4 of 5 on the path defect and the work was undone deliberately.
+That is one defect away from a finished milestone rather than a failed design, but the
+distinction is exactly what a checklist is for and the boxes stay empty.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.
@@ -4362,8 +4380,10 @@ Never done. Each piece works alone; the seams between them are untested.
 
 ### The two M9d2 items that have never run
 
-- [ ] The comment-style question is asked once, in the final round, both options
-      presented as legitimate
+- [x] The comment-style question is asked once, in the final round, both options
+      presented as legitimate — **verified, project 1.** Asked last, pushed back once
+      on a vague answer ("either works here"), and synthesised into the plan's
+      Conventions section.
 - [ ] Build a file under each setting — `explanatory` produces comments throughout,
       `lean` only where something is surprising
 

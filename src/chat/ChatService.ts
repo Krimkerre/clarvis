@@ -28,6 +28,7 @@ import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
 import { offerAnswer } from './offerAnswer';
+import { PendingChoice } from './PendingChoice';
 
 /** Set when someone turns the planning offer down, so it is asked once per project. */
 const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
@@ -513,6 +514,113 @@ export class ChatService {
   }
 
   /**
+   * The action a matcher missed but a model recognised.
+   *
+   * Only ever a suggestion, and a declined one falls through to a normal answer (M8f2).
+   * Planning is the exception it has to handle itself: it owns the conversation for the
+   * next several minutes, which is ChatService's to hand over rather than an action's
+   * to start.
+   */
+  private async inferredActionTook(question: string): Promise<boolean> {
+    const inferred = await this.actions.offerInferred(question);
+
+    if (inferred === 'planProject') {
+      await this.startPlanning();
+      return true;
+    }
+
+    return Boolean(inferred);
+  }
+  /**
+   * The two things that must happen before a message is routed at all.
+   *
+   * Stop first, always: "stop" means stop even when something is waiting on an answer,
+   * and an offer that swallowed it would make the one word that must always work the
+   * one word that did not. Then a pending offer, because a reply to a question just
+   * asked is an answer to it rather than a new request.
+   */
+  private async stoppedOrAnswered(question: string): Promise<boolean> {
+    if (isStopRequest(question)) {
+      await this.stopFromChat();
+      return true;
+    }
+
+    if (this.offers.isWaiting) {
+      this.offers.supply(question);
+      return true;
+    }
+
+    return false;
+  }
+  /**
+   * Offers to step into Agent for one job, then step back.
+   *
+   * **The old answer was homework.** "That's a job, and Chat only won't let me change
+   * files. Switch to Agent or Auto and ask again" — correct, and it made the user do
+   * the mode change *and* retype the request, to reach a thing Clarvis could plainly
+   * see they wanted. The restriction is worth keeping; making them re-ask for it is not.
+   *
+   * **Borrowed, not moved.** The mode goes back afterwards, because someone in Chat
+   * only chose that on purpose and one fix is not a decision to leave the safety catch
+   * off. Unless they changed it themselves during the run, in which case the newer
+   * choice is theirs and stands — the same rule planning already follows on handoff.
+   */
+  private async offerToBorrowAgent(question: string, mode: ChatMode): Promise<boolean> {
+    this.log(`chat: job blocked by ${mode} mode, offering to borrow Agent`);
+
+    await this.note(
+      await this.phrase(
+        'ask',
+        `That's a job, and ${modeSpec(mode).label} won't let me change files. I can borrow Agent for this one and hand it straight back.`,
+        [modeSpec(mode).label]
+      )
+    );
+
+    const answer = await this.offers.ask([
+      { label: 'Do it in Agent mode', detail: `One job, then back to ${modeSpec(mode).label}` },
+      { label: 'Tell me what you would change', detail: 'No edits — just the answer' },
+      { label: 'Leave it', detail: 'Nothing happens' },
+    ]);
+
+    if (answer === 'Leave it') {
+      this.log('chat: job declined, mode unchanged');
+      return true;
+    }
+
+    // Anything that is not a yes falls through to the ordinary answer, which is what
+    // the second button asks for and what an unrelated reply deserves anyway.
+    if (answer !== 'Do it in Agent mode') return false;
+
+    await this.actions.setMode('agent');
+    this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
+    this.runs.setFromPlan(false);
+
+    try {
+      await this.runs.run(question, 'Borrowing Agent for this one.');
+    } finally {
+      // Only if they have not moved it themselves in the meantime: switching to
+      // Unattended mid-run is a decision, and undoing it here would be this method
+      // overruling the user about their own editor.
+      if (this.actions.mode() === 'agent') {
+        await this.actions.setMode(mode);
+        this.log(`chat: handed Agent back, returned to ${mode}`);
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * One-shot offers made from `ask` itself, as opposed to the ones a run makes.
+   *
+   * The same mechanism the interview uses: a promise resolved by the next message,
+   * with buttons alongside. Checked before routing, since a reply to a question is not
+   * a new request.
+   */
+  private readonly offers = new PendingChoice((items: { label: string; detail?: string }[]) =>
+    this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' })
+  );
+  /**
    * Starts the next milestone from an approved plan.
    *
    * Same run path as the first one — step approval on, progress showing, the pause
@@ -891,10 +999,7 @@ export class ChatService {
 
     // Before anything that costs a request: someone typing "stop" wants the thing to
     // stop, and asking a model about it first is both slow and beside the point.
-    if (isStopRequest(question)) {
-      await this.stopFromChat();
-      return;
-    }
+    if (await this.stoppedOrAnswered(question)) return;
 
     // **Typing during a run redirects it.** Anything else is worse: answering it
     // separately leaves the user watching the agent carry on doing the thing they
@@ -921,12 +1026,7 @@ export class ChatService {
     // and a declined suggestion falls through to a normal answer (M8f2). Planning is
     // the one action ChatActions cannot run itself: it owns the whole conversation
     // for the next several minutes, which is ChatService's to hand over, not its.
-    const inferred = await this.actions.offerInferred(question);
-    if (inferred === 'planProject') {
-      await this.startPlanning();
-      return;
-    }
-    if (inferred) return;
+    if (await this.inferredActionTook(question)) return;
 
     const mode = this.actions.mode();
 
@@ -952,10 +1052,7 @@ export class ChatService {
     // was the reason. Said before the answer rather than instead of it: the answer is
     // still useful, and the note is what makes the refusal make sense.
     if (decision.route === 'agent' && !canEdit(mode)) {
-      this.log(`chat: job blocked by ${mode} mode`);
-      await this.note(
-        `That's a job, and ${modeSpec(mode).label} won't let me change files. Switch to Agent or Auto and ask again.`
-      );
+      if (await this.offerToBorrowAgent(question, mode)) return;
     }
 
     // **The model phrases it; local state supplies the facts.** Canned answers are

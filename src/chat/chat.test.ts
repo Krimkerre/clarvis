@@ -1,4 +1,4 @@
-import { capabilities, MODES } from './modes';
+import { capabilities, MODES, canEdit, modeSpec } from './modes';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { appendTurn, MAX_TURNS, Turn } from './thread';
@@ -586,4 +586,18 @@ test('the open file problems reach the model too, not just the counts', () => {
   });
 
   assert.match(block, /line 19: unterminated string literal/);
+});
+
+test('a read-only mode is named in the offer, and it is the mode returned to', () => {
+  // The wording has to say which mode is being borrowed *from*, because "back to Chat
+  // only" and "back to Plan only" are different promises and only one of them is true.
+  for (const mode of ['chat', 'plan'] as const) {
+    assert.equal(canEdit(mode), false, mode);
+    assert.ok(modeSpec(mode).label.length > 0, mode);
+  }
+
+  // And the modes that can already edit must never see the offer at all.
+  for (const mode of ['agent', 'auto', 'unattended'] as const) {
+    assert.equal(canEdit(mode), true, mode);
+  }
 });

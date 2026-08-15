@@ -4938,6 +4938,30 @@ every one of those is a thing a paraphrase could send someone to the wrong line 
 
 > That's 3 times this week — nanocode.py line 19: Expected expression. No fix on record yet.
 
+### Borrowing Agent for one job
+
+"Fix my code" in Chat only produced *"That's a job, and Chat only won't let me change
+files. Switch to Agent or Auto and ask again."* Correct, and it set homework: change the
+mode, retype the request, to reach a thing Clarvis could plainly see was wanted. The
+restriction is worth keeping. Making someone re-ask for it is not.
+
+He offers instead — **do it in Agent mode**, **tell me what you would change**, or
+**leave it** — and on the first, switches, runs the one job, and hands the mode back in
+a `finally`. Borrowed, not moved: someone in Chat only chose that deliberately, and one
+fix is not a decision to leave the safety catch off.
+
+**Unless they moved it themselves mid-run**, in which case the newer choice is theirs
+and stands. Same rule planning already follows when it hands off to a build, and the
+same reasoning: a method that overrules the user about their own editor is worse than
+the inconvenience it saves.
+
+Two structural notes. The offer uses `PendingChoice` — the mechanism the interview and
+step approval already share — rather than a sixth `awaiting…` flag on `ChatService`,
+which is the drift that made that file hard to follow. And the reply to it is taken
+*after* the stop check, never before: "stop" has to mean stop even when something is
+waiting on an answer, or the one word that must always work becomes the one word that
+does not.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

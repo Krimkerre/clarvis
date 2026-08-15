@@ -110,6 +110,14 @@ on and put you back there. Take it and the next job starts from your branch as w
 decline and it stays put, which is fine, but a week of declining leaves you with a
 branch per request.
 
+**Ask for a job in Chat only and he offers to borrow Agent for it.** "Fix my code" in a
+mode that cannot change files used to get you a note telling you to switch modes and ask
+again — the mode change *and* retyping the request, to reach something he could plainly
+see you wanted. Now he offers: do it in Agent mode, tell you what he would change, or
+leave it. Take the first and he switches, does the one job, and **hands the mode back**
+when it finishes. Change the mode yourself while he works and your choice stands; he
+won't undo it.
+
 **Ask "anything wrong in here?" and he reads the file you're looking at.** Not the last
 build, not the whole project — the errors and warnings the editor is reporting for the
 open file, with line numbers, worst first, five at a time. If there is nothing, he says

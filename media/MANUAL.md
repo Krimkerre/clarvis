@@ -104,6 +104,12 @@ to the same finding, and they are different projects, so you pick rather than ap
 **Something else** takes your own answer instead, and **No, drop this** turns the
 finding down (say why — it's recorded, not dropped).
 
+**When a job is done he asks where the work should go.** His changes live on a branch
+of their own while he works; at the end he offers to fold them into the branch you were
+on and put you back there. Take it and the next job starts from your branch as well —
+decline and it stays put, which is fine, but a week of declining leaves you with a
+branch per request.
+
 **He knows when the project is finished.** Each milestone is handed over as "4 of 4",
 with the later ones named so the code being written now can accommodate them, and the
 last one is told it is the last. When the final step is ticked he says so in the

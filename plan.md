@@ -4630,6 +4630,25 @@ Three things follow, all from the same fact — the plan already knows.
 Both call sites pass the milestone list, including the resume-build path, which is the
 one that started milestone 4 in the first place.
 
+**Eight branches, stacked in a straight line, and nothing ever offered to land them.**
+Every request made its own `clarvis/<task>` branch off the *previous* run's branch:
+`commit changes` → `clarvis/commit-changes`, then a gitignore branch on top of that,
+then — the one that gives it away — asking to merge to main produced a branch called
+`clarvis/merge-to-main`. Each run opened with "I couldn't start cleanly from where you
+were", which was true and read as an apology for a situation nothing was fixing.
+
+The review wizard has had merge, return and discard since M8, with `Merge into <branch>`
+first in the list. It is reachable only through `clarvis.reviewRun`, a command nobody
+knows exists — so the work never went home, the next run branched off the temp branch,
+and the repository grew a branch per sentence.
+
+A run that committed something now asks at the end, in chat, with buttons: **Merge into
+`<home>`** (the work and the user, back where they were), **Show me what changed**, or
+**Leave it there**. Nothing new was built for it — the command takes a decision made in
+chat and skips its own picker, because asking the same question twice in two different
+widgets is worse than not asking at all. Runs that changed nothing say nothing, and a
+run already on its home branch has nothing to ask about.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

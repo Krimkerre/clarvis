@@ -301,7 +301,7 @@ export class RunSession {
     }
 
     const { commits, files } = runner.result;
-    await this.close(task, summary, files.length, closing);
+    await this.close(task, summary, files.length, closing, runner.branches);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
@@ -372,6 +372,47 @@ export class RunSession {
     await this.readBackWhatIWrote(summary);
   }
 
+  /**
+   * Offers to put the run's work where it belongs, once the run is over.
+   *
+   * **Only when there is something to land** — a run that committed nothing has no
+   * branch worth discussing, and asking anyway is the nagging §6 exists to prevent.
+   *
+   * Merging is first and named, because it is what someone means by "that's fine, keep
+   * it": the work ends up on the branch they were on, and the *next* run starts from
+   * there rather than stacking on this one.
+   */
+  private async offerToLandTheWork(changed: number, branch?: string, home?: string): Promise<void> {
+    if (changed === 0 || !branch || !home || branch === home) return;
+
+    this.log(`review: offering to land ${branch} on ${home}`);
+    await this.note(
+      await this.phrase(
+        'ask',
+        `That work is on \`${branch}\`. Shall I fold it into \`${home}\` and put you back there?`,
+        [branch, home]
+      )
+    );
+
+    const answer = await this.pending.ask(
+      [
+        { label: `Merge into ${home}`, detail: 'Puts the work, and you, back where you were' },
+        { label: 'Show me what changed', detail: 'Opens the diff. Nothing moves.' },
+        { label: 'Leave it there', detail: `Stays on \`${branch}\` — decide later` },
+      ],
+      `where ${branch} should go`
+    );
+
+    if (!answer || answer === 'Leave it there') {
+      this.log(`review: ${branch} left where it is`);
+      return;
+    }
+
+    await vscode.commands.executeCommand(
+      'clarvis.reviewRun',
+      answer === 'Show me what changed' ? 'diff' : 'merge-origin'
+    );
+  }
   /**
    * Reviews the milestone's own diff, and offers what to do about it.
    *
@@ -453,7 +494,13 @@ export class RunSession {
    * and has to be trustworthy; the aside is comic relief after it. A summary trying to
    * be funny is a summary nobody can rely on.
    */
-  private async close(task: string, summary: string, changed: number, closing = ''): Promise<void> {
+  private async close(
+    task: string,
+    summary: string,
+    changed: number,
+    closing = '',
+    landing?: { working?: string; startedFrom?: string }
+  ): Promise<void> {
     // **A run that changed nothing still ends.** There is no closing line in that case —
     // "your own work is untouched" is meaningless when nothing was touched at all — so
     // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
@@ -477,6 +524,14 @@ export class RunSession {
     // upstream it counted as a summary, so a run that narrated nothing looked like a
     // run that had reported — and the honest line above never fired.
     await this.note([said, closing].filter(Boolean).join('\n\n'));
+
+    // **Where the work should live, asked once, at the end.** The review wizard has
+    // always had merge, return and discard — behind a command nobody runs, so every
+    // run left the user on its temp branch and the next one branched off *that*. Found
+    // live: eight `clarvis/*` branches stacked in a straight line, each announcing "I
+    // couldn't start cleanly from where you were", and a request to merge to main that
+    // created a branch called `clarvis/merge-to-main`.
+    await this.offerToLandTheWork(changed, landing?.working, landing?.startedFrom);
 
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.

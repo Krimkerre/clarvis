@@ -416,6 +416,9 @@ export class AgentRunner {
     // a read-only answer: there is nothing to undo and nothing to isolate.
     const checkpoint = new Checkpoint(this.context, this.root, this.log);
     const branch = new AgentBranch(this.log, this.context.workspaceState);
+    // Held so the caller can ask afterwards where the work ended up — the run is over
+    // by the time "shall I fold this back in?" is worth asking.
+    this.lastBranch = branch;
 
     if (!options.readOnly) yield* this.protect(checkpoint, branch, task);
 
@@ -770,6 +773,19 @@ export class AgentRunner {
   }
 
   /** What this run committed and touched, for the review wizard. */
+  /** The branch object from the last run, for the questions that come after it. */
+  private lastBranch?: AgentBranch;
+
+  /**
+   * The branch this run worked on, and the one it came from.
+   *
+   * Exposed because the end of a run is where "shall I fold this back in?" belongs,
+   * and the caller cannot answer that without knowing both names.
+   */
+  get branches(): { working?: string; startedFrom?: string } {
+    return { working: this.lastBranch?.current, startedFrom: this.lastBranch?.previous };
+  }
+
   get result(): { commits: string[]; files: string[] } {
     return { commits: [...this.ownCommits], files: [...this.touched] };
   }

@@ -206,3 +206,25 @@ test('a failed delete does not pretend the branch is gone', () => {
 
   assert.match(line, /still there/);
 });
+
+test('merging into where the run started is offered first among the moves', () => {
+  // Found live: eight clarvis/* branches stacked in a line, each run branching off the
+  // previous run's branch, because nothing ever offered to put the work back. The
+  // wizard had the option the whole time — behind a command nobody runs.
+  const options = reviewOptions({
+    branch: 'clarvis/add-a-gitignore',
+    origin: 'master',
+    base: 'master',
+    files: ['.gitignore'],
+    commits: [{ hash: 'abc1234', subject: 'Add a .gitignore' }],
+    foreign: [],
+    uncommitted: 0,
+  });
+
+  const moves = options.filter((option) => option.action.startsWith('merge'));
+
+  assert.ok(moves.length >= 1);
+  assert.match(moves[0].label, /Merge into master/);
+  // And the destructive one is still last, wherever the merges landed.
+  assert.equal(options[options.length - 1].action, 'discard');
+});

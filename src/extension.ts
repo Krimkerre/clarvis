@@ -19,6 +19,7 @@ import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { reviewRun } from './agent/reviewWizard';
+import { ReviewAction } from './agent/runReview';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
@@ -791,13 +792,14 @@ function registerAgentCommands(
 
     // Available any time, not only after a run — the question "what is this branch and
     // what do I do with it" outlives the run that created it.
-    vscode.commands.registerCommand('clarvis.reviewRun', () =>
+    vscode.commands.registerCommand('clarvis.reviewRun', (decided?: ReviewAction) =>
       reviewRun(
         [],
         [],
         (message) => logger.write(message),
         context.workspaceState.get('clarvis.agent.baseBranch'),
-        toTranscriptSpoken
+        toTranscriptSpoken,
+        decided
       )
     ),
 

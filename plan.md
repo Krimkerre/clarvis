@@ -4494,6 +4494,22 @@ the earlier agent-to-auto switch was a no-op and verified nothing. Nine steps as
 were answered after it, which is correct for both modes and would have looked the same
 before the fix.
 
+**Finishing a milestone was the one moment "in progress" could not see.** Milestones 1
+to 3 done, milestone 4 untouched, window closed — and reopening it offered nothing.
+The build had to be restarted by hand with "start milestone 3 from plan.md".
+
+`interruptedBuild()` tested `milestone.done > 0`, meaning progress inside the *next*
+milestone, which is a different question from whether this project is being built.
+A finished milestone is the most likely moment for someone to close the window, and it
+produced the one plan state that read as untouched. It now asks whether anything
+anywhere in the plan is ticked.
+
+The offer needed two shapes as well, since one line covered both badly: mid-milestone
+is "milestone 3 is 2 of 5 done, shall I carry on with it", and a finished one is
+"milestone 4 is next: Finalize the user-facing interface. Shall I start on it?" —
+reading "milestone 4 is 0 of 2 done" back to someone who has just finished three of
+them describes their progress as nothing.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

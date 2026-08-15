@@ -104,6 +104,13 @@ to the same finding, and they are different projects, so you pick rather than ap
 **Something else** takes your own answer instead, and **No, drop this** turns the
 finding down (say why — it's recorded, not dropped).
 
+**Close the window mid-build and he picks that up too.** Reopen and he says where the
+plan stands — "Milestone 4 is next: Finalize the user-facing interface. Shall I start on
+it?" if the last one finished, or "Milestone 3 is 2 of 5 done, shall I carry on?" if you
+stopped part-way. He reads that out of `plan.md` every time rather than remembering it,
+so ticking something off by hand counts. A plan with nothing built yet gets no offer —
+that is not work in progress, it is a plan you have not started.
+
 **Close the window mid-interview and he picks it up.** Reopen the folder and the first
 thing he says is where you got to — *"Forecast — 3 questions in. Carry on from there?"*
 — with **Carry on**, **Start again** and **Leave it**. Answers are saved after every

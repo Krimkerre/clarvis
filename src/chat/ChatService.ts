@@ -344,16 +344,31 @@ export class ChatService {
     const pending = await interruptedBuild();
     if (!pending) return false;
 
-    this.log(`chat: build in progress — milestone ${pending.milestone.number}, ${pending.milestone.done}/${pending.milestone.total}`);
-    await this.remark(
-      await opening(
-        `They were part-way through building "${pending.projectName}": milestone ${pending.milestone.number}, ${pending.milestone.title}, ${pending.milestone.done} of ${pending.milestone.total} steps done. You are offering to pick it up where it stopped.`,
-        `Milestone ${pending.milestone.number} is ${pending.milestone.done} of ${pending.milestone.total} done. Shall I carry on with it?`
-      )
-    );
+    const { number, title, done, total } = pending.milestone;
+    this.log(`chat: build in progress — milestone ${number}, ${done}/${total}`);
+
+    // **Two different situations, and one line for both was wrong.** Mid-milestone is
+    // "carry on where it stopped"; a milestone finished with the next one untouched is
+    // "shall I start the next one" — and reading "milestone 4 is 0 of 2 done" back to
+    // someone who just finished milestone 3 describes their progress as nothing.
+    const [context, fallback] =
+      done > 0
+        ? [
+            `They were part-way through building "${pending.projectName}": milestone ${number}, ${title}, ${done} of ${total} steps done. You are offering to pick it up where it stopped.`,
+            `Milestone ${number} is ${done} of ${total} done. Shall I carry on with it?`,
+          ]
+        : [
+            `They have been building "${pending.projectName}" and the milestone they were on is finished. Milestone ${number} — ${title} — is the next one, ${total} step(s), not started. You are offering to begin it.`,
+            `Milestone ${number} is next: ${title}. Shall I start on it?`,
+          ];
+
+    await this.remark(await opening(context, fallback));
 
     this.awaitingBuildAnswer = pending;
-    this.panel.post({ type: 'choices', items: [{ label: 'Carry on' }, { label: 'Not now' }] });
+    this.panel.post({
+      type: 'choices',
+      items: [{ label: done > 0 ? 'Carry on' : 'Start it' }, { label: 'Not now' }],
+    });
     return true;
   }
 
@@ -418,7 +433,7 @@ export class ChatService {
     this.panel.post({ type: 'choices-clear' });
     if (!pending) return false;
 
-    if (!/^(carry on|y|yes|sure|ok|okay|go on|continue)\b/i.test(question.trim())) {
+    if (!/^(carry on|start it|y|yes|sure|ok|okay|go on|continue)\b/i.test(question.trim())) {
       this.log('chat: build resume declined');
       return false;
     }

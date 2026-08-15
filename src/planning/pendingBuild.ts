@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MilestoneState, milestoneSteps, nextMilestone } from './planUpdate';
+import { MilestoneState, milestoneSteps, nextMilestone, readMilestones } from './planUpdate';
 
 /**
  * The milestone this workspace is part-way through, if there is one.
@@ -13,6 +13,13 @@ export interface PendingBuild {
   milestone: MilestoneState;
   projectName: string;
   steps: string[];
+  /**
+   * Whether anything in this plan has been built already.
+   *
+   * Not the same question as "is this milestone part-way through", and conflating the
+   * two is what left a finished milestone 3 looking like an untouched project.
+   */
+  started: boolean;
 }
 
 export async function pendingBuild(): Promise<PendingBuild | undefined> {
@@ -33,18 +40,25 @@ export async function pendingBuild(): Promise<PendingBuild | undefined> {
     // The plan's own title, which is the project name planning chose.
     projectName: /^#\s+(.+)$/m.exec(planText)?.[1]?.trim() ?? 'this project',
     steps: milestoneSteps(planText, milestone.number),
+    started: readMilestones(planText).some((entry) => entry.done > 0),
   };
 }
 
 /**
- * The same, but only when work has actually started.
+ * The same, but only when this project has actually been built in.
  *
- * A freshly approved plan with nothing ticked is not an interrupted build, and
+ * A freshly approved plan with nothing ticked anywhere is not work in progress, and
  * offering to continue it every time the window opens is the nagging §6 exists to
- * prevent. Some progress and something left is the narrow case that honestly means
- * "you were in the middle of this".
+ * prevent.
+ *
+ * **The test used to be `milestone.done > 0` — progress inside the *next* milestone —
+ * and that is a different question.** Found live: milestones 1 to 3 finished, milestone
+ * 4 untouched, and reopening the window offered nothing at all; the build had to be
+ * restarted by hand with "start milestone 3 from plan.md". Finishing a milestone is the
+ * single most likely moment to close a window, and it was the one moment this could not
+ * see. Any progress anywhere in the plan means someone is building this.
  */
 export async function interruptedBuild(): Promise<PendingBuild | undefined> {
   const pending = await pendingBuild();
-  return pending && pending.milestone.done > 0 ? pending : undefined;
+  return pending?.started ? pending : undefined;
 }

@@ -3,7 +3,14 @@ import assert from 'node:assert/strict';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { isInside, realpathOfNearestExisting, resolveInWorkspace, unquote, PathRefused } from './workspacePaths';
+import {
+  isInside,
+  isCaseSensitiveFilesystem,
+  realpathOfNearestExisting,
+  resolveInWorkspace,
+  unquote,
+  PathRefused,
+} from './workspacePaths';
 
 // ---------------------------------------------------------------------------
 // Containment, as pure string logic. These are the cases that must never pass,
@@ -12,27 +19,42 @@ import { isInside, realpathOfNearestExisting, resolveInWorkspace, unquote, PathR
 
 test('a sibling directory sharing a prefix is not inside', () => {
   // The classic containment bug: startsWith('/work') accepts '/workspace-secrets'.
-  assert.equal(isInside('/work', '/workspace-secrets/passwords', 'linux'), false);
-  assert.equal(isInside('/work', '/work/src/index.ts', 'linux'), true);
+  assert.equal(isInside('/work', '/workspace-secrets/passwords', true), false);
+  assert.equal(isInside('/work', '/work/src/index.ts', true), true);
 });
 
 test('the root itself is inside', () => {
-  assert.equal(isInside('/work', '/work', 'linux'), true);
+  assert.equal(isInside('/work', '/work', true), true);
 });
 
 test('traversal out and back is judged on where it lands', () => {
   // '/work/../work/x' is legitimate; '/work/../etc/passwd' is not. Only resolution
   // tells them apart, which is why the check resolves before comparing.
-  assert.equal(isInside('/work', '/work/../work/x', 'linux'), true);
-  assert.equal(isInside('/work', '/work/../etc/passwd', 'linux'), false);
-  assert.equal(isInside('/work', '/work/a/../../etc/passwd', 'linux'), false);
+  assert.equal(isInside('/work', '/work/../work/x', true), true);
+  assert.equal(isInside('/work', '/work/../etc/passwd', true), false);
+  assert.equal(isInside('/work', '/work/a/../../etc/passwd', true), false);
 });
 
-test('case handling follows the platform, because the filesystem does', () => {
-  // On macOS the two are the same file, so refusing would break real paths. On Linux
-  // they are different files, so folding case would accept one that must be refused.
-  assert.equal(isInside('/Work', '/work/file.ts', 'darwin'), true);
-  assert.equal(isInside('/Work', '/work/file.ts', 'linux'), false);
+test('case handling follows caseSensitive, because it must match what the filesystem does', () => {
+  // On a case-insensitive filesystem the two are the same file, so refusing would
+  // break real paths. On a case-sensitive one they are different files, and folding
+  // case would wrongly accept a path that must be refused — the containment bug this
+  // guards against (case-sensitive APFS volumes on macOS, not just Linux).
+  assert.equal(isInside('/Work', '/work/file.ts', false), true);
+  assert.equal(isInside('/Work', '/work/file.ts', true), false);
+});
+
+test('case sensitivity is probed against the real filesystem, not assumed from the OS', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'clarvis-case-probe-'));
+  try {
+    const sensitive = await isCaseSensitiveFilesystem(dir);
+    // Whichever way this disk actually behaves, the probe's own marker file must be
+    // gone afterwards — it must not leave debris in the directory it was asked about.
+    assert.deepEqual(await fs.readdir(dir), []);
+    assert.equal(typeof sensitive, 'boolean');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
 });
 
 // ---------------------------------------------------------------------------

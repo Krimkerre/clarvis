@@ -37,16 +37,17 @@ export class PathRefused extends Error {
  * `/workspace-secrets`, which a naive `startsWith` gets wrong — and that is the classic
  * way a containment check leaks a sibling directory.
  *
- * Case handling follows the platform, because it must match what the *filesystem*
- * does. On macOS and Windows a case-different path is the same file, so comparing
- * case-sensitively there would refuse legitimate paths; on Linux it is a different
- * file, and folding case would accept one that should be refused.
+ * Case handling follows `caseSensitive`, which the caller must derive from the real
+ * filesystem rather than from the OS name — macOS supports case-sensitive APFS
+ * volumes, so `process.platform === 'darwin'` is not a reliable stand-in for "this
+ * filesystem folds case". Getting that wrong here is a containment bypass, not a
+ * cosmetic bug: a case-different path outside the workspace would be folded onto one
+ * that reads as inside it.
  */
-export function isInside(root: string, candidate: string, platform: NodeJS.Platform = process.platform): boolean {
-  const fold = platform === 'win32' || platform === 'darwin';
+export function isInside(root: string, candidate: string, caseSensitive: boolean): boolean {
   const normalise = (value: string) => {
     const resolved = path.resolve(value);
-    return fold ? resolved.toLowerCase() : resolved;
+    return caseSensitive ? resolved : resolved.toLowerCase();
   };
 
   const normalisedRoot = normalise(root);
@@ -56,6 +57,36 @@ export function isInside(root: string, candidate: string, platform: NodeJS.Platf
 
   // The separator is what stops /work matching /workspace-secrets.
   return normalisedCandidate.startsWith(normalisedRoot + path.sep);
+}
+
+/**
+ * Whether `root`'s filesystem tells two differently-cased spellings of the same path
+ * apart, determined by asking the filesystem rather than assuming it from the OS name.
+ *
+ * Windows is hard-coded case-insensitive by the caller instead of probed — that is a
+ * genuine OS guarantee, unlike the darwin assumption this function replaces. Probing
+ * writes a marker file once and reads it back under a case-flipped name; any failure
+ * (permissions, a root that doesn't exist yet) falls back to case-insensitive, the
+ * stricter assumption for containment purposes since it folds more paths together
+ * rather than fewer.
+ */
+export async function isCaseSensitiveFilesystem(root: string): Promise<boolean> {
+  const probe = path.join(root, `.clarvis-case-probe-${process.pid}`);
+  const flipped = probe.replace('case-probe', 'CASE-PROBE');
+
+  try {
+    await fs.writeFile(probe, '');
+    try {
+      await fs.stat(flipped);
+      return false; // the flipped-case name was found: this filesystem folds case
+    } catch {
+      return true; // the flipped-case name does not exist: case is significant
+    } finally {
+      await fs.unlink(probe).catch(() => {});
+    }
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -142,19 +173,21 @@ export async function resolveInWorkspace(root: string | undefined, requested: st
     );
   }
 
+  const realRoot = await realpathOrSelf(root);
+  const caseSensitive = process.platform === 'win32' ? false : await isCaseSensitiveFilesystem(realRoot);
+
   // An absolute path is allowed, but only if it lands inside; a relative one is
   // resolved from the workspace root rather than from the extension host's cwd, which
   // is somewhere nobody intended.
   const textual = path.resolve(root, await undoubled(root, unquote(requested)));
 
-  if (!isInside(root, textual)) {
+  if (!isInside(root, textual, caseSensitive)) {
     throw new PathRefused('outside-workspace', requested, outsideMessage(requested));
   }
 
-  const realRoot = await realpathOrSelf(root);
   const realTarget = await realpathOfNearestExisting(textual);
 
-  if (!isInside(realRoot, realTarget)) {
+  if (!isInside(realRoot, realTarget, caseSensitive)) {
     // Reached only via a symlink, so the message says so — otherwise the refusal looks
     // arbitrary to someone staring at a path that is plainly inside the project.
     throw new PathRefused(

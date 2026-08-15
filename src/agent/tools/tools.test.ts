@@ -422,3 +422,20 @@ test('replacement is literal, so regex characters are not special', () => {
 
   assert.equal(plan.next, 'if (a || b) { cost = $6; }\n');
 });
+
+test('a virtualenv is skipped whether or not it has a dot', async () => {
+  // `python3 -m venv venv` is what every Python tutorial types; `.venv` is what some
+  // tools prefer. Only the dotted one was skipped, and a fresh virtualenv holds around
+  // 3,000 files — three times the listing cap — so one listFiles would have come back
+  // full of library code and none of the user's own.
+  const root = await workspace();
+  await fs.mkdir(path.join(root, 'venv', 'lib'), { recursive: true });
+  await fs.writeFile(path.join(root, 'venv', 'lib', 'vendored.py'), 'x = 1');
+  await fs.mkdir(path.join(root, '.pytest_cache'), { recursive: true });
+  await fs.writeFile(path.join(root, '.pytest_cache', 'junk'), 'x');
+  await fs.writeFile(path.join(root, 'nanocode.py'), 'print("hi")');
+
+  const files = await listFiles(root, { recursive: true });
+
+  assert.deepEqual(files, ['nanocode.py']);
+});

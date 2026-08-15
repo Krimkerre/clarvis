@@ -17,7 +17,27 @@ export const MAX_READ_BYTES = 512 * 1024;
 export const MAX_SEARCH_RESULTS = 200;
 
 /** Directories never worth walking into, and expensive to walk. */
-const ALWAYS_SKIP = new Set(['.git', 'node_modules', 'dist', 'out', '.next', 'build', '.venv', '__pycache__']);
+/**
+ * Directories never worth walking into.
+ *
+ * `venv` without the dot is the one that was missing, and Python's own tooling is why:
+ * `python3 -m venv venv` is what every tutorial types, `.venv` is the convention some
+ * tools prefer, and both are ordinary. Caught before it bit — a fresh virtualenv here
+ * holds about 3,000 files, which is three times the listing cap, so a single
+ * `listFiles` would have returned library code and nothing the user wrote.
+ */
+const ALWAYS_SKIP = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'out',
+  '.next',
+  'build',
+  'venv',
+  '.venv',
+  '__pycache__',
+  '.pytest_cache',
+]);
 
 export interface ReadResult {
   text: string;

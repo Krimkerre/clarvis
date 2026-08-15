@@ -208,6 +208,28 @@ export class ChatService {
   }
 
   /**
+   * Whether the run in progress consumed this message.
+   *
+   * Two ways it can, and the order matters. **A run waiting on step approval is not a
+   * run to redirect**: "do it" handed to `handleMidRun` would be sent to a model to be
+   * judged as possible new scope, while the step sat there waiting for an answer that
+   * had already been given. Everything else typed during a run is a correction.
+   */
+  private async runTook(question: string): Promise<boolean> {
+    if (this.runs.awaitingStep) {
+      this.runs.answerStep(question);
+      return true;
+    }
+
+    if (this.runs.isRunning) {
+      await this.handleMidRun(question);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Something said mid-build: folded in, or kicked back for sign-off.
    *
    * The judgement is a model call, and it fails toward folding in — losing a
@@ -471,6 +493,7 @@ export class ChatService {
       (text) => this.remark(text),
       (purpose, fallback, keep) => this.phrase(purpose, fallback, keep),
       (frame) => panel.post({ type: 'progress', ...frame }),
+      (items) => panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       log
     );
     this.replier = new Replier(
@@ -652,10 +675,7 @@ export class ChatService {
     //
     // Unless it is not a correction at all. §0: scope discovered mid-build kicks
     // back to Plan Mode rather than growing silently inside Code Mode.
-    if (this.runs.isRunning) {
-      await this.handleMidRun(question);
-      return;
-    }
+    if (await this.runTook(question)) return;
 
     // Requests to *open* something are handled before answering: "change the voice"
     // wants the picker, not a paragraph about where the setting lives.

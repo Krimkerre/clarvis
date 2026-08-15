@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
 import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
+import { explainStep, StepExplanation } from './stepExplanation';
 import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
 import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
@@ -95,7 +96,7 @@ export class AgentRunner {
      * Absent for read-only calls in every mode: approving a file *read* six times
      * teaches people to click yes without reading, which is worse than not asking.
      */
-    private readonly approveStep?: (description: string, detail: string) => Promise<boolean>
+    private readonly approveStep?: (step: StepExplanation) => Promise<boolean>
   ) {}
 
   /**
@@ -358,8 +359,12 @@ export class AgentRunner {
       // anything at all.
       const acting = isToolName(call.name) && !isLookingAround(call.name, args);
       if (this.approveStep && acting) {
-        const description = isToolName(call.name) ? narrateTool(call.name, args) : call.name;
-        const approved = await this.approveStep(description, describe(call));
+        // **What it does, not what it is called.** This used to hand over
+        // `describe(call)` — `runCommand: python3 -m pip install pillow` — which is a
+        // log line, and being asked to approve one means already knowing the answer.
+        const step = explainStep(call.name, args);
+        const description = step.title;
+        const approved = await this.approveStep(step);
         if (!approved) {
           this.log(`agent [declined] ${description}`);
           const declined = 'The user declined that step. Do not retry it — find another way, or stop and say what you would have done.';

@@ -9,6 +9,8 @@ import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
+import { StepExplanation } from '../agent/stepExplanation';
+import { PendingChoice } from './PendingChoice';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -41,8 +43,32 @@ export class RunSession {
     /** Shows where the run has got to. A function rather than the panel itself: this
      * class needs one frame, not a view. */
     private readonly showProgress: (frame: { current: number; total: number; label: string }) => void,
+    /** Puts the answers in the panel as buttons. Typing still works regardless. */
+    offer: (items: { label: string; detail?: string }[]) => void,
     private readonly log: (message: string) => void
-  ) {}
+  ) {
+    this.pending = new PendingChoice(offer);
+  }
+
+  /**
+   * The step-approval question, when one is on screen.
+   *
+   * **In the chat, not in a modal.** Approval used to be a `showInformationMessage`
+   * with `modal: true`, which greys out the editor, cannot be scrolled back to, and
+   * puts the one decision that matters somewhere other than the conversation it
+   * belongs to. Found live during the first-run checklist.
+   */
+  private readonly pending: PendingChoice;
+
+  /** Whether a step is waiting on an answer. Chat checks before routing a message. */
+  get awaitingStep(): boolean {
+    return this.pending.isWaiting;
+  }
+
+  /** Hands a typed message to the step waiting for it. */
+  answerStep(text: string): void {
+    this.pending.supply(text);
+  }
 
   /** The written bank, for the closing aside when no model is available. */
   private readonly closers = new QuipPicker();
@@ -165,7 +191,7 @@ export class RunSession {
       this.models,
       this.terminal,
       this.log,
-      this.stepApproval ? (description, detail) => this.askStep(description, detail) : undefined
+      this.stepApproval ? (step) => this.askStep(step) : undefined
     );
     // Held for the length of the run, so anything typed while it works has somewhere
     // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
@@ -296,13 +322,19 @@ export class RunSession {
    * "Skip this step" rather than "No", because the run continues either way — the
    * model is told what was declined and asked to find another route.
    */
-  private async askStep(description: string, detail: string): Promise<boolean> {
-    const answer = await vscode.window.showInformationMessage(
-      description,
-      { modal: true, detail },
-      'Do it',
-      'Skip this step'
-    );
+  private async askStep(step: StepExplanation): Promise<boolean> {
+    // Written, never spoken. The step title is short and the question is solicited,
+    // but a run has a dozen of these in it and hearing each one read aloud is how a
+    // voice gets switched off (§4.4's rationing, applied to the surface that would
+    // break it fastest).
+    await this.note([step.title, '', step.what, ...(step.exact ? ['', step.exact] : [])].join('\n'));
+
+    const answer = await this.pending.ask([
+      { label: 'Do it' },
+      { label: 'Skip this step' },
+    ]);
+
+    // No answer means the run was stopped or the panel went away — not consent.
     return answer === 'Do it';
   }
 

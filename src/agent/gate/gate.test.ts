@@ -117,3 +117,23 @@ test('the escape is explained in the dialog, not just offered', () => {
   assert.match(offered, /never remembered/);
   assert.doesNotMatch(explainGate('brew install go', verdict), /never remembered/);
 });
+
+test('go install and go get are dependency installs like any other', () => {
+  // Not tidiness: the gate is what offers the way out of the sandbox, and `go install`
+  // writes to ~/go/bin, outside it. With no rule here the command was refused by the
+  // sandbox with no escape offered and no hint that installing was what it was doing.
+  for (const command of ['go install golang.org/x/tools/cmd/goimports@latest', 'go get github.com/x/y']) {
+    const verdict = classifyCommand(command);
+    assert.ok(verdict, command);
+    assert.equal(verdict.category, 'dependency', command);
+    assert.ok(mayEscapeConfinement(verdict), command);
+  }
+});
+
+test('go build and go test are not gated', () => {
+  // Building and testing are the work, not an install. A gate on those would fire on
+  // every step of a Go project and teach the reflex the gates exist to prevent.
+  for (const command of ['go build ./...', 'go test ./...', 'go run main.go']) {
+    assert.equal(classifyCommand(command), undefined, command);
+  }
+});

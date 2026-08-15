@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as os from 'os';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { realpath } from 'fs/promises';
+import { realpathOfNearestExisting } from './workspacePaths';
 import { execFile } from 'child_process';
 import { macProfile, Sandbox, sandboxArgv } from './sandboxProfile';
 import { installCommand, packageManagers } from './bwrapInstall';
@@ -69,6 +69,14 @@ function buildCaches(): string[] {
     path.join(home, '.rustup'),
     path.join(home, '.gradle'),
     path.join(home, '.m2'),
+    // Go keeps its module cache under GOPATH rather than in a dotfile, so it does not
+    // match the shape of every other entry here and was missed. `go build` on anything
+    // with a dependency writes `~/go/pkg/mod`, and `go install` to `~/go/bin` — the
+    // same shape as `.cargo`, which also holds both. Without this it fails confined and
+    // works unconfined, which is the exact "the sandbox breaks my toolchain" failure
+    // that gets sandboxes switched off. (`~/Library/Caches/go-build` is already
+    // covered by the Caches entry below.)
+    path.join(home, 'go'),
     path.join(home, 'Library', 'Caches'),
     os.tmpdir(),
   ];
@@ -80,11 +88,18 @@ function buildCaches(): string[] {
  * `/tmp` is a symlink to `/private/tmp` on macOS, so a rule written against the
  * symlink matches nothing — found by writing one, watching it deny a write it had
  * explicitly allowed, and being unable to tell that from the sandbox simply working.
- * Paths that do not exist are dropped rather than guessed at.
+ *
+ * **A cache that does not exist yet still needs its rule.** The first version dropped
+ * anything missing, which quietly meant every toolchain's *first* confined build
+ * failed: Go wanting to create `~/go`, a fresh machine's first `cargo build` wanting
+ * `~/.cargo`. Found by running a real `go build` against the profile before handing the
+ * checklist a bug — it stopped at `could not create module cache: mkdir /Users/…/go:
+ * operation not permitted`. So the nearest existing ancestor is realpathed and the
+ * missing tail re-attached, which is exactly what `resolveInWorkspace` does for a file
+ * about to be created, and for the same reason.
  */
 async function resolveAll(paths: readonly string[]): Promise<string[]> {
-  const resolved = await Promise.all(paths.map((entry) => realpath(entry).catch(() => undefined)));
-  return resolved.filter((entry): entry is string => Boolean(entry));
+  return Promise.all(paths.map((entry) => realpathOfNearestExisting(entry)));
 }
 
 /** How a command should be spawned: confined where possible, plainly where not. */

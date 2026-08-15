@@ -4387,6 +4387,19 @@ program whose whole job is *moving and overwriting files*. If the checkpoint or 
 sandbox is wrong, this is where it shows. Big enough for three or four milestones.
 Answer "somewhere on my machine" to *where does it run* to trigger the pushback.
 
+**Two sandbox defects found before project 2 ran, by testing the profile instead of
+waiting.** The allow-list held `.npm .cargo .rustup .gradle .m2 Library/Caches` and
+`tmpdir` — and Go keeps its module cache under `GOPATH`, so `~/go/pkg/mod` matched
+nothing. Worse, `resolveAll` *dropped paths that did not exist*, which quietly meant
+every toolchain's **first** confined build failed: Go could not create `~/go` at all,
+and a fresh machine's first `cargo build` would have hit the same wall. A real
+`go build` against a real dependency, run through the actual profile, stopped at
+`could not create module cache: mkdir /Users/…/go: operation not permitted`; with
+`~/go` added and the missing tail re-attached rather than dropped, the same build
+downloads three modules, compiles and runs. `go install` and `go get` also joined the
+dependency gate — not for tidiness, but because the gate is what offers the escape from
+confinement, and `~/go/bin` is outside it.
+
 **2. "A command-line tool that fetches the weather and caches it." (Rust or Go)**
 Forces the build-cache allowlist, which is the sandbox's most likely real-world
 break: `cargo build` writes to `~/.cargo/registry`, `go build` to `~/go/pkg`. If

@@ -186,8 +186,11 @@ async function realpathOrSelf(target: string): Promise<string> {
  * Creating a new file must stay possible, so a missing leaf is not a refusal — but the
  * directory it would be created in still gets checked, which is where a symlink would
  * actually be.
+ *
+ * Exported because the sandbox needs the same trick for a different reason: a build
+ * cache that does not exist yet still needs a rule allowing it to be created.
  */
-async function realpathOfNearestExisting(target: string): Promise<string> {
+export async function realpathOfNearestExisting(target: string): Promise<string> {
   let current = path.resolve(target);
   const missing: string[] = [];
 

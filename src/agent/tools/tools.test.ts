@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs/promises';
-import { isInside, resolveInWorkspace, unquote, PathRefused } from './workspacePaths';
+import { isInside, realpathOfNearestExisting, resolveInWorkspace, unquote, PathRefused } from './workspacePaths';
 
 // ---------------------------------------------------------------------------
 // Containment, as pure string logic. These are the cases that must never pass,
@@ -105,6 +105,17 @@ test('a missing file is reported with what to do about it', async () => {
   const root = await workspace();
 
   await assert.rejects(() => readFile(root, 'nope.md'), /relative to the workspace root/);
+});
+
+test('a cache directory that does not exist yet still resolves to a usable path', async () => {
+  // The sandbox needs a rule for `~/go` *before* Go creates it. Dropping missing paths
+  // quietly meant every toolchain's first confined build failed — verified by running a
+  // real `go build` against the profile: "could not create module cache: mkdir
+  // /Users/…/go: operation not permitted".
+  const root = await workspace();
+  const missing = path.join(root, 'not', 'there', 'yet');
+
+  assert.equal(await realpathOfNearestExisting(missing), missing);
 });
 
 test('traversal outside the workspace is refused', async () => {

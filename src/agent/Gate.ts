@@ -131,7 +131,12 @@ const RULES: Rule[] = [
   },
   {
     category: 'dependency',
-    pattern: /\b(npm|yarn|pnpm|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\bcargo\s+add\b|\bgem\s+install\b|\bbrew\s+install\b/i,
+    // `go install` and `go get` belong here for a reason beyond tidiness: the gate is
+    // what offers the way out of the sandbox (see `mayEscapeConfinement`), and
+    // `go install` writes to `~/go/bin`, which is outside it. Without a rule here the
+    // command was refused by the sandbox with no escape offered and no explanation
+    // that installing is what it was.
+    pattern: /\b(npm|yarn|pnpm|bun)\s+(i|install|add)\b|\bpip3?\s+install\b|\bcargo\s+add\b|\bgem\s+install\b|\bbrew\s+install\b|\bgo\s+(install|get)\b/i,
     what: 'installs a package and its dependencies',
     why: 'A package runs install scripts on your machine, and pulls in code you did not choose directly.',
     worstCase: 'A compromised or typo-squatted package executes as you during install.',

@@ -1,10 +1,12 @@
 .vscode/**
+.github/**
 src/**
 out/**
 node_modules/**
 .gitignore
 esbuild.js
 tsconfig.json
+.vscode-test.mjs
 plan.md
 docs/**
 AGENTS.md
@@ -14,5 +16,7 @@ media/previews/**
 media/states-strip.svg
 media/states-strip.png
 clarvis-probe-log.jsonl
-*.map
+**/*.map
+eslint.config.mjs
+TUTOR-README.md
 .git/**

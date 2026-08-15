@@ -97,15 +97,15 @@
       },
       {
         "command": "clarvis.debug.voiceCheck",
-        "title": "Clarvis: Debug \u2014 Voice Check"
+        "title": "Clarvis: Debug — Voice Check"
       },
       {
         "command": "clarvis.debug.tools",
-        "title": "Clarvis: Debug \u2014 Try a Tool"
+        "title": "Clarvis: Debug — Try a Tool"
       },
       {
         "command": "clarvis.debug.micProbe",
-        "title": "Clarvis: Debug \u2014 Microphone Probe"
+        "title": "Clarvis: Debug — Microphone Probe"
       },
       {
         "command": "clarvis.configureModels",
@@ -186,7 +186,7 @@
             "Work out what to do and write it down. No edits.",
             "Treat everything as a job, and check before each step that changes anything."
           ],
-          "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all \u2014 the code never calls it, rather than the prompt being asked not to."
+          "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all — the code never calls it, rather than the prompt being asked not to."
         },
         "clarvis.chat.provider": {
           "type": "string",
@@ -201,7 +201,7 @@
           "enumDescriptions": [
             "Anthropic API with your own key. Best tool calling.",
             "OpenAI with your own key.",
-            "OpenRouter \u2014 one key, many models. Use \"Clarvis: Choose Model\" for the filtered list.",
+            "OpenRouter — one key, many models. Use \"Clarvis: Choose Model\" for the filtered list.",
             "Ollama on this machine. No key, nothing leaves it.",
             "LM Studio on this machine. No key, nothing leaves it."
           ],
@@ -210,7 +210,7 @@
         "clarvis.chat.model": {
           "type": "string",
           "default": "",
-          "description": "Model name. Empty uses the provider's default. Run \"Clarvis: Choose Model\" for a picker \u2014 on OpenRouter it lists only models that can call tools."
+          "description": "Model name. Empty uses the provider's default. Run \"Clarvis: Choose Model\" for a picker — on OpenRouter it lists only models that can call tools."
         },
         "clarvis.agent.provider": {
           "type": "string",
@@ -227,11 +227,11 @@
             "Use the same provider as chat.",
             "Anthropic API with your own key.",
             "OpenAI with your own key.",
-            "OpenRouter \u2014 one key, many models.",
+            "OpenRouter — one key, many models.",
             "Ollama on this machine.",
             "LM Studio on this machine."
           ],
-          "description": "Provider for writing code and running the agent. Empty follows the chat provider \u2014 set it to keep a cheap model for chat and a capable one for code."
+          "description": "Provider for writing code and running the agent. Empty follows the chat provider — set it to keep a cheap model for chat and a capable one for code."
         },
         "clarvis.agent.model": {
           "type": "string",
@@ -262,7 +262,7 @@
         "clarvis.voice.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Speak briefings, task outcomes and chat replies aloud. Off until you ask for it \u2014 a voice that surprises you once is a voice you disable forever. Clarvis offers to set it up once, on first run."
+          "description": "Speak briefings, task outcomes and chat replies aloud. Off until you ask for it — a voice that surprises you once is a voice you disable forever. Clarvis offers to set it up once, on first run."
         },
         "clarvis.voice.selectedVoice": {
           "type": "string",
@@ -317,12 +317,15 @@
     "package": "vsce package",
     "check-types": "tsc --noEmit",
     "test": "rm -rf out && tsc --outDir out && node --test \"out/**/*.test.js\"",
+    "test:host": "tsc --outDir out && vscode-test",
     "lint": "eslint src",
     "check": "npm run check-types && npm run lint && npm test"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.93.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.23.0",
     "eslint": "^9.39.5",

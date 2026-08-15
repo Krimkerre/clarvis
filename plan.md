@@ -4739,6 +4739,27 @@ Never done. Each piece works alone; the seams between them are untested.
 
 ### Older debts, not to be lost
 
+**The M6 dogfood pass is not being closed by any of this, and it is worth saying why
+rather than assuming otherwise.** Measured across a full day of heavy use on 15 Aug:
+of the seven unsolicited triggers, exactly **one fired, twice** —
+`firstCommitAfterSilence`. `buildSlow`, `repeatFailure`, `suiteWentGreen`, `bigDiff`,
+`taskDone` and `newBranch` never fired at all.
+
+Three reasons, none of which projects 3 and 4 improve. The test projects are too small
+to trip anything — `go build` on 327 lines takes two seconds against a thirty-second
+threshold, no suite went red then green, no diff came near two hundred files. Agent runs
+*deliberately* suppress the watch surfaces, so the day was spent with them switched off
+by design. And M6's actual question — does the cadence feel right, does a line grate on
+a third viewing, does earned sass fire before it is earned — needs the same lines seen
+repeatedly across days of ordinary work, which is not a thing a scripted pass can
+produce.
+
+What §10 *has* exercised hard is §2.2's one-voice-everywhere: the briefing, gate copy,
+findings, the read-back summary, the answer about his own capabilities. That is the
+adjacent question, and confusing the two would close a debt that is still open. The M6
+pass wants Clarvis watching someone work normally in a project with slow builds and real
+failures — this repository being the obvious candidate.
+
 The M6 dogfood pass has been outstanding since M6, and roughly 45 finer-grained M8
 checklist items remain unverified — mute mid-sentence, avatar strobing, transcript
 persistence, Ollama. Both predate M9 and neither is closed by anything above.

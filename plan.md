@@ -4817,6 +4817,34 @@ with a straight face. It is now consumed as the answer it is, acknowledged in on
 and remembered per workspace; `Clarvis: Forget branch answers` clears it along with the
 git offer, both being "you said no once, here".
 
+### Asking is now a way to find out — §4.2's threshold, answered from the other side
+
+The M6 afternoon left an open question rather than a defect: pattern memory speaks at
+the third occurrence in seven days, which is right for a colleague and leaves a learner
+unable to tell "fine" from "not looking". Lowering the threshold would have made him a
+second linter, which §6 exists to prevent.
+
+So the threshold is untouched and the question is answerable instead. *"Anything wrong
+in here?"* now reads the diagnostics of the **file on screen** — line numbers, messages,
+errors before warnings, five listed and the rest counted — and says so plainly when
+there are none, naming the file, because a silent answer is the ambiguity this was meant
+to remove.
+
+Three details worth keeping:
+
+- **The active editor, not the workspace.** "In here" means here. A project can carry
+  forty problems in files nobody has open, and answering with those answers a different
+  question.
+- **1-based lines.** The editor counts from zero and displays from one; the number said
+  out loud has to match the gutter or it sends someone to the wrong line.
+- **Both paths, not just the free one.** The detail goes into the facts block as well as
+  the no-model answer — the model path wins whenever a key exists, so anything reaching
+  only the fallback would never be seen by someone who has one.
+
+§4.6 already listed active-file diagnostics among the bounded context a reply may draw
+on. Nothing had ever supplied them; the facts carried counts, so the best answer
+available was how many things were wrong rather than which.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

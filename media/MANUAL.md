@@ -110,6 +110,16 @@ on and put you back there. Take it and the next job starts from your branch as w
 decline and it stays put, which is fine, but a week of declining leaves you with a
 branch per request.
 
+**Ask "anything wrong in here?" and he reads the file you're looking at.** Not the last
+build, not the whole project — the errors and warnings the editor is reporting for the
+open file, with line numbers, worst first, five at a time. If there is nothing, he says
+so and names the file, because silence is what "not looking" looks like. Costs nothing
+and needs no key: the editor already knows.
+
+That is different from him mentioning problems on his own, which he only does once the
+same error has turned up three times in a week. He notices immediately and speaks up
+when it becomes a pattern — ask, and he will tell you now.
+
 **He knows when the project is finished.** Each milestone is handed over as "4 of 4",
 with the later ones named so the code being written now can accommodate them, and the
 last one is told it is the last. When the final step is ticked he says so in the

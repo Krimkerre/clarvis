@@ -533,3 +533,57 @@ test('the modes that can work are read off MODES rather than listed by hand', ()
     assert.doesNotMatch(named, new RegExp(`${spec.label} is where`));
   }
 });
+
+test('"anything wrong in here?" is answered about the open file, not the last build', () => {
+  // "broken" and "wrong" both used to land on the failure answer, which talks about the
+  // last red build — a different question, answered confidently.
+  const facts = {
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+    activeFile: 'nanocode.py',
+    openProblems: {
+      file: 'nanocode.py',
+      items: [{ line: 19, message: 'unterminated string literal', severity: 'error' as const }],
+      more: 0,
+    },
+    lastFailure: { label: 'npm test', exitCode: 1, at: Date.now() },
+  };
+
+  const reply = localAnswer('anything wrong in here?', facts);
+
+  assert.match(reply!.text, /line 19/);
+  assert.doesNotMatch(reply!.text, /npm test/);
+});
+
+test('asked about a clean file, he says so rather than saying nothing', () => {
+  const reply = localAnswer('anything wrong in here?', {
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+    activeFile: 'nanocode.py',
+  });
+
+  assert.match(reply!.text, /Nothing in nanocode\.py/);
+});
+
+test('the open file problems reach the model too, not just the counts', () => {
+  // The model path wins whenever a key exists, so detail that only reached the no-key
+  // fallback would never be seen by the person who has one.
+  const block = factsBlock({
+    now: Date.now(),
+    running: [],
+    recentFiles: [],
+    patterns: [],
+    problems: { errors: 1, warnings: 0, worstFile: 'nanocode.py' },
+    openProblems: {
+      file: 'nanocode.py',
+      items: [{ line: 19, message: 'unterminated string literal', severity: 'error' as const }],
+      more: 0,
+    },
+  });
+
+  assert.match(block, /line 19: unterminated string literal/);
+});

@@ -13,6 +13,8 @@ export interface PendingBuild {
   milestone: MilestoneState;
   projectName: string;
   steps: string[];
+  /** Every milestone in the plan, so a task can say which of them this is. */
+  milestones: MilestoneState[];
   /**
    * Whether anything in this plan has been built already.
    *
@@ -35,12 +37,15 @@ export async function pendingBuild(): Promise<PendingBuild | undefined> {
   const milestone = nextMilestone(planText);
   if (!milestone) return undefined;
 
+  const milestones = readMilestones(planText);
+
   return {
     milestone,
+    milestones,
     // The plan's own title, which is the project name planning chose.
     projectName: /^#\s+(.+)$/m.exec(planText)?.[1]?.trim() ?? 'this project',
     steps: milestoneSteps(planText, milestone.number),
-    started: readMilestones(planText).some((entry) => entry.done > 0),
+    started: milestones.some((entry) => entry.done > 0),
   };
 }
 

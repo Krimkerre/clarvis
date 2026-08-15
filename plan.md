@@ -4523,6 +4523,38 @@ is "milestone 3 is 2 of 5 done, shall I carry on with it", and a finished one is
 reading "milestone 4 is 0 of 2 done" back to someone who has just finished three of
 them describes their progress as nothing.
 
+### Project 2 finished — and the ending was the weakest part of it
+
+All four milestones built. The closing line was **"That's Milestone 4 finished —
+Milestone 5, if there is one, is a separate conversation."** There were four, and the
+plan he had just been told to read said so on every heading.
+
+`nextMilestoneTask` named the milestone and never its position: "Milestone 4 —
+Finalize the user-facing interface", with no total. So the build could not tell whether
+it had finished the project, which makes every "done" it reports provisional. A build
+that cannot say when it is finished is one you have to check on, and checking on it is
+the work this was supposed to remove.
+
+Three things follow, all from the same fact — the plan already knows.
+
+- **Position.** "Milestone 4 of 4", and on the last one: *the project as planned is
+  finished — say so plainly rather than wondering aloud whether there is another. There
+  is not.* The stop instruction changes with it; telling him to stop before a milestone
+  that does not exist is what produced the question.
+- **What is still coming.** The later milestones are named, with "do not build any of
+  that now. Knowing it is there is enough." A cache written in milestone 2 with no idea
+  milestone 3 is a week forecast is how a build paints itself into a corner one
+  milestone at a time.
+- **An ending.** The last step ticked used to produce a *notification* — the one place
+  a finished project was guaranteed not to be mentioned by the butler who built it —
+  and then silence. It is announced in the conversation now, with what the project
+  consists of: the milestones by name, the step count, and where the recorded results
+  are. No congratulation and no exclamation mark; the aside afterwards is written
+  separately, as every other report's is.
+
+Both call sites pass the milestone list, including the resume-build path, which is the
+one that started milestone 4 in the first place.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

@@ -12,12 +12,51 @@ import { MilestoneState } from './planUpdate';
  * than handed a copy of it, which is also the only version of this that stays true
  * when the user edits the plan by hand between milestones.
  */
-export function nextMilestoneTask(milestone: MilestoneState, projectName: string): string {
+export function nextMilestoneTask(
+  milestone: MilestoneState,
+  projectName: string,
+  /**
+   * Every milestone in the plan, so this one knows where it sits.
+   *
+   * **Without it he does not know how many there are.** Found live at the end of
+   * project 2: "That's Milestone 4 finished — Milestone 5, if there is one, is a
+   * separate conversation." There were four. A build that cannot tell whether it has
+   * finished the project is one nobody can trust to say when it has, and the answer
+   * was in the plan he had just been told to read.
+   */
+  all: MilestoneState[] = []
+): string {
+  const total = all.length;
+  const later = all.filter((entry) => entry.number > milestone.number);
+  const last = total > 0 && later.length === 0;
+
   return [
     `Continue building ${projectName}, following the approved plan.md in this workspace.`,
     '',
-    `Milestone ${milestone.number} — ${milestone.title}.`,
+    total > 0
+      ? `Milestone ${milestone.number} of ${total} — ${milestone.title}.`
+      : `Milestone ${milestone.number} — ${milestone.title}.`,
     '',
+    // **Named so the code written now can accommodate them.** Not to be built — the
+    // instruction to stop is unchanged and comes last — but a cache written in
+    // milestone 2 with no idea that milestone 3 is a week forecast is how a build
+    // paints itself into a corner one milestone at a time.
+    ...(later.length > 0
+      ? [
+          'Still to come after this one, so do not design against them:',
+          ...later.map((entry) => `- Milestone ${entry.number} — ${entry.title}`),
+          'Do not build any of that now. Knowing it is there is enough.',
+          '',
+        ]
+      : []),
+    ...(last
+      ? [
+          'This is the last milestone in the plan. When its steps are ticked the project',
+          'as planned is finished — say so plainly rather than wondering aloud whether',
+          'there is another one after it. There is not.',
+          '',
+        ]
+      : []),
     'Read plan.md first. Build only the unticked steps under that milestone heading,',
     'in order, and tick each one off in plan.md as it lands.',
     '',
@@ -33,7 +72,11 @@ export function nextMilestoneTask(milestone: MilestoneState, projectName: string
     'happened — the command you ran and its real output, not what you expect it to say.',
     'A check that fails is a result, not a failure to hide: say so and stop.',
     '',
-    `Then stop. Build milestone ${milestone.number} and no further — the next one is a`,
-    'separate decision, and not yours.',
+    ...(last
+      ? ['Then stop. The plan is complete at that point.']
+      : [
+          `Then stop. Build milestone ${milestone.number} and no further — the next one is a`,
+          'separate decision, and not yours.',
+        ]),
   ].join('\n');
 }

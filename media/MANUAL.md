@@ -104,6 +104,12 @@ to the same finding, and they are different projects, so you pick rather than ap
 **Something else** takes your own answer instead, and **No, drop this** turns the
 finding down (say why — it's recorded, not dropped).
 
+**He knows when the project is finished.** Each milestone is handed over as "4 of 4",
+with the later ones named so the code being written now can accommodate them, and the
+last one is told it is the last. When the final step is ticked he says so in the
+conversation — the project by name, its milestones, the step count, and a pointer to
+the results recorded beside each step in `plan.md`.
+
 **Close the window mid-build and he picks that up too.** Reopen and he says where the
 plan stands — "Milestone 4 is next: Finalize the user-facing interface. Shall I start on
 it?" if the last one finished, or "Milestone 3 is 2 of 5 done, shall I carry on?" if you

@@ -27,6 +27,7 @@ import { VsCodeIO } from './planning/VsCodeIO';
 import { recordMilestone } from './planning/recordMilestone';
 import { pendingBuild } from './planning/pendingBuild';
 import { nextMilestoneTask } from './planning/nextMilestoneTask';
+import { finishedLines, finishedProject } from './planning/projectFinished';
 import { chooseProvider, chooseModel, configureModels, manageKeys, refreshModelCatalog } from './model/modelPickers';
 import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
@@ -671,7 +672,12 @@ function registerRecordMilestone(
       // milestone is one nobody agreed to.
       const next = await pendingBuild();
       if (!next) {
-        void vscode.window.showInformationMessage(outcome);
+        // **The end of a project is news, and news goes in the conversation.** This
+        // was a notification and nothing else — the one place a finished project was
+        // guaranteed not to be mentioned by the butler who built it.
+        const finished = await finishedProject(await planTextOf());
+        if (finished) await chatOf()?.announceProjectFinished(finishedLines(finished));
+        else void vscode.window.showInformationMessage(outcome);
         return;
       }
 
@@ -686,8 +692,22 @@ function registerRecordMilestone(
         return;
       }
 
-      await chatOf()?.startNextMilestone(nextMilestoneTask(next.milestone, next.projectName), next.steps);
+      await chatOf()?.startNextMilestone(
+        nextMilestoneTask(next.milestone, next.projectName, next.milestones),
+        next.steps
+      );
     })
+  );
+}
+
+/** The plan as text, or an empty string when there is none to read. */
+async function planTextOf(): Promise<string> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) return '';
+
+  return vscode.workspace.fs.readFile(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+    (bytes) => Buffer.from(bytes).toString('utf8'),
+    () => ''
   );
 }
 

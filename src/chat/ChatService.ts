@@ -27,10 +27,9 @@ import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
-import { interruptedBuild } from '../planning/pendingBuild';
+import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
-import { MilestoneState } from '../planning/planUpdate';
 import { nextMilestoneTask } from '../planning/nextMilestoneTask';
 
 
@@ -427,7 +426,7 @@ export class ChatService {
   }
 
   /** Set between offering to resume a build and the user answering. */
-  private awaitingBuildAnswer?: { milestone: MilestoneState; projectName: string; steps: string[] };
+  private awaitingBuildAnswer?: PendingBuild;
 
   /** Takes the reply to that offer. `true` once the build has been picked up. */
   private async answeredBuildOffer(question: string): Promise<boolean> {
@@ -441,8 +440,36 @@ export class ChatService {
       return false;
     }
 
-    await this.startNextMilestone(nextMilestoneTask(pending.milestone, pending.projectName), pending.steps);
+    await this.startNextMilestone(
+      nextMilestoneTask(pending.milestone, pending.projectName, pending.milestones),
+      pending.steps
+    );
     return true;
+  }
+
+  /**
+   * Says a project is finished, in the conversation, with what it consists of.
+   *
+   * **Spoken as well as written**, and one of the few things that earns it: the end of
+   * a project is the single most useful thing he will say all week, and §4.4's ration
+   * exists to protect moments like this rather than to rule them out.
+   *
+   * The aside afterwards is separate and written by the model, the same split every
+   * other report uses — the facts stay a report, and the remark stays a remark.
+   */
+  async announceProjectFinished(lines: string[]): Promise<void> {
+    const [headline, ...rest] = lines;
+    this.log(`planning: project finished — ${headline}`);
+
+    await this.remark(headline);
+    if (rest.length) await this.note(rest.join('\n'));
+
+    const aside = await this.phrase(
+      'aside',
+      'I would say it was a pleasure, but you were here for most of it.',
+      []
+    );
+    if (aside) await this.note(aside);
   }
 
   /**

@@ -47,3 +47,28 @@ export function lingeringLine(file: string, line: number, message: string, other
   const rest = others === 1 ? ', and one more like it' : others > 1 ? `, and ${others} more like it` : '';
   return `${file} line ${line} has been unhappy for a few minutes now: ${message}${rest}`;
 }
+
+/**
+ * The same facts, as a situation for the model to write its own line about.
+ *
+ * **Because every notice opened the same way.** `phrase` is a *rewrite*: it is handed
+ * a finished sentence and asked to say it differently, and with a strong template plus
+ * a list of literals to preserve, "line 18 has been unhappy for a few minutes" came
+ * back as a variation on itself every time. Reported after three of them.
+ *
+ * `opening` is the other path — the one the briefing uses — and it takes facts rather
+ * than a sentence. Given the same information as a situation, the line is written for
+ * this moment instead of edited towards the last one. The literals still have to
+ * survive, and `acceptOpening` throws away anything that drops them.
+ */
+export function lingeringSituation(file: string, line: number, message: string, others = 0): string {
+  return [
+    `An error has been sitting in ${file} at line ${line} for about three minutes without being fixed.`,
+    `The editor says: ${message}.`,
+    others === 1 ? 'There is one more like it in the same file.' : '',
+    others > 1 ? `There are ${others} more like it in the same file.` : '',
+    'You are mentioning it once, in passing. Not a question, not an offer to fix it.',
+  ]
+    .filter(Boolean)
+    .join(' ');
+}

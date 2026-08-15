@@ -34,7 +34,7 @@ import { Announcer } from './personality/Announcer';
 import { Personality } from './personality/Personality';
 import { LiveQuips } from './personality/LiveQuips';
 import { Voice } from './personality/Voice';
-import { phrase, setVoice } from './personality/Voice';
+import { opening, phrase, setVoice } from './personality/Voice';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
@@ -258,9 +258,20 @@ function startPatternMemory(
     new PatternStore(context),
     (message) => log.write(message),
     // A suggestion, never an action (rule 3), and subject to the shared budget.
-    // The keep list is what stops the rewrite paraphrasing away the error text, and the
-    // return value is what stops a suppressed remark being recorded as said.
-    (message, keep) => announcer.announce(message, 'judging', 'patternHit', 'important', Date.now(), keep)
+    // **`announceWith`, not `announce`.** The producer runs only if the budget will let
+    // the line through, and it *writes* rather than rewrites: handed a finished sentence
+    // and a list of literals to preserve, the model returned a variation on the same
+    // opening every time. Given the situation instead, it writes for the moment — and
+    // anything that drops the file or the line number is rejected back to the written
+    // line, so variety never costs a fact.
+    (line) =>
+      announcer.announceWith(
+        () => opening(line.situation, line.fallback, false, line.keep),
+        line.fallback,
+        'judging',
+        'patternHit',
+        'important'
+      )
   );
 
   void memory.start(tracker, context);

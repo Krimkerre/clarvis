@@ -48,7 +48,7 @@ const INTERROGATIVE =
  * because this runs where nothing else about the project is known, which is the exact
  * condition under which he invents a branch name and a failing test to be funny about.
  */
-export function openingPrompt(situation: string, mustAsk: boolean): string {
+export function openingPrompt(situation: string, mustAsk: boolean, keep: readonly string[] = []): string {
   return [
     character(),
     '',
@@ -62,6 +62,21 @@ export function openingPrompt(situation: string, mustAsk: boolean): string {
     '- Dry, understated, faintly put-upon. Have a view about it — a line that could have come from any tool is a failed line.',
     '- No greeting, no emoji, no exclamation marks, no offer of further help.',
     '- Do not name commands or files that were not given to you in the situation.',
+    // **The facts survive the variety, or the variety is not worth having.** A line
+    // about a broken file that omits the line number is a nicer sentence and a worse
+    // answer — and `acceptOpening` throws it away rather than trusting this rule alone.
+    //
+    // **Quoted and bulleted, not joined by a separator.** The first version wrote
+    // `nanocode.py · line 18 · "(" was not closed`, and the model echoed the format
+    // back verbatim three times running — a `·`-joined list reads as the shape of the
+    // answer, not as three things to weave into one. Each literal gets its own line and
+    // its own quotes, so nothing about the instruction looks like a sentence to copy.
+    ...(keep.length
+      ? [
+          '- Weave these exact words into your sentence, unchanged — do not just list them:',
+          ...keep.map((literal) => `  "${literal}"`),
+        ]
+      : []),
     ONLY_WHAT_YOU_WERE_GIVEN,
     'Reply with the line alone.',
   ].join('\n');
@@ -75,7 +90,11 @@ export function openingPrompt(situation: string, mustAsk: boolean): string {
  * rule that differs from `sanitiseQuip`: a question mark is required rather than
  * forbidden, since this line's whole job is to ask something.
  */
-export function acceptOpening(raw: string | undefined, mustAsk: boolean): string | undefined {
+export function acceptOpening(
+  raw: string | undefined,
+  mustAsk: boolean,
+  keep: readonly string[] = []
+): string | undefined {
   if (!raw) return undefined;
 
   let text = raw.trim();
@@ -105,6 +124,12 @@ export function acceptOpening(raw: string | undefined, mustAsk: boolean): string
   }
   if (/[\p{Extended_Pictographic}]/u.test(text)) return undefined;
   if (text.includes('!')) return undefined;
+
+  // **A line that lost a fact is rejected, not repaired.** The written line is right
+  // there and was never wrong, only predictable — so an original that drops the file or
+  // the line number costs nothing to throw away, and keeping it would trade a correct
+  // notice for a livelier one.
+  if (keep.some((literal) => !text.includes(literal))) return undefined;
 
   return text;
 }

@@ -124,6 +124,10 @@ open file, with line numbers, worst first, five at a time. If there is nothing, 
 so and names the file, because silence is what "not looking" looks like. Costs nothing
 and needs no key: the editor already knows.
 
+**And when connected to a model, each notice is written for the moment rather than a
+variation on the last one.** With no model, or if the attempt is rejected, the written
+line stands — same wording every time, and always correct.
+
 **And an error that just sits there gets mentioned.** If something is still broken about
 three minutes after it appeared, he says so once — the file, the line, and what the
 editor said. Once, ever: if it is still there twenty minutes later that is a decision,

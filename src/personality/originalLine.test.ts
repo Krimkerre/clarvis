@@ -94,3 +94,35 @@ test('nothing at all is undefined, not an empty string', () => {
   assert.equal(acceptOpening(undefined, true), undefined);
   assert.equal(acceptOpening('   ', true), undefined);
 });
+
+test('keep literals appear in the prompt when supplied', () => {
+  // A line that lost the file or the line number would be a nicer sentence and a worse
+  // answer, so the model is told exactly which words cannot be paraphrased away.
+  const prompt = openingPrompt('an error is lingering', false, ['nanocode.py', 'line 18']);
+
+  assert.match(prompt, /"nanocode\.py"/);
+  assert.match(prompt, /"line 18"/);
+  assert.match(prompt, /Weave these exact words/);
+});
+
+test('no keep list means no instruction about one', () => {
+  assert.doesNotMatch(openingPrompt('a plan was just approved', false), /Weave these exact words/);
+});
+
+test('an original line that drops a required literal is rejected', () => {
+  // Rejection is cheap here — the written fallback was never wrong, only predictable —
+  // so a livelier line that lost the file or the line number is thrown away rather than
+  // kept, which would trade a correct notice for an incorrect one.
+  const line = acceptOpening('That file has been sulking for a while.', false, ['nanocode.py', 'line 18']);
+
+  assert.equal(line, undefined);
+});
+
+test('an original line that keeps every literal is accepted', () => {
+  const line = acceptOpening('nanocode.py at line 18 is still unhappy about that quote.', false, [
+    'nanocode.py',
+    'line 18',
+  ]);
+
+  assert.equal(line, 'nanocode.py at line 18 is still unhappy about that quote.');
+});

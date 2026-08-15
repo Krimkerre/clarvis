@@ -183,6 +183,28 @@ export function patternHitLine(
     text: `That's ${THRESHOLD} times this week — ${at}${sample}.${fix}`,
     // The parts a rewrite must not paraphrase away, which is all of the parts that
     // could send someone to the wrong line.
-    keep: [sample, ...(where ? [where.file, `line ${where.line}`] : []), ...(resolvedBy ? [resolvedBy] : [])],
+    // The location and the remembered fix, not the error text — that is free text a
+    // model naturally paraphrases, and requiring it verbatim rejects good original
+    // lines for saying the same thing differently. File and line send someone to the
+    // wrong place if wrong; the fix command is a literal, not prose, so it stays.
+    keep: [...(where ? [where.file, `line ${where.line}`] : []), ...(resolvedBy ? [resolvedBy] : [])],
   };
+}
+
+/** The pattern hit as a situation, for the same reason `lingeringSituation` exists. */
+export function patternHitSituation(
+  sample: string,
+  where?: { file: string; line: number },
+  resolvedBy?: string
+): string {
+  return [
+    `The same error has now happened ${THRESHOLD} times in the last seven days: ${sample}.`,
+    where ? `It is in ${where.file} at line ${where.line} right now.` : '',
+    resolvedBy
+      ? `Last time it went away after \`${resolvedBy}\` ran — which is a correlation you noticed, not a promise.`
+      : 'Nothing on record has fixed it yet.',
+    'You are mentioning the pattern once. Not a question.',
+  ]
+    .filter(Boolean)
+    .join(' ');
 }

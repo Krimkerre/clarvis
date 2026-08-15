@@ -4962,6 +4962,46 @@ which is the drift that made that file hard to follow. And the reply to it is ta
 waiting on an answer, or the one word that must always work becomes the one word that
 does not.
 
+### Every lingering and pattern notice opened the same way
+
+"Line X has been unhappy" every time — reported live, correctly. Both surfaces called
+`phrase()`, which *rewrites*: handed a finished sentence and a list of literals to keep,
+the model paraphrases the same opening rather than writing one. With a strong template
+and a tight `keep`, "line 18 has been unhappy for a few minutes" came back as a
+variation on itself, three sessions running.
+
+`opening()` is the other path this project already has — the one the briefing uses —
+and it takes facts, not a sentence: `lingeringSituation()` and `patternHitSituation()`
+describe what happened, and the model writes an original line about it, exactly as it
+does for "welcome back" each morning. Both went through `announceWith` rather than
+`announce`, so the model is asked only when §6's budget will actually let the answer
+through — no request spent on a remark nobody hears.
+
+**The literal-preservation rule needed a second pass, found by checking against a real
+model rather than trusting the design.** The first version asked for the whole error
+message verbatim and rejected three of four genuinely good lines — models naturally
+paraphrase message text ("not closed" for "was not closed"), and requiring it exactly
+defeated the entire point of asking for variety. Loosened to what actually matters: the
+**file and the line number** are required, because those are what send someone to the
+wrong place if wrong; the message itself is free to be said differently, being where
+the variety was wanted in the first place.
+
+The instruction format needed a second look too. Literals joined by `·` in the prompt
+were echoed back verbatim, format and all — three sessions in a row, before the fix.
+Quoted, one per line, with an explicit "weave these into your sentence" instruction,
+and the model stopped copying the shape of the instruction as if it were the answer.
+
+Four real lines from one situation, after both fixes:
+
+> nanocode.py, line 18, "(" not closed for about three minutes now — I've seen slower crimes solved.
+> Three minutes on line 18, and "(" still hasn't found its match in nanocode.py.
+> nanocode.py, line 18, three minutes now — "(" was not closed and neither, it seems, is the matter.
+> nanocode.py's had an open "(" since line 18 for three minutes now — I've seen turtles close faster.
+
+Falls back to the written line when there is no model, the attempt times out, or the
+file and line do not survive — the same fallback that was always correct, now the floor
+rather than the ceiling.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

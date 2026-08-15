@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { LINGER_MS, lingeringLine } from './lingering';
+import { LINGER_MS, lingeringLine, lingeringSituation } from './lingering';
 
 test('the wait is minutes — long enough to not be a linter, short enough to matter', () => {
   // On the keystroke it is a linter. In ten minutes it is a historian. Anything fixed
@@ -49,4 +49,21 @@ test('the error text is the last thing in the line, so a trim cannot eat it', ()
   const line = lingeringLine('a.py', 18, '"(" was not closed');
 
   assert.ok(line.endsWith('"(" was not closed'));
+});
+
+test('the situation carries what has to survive rewriting', () => {
+  // The literals a written line must keep, expressed as facts rather than a sentence
+  // to paraphrase — the difference between "write about this" and "rewrite this".
+  const situation = lingeringSituation('a.py', 18, '"(" was not closed');
+
+  assert.match(situation, /a\.py/);
+  assert.match(situation, /line 18/);
+  assert.match(situation, /"\(" was not closed/);
+  assert.match(situation, /once, in passing/);
+});
+
+test('other errors in the file are named in the situation too', () => {
+  const situation = lingeringSituation('a.py', 18, 'x', 2);
+
+  assert.match(situation, /2 more like it/);
 });

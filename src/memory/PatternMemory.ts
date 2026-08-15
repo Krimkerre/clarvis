@@ -1,11 +1,12 @@
 import * as vscode from 'vscode';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { fingerprint } from './fingerprint';
-import { LINGER_MS, lingeringLine } from './lingering';
+import { LINGER_MS, lingeringLine, lingeringSituation } from './lingering';
 import { PatternStore } from './PatternStore';
 import {
   forgetMatching,
   patternHitLine,
+  patternHitSituation,
   recordOccurrence,
   recordResolution,
   topPattern,
@@ -83,7 +84,14 @@ export class PatternMemory {
      * and a suppressed remark recorded as delivered is one nobody will ever hear about
      * again. `keep` protects the literals the rewrite must not paraphrase away.
      */
-    private readonly surface: (message: string, keep?: string[]) => boolean
+    private readonly surface: (line: {
+      /** The facts, for a line written about this moment. */
+      situation: string;
+      /** The written line, used when there is no model or its attempt was rejected. */
+      fallback: string;
+      /** Literals that must survive, or the attempt is thrown away. */
+      keep: string[];
+    }) => Promise<boolean>
   ) {}
 
   /** Every error pattern seen so far, for chat's "have we seen this?" question. */
@@ -250,53 +258,67 @@ export class PatternMemory {
     if (this.mentionedLingering.has(identity) || this.lingerTimers.has(identity)) return;
 
     const timer = setTimeout(() => {
-      this.lingerTimers.delete(identity);
-
-      // Re-read rather than trusted: the only question is whether it is *still* there,
-      // and the editor is the only thing that knows. Fixed in the meantime is the
-      // ordinary case and says nothing.
-      const current = vscode.languages
-        .getDiagnostics(uri)
-        .find((entry) => entry.message === message && entry.severity === vscode.DiagnosticSeverity.Error);
-
-      if (!current) {
-        this.log(`pattern: lingering error cleared before it was worth mentioning — ${excerpt(message)}`);
-        return;
-      }
-
-      const file = vscode.workspace.asRelativePath(uri);
-      // 1-based, to match the gutter rather than the array index.
-      const line = current.range.start.line + 1;
-      const text = excerpt(message);
-
-      // **Everything else still wrong in the same file, counted rather than repeated.**
-      // Three errors in one file mean three timers landing at once; the budget lets one
-      // through and drops the rest, so saying "and two more" is the difference between
-      // one useful remark and one remark plus two silently lost.
-      const others = vscode.languages
-        .getDiagnostics(uri)
-        .filter(
-          (entry) =>
-            entry.severity === vscode.DiagnosticSeverity.Error &&
-            entry.message !== message &&
-            !this.mentionedLingering.has(`${uri.fsPath}::${entry.message}`)
-        ).length;
-
-      const said = this.surface(lingeringLine(file, line, text, others), [file, `line ${line}`, text]);
-
-      // **Only a delivered remark counts as mentioned.** Marking a suppressed one would
-      // guarantee it is never mentioned again — found live: three fired together, two
-      // were dropped by the budget, and all three were recorded as said.
-      if (!said) {
-        this.log(`pattern: lingering error in ${file} withheld by the budget, still unmentioned`);
-        return;
-      }
-
-      this.mentionedLingering.add(identity);
-      this.log(`pattern: mentioned a lingering error in ${file} — ${text}`);
+      void this.confirmLingering(uri, message, identity);
     }, LINGER_MS);
 
     this.lingerTimers.set(identity, timer);
+  }
+
+  /** The check-and-say for one lingering error, split out so setTimeout stays void. */
+  private async confirmLingering(uri: vscode.Uri, message: string, identity: string): Promise<void> {
+    this.lingerTimers.delete(identity);
+
+    // Re-read rather than trusted: the only question is whether it is *still* there,
+    // and the editor is the only thing that knows. Fixed in the meantime is the
+    // ordinary case and says nothing.
+    const current = vscode.languages
+      .getDiagnostics(uri)
+      .find((entry) => entry.message === message && entry.severity === vscode.DiagnosticSeverity.Error);
+
+    if (!current) {
+      this.log(`pattern: lingering error cleared before it was worth mentioning — ${excerpt(message)}`);
+      return;
+    }
+
+    const file = vscode.workspace.asRelativePath(uri);
+    // 1-based, to match the gutter rather than the array index.
+    const line = current.range.start.line + 1;
+    const text = excerpt(message);
+
+    // **Everything else still wrong in the same file, counted rather than repeated.**
+    // Three errors in one file mean three timers landing at once; the budget lets one
+    // through and drops the rest, so saying "and two more" is the difference between
+    // one useful remark and one remark plus two silently lost.
+    const others = vscode.languages
+      .getDiagnostics(uri)
+      .filter(
+        (entry) =>
+          entry.severity === vscode.DiagnosticSeverity.Error &&
+          entry.message !== message &&
+          !this.mentionedLingering.has(`${uri.fsPath}::${entry.message}`)
+      ).length;
+
+    // **The file and the line, not the message text.** Those two send someone to the
+    // wrong place if wrong; the message is free text a model naturally paraphrases
+    // ("not closed" for "was not closed"), and requiring it verbatim rejected three of
+    // four genuinely good lines in a live check, for saying the same thing differently —
+    // which is the entire reason this exists.
+    const said = await this.surface({
+      situation: lingeringSituation(file, line, text, others),
+      fallback: lingeringLine(file, line, text, others),
+      keep: [file, `line ${line}`],
+    });
+
+    // **Only a delivered remark counts as mentioned.** Marking a suppressed one would
+    // guarantee it is never mentioned again — found live: three fired together, two
+    // were dropped by the budget, and all three were recorded as said.
+    if (!said) {
+      this.log(`pattern: lingering error in ${file} withheld by the budget, still unmentioned`);
+      return;
+    }
+
+    this.mentionedLingering.add(identity);
+    this.log(`pattern: mentioned a lingering error in ${file} — ${text}`);
   }
 
   /** Records one occurrence and speaks up if it just hit the threshold. */
@@ -314,7 +336,11 @@ export class PatternMemory {
     if (!result.shouldSurface) return;
 
     const line = patternHitLine(excerpt(sample), where, result.pattern.resolvedBy);
-    this.surface(line.text, line.keep);
+    await this.surface({
+      situation: patternHitSituation(excerpt(sample), where, result.pattern.resolvedBy),
+      fallback: line.text,
+      keep: line.keep,
+    });
     this.log(`pattern: surfaced ${key} (${THRESHOLD}×) — ${line.text}`);
   }
 

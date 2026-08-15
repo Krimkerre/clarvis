@@ -14,6 +14,7 @@ import { PendingChoice } from './PendingChoice';
 import { reviewMilestone } from '../agent/readBack';
 import { reviewSummary } from '../agent/milestoneReview';
 import { Finding } from '../planning/analysisPrompt';
+import { buildRunRecord, LAST_RUN_KEY, LedgerEvent } from '../agent/runLedger';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -262,6 +263,12 @@ export class RunSession {
     // Where it left them — kept apart from the summary, because a note about branches
     // is not the run having said something.
     let closing = '';
+    // **Every step, kept — the run summary and "why did you do that" both need it.**
+    // Everything else here is ephemeral: the terminal scrolls, the panel resets. This
+    // is the one copy that survives the run finishing, built from the same events as
+    // the display rather than a second pass over anything.
+    const ledgerEvents: LedgerEvent[] = [];
+    const startedAt = Date.now();
 
     try {
       for await (const event of runner.run(task, controller.signal)) {
@@ -276,6 +283,8 @@ export class RunSession {
         // nothing but an announcement has nothing left to show.
         const text = this.takeStepMarkers(event);
         if (text === undefined) continue;
+
+        ledgerEvents.push({ kind: event.kind, text, detail: event.detail, step: event.step });
 
         // Everything, verbatim, in the place that is meant to be read line by line.
         this.terminal.write(
@@ -301,6 +310,13 @@ export class RunSession {
     }
 
     const { commits, files } = runner.result;
+
+    // **Persisted whether or not anything changed.** A run that did nothing is exactly
+    // the run someone asks "why didn't you" about — the record that answers that has
+    // to exist even when `files` is empty.
+    const record = buildRunRecord(task, startedAt, ledgerEvents);
+    await this.context.workspaceState.update(LAST_RUN_KEY, record);
+
     await this.close(task, summary, files.length, closing, runner.branches);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');

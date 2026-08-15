@@ -1293,6 +1293,36 @@ Deliberately not done: domain-level rules. The review's own scope for this item 
 level firewall logic is not required initially" — is exactly where this stops. A command
 either has network or it doesn't; nothing here decides which hosts.
 
+**A durable run record, and "why did you do that" grounded in it (review items B and A,
+also 15 Aug).** A run's narration existed only as text streamed through the panel and
+gone the moment it scrolled past — asking "why did you touch that file" ten minutes
+later had nothing to answer from but the model's general memory of the conversation,
+which is the "generic model hindsight" the review said this feature must not be built
+on.
+
+One ledger now serves both items, because they turned out to need the same thing:
+`runLedger.ts` builds a `RunRecord` from the run's own events as they stream through —
+intent, every step with the narration said just before it ran, files actually changed
+(mutating tools only; a file merely read is not "changed"), the result, and a remaining
+concern derived rather than invented (declined steps named, or "none recorded" — never
+a fabricated worry). Persisted as the single most recent run, not a history: "why did
+you do X" almost always means the last time X happened.
+
+**B** — `Clarvis: Show Last Run Summary` opens it as a document: Intent, Files changed,
+Steps, Result, Remaining concern, and Branch state (fetched live via the same branch
+lookup the review wizard already uses, exported for the purpose). A support artifact,
+per the review's own framing, for exactly the moment someone reports "Clarvis broke
+something" and needs to show someone else what actually happened.
+
+**A** — chat answers "why did you edit X" / "why did you run Y" from the same record:
+the question is stripped of its connective words ("why did you", "edit", "that") down
+to the words that could name a file or a command, matched against each step's file and
+action, most recent first. Grounded in the plan-step → decision → tool-call chain this
+product already narrates, not a model asked to reconstruct one after the fact — and it
+says plainly when nothing matches, rather than guessing at a step. Reaches the model
+path too, through `factsBlock`, for the same reason `openProblems` and `patterns` do:
+whichever path answers, it should be answering from the same facts.
+
 #### Personality under load
 
 The butler voice (§2) governs chat too — dry, brief, helps first. Rule 1 (*helps first*)

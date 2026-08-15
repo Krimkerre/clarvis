@@ -1,5 +1,6 @@
 import type { Pattern } from '../memory/patterns';
 import { nothingWrong, OpenProblems, problemLines } from './openProblems';
+import { explainStep, RunRecord } from '../agent/runLedger';
 
 /**
  * Everything Clarvis knows without asking anyone.
@@ -45,6 +46,14 @@ export interface WorkspaceFacts {
   openProblems?: OpenProblems;
   /** The file being looked at, named even when it is clean. */
   activeFile?: string;
+  /**
+   * The last agent run, step by step — review item A, "why did you do that?".
+   *
+   * One run, not a history: "why did you do X" almost always means the most recent
+   * time X happened, and a longer memory here would be a second, quieter place errors
+   * about *this* run's reasoning could go stale against a later one.
+   */
+  lastRun?: RunRecord;
 }
 
 /** A local reply, plus the face to wear while giving it. */
@@ -66,6 +75,16 @@ export interface LocalReply {
  */
 export function localAnswer(question: string, facts: WorkspaceFacts): LocalReply | null {
   const q = question.toLowerCase();
+
+  // **First of all**, because "why did you fix the failing test" contains "failing"
+  // and would otherwise be read as asking about a build, not for a reason.
+  if (matches(q, /\bwhy (did|were|was) you\b|\bwhy did that\b|\breason (for|behind)\b/)) {
+    return whyAnswer(facts, question);
+  }
+
+  if (matches(q, /\b(what did (you|the (last|previous) run) (do|change)|last run|run summary)\b/)) {
+    return lastRunAnswer(facts);
+  }
 
   // Order matters below: the more specific intents are tested first, because
   // "is the build still broken" matches both the failure and the running check.
@@ -120,6 +139,52 @@ function problemsAnswer(facts: WorkspaceFacts): LocalReply {
   }
 
   return { text: problemLines(facts.openProblems).join('\n'), state: 'judging' };
+}
+
+/**
+ * "Why did you do that?" — review item A.
+ *
+ * Grounded in what the run actually recorded, not model hindsight: the question text
+ * itself is the needle, matched against the ledger's steps (§ runLedger.ts), and the
+ * answer is the narration the model gave *before* that step ran — the real
+ * plan-step → decision chain, or as close to it as this product keeps.
+ */
+function whyAnswer(facts: WorkspaceFacts, question: string): LocalReply {
+  if (!facts.lastRun) {
+    return { text: "I haven't done anything yet this session — nothing to explain.", state: 'neutral' };
+  }
+
+  const needle = question.replace(/\bwhy (did|were|was) you\b|\bwhy did that\b|\breason (for|behind)\b/i, '');
+  const step = explainStep(facts.lastRun, needle);
+
+  if (!step) {
+    return {
+      text: "I can't tell which step you mean — name the file or command and I'll check what I said about it.",
+      state: 'neutral',
+    };
+  }
+
+  return {
+    text: step.narration
+      ? `${step.narration} (${step.action})`
+      : `No reason was recorded for that one — just: ${step.action}.`,
+    state: 'talking',
+  };
+}
+
+/** Review item B, said rather than opened as a document — the short version. */
+function lastRunAnswer(facts: WorkspaceFacts): LocalReply {
+  if (!facts.lastRun) {
+    return { text: "I haven't done anything yet this session.", state: 'neutral' };
+  }
+
+  const { intent, filesChanged, result } = facts.lastRun;
+  const files = filesChanged.length ? filesChanged.join(', ') : 'nothing';
+
+  return {
+    text: `Asked to ${intent || 'do something unrecorded'}. Touched: ${files}. ${result || 'It ended without saying why.'}`,
+    state: 'talking',
+  };
 }
 
 function failureAnswer(facts: WorkspaceFacts): LocalReply {
@@ -339,6 +404,18 @@ export function factsBlock(facts: WorkspaceFacts): string {
   // The open file's own complaints, verbatim. Counts alone let him say how many things
   // were wrong and never which, which reads like an answer and is not one.
   if (facts.openProblems) lines.push(...problemLines(facts.openProblems));
+
+  // **Grounds "why did you do that" in the record, not in guessing.** Without this the
+  // model path answered from general conversation memory — the "generic hindsight" the
+  // review specifically said not to build on — even though the real narration was
+  // sitting in workspaceState the whole time.
+  if (facts.lastRun) {
+    const { intent, filesChanged, steps } = facts.lastRun;
+    lines.push(`Last run: asked to ${intent || '(not recorded)'}; touched ${filesChanged.join(', ') || 'nothing'}.`);
+    for (const step of steps.slice(-8)) {
+      if (step.narration) lines.push(`  step ${step.step}: ${step.narration} — ${step.action}`);
+    }
+  }
 
   if (lines.length === 0) return '';
 

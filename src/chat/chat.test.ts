@@ -617,3 +617,88 @@ test('a read-only mode is named in the offer, and it is the mode returned to', (
     assert.equal(canEdit(mode), true, mode);
   }
 });
+
+test('"why did you" is answered from the last run\'s recorded narration, not guessed', () => {
+  // Review item A. Grounded in what was actually recorded, not "generic model
+  // hindsight" — the review's own phrase for the thing this must not be.
+  const lastRun = {
+    intent: 'fix the failing test',
+    startedAt: 0,
+    steps: [
+      {
+        step: 1,
+        narration: 'The test wants a trailing slash stripped before comparing.',
+        action: 'applyEdit: src/app.ts',
+        file: 'src/app.ts',
+        declined: false,
+      },
+    ],
+    filesChanged: ['src/app.ts'],
+    result: 'Fixed it.',
+  };
+
+  const reply = localAnswer('why did you edit app.ts?', { ...baseFacts(), lastRun });
+
+  assert.match(reply!.text, /trailing slash/);
+  assert.match(reply!.text, /applyEdit: src\/app\.ts/);
+});
+
+test('"why did you" with no matching step says so, rather than guessing at one', () => {
+  const lastRun = {
+    intent: 'fix the failing test',
+    startedAt: 0,
+    steps: [{ step: 1, narration: 'x', action: 'applyEdit: src/app.ts', file: 'src/app.ts', declined: false }],
+    filesChanged: ['src/app.ts'],
+    result: 'Fixed it.',
+  };
+
+  const reply = localAnswer('why did you touch package.json?', { ...baseFacts(), lastRun });
+
+  assert.match(reply!.text, /can't tell which step/);
+});
+
+test('"why did you" with no run at all says so plainly', () => {
+  const reply = localAnswer('why did you do that?', baseFacts());
+
+  assert.match(reply!.text, /haven't done anything yet/);
+});
+
+test('"what did the last run do" gives the short version: intent, files, result', () => {
+  const lastRun = {
+    intent: 'fix the failing test',
+    startedAt: 0,
+    steps: [],
+    filesChanged: ['src/app.ts'],
+    result: 'Fixed it.',
+  };
+
+  const reply = localAnswer('what did the last run do?', { ...baseFacts(), lastRun });
+
+  assert.match(reply!.text, /fix the failing test/);
+  assert.match(reply!.text, /src\/app\.ts/);
+  assert.match(reply!.text, /Fixed it\./);
+});
+
+test('the last run reaches the model path too, not just the local one', () => {
+  // Without this the model answered "why" from general conversation memory — the
+  // generic hindsight the review said not to build on — even with the real narration
+  // sitting in workspaceState.
+  const lastRun = {
+    intent: 'fix the failing test',
+    startedAt: 0,
+    steps: [
+      { step: 1, narration: 'Trailing slash was the mismatch.', action: 'applyEdit: src/app.ts', declined: false },
+    ],
+    filesChanged: ['src/app.ts'],
+    result: 'Fixed it.',
+  };
+
+  const block = factsBlock({ ...baseFacts(), lastRun });
+
+  assert.match(block, /fix the failing test/);
+  assert.match(block, /Trailing slash was the mismatch/);
+});
+
+function baseFacts(): WorkspaceFacts {
+  return { now: Date.now(), running: [], recentFiles: [], patterns: [] };
+}

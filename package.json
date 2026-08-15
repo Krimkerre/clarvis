@@ -84,6 +84,10 @@
         "title": "Clarvis: Review Agent Run"
       },
       {
+        "command": "clarvis.showLastRun",
+        "title": "Clarvis: Show Last Run Summary"
+      },
+      {
         "command": "clarvis.undoLastRun",
         "title": "Clarvis: Undo Last Agent Run"
       },

@@ -6,6 +6,7 @@ node_modules/**
 esbuild.js
 tsconfig.json
 plan.md
+docs/**
 avatar.html
 media/previews/**
 media/states-strip.svg

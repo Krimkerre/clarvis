@@ -5,6 +5,7 @@ import type { Pattern } from '../memory/patterns';
 import { activeFailure, parseRecord, FailureRecord, FAILURE_KEY } from '../briefing/lastFailure';
 import { readGitSummary } from '../briefing/gitSummary';
 import { WorkspaceFacts } from './localAnswer';
+import { LAST_RUN_KEY } from '../agent/runLedger';
 import { summariseProblems } from './openProblems';
 
 /**
@@ -68,6 +69,7 @@ export class WorkspaceFactsReader {
       patterns: this.patterns(),
       problems: countProblems(),
       ...activeFileProblems(),
+      lastRun: this.context.workspaceState.get(LAST_RUN_KEY),
     };
   }
 }

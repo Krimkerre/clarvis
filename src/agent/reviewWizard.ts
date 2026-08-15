@@ -247,7 +247,8 @@ async function discardBranch(
 }
 
 /** Reads the current state of the run from git. */
-async function gather(
+/** Exported so the run summary can reuse the same branch/commit lookup. */
+export async function gather(
   runCommits: string[],
   files: string[],
   origin?: string

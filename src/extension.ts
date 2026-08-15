@@ -18,8 +18,9 @@ import { buildStamp } from './buildStamp';
 import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
-import { reviewRun } from './agent/reviewWizard';
-import { ReviewAction } from './agent/runReview';
+import { gather, reviewRun } from './agent/reviewWizard';
+import { describeRun, ReviewAction } from './agent/runReview';
+import { LAST_RUN_KEY, renderRunSummary, RunRecord } from './agent/runLedger';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
@@ -748,6 +749,24 @@ function registerPlanningCommand(
  * Returns the shared terminal, because the chat path needs the same one — a probe run
  * and an agent run in separate windows would read as two unrelated things happening.
  */
+/** The body of `clarvis.showLastRun`, split out to keep its registering function short. */
+async function showLastRun(context: vscode.ExtensionContext): Promise<void> {
+  const record = context.workspaceState.get<RunRecord>(LAST_RUN_KEY);
+  if (!record) {
+    void vscode.window.showInformationMessage(await phrase('report', 'No run recorded yet this session.'));
+    return;
+  }
+
+  const summary = await gather([], [], context.workspaceState.get('clarvis.agent.baseBranch'));
+  const withBranch = summary ? { ...record, branchState: describeRun(summary) } : record;
+
+  const document = await vscode.workspace.openTextDocument({
+    content: renderRunSummary(withBranch),
+    language: 'markdown',
+  });
+  await vscode.window.showTextDocument(document, { preview: false });
+}
+
 function registerAgentCommands(
   context: vscode.ExtensionContext,
   logger: ClarvisLog,
@@ -819,6 +838,13 @@ function registerAgentCommands(
         decided
       )
     ),
+
+    // A durable, inspectable summary of the last run: intent, files changed, steps
+    // and why, result, remaining concern, branch state. The chat answer to "why did
+    // you do that" reads the same stored record; this is the whole thing, as a
+    // document, for when a chat reply is not enough — a support artifact, per the
+    // review that asked for it.
+    vscode.commands.registerCommand('clarvis.showLastRun', () => showLastRun(context)),
 
     // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
     // the escape hatch exists before the thing it rescues you from.

@@ -4665,6 +4665,14 @@ Forces the **no-plan-needed** outcome, which nothing else reaches — a 30-line
 throwaway should be told it doesn't need a plan rather than handed four milestones of
 ceremony. Also the fastest way to see whether the analysis over-produces.
 
+**Pre-tested three times, and the seed is less decisive than it looks.** Twice it
+returned `NO-PLAN-NEEDED: thirty lines, one machine, one list, no state — there is
+nothing here a plan would catch that reading the file wouldn't`. Once it declined, and
+was right to: "a different one *each time*" alongside "nothing is remembered between
+runs" is a genuine contradiction, since `random.choice` repeats. Which branch fires
+depends on how the interview is answered, and both are correct — so this project tests
+that the outcome *exists*, not that it is inevitable.
+
 **4. Anything at all, in Elixir, Zig or Ruby.**
 Forces the honest conventions fallback: no entry exists, so the plan must say the
 specifics were never written down rather than inventing four plausible idioms. The

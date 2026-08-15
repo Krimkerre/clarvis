@@ -240,6 +240,22 @@ test('thinking out loud is not an instruction', () => {
   }
 });
 
+test('a polite request is a request, question mark and all', () => {
+  // Found live: "can you fix my code?" hit the trailing-? rule and was answered — a
+  // list of what was wrong, and a note that files could not be written in Chat mode,
+  // for a message whose entire point was to have it fixed.
+  for (const message of ['can you fix my code?', 'could you fix this?', 'can you refactor this file?']) {
+    assert.equal(routeFor(message).route, 'agent', message);
+  }
+});
+
+test('a genuine opinion question survives the polite-request check', () => {
+  // "would you" was tried in the same list and broke this: "what would you change" is
+  // asking for an opinion, and every instance of "would you X" in ordinary phrasing is
+  // closer to that than to a request. Left out for exactly this sentence.
+  assert.equal(routeFor('what would you change about this file').route, 'answer');
+});
+
 test('ambiguity resolves toward answering', () => {
   // The two mistakes are not equal: a question wrongly routed to the agent starts
   // editing a codebase nobody asked it to touch.

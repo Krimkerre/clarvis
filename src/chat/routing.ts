@@ -39,7 +39,7 @@ const WORK_VERBS =
 /** Phrasings that are a request for work even without an imperative verb. */
 const WORK_PHRASES = [
   /\bmake (it|this|the|them|that)\b/,
-  /\bcan you (fix|add|change|update|write|implement|create|refactor|rename)\b/,
+  /\b(can|could) you (fix|add|change|update|write|implement|create|refactor|rename)\b/,
   /\bget (it|this|the tests?) (working|passing|green)\b/,
   /\bsort (it|this) out\b/,
   /\bdo it\b/,
@@ -71,6 +71,17 @@ const HYPOTHETICAL =
 export function routeFor(text: string): RouteDecision {
   const message = text.trim().toLowerCase();
 
+  // **A polite request is a request, question mark and all.** "Can you fix my code?"
+  // used to hit the trailing-? rule below and read as an answer — found live: it
+  // produced a list of what was wrong and a note that he could not write files in Chat
+  // mode, when the whole point of asking was to have it fixed. `WORK_PHRASES` already
+  // recognised "can you fix" as work; it just never ran, because the question mark
+  // returned first. Checked before the blanket rule, since this is the one shape of
+  // question that is unambiguously a job wearing a question mark as a courtesy.
+  if (WORK_PHRASES.some((phrase) => phrase.test(message))) {
+    return { route: 'agent', because: 'That reads as a job, so I picked up the tools.' };
+  }
+
   // A question mark is the clearest signal a person can give, and people mean it.
   if (message.endsWith('?')) {
     return { route: 'answer', because: 'That reads as a question, so I answered rather than started work.' };
@@ -85,7 +96,7 @@ export function routeFor(text: string): RouteDecision {
     return { route: 'answer', because: 'That reads as a question, so I answered rather than started work.' };
   }
 
-  if (WORK_VERBS.test(message) || WORK_PHRASES.some((phrase) => phrase.test(message))) {
+  if (WORK_VERBS.test(message)) {
     return { route: 'agent', because: 'That reads as a job, so I picked up the tools.' };
   }
 

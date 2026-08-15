@@ -5002,6 +5002,23 @@ Falls back to the written line when there is no model, the attempt times out, or
 file and line do not survive — the same fallback that was always correct, now the floor
 rather than the ceiling.
 
+### "Can you fix my code?" was answered, not agreed to
+
+The Agent-borrowing offer was never reached. "Can you fix my code?" ends in a question
+mark, and `routeFor`'s first rule was `message.endsWith('?')` → answer — checked before
+`WORK_PHRASES`, which already recognised `can you fix` as work and has since `WORK_VERBS`
+first went in. The offer built to solve exactly this sat downstream of a routing decision
+that never let the message reach it: he read the file, listed three real defects, and
+signed off with "they're all yours to fix through the editor; I can't write files in this
+mode" — correct about the mode, and a non-answer to what was asked.
+
+`WORK_PHRASES` now runs before the blanket question-mark rule. Not a general reordering —
+this is the one shape of question that is unambiguously a job wearing a "?" as a courtesy,
+and every other question rule is untouched. `could you fix` joined `can you fix`; `would
+you` was tried in the same edit and immediately broke "what would you change about this
+file", which is an opinion question — "would you" is common enough in ordinary phrasing
+that treating it as a request would misroute more than it fixed. Left out on purpose.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

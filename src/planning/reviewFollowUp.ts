@@ -1,6 +1,4 @@
-import * as vscode from 'vscode';
 import { Finding } from './analysisPrompt';
-import { appendMilestone } from './planUpdate';
 import { MilestoneStep } from './milestonePrompt';
 
 /**
@@ -8,6 +6,10 @@ import { MilestoneStep } from './milestonePrompt';
  *
  * Two of the three answers do something, and both of them are the same act as
  * everywhere else in this product: work gets written down before it gets done.
+ *
+ * Pure. The writing itself lives in `recordMilestone.ts`, which already owns editing
+ * `plan.md` — and keeping the wording here is the third time this week that a file
+ * importing `vscode` turned out to be hiding something worth testing.
  */
 
 /**
@@ -24,31 +26,6 @@ export function findingSteps(findings: readonly Finding[]): MilestoneStep[] {
     step: finding.fixes[0] ?? finding.what,
     check: `${finding.what} — no longer true. Prove it with a run whose output would differ if it were.`,
   }));
-}
-
-/** Writes them into `plan.md` as a milestone of their own. Returns its number. */
-export async function addFindingsToPlan(
-  findings: readonly Finding[],
-  log: (message: string) => void
-): Promise<number | undefined> {
-  const folder = vscode.workspace.workspaceFolders?.[0];
-  if (!folder || findings.length === 0) return undefined;
-
-  const planUri = vscode.Uri.joinPath(folder.uri, 'plan.md');
-  const existing = await vscode.workspace.fs.readFile(planUri).then(
-    (bytes) => Buffer.from(bytes).toString('utf8'),
-    () => undefined
-  );
-  if (existing === undefined) return undefined;
-
-  const updated = appendMilestone(existing, 'Fix what the read-back found', findingSteps(findings));
-  if (updated === existing) return undefined;
-
-  await vscode.workspace.fs.writeFile(planUri, Buffer.from(updated, 'utf8'));
-
-  const number = (updated.match(/^#{2,4}\s*Milestone\s+(\d+)/gim) ?? []).length;
-  log(`review: written into plan.md as milestone ${number}`);
-  return number;
 }
 
 /**

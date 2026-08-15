@@ -3930,10 +3930,34 @@ Three answers, and the middle one is the point:
 Offered, never applied. Rule 3 holds at the end of a build exactly as it does at the
 start.
 
+**Run against the diff it was written for, from a clean context.** The prompt was
+assembled from project 2's real diff and its nine recorded steps, checks and results,
+and answered by a model that had never seen the hand review. It returned four findings,
+no false positives, most severe first, in the exact shape the parser expects:
+
+1. *(safety)* `http.Get` with the zero-value client — no timeout, no deadline. **And it
+   noticed why the check missed it**: "the check was only exercised via an invalid
+   hostname, which fails fast on DNS and never touches this path."
+2. *(safety)* `dailyForecasts` indexing five parallel slices without checking their
+   lengths.
+3. *(logic)* `chanceOfRainNow` falling back to 0 on no match — with the check-quality
+   observation the second question was written to produce: "the milestone's own check
+   passes identically whether the matching logic works or is silently broken — a
+   constant would satisfy it."
+4. *(logic)* the `http.Get` error discarded by `fmt.Errorf("%w", …)`.
+
+Four of the six found by hand. It missed the cache having no age — never specified, so
+arguably not its business — and the green `go test ./...` over zero test files, which
+was Clarvis's own post-run check rather than a step in the plan, and so was not in
+front of it. Both misses are the prompt's boundaries working rather than failing.
+
 **Exit checklist:**
 - [ ] A milestone whose code is fine produces "found nothing worth raising", not silence.
-- [ ] The rain-constant defect is found when the read-back runs against that same diff.
-- [ ] A finding written into the plan arrives as a milestone with a falsifiable check.
+- [x] The rain-constant defect is found when the read-back runs against that same diff —
+      **verified 15 Aug**, along with three others, from a clean context.
+- [x] A finding written into the plan arrives as a milestone with a falsifiable check —
+      the four findings render as four steps, each checked by "no longer true; prove it
+      with a run whose output would differ".
 - [ ] A review that fails or times out does not fail the milestone that already landed.
 
 ### M9g — Project notes, written by the user *(next, after the checklist)*

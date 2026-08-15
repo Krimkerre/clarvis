@@ -34,3 +34,30 @@ test('a killed command with a denial still gets the note', () => {
   // No exit code means killed or timed out, which is not success.
   assert.ok(confinementNote(true, undefined, 'mkdir: /usr/local/lib: Operation not permitted'));
 });
+
+test('a DNS failure with network denied gets the network note, not the write one', () => {
+  const note = confinementNote(true, 6, 'curl: (6) Could not resolve host: api.example.com', false);
+
+  assert.match(note ?? '', /no network by default|get none by default/);
+  assert.doesNotMatch(note ?? '', /sudo.*chown/);
+});
+
+test('a connection refusal with network denied gets the note', () => {
+  const note = confinementNote(true, 7, 'curl: (7) Failed to connect to api.example.com port 443: Connection refused', false);
+
+  assert.ok(note);
+});
+
+test('the same failure with network allowed gets no note — it is a real outage', () => {
+  assert.equal(
+    confinementNote(true, 6, 'curl: (6) Could not resolve host: api.example.com', true),
+    undefined
+  );
+});
+
+test('network note tells the model not to blame the network and not to route around it', () => {
+  const note = confinementNote(true, 7, 'connection refused', false) ?? '';
+
+  assert.match(note, /not.*real outage/);
+  assert.match(note, /say so and stop/);
+});

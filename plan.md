@@ -1267,6 +1267,32 @@ deny-list gate for commands, and unlike ordinary step approval, it does not go t
 `approveStep`, so Auto and Unattended cannot skip it. Reading a private key was never a
 decision either mode was meant to make unattended.
 
+**Network confinement, closing the gap the review actually pointed at (also 15 Aug).**
+The sandbox previously read the whole machine and left the network open — enough to
+stop destruction, not exfiltration. Network is now **denied by default** on both
+mechanisms: macOS gets `(deny network*)` in the SBPL profile, Linux gets `--unshare-net`
+(its own network namespace, no interfaces — not a firewall rule to get wrong, an
+absence of network to have an opinion about). Opened back up only for the gate
+categories that cannot function without it and are already a stop-and-ask —
+`dependency` installs, `outward-facing` commands (`git push`, `npm publish`) — via
+`allowsNetwork(verdict)`. Everything else, the majority of commands run in a session
+(tests, builds, linters, arbitrary scripts), gets none, silently: not a new prompt, a
+narrower default.
+
+**Verified against a real `sandbox-exec`, not just the SBPL syntax:** `curl` to a real
+host inside the denied profile returns `curl: (6) Could not resolve host` (exit 6); the
+identical command inside the allowed profile returns `HTTP 200`. `confinement.ts` gained
+the matching half of the existing write-denial pattern — a DNS or connection failure
+under a denied-network run gets a note telling the model this is confinement, not an
+outage, and not to suggest checking the user's internet or route around it by retrying;
+if the command genuinely needs the network, that is the user's decision, stated and
+stopped on rather than silently worked around.
+
+Deliberately not done: domain-level rules. The review's own scope for this item —
+"even a simple network yes/no capability materially shrinks the attack surface; domain-
+level firewall logic is not required initially" — is exactly where this stops. A command
+either has network or it doesn't; nothing here decides which hosts.
+
 #### Personality under load
 
 The butler voice (§2) governs chat too — dry, brief, helps first. Rule 1 (*helps first*)

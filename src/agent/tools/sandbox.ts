@@ -123,11 +123,20 @@ export async function spawnFor(
   command: string,
   root: string,
   storageDir: string,
-  log?: (message: string) => void
+  log?: (message: string) => void,
+  /**
+   * Whether this command may reach the network, confined or not.
+   *
+   * Defaults closed. A broad-read, open-network sandbox cannot stop a command reading
+   * a secret and sending it somewhere, so most commands — tests, builds, linters — get
+   * none. The caller opens it only for the gate categories that cannot function
+   * without it and are already a stop-and-ask: a dependency install, a `git push`.
+   */
+  allowNetwork = false
 ): Promise<Spawn> {
   const sandbox = await availableSandbox(log);
   if (!sandbox) return { file: command, args: [], confined: false };
-  
+
 
   const [workspace] = await resolveAll([root]);
   const caches = await resolveAll(buildCaches());
@@ -138,10 +147,10 @@ export async function spawnFor(
   if (sandbox === 'sandbox-exec') {
     await fs.mkdir(storageDir, { recursive: true });
     profilePath = path.join(storageDir, 'commands.sb');
-    await fs.writeFile(profilePath, macProfile(workspace, caches), 'utf8');
+    await fs.writeFile(profilePath, macProfile(workspace, caches, allowNetwork), 'utf8');
   }
 
-  const { file, args } = sandboxArgv(sandbox, profilePath, workspace, caches, command);
+  const { file, args } = sandboxArgv(sandbox, profilePath, workspace, caches, command, allowNetwork);
   return { file, args, confined: true, via: sandbox };
 }
 

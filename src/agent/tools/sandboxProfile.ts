@@ -14,10 +14,19 @@
  *
  * **The guarantee, stated exactly:** a command cannot modify anything outside the
  * project folder and the build caches it needs. Not "sandboxed", which means nothing.
- * Reads are still allowed and the network is still open — see below — so this stops
- * destruction and persistence, and does not stop a command reading a secret and
- * sending it somewhere. Saying so is part of the fix; the previous version of this
- * problem was a README claiming containment the code did not have.
+ * Reads are still allowed — see below — so this stops destruction and persistence, and
+ * does not by itself stop a command reading a secret. Saying so is part of the fix;
+ * the previous version of this problem was a README claiming containment the code did
+ * not have.
+ *
+ * **Network is denied by default, allowed per command (15 Aug, review item #3).** Most
+ * commands — test runs, builds, linters — need no network at all, and a broad read plus
+ * an open network is the one combination that lets a read become exfiltration. The
+ * caller decides `allowNetwork` from the same gate classification that already stops a
+ * dependency install or a `git push` for approval: those categories get network,
+ * because they cannot function without it and are already a stop-and-ask. Everything
+ * else runs with none, silently, which is the change — not a new prompt, a narrower
+ * default.
  */
 
 /** Where the profile is enforced from, or `undefined` when nothing here can. */
@@ -47,7 +56,7 @@ const DEVICES = ['/dev/null', '/dev/dtracehelper', '/dev/zero', '/dev/random', '
  * discovered by writing one, watching it deny a write it had explicitly allowed, and
  * being unable to tell the difference from the sandbox working.
  */
-export function macProfile(workspace: string, caches: readonly string[]): string {
+export function macProfile(workspace: string, caches: readonly string[], allowNetwork: boolean): string {
   const writable = [workspace, ...caches].filter(Boolean);
 
   return [
@@ -58,6 +67,9 @@ export function macProfile(workspace: string, caches: readonly string[]): string
     `(allow file-write* ${DEVICES.map((device) => `(literal ${quote(device)})`).join(' ')})`,
     // Terminals and pipes, which are how output reaches the caller at all.
     '(allow file-write* (regex #"^/dev/tty") (regex #"^/dev/fd/"))',
+    // Last-match-wins, same as the write rules above: deny after the blanket allow,
+    // narrowed back open only for the commands the gate already trusts with it.
+    ...(allowNetwork ? [] : ['(deny network*)']),
   ].join('\n');
 }
 
@@ -78,7 +90,8 @@ export function sandboxArgv(
   profilePath: string,
   workspace: string,
   caches: readonly string[],
-  command: string
+  command: string,
+  allowNetwork: boolean
 ): { file: string; args: string[] } {
   if (sandbox === 'sandbox-exec') {
     return { file: 'sandbox-exec', args: ['-f', profilePath, '/bin/sh', '-c', command] };
@@ -87,9 +100,12 @@ export function sandboxArgv(
   // bubblewrap takes the opposite shape: everything is read-only unless bound
   // writable, which reaches the same guarantee from the other direction.
   const binds = [workspace, ...caches].filter(Boolean).flatMap((path) => ['--bind', path, path]);
+  // `--unshare-net` gives the command its own network namespace with no interfaces —
+  // not a firewall rule to get wrong, an absence of network to have an opinion about.
+  const net = allowNetwork ? [] : ['--unshare-net'];
 
   return {
     file: 'bwrap',
-    args: ['--ro-bind', '/', '/', '--dev', '/dev', '--tmpfs', '/tmp', ...binds, '/bin/sh', '-c', command],
+    args: ['--ro-bind', '/', '/', '--dev', '/dev', '--tmpfs', '/tmp', ...net, ...binds, '/bin/sh', '-c', command],
   };
 }

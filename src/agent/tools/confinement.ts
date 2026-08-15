@@ -25,13 +25,41 @@ const DENIED_WRITE =
   /operation not permitted|permission denied|read-?only file system|not writable|insufficient permissions|\bEACCES\b|\bEPERM\b|\bEROFS\b|sudo chown/i;
 
 /**
+ * Failures a denied network plausibly caused.
+ *
+ * The same false-diagnosis risk as `DENIED_WRITE`, one layer down: `curl: (6) Could
+ * not resolve host` and `connect ETIMEDOUT` read exactly like a real outage, and a
+ * model told to fix a flaky network has no way to discover the network was never
+ * there to begin with.
+ */
+const DENIED_NETWORK =
+  /could not resolve host|connection refused|network is unreachable|\bENOTFOUND\b|\bECONNREFUSED\b|\bEHOSTUNREACH\b|\bETIMEDOUT\b|curl: \(([67])\)/i;
+
+/**
  * What to add to a failed command's result, if anything.
  *
  * Written to the model rather than the user: it is the one deciding what to tell them
  * next, and the instruction it needs is "do not repeat this diagnosis".
  */
-export function confinementNote(confined: boolean, exitCode: number | undefined, output: string): string | undefined {
+export function confinementNote(
+  confined: boolean,
+  exitCode: number | undefined,
+  output: string,
+  networkAllowed = true
+): string | undefined {
   if (!confined || exitCode === 0) return undefined;
+
+  if (!networkAllowed && DENIED_NETWORK.test(output)) {
+    return [
+      'Note: this ran confined with no network — most commands get none by default.',
+      'A DNS or connection failure here is that, not a real outage or a missing service.',
+      "Do not repeat the tool's diagnosis or suggest checking the user's internet:",
+      'it is about to describe a working network as down.',
+      'If the command genuinely needs the network, say so and stop rather than retrying —',
+      'that is a decision for the user, not something to route around.',
+    ].join(' ');
+  }
+
   if (!DENIED_WRITE.test(output)) return undefined;
 
   return [

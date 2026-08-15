@@ -258,3 +258,16 @@ export const ESCAPE_LABEL = 'Run it unconfined';
 export function approveLabel(verdict: GateVerdict): string {
   return verdict.reversible ? 'Run it' : 'Run it anyway';
 }
+
+/**
+ * Whether a command may reach the network, from the same classification that gates it.
+ *
+ * A dependency install or a `git push`/`publish` cannot function without the network
+ * and already stops for approval — nothing new to ask, only somewhere to open what the
+ * sandbox now closes by default. Everything else, the vast majority of commands, gets
+ * none: a broad-read, open-network sandbox cannot stop a command reading a secret and
+ * sending it somewhere.
+ */
+export function allowsNetwork(verdict: GateVerdict | undefined): boolean {
+  return verdict?.category === 'dependency' || verdict?.category === 'outward-facing';
+}

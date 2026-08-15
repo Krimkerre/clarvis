@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyCommand, shellSegments, explainGate, mayEscapeConfinement } from '../Gate';
+import { allowsNetwork, classifyCommand, shellSegments, explainGate, mayEscapeConfinement } from '../Gate';
 
 test('a chained destructive command is caught, not hidden by a safe prefix', () => {
   // The failure a naive gate has: checking only the start means
@@ -136,4 +136,17 @@ test('go build and go test are not gated', () => {
   for (const command of ['go build ./...', 'go test ./...', 'go run main.go']) {
     assert.equal(classifyCommand(command), undefined, command);
   }
+});
+
+test('network is allowed only for dependency installs and outward-facing commands', () => {
+  for (const command of ['npm install lodash', 'pip install requests', 'git push', 'npm publish']) {
+    assert.equal(allowsNetwork(classifyCommand(command)), true, command);
+  }
+});
+
+test('network is denied for everything else, including ungated commands', () => {
+  for (const command of ['npm test', 'go build ./...', 'curl https://example.com', 'python script.py']) {
+    assert.equal(allowsNetwork(classifyCommand(command)), false, command);
+  }
+  assert.equal(allowsNetwork(undefined), false);
 });

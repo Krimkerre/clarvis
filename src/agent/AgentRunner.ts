@@ -8,7 +8,15 @@ import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
 import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
 import { phrase } from '../personality/Voice';
-import { approveLabel, classifyCommand, ESCAPE_LABEL, explainGate, GateVerdict, mayEscapeConfinement } from './Gate';
+import {
+  allowsNetwork,
+  approveLabel,
+  classifyCommand,
+  ESCAPE_LABEL,
+  explainGate,
+  GateVerdict,
+  mayEscapeConfinement,
+} from './Gate';
 import { classifyPath } from './sensitivePath';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
@@ -705,6 +713,8 @@ export class AgentRunner {
   private async runGated(command: string, signal: AbortSignal): Promise<string> {
     const verdict = classifyCommand(command);
 
+    const allowNetwork = allowsNetwork(verdict);
+
     // **Confined where the machine can confine it.** Worked out before the gate rather
     // than after it, because whether the sandbox is standing there changes what the
     // gate can offer — an install it is about to confine has a second answer worth
@@ -716,7 +726,8 @@ export class AgentRunner {
       command,
       this.root ?? '',
       path.join(this.context.globalStorageUri.fsPath, 'sandbox'),
-      this.log
+      this.log,
+      allowNetwork
     );
 
     if (verdict) {
@@ -759,8 +770,8 @@ export class AgentRunner {
       spawnAs
     );
 
-    const note = confinementNote(spawnAs.confined, result.exitCode, result.output);
-    if (note) this.log(`sandbox: "${command}" failed on a write it was not allowed to make`);
+    const note = confinementNote(spawnAs.confined, result.exitCode, result.output, allowNetwork);
+    if (note) this.log(`sandbox: "${command}" failed on something the confinement denied`);
 
     return [
       `exit ${result.exitCode ?? 'killed'}${result.timedOut ? ' (timed out)' : ''}`,

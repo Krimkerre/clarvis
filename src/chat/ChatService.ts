@@ -25,6 +25,7 @@ import { DraftDocument } from '../planning/DraftDocument';
 import { acceptGitOffer, declineGitOffer, gitOffer } from '../agent/gitOffer';
 import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
+import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { interruptedBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
@@ -146,7 +147,7 @@ export class ChatService {
    * Guarded against re-entry: a second interview started mid-interview would have
    * two sets of questions competing for the same replies.
    */
-  private async startPlanning(): Promise<void> {
+  private async startPlanning(decided?: 'carry-on'): Promise<void> {
     if (this.planningIO) {
       await this.note("We're already in the middle of that one.");
       return;
@@ -210,7 +211,8 @@ export class ChatService {
         },
         // An interview is two minutes of someone's attention; losing it to a window
         // reload teaches people not to start one.
-        workspaceMemory(this.context)
+        workspaceMemory(this.context),
+        decided
       );
     } finally {
       this.planningIO = undefined;
@@ -355,6 +357,57 @@ export class ChatService {
     return true;
   }
 
+  /**
+   * Offers to pick up an interview that was interrupted, with its progress named.
+   *
+   * The three answers are the same three `runPlanning` would have asked, and the
+   * choice is passed through so it is not asked twice.
+   */
+  private async offerToResumeInterview(): Promise<boolean> {
+    const snapshot = workspaceMemory(this.context).load();
+    if (!snapshot || !worthResuming(snapshot, Date.now())) return false;
+
+    this.log(`chat: unfinished interview here — ${describeProgress(snapshot)}`);
+    await this.remark(
+      await opening(
+        `They closed the window part-way through planning a project and have just come back. ${describeProgress(snapshot)}.`,
+        `We were part-way through planning this. ${describeProgress(snapshot)}. Carry on from there?`
+      )
+    );
+
+    this.awaitingResume = true;
+    this.panel.post({
+      type: 'choices',
+      items: [{ label: 'Carry on' }, { label: 'Start again' }, { label: 'Leave it' }],
+    });
+    return true;
+  }
+
+  /** Set between offering to resume an interview and the user answering. */
+  private awaitingResume = false;
+
+  /** Takes the reply to that offer. */
+  private async answeredResumeOffer(question: string): Promise<boolean> {
+    this.awaitingResume = false;
+    this.panel.post({ type: 'choices-clear' });
+
+    const answer = question.trim().toLowerCase();
+    if (/^(start again|fresh|start over)/.test(answer)) {
+      await workspaceMemory(this.context).clear();
+      this.log('planning: unfinished interview thrown away, starting fresh');
+      await this.startPlanning();
+      return true;
+    }
+
+    if (/^(carry on|y|yes|continue|go on|ok|okay|sure)\b/.test(answer)) {
+      await this.startPlanning('carry-on');
+      return true;
+    }
+
+    this.log('planning: unfinished interview left for now');
+    return false;
+  }
+
   /** Set between offering to resume a build and the user answering. */
   private awaitingBuildAnswer?: { milestone: MilestoneState; projectName: string; steps: string[] };
 
@@ -393,6 +446,7 @@ export class ChatService {
    * asked, or as the reply to the offer to start.
    */
   private async planningTook(question: string): Promise<boolean> {
+    if (this.awaitingResume) return this.answeredResumeOffer(question);
     if (this.awaitingScopeAnswer) return this.answeredScopeOffer(question);
     if (this.awaitingBuildAnswer) return this.answeredBuildOffer(question);
     if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
@@ -460,6 +514,14 @@ export class ChatService {
     // the progress, so a window reopened next Tuesday can pick it up — and asking
     // "shall we plan something?" at someone mid-build would be absurd.
     if (await this.offerToResumeBuild()) return;
+
+    // **An interview left half-finished is offered before a fresh one.** The resume
+    // question lived inside `runPlanning`, which meant it only appeared *after*
+    // agreeing to plan — so someone who closed the window mid-interview was greeted
+    // with "an empty folder, nothing built yet", which was both wrong and the reason
+    // they never got as far as the offer. Found live: closed at the scope question,
+    // reopened, and was invited to start from nothing.
+    if (await this.offerToResumeInterview()) return;
 
     // What is actually here, so the line can react to *this* folder rather than to
     // the abstract fact of a missing file. An empty one deserves "oh, a new project?";

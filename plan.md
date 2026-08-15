@@ -4432,6 +4432,22 @@ the chat showed "your own work on `master` is untouched" followed by an aside ab
 hard part being over, about a run that had built nothing at all. They travel as separate
 fields now, and the branch note goes *after* what was said rather than instead of it.
 
+**Quit mid-interview, and he offered to start from nothing.** Closed at the scope
+question, reopened, and was greeted with "an empty folder, nothing built yet" — a
+description of a folder that had a three-answer interview saved against it.
+
+Nothing was lost: `clarvis.planning.interview` held the seed, the name and all three
+answers, written after each one. **The offer was in the wrong place.** `offerResume`
+sits inside `runPlanning`, so it only fires once someone has already agreed to plan —
+which is a question they now have no reason to say yes to, having just been told this
+was a blank folder. The resume was one accepted offer away from appearing and might as
+well not have existed.
+
+It is asked at startup now, before the new-project offer, with its progress named and
+the same three answers `runPlanning` would have given. The choice is handed down so it
+is not asked twice — two identical questions in a row reads as the product not
+listening.
+
 ### The projects, and what each one forces
 
 Chosen so the interesting path cannot be avoided rather than merely being available.

@@ -92,12 +92,20 @@ export async function runPlanning(
   lines: PlanningLines,
   log: (message: string) => void,
   startBuild?: StartBuild,
-  memory?: InterviewMemory
+  memory?: InterviewMemory,
+  /**
+   * Already decided elsewhere, so it is not asked twice.
+   *
+   * Chat now offers the resume at startup — that is where someone reopening a window
+   * actually is — and hands the answer down rather than letting this ask again two
+   * seconds later.
+   */
+  decided?: 'carry-on'
 ): Promise<void> {
   // **Offered before anything else, including the plan.md question.** Someone
   // halfway through an interview does not want to be asked whether to replace a
   // plan that does not exist yet.
-  const result = await gatherAnswers(models, io, lines, log, memory);
+  const result = await gatherAnswers(models, io, lines, log, memory, decided);
   // A paused interview keeps its snapshot: cancelling is not abandoning, and the
   // next window should still offer to carry on.
   if (!result) return;
@@ -168,9 +176,10 @@ async function gatherAnswers(
   io: PlanningIO,
   lines: PlanningLines,
   log: (message: string) => void,
-  memory?: InterviewMemory
+  memory?: InterviewMemory,
+  decided?: 'carry-on'
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
-  const { resume, stop } = await offerResume(io, log, memory);
+  const { resume, stop } = await offerResume(io, log, memory, decided);
   if (stop) return undefined;
 
   if (!resume && !(await okToReplaceExistingPlan(io, log))) return undefined;
@@ -192,10 +201,18 @@ async function gatherAnswers(
 async function offerResume(
   io: PlanningIO,
   log: (message: string) => void,
-  memory?: InterviewMemory
+  memory?: InterviewMemory,
+  decided?: 'carry-on'
 ): Promise<{ resume?: { state: InterviewState; seed: string }; stop?: boolean }> {
   const snapshot = memory?.load();
   if (!snapshot || !worthResuming(snapshot, Date.now())) return {};
+
+  // Asked and answered upstairs. Asking again is how a resume offer becomes two
+  // identical questions in a row, which reads as the product not listening.
+  if (decided === 'carry-on') {
+    log(`planning: resuming an interview — ${describeProgress(snapshot)}`);
+    return { resume: { state: snapshot.state, seed: snapshot.seed } };
+  }
 
   const choice = await io.confirm(
     await phrase('ask', 'We were part-way through planning something.', []),

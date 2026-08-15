@@ -104,6 +104,12 @@ to the same finding, and they are different projects, so you pick rather than ap
 **Something else** takes your own answer instead, and **No, drop this** turns the
 finding down (say why — it's recorded, not dropped).
 
+**Close the window mid-interview and he picks it up.** Reopen the folder and the first
+thing he says is where you got to — *"Forecast — 3 questions in. Carry on from there?"*
+— with **Carry on**, **Start again** and **Leave it**. Answers are saved after every
+question, not at the end, since the end is exactly what a closed window prevents you
+reaching. After a week an unfinished interview is dropped rather than offered.
+
 **The draft opens in the editor**, rendered rather than raw, while the approval
 question stays in the chat. Add anything missing and he redraws; nothing is written
 to disk until you choose **Approve**. If a `plan.md` already exists he asks whether

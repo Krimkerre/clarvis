@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { fingerprint } from './fingerprint';
+import { LINGER_MS, lingeringLine } from './lingering';
 import { PatternStore } from './PatternStore';
 import { forgetMatching, recordOccurrence, recordResolution, topPattern, THRESHOLD, Pattern } from './patterns';
 import { PendingFix, beginPending, noteOutcome } from './resolution';
@@ -51,6 +52,19 @@ export class PatternMemory {
    */
   private readonly pendingDiagnostics = new Map<string, ReturnType<typeof setTimeout>>();
 
+  /**
+   * Errors already mentioned for lingering, so each is said once and never again.
+   *
+   * Keyed the same way as `seenDiagnostics` — file plus message — so the same mistake
+   * in two files is two mentions, and the same mistake fixed and reintroduced is one.
+   * A second mention twenty minutes on would be nagging about a decision rather than
+   * reporting a fact.
+   */
+  private readonly mentionedLingering = new Set<string>();
+
+  /** Linger timers in flight, cleared on dispose like every other timer here. */
+  private readonly lingerTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
   constructor(
     private readonly store: PatternStore,
     private readonly log: (message: string) => void,
@@ -78,6 +92,8 @@ export class PatternMemory {
   dispose(): void {
     for (const timer of this.pendingDiagnostics.values()) clearTimeout(timer);
     this.pendingDiagnostics.clear();
+    for (const timer of this.lingerTimers.values()) clearTimeout(timer);
+    this.lingerTimers.clear();
   }
 
   /**
@@ -187,9 +203,52 @@ export class PatternMemory {
       }
 
       void this.count(fingerprint(message), message);
+      // Confirmed present. Whether it is still present in three minutes is a different
+      // question, and the one that decides whether it is worth saying anything about.
+      this.watchForLingering(uri, message, identity);
     }, DIAGNOSTIC_CONFIRM_MS);
 
     this.pendingDiagnostics.set(identity, timer);
+  }
+
+  /**
+   * Mentions an error that is still there several minutes later. Once.
+   *
+   * **The third occurrence is the wrong trigger for a first mistake.** §4.2's threshold
+   * answers "is this a pattern"; it cannot answer "this file is broken right now", and
+   * the second question is the one someone staring past a missing colon needs answered.
+   *
+   * What keeps it from being a linter is entirely in the timing and the once: three
+   * minutes means anything fixed while working never surfaces, and one mention means a
+   * problem left deliberately is left alone. It goes through `surface`, so §6's
+   * one-a-minute budget applies exactly as it does to everything else unsolicited.
+   */
+  private watchForLingering(uri: vscode.Uri, message: string, identity: string): void {
+    if (this.mentionedLingering.has(identity) || this.lingerTimers.has(identity)) return;
+
+    const timer = setTimeout(() => {
+      this.lingerTimers.delete(identity);
+
+      // Re-read rather than trusted: the only question is whether it is *still* there,
+      // and the editor is the only thing that knows. Fixed in the meantime is the
+      // ordinary case and says nothing.
+      const current = vscode.languages
+        .getDiagnostics(uri)
+        .find((entry) => entry.message === message && entry.severity === vscode.DiagnosticSeverity.Error);
+
+      if (!current) {
+        this.log(`pattern: lingering error cleared before it was worth mentioning — ${excerpt(message)}`);
+        return;
+      }
+
+      this.mentionedLingering.add(identity);
+      const file = vscode.workspace.asRelativePath(uri);
+      // 1-based, to match the gutter rather than the array index.
+      this.surface(lingeringLine(file, current.range.start.line + 1, excerpt(message)));
+      this.log(`pattern: mentioned a lingering error in ${file} — ${excerpt(message)}`);
+    }, LINGER_MS);
+
+    this.lingerTimers.set(identity, timer);
   }
 
   /** Records one occurrence and speaks up if it just hit the threshold. */

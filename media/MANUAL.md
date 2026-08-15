@@ -116,9 +116,15 @@ open file, with line numbers, worst first, five at a time. If there is nothing, 
 so and names the file, because silence is what "not looking" looks like. Costs nothing
 and needs no key: the editor already knows.
 
-That is different from him mentioning problems on his own, which he only does once the
-same error has turned up three times in a week. He notices immediately and speaks up
-when it becomes a pattern — ask, and he will tell you now.
+**And an error that just sits there gets mentioned.** If something is still broken about
+three minutes after it appeared, he says so once — the file, the line, and what the
+editor said. Once, ever: if it is still there twenty minutes later that is a decision,
+not news. Anything you fix while working never surfaces at all, which is the difference
+between this and a linter shouting on every keystroke.
+
+Separately, when the *same* error has turned up three times in a week he mentions the
+pattern and what fixed it last time. Three triggers, then: ask him and he answers now, a
+lingering mistake gets one word, and a recurring one gets its history.
 
 **He knows when the project is finished.** Each milestone is handed over as "4 of 4",
 with the later ones named so the code being written now can accommodate them, and the

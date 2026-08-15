@@ -4845,6 +4845,31 @@ Three details worth keeping:
 on. Nothing had ever supplied them; the facts carried counts, so the best answer
 available was how many things were wrong rather than which.
 
+### Lingering errors — the trigger §4.2 was missing
+
+Asking works, but it still required knowing to ask. **The third occurrence is the wrong
+trigger for a first mistake**: §4.2 answers "is this a pattern", and the person staring
+past a missing colon needs "this file is broken now", which nothing answered.
+
+So an error confirmed present is watched, and if it is *still* there three minutes later
+it is mentioned — once, with the file, the gutter line and the editor's own words.
+
+Three properties keep it from being the linter §6 exists to prevent:
+
+- **Three minutes, not a keystroke.** A half-typed line, a paste being tidied, a rename
+  the language server has not caught up with — all produce errors that mean nothing, and
+  all are gone inside the window. Anything fixed while working never surfaces.
+- **Once, ever, per error.** Still broken twenty minutes on is a decision, not news.
+- **Through the same budget.** It goes out via the Announcer like every other
+  unsolicited surface, so it queues behind a failing build rather than talking over one,
+  and mute silences it with everything else.
+
+The wording earns a note of its own. "Has been unhappy for a few minutes now" is a
+*measured* duration — we watched it arrive and re-checked three minutes later — where
+§4.2 is explicit that the editor cannot say when a diagnostic first appeared. It is the
+honest version of the invented "for the past six minutes" that produced rule 6, and the
+vagueness is what makes it true: we know it is minutes, not how many.
+
 ## 11. The codebase, measured
 
 As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's

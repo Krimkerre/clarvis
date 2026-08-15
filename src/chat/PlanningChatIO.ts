@@ -30,6 +30,8 @@ export class PlanningChatIO implements PlanningIO {
     private readonly offer: (items: { label: string; detail?: string }[]) => void,
     /** Opens a document in the editor, where a long one can actually be read. */
     private readonly openDocument: (text: string) => Promise<void>,
+    /** Closes it again, once the real file exists. */
+    private readonly putDocumentAway: () => Promise<void>,
     /** Puts text in the prompt box for editing, rather than for copying by hand. */
     private readonly fill: (text: string) => void,
     private readonly log: (message: string) => void
@@ -168,6 +170,10 @@ export class PlanningChatIO implements PlanningIO {
    */
   async showDocument(text: string): Promise<void> {
     await this.openDocument(text);
+  }
+
+  async closeDocument(): Promise<void> {
+    await this.putDocumentAway();
   }
 
   private nextMessage(): Promise<string | undefined> {

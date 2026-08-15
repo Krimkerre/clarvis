@@ -34,6 +34,7 @@ function fakeIO(replies: (string | undefined)[]): PlanningIO & { buttons: string
     },
     async say() {},
     async showDocument() {},
+    async closeDocument() {},
   };
 }
 

@@ -21,6 +21,7 @@ import { researchWorkspace } from '../planning/workspaceResearch';
 import { describeWorkspaceSignals } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
+import { DraftDocument } from '../planning/DraftDocument';
 import { runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { interruptedBuild } from '../planning/pendingBuild';
@@ -154,7 +155,8 @@ export class ChatService {
       (text) => this.remark(text),
       (text) => this.note(text),
       (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
-      (text) => this.showPlanDocument(text),
+      (text) => this.draft.show(text),
+      () => this.draft.close(),
       (text) => this.panel.post({ type: 'prefill', text }),
       this.log
     );
@@ -390,13 +392,13 @@ export class ChatService {
    * asterisks while they do that is the opposite of help. Beside the editor rather
    * than over it, so the chat panel and its question stay visible.
    */
-  private async showPlanDocument(text: string): Promise<void> {
-    const document = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
-    await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
-    // Best effort: an editor showing the source is a fine outcome if the preview
-    // command is unavailable, and far better than an error where a plan should be.
-    await vscode.commands.executeCommand('markdown.showPreview').then(undefined, () => undefined);
-  }
+  /**
+   * The single editor tab the interview draws in.
+   *
+   * Held here rather than made per interview so a second `/plan` in the same window
+   * reuses it too.
+   */
+  private readonly draft = new DraftDocument();
 
   /**
    * Offers to plan, once, when a project has no `plan.md` of its own.

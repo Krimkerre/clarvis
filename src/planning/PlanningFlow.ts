@@ -351,6 +351,10 @@ async function draftAndApprovePlan(
       if (choice === 'Approve') {
         await vscode.workspace.fs.writeFile(planUri, Buffer.from(planText, 'utf8'));
         log(`planning: wrote plan.md\n${planText}`);
+        // The draft goes before the file arrives, not after: two tabs holding the
+        // same plan, one of them editable and one of them not the file, is how
+        // someone spends ten minutes improving the document that gets thrown away.
+        await io.closeDocument();
         const written = await vscode.workspace.openTextDocument(planUri);
         await vscode.window.showTextDocument(written, { preview: false });
         return true;

@@ -4294,6 +4294,16 @@ name (`mytool` containing `mytool/`) is normal, and there the doubled path *does
 exist. The ENOENT message now also says paths are workspace-relative, since the old one
 quoted an absolute path and was therefore an argument for repeating the mistake.
 
+**And five editor tabs for one plan.** The verdict summary opened an untitled
+document, each refinement round opened another, `markdown.showPreview` doubled every
+one of them, and the approved `plan.md` arrived alongside the lot. Two tabs read
+`# Photochrono` — an untitled markdown document is named after its own first heading —
+so the pair that looked identical were a scratch draft and a rendered view of that same
+scratch draft, neither of them the file. One `DraftDocument` now owns a single tab,
+redrawn in place through a `WorkspaceEdit`, and closed the moment `plan.md` exists: a
+draft sitting next to the file it became is ten minutes spent improving the copy that
+gets thrown away.
+
 **Also confirmed working from the previous round:** `listFiles: .` arrived unquoted.
 
 ### The projects, and what each one forces

@@ -28,6 +28,21 @@ export interface PlanningIO {
   /** A short aside — a quip, a one-line status. Never blocks on a reply. */
   say(text: string): Promise<void>;
 
-  /** A longer piece of writing — a draft, a summary, the finished plan. */
+  /**
+   * A longer piece of writing — a draft, a summary, the finished plan.
+   *
+   * Repeated calls replace what the last one showed rather than stacking up another
+   * editor tab: an interview shows the summary, then a draft, then a redraw per
+   * refinement round, and each of those used to arrive as its own document.
+   */
   showDocument(text: string): Promise<void>;
+
+  /**
+   * Puts away whatever `showDocument` last showed.
+   *
+   * Called once `plan.md` exists on disk, because a draft sitting next to the file it
+   * became is an invitation to edit the wrong one — and they look identical, an
+   * untitled markdown document being named after its own first heading.
+   */
+  closeDocument(): Promise<void>;
 }

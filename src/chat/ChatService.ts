@@ -28,6 +28,7 @@ import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
 import { offerAnswer } from './offerAnswer';
+import { ArmedOffer, OFFER_ORDER, offerToConsume } from './pendingOffers';
 import { PendingChoice } from './PendingChoice';
 
 /** Set when someone turns the planning offer down, so it is asked once per project. */
@@ -639,11 +640,28 @@ export class ChatService {
    * asked, or as the reply to the offer to start.
    */
   private async planningTook(question: string): Promise<boolean> {
-    if (this.runs.hasReviewFindings) return this.answeredReviewOffer(question);
-    if (this.awaitingResume) return this.answeredResumeOffer(question);
-    if (this.awaitingScopeAnswer) return this.answeredScopeOffer(question);
-    if (this.awaitingBuildAnswer) return this.answeredBuildOffer(question);
-    if (this.awaitingPlanAnswer) return this.answeredPlanOffer(question);
+    // One row per outstanding question: whether it is armed, and who answers it. A
+    // table rather than a chain of `if`s because the order is `OFFER_ORDER`'s to
+    // decide, not this method's — and because the chain is what hid the stop bug.
+    const offers: Record<ArmedOffer, { armed: boolean; answer: () => Promise<boolean> }> = {
+      review: { armed: this.runs.hasReviewFindings, answer: () => this.answeredReviewOffer(question) },
+      resume: { armed: this.awaitingResume, answer: () => this.answeredResumeOffer(question) },
+      scope: { armed: Boolean(this.awaitingScopeAnswer), answer: () => this.answeredScopeOffer(question) },
+      build: { armed: Boolean(this.awaitingBuildAnswer), answer: () => this.answeredBuildOffer(question) },
+      plan: { armed: this.awaitingPlanAnswer, answer: () => this.answeredPlanOffer(question) },
+      interview: { armed: Boolean(this.planningIO?.isWaiting), answer: () => this.interviewTook(question) },
+    };
+
+    const armed = OFFER_ORDER.filter((offer) => offers[offer].armed);
+    const chosen = offerToConsume(question, armed);
+
+    // 'stop' falls through to `stoppedOrAnswered`, which owns stopping; 'none' routes
+    // the message normally.
+    return chosen === 'stop' || chosen === 'none' ? false : offers[chosen].answer();
+  }
+
+  /** The interview's own message handling, including the stop that cancels it. */
+  private async interviewTook(question: string): Promise<boolean> {
     if (!this.planningIO?.isWaiting) return false;
 
     if (isStopRequest(question)) {

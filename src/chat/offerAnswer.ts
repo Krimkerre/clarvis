@@ -29,7 +29,14 @@ const YES = /^(y|yes|yeah|yep|sure|ok|okay|go on|please|do it|start it|carry on|
  */
 const NO = /^(n|no|nope|nah|not now|leave it|later|no thanks|not really|don'?t)\b/i;
 
-export function offerAnswer(message: string): OfferAnswer {
+/**
+ * @param alsoYes Words that mean yes to *this* question and not in general — "add" to
+ * a scope offer, "continue" to a paused build. Each offer used to carry its own full
+ * yes-list, which is how "do it" came to be accepted by one and not the next; the
+ * shared vocabulary lives here now and a caller supplies only what is genuinely its
+ * own.
+ */
+export function offerAnswer(message: string, alsoYes: readonly string[] = []): OfferAnswer {
   const text = message.trim();
 
   // A question is never an answer to a question, however it starts. "No idea, what is
@@ -37,6 +44,7 @@ export function offerAnswer(message: string): OfferAnswer {
   if (text.includes('?')) return 'unrelated';
 
   if (YES.test(text)) return 'yes';
+  if (alsoYes.length > 0 && new RegExp(`^(${alsoYes.join('|')})\\b`, 'i').test(text)) return 'yes';
   if (NO.test(text)) return 'no';
 
   // **Length is the honest tiebreak.** A one-word reply to a yes-or-no is an answer to

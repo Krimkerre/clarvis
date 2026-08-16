@@ -320,7 +320,7 @@ export class ChatService {
     this.panel.post({ type: 'choices-clear' });
     if (!verdict) return false;
 
-    if (!/^(add|y|yes|ok|okay|sure|do it)\b/i.test(question.trim())) {
+    if (offerAnswer(question, ['add']) !== 'yes') {
       this.log('chat: scope change declined, plan unchanged');
       await this.note(await this.phrase('report', 'Left out of the plan, then. Say the word when you want it back.', []));
       return true;
@@ -442,7 +442,7 @@ export class ChatService {
     this.panel.post({ type: 'choices-clear' });
     if (!pending) return false;
 
-    if (!/^(carry on|start it|y|yes|sure|ok|okay|go on|continue)\b/i.test(question.trim())) {
+    if (offerAnswer(question, ['continue']) !== 'yes') {
       this.log('chat: build resume declined');
       return false;
     }

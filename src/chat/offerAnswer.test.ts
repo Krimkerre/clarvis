@@ -26,3 +26,26 @@ test('a refusal inside a longer sentence is not a refusal', () => {
   // Substring matching on "no" files "there is nothing wrong" as a decline.
   assert.equal(offerAnswer('there is nothing wrong with it'), 'unrelated');
 });
+
+test('a question-specific word counts as yes only for the question that offered it', () => {
+  // "add" answers a scope offer; on its own it is not agreement to anything else.
+  assert.equal(offerAnswer('add it to the plan', ['add']), 'yes');
+  assert.equal(offerAnswer('add it to the plan'), 'unrelated');
+  // "continue" answers a paused build, and used to be the one word the build offer
+  // recognised that no other offer did.
+  assert.equal(offerAnswer('continue', ['continue']), 'yes');
+});
+
+test('the shared vocabulary reaches every offer that supplies its own words', () => {
+  // The drift this replaced: "do it" was a yes to a scope change and not to a build,
+  // "sure" to a build and not to a review. Both now come from one list.
+  for (const word of ['do it', 'sure', 'go on', 'yep']) {
+    assert.equal(offerAnswer(word, ['add']), 'yes', `${word} should answer a scope offer`);
+    assert.equal(offerAnswer(word, ['continue']), 'yes', `${word} should answer a build offer`);
+  }
+});
+
+test('a question is not an answer, even when it opens with the offer own word', () => {
+  // "add it?" is someone asking, not agreeing — and agreeing writes to plan.md.
+  assert.equal(offerAnswer('add it?', ['add']), 'unrelated');
+});

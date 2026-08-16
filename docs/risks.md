@@ -1,0 +1,60 @@
+# Risks
+
+*Split out of `plan.md` §8 on 16 Aug so the plan holds the plan. This is the risk
+register: what could go wrong with Clarvis as a product, and what is already done
+about it. The spec itself is [`../plan.md`](../plan.md); what actually went wrong in
+practice is [`build-log.md`](build-log.md).*
+
+---
+
+| Risk | Mitigation |
+|---|---|
+| Event fidelity is worse than hoped (esp. shell integration off, or an unsupported shell) | M1 spike first; task + debug + diagnostics are the fallback spine; project pivots there, not at M6 |
+| A fork lags upstream and lacks an API we use | Lowest viable `engines.vscode`, stable APIs only, runtime capability probes, fork matrix tested every milestone |
+| Marketplace licensing blocks fork users | Dual-publish to Open VSX from M11, verified by installing on VSCodium |
+| Agent makes a bad multi-file edit | Every run checkpoints the files it will touch before starting (`Clarvis: Undo Last Agent Run` restores wholesale); edits go through `WorkspaceEdit` so per-file undo works; the panel lists every changed file with a clickable diff while the work happens; `Clarvis: Stop` aborts at the next tool boundary |
+| Agent runs away — loops, burns tokens, never finishes | `clarvis.agent.maxStepsPerTask` (default 40) hard-stops and asks before continuing; live step and token counters in the panel; `Clarvis: Stop` always available |
+| Users click Approve reflexively without reading | Gates explain what, why, the specific risk, and whether it's reversible; irreversible actions are visually distinct from reversible ones so one learned reflex doesn't cover both |
+| A prompt injection rewrites a safety warning into something reassuring | Warning copy is templated in the tool layer with details filled from the actual call — never authored by the model, which has been reading untrusted file content. Verified by an explicit hostile-file test |
+| Agent does something destructive or outward-facing | Gates are enforced in the tool layer, not the system prompt — a model cannot talk its way past them. Destructive shell, `git push`, publishing, and dependency installs all stop and ask; anything outside the workspace is refused outright, symlinks included |
+| Agent edits outside the workspace | Every path is resolved and checked against the workspace root before use. Not a gate — a refusal |
+| Expressive states fire so often they stop meaning anything | Default is `talking`; expressive faces are earned from content, gated the same way as M6's earned-sass logic |
+| Model emits a bogus or injected avatar state | Validated through `isButlerState()` with a `talking` fallback — the same trust-boundary rule as every other value crossing into the extension |
+| Avatar fought over by the agent, chat, and M3's watcher, or strobing on fast tool calls | The agent is the single writer during a run; `WatchPresenter` yields and also suppresses completion toasts for agent-started commands. Minimum dwell time with repeat-collapsing prevents flicker |
+| Agent's work tangles with the user's uncommitted changes | Each run gets its own `clarvis/<task-slug>` branch and commits **only the paths it touched, never `git add -A`** — the user's uncommitted work stays uncommitted and theirs. A dirty tree is flagged before the task starts |
+| Branch isolation unavailable — Git extension disabled, `git` binary missing, or the folder isn't a repository | Probed, not assumed (§4.0). Clarvis offers the specific fix for the specific cause (enable the extension, install git, or `git init`), and falls back to checkpoint-only if declined — the agent path stays fully functional either way |
+| Surprise API bill from agentic runs | Token budget rather than a request cap (wrong unit for agents), tripped as a gate so a task never dies half-applied; live spend shown per task |
+| The agent path widens the privacy story | Answered by restating it honestly (§4.6 *Privacy*) rather than keeping a promise that no longer holds: the Answer path keeps its bounded visible context; the Agent path reads what the task needs and shows every file it opened; everything stays inside the activating workspace |
+| Clarvis acts when the user only asked a question | Routing is explicit and announced before work starts; ambiguity resolves toward answering, never toward editing |
+| ~~Claude subscription auth turns out to be impermissible~~ | **Materialised, and cost nothing.** M8b0 found it is not permitted without prior Anthropic approval, before any login flow existed. The API-key fallback was already the default; one table row was deleted |
+| A local model is too weak for the agent loop and flails | `supportsTools()` probed per provider *and* per model; a model that fails still serves Local and Answer paths, and Clarvis says so plainly instead of starting a run it can't finish |
+| Provider sprawl becomes four integrations to maintain | OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible — one adapter plus a base URL. Only Anthropic and the host LM API need their own |
+| Interview fatigue — the user abandons planning halfway | Questions batched, ~2–3 rounds, early exit as soon as a draft is honest; the partial interview persists so it can be resumed rather than restarted |
+| A confidently wrong generated plan | Every finding is a proposal the user rules on individually, never silently adopted; the plan records rejections *with reasoning* so decisions are auditable |
+| Generated plan drifts from the code as it's built | Checklist ticking is part of Code Mode (§0); drift is an explicit re-plan trigger rather than something to paper over |
+| Planning ceremony for a project too small to need it | "This doesn't need a plan" is a legitimate analysis outcome and an exit-checklist item, not an edge case |
+| Clarvis's agent is worse than the panel it replaced | Same answer as before: M8a ships the half nobody else has (answers from his own watch/memory state) before the agent path. If the agent isn't competitive, the host's panel is one click away — we lose the "primary" claim, not the product |
+| Clarvis's chat is worse than the panel he replaced | M8a ships the half nobody else has — answers from his own watch/memory state — before the model path. If M8b's replies aren't competitive, the host's panel is still installed and one click away; we lose the "primary" claim, not the product |
+| Chat widens the privacy story | Context is an explicit, bounded list (selection/visible range, active-file diagnostics, last failure tail, pattern hits), rendered above each reply and removable per item. No workspace crawl, no index. Local answers need no network at all |
+| Model key leaks or unexpected chat spend | Same handling as the voice key — `SecretStorage`, `password: true`, never logged, absent from `contributes.configuration`; `clarvis.chat.dailyRequestCap` with a one-time notice on trip |
+| Webview panel is closed → butler is invisible | Status-bar mood glyph + notifications carry the value; the panel is a bonus, not the product |
+| Charm decays into annoyance | Hard interruption cap, no-repeat quips, earned sass, easy mute |
+| Tutor mode's humour reads as mockery to the person least able to shrug it off | §2 aims jokes at situations, never at not-knowing; M12's exit checklist requires a human to read a full session cold and judge it. No automated check catches this |
+| Tutor mode becomes a separate, lesser product its users are stranded on | One extension, one codebase, one project format; graduating flips a setting and changes nothing else. No learner edition, no starter template, no markers in the repository (§4.10) |
+| A beginner learns to code but never learns to read an error, and stalls the moment they are alone | Errors are taught deliberately from *real* failures in their own project (§4.10); never from staged ones, which cost more trust than they teach |
+| Tutor mode teaches something false by simplifying | Simplify or say "too big for now" — never invent a small wrong answer. Spot-checked against the code at M12 exit |
+| Shipping a voice that imitates a specific copyrighted character | Traits are an archetype and free to use; the *voice* ships described by qualities only (gravelly, impatient, world-weary), never named or marketed as any character. Users wanting a closer match clone one themselves under their own Fish Audio account via §4.5's consent-gated flow — their rights, their responsibility, not something we distribute |
+| Voice is now core, but the good tier needs a key — does zero-config still hold? | Yes: everything except voice works with no key. Without one, voice falls back to system TTS or stays silent and nothing else changes. The plan states plainly that the free tier is a downgrade rather than pretending the tiers are equivalent |
+| Voice ruins the character | Off by default, explicit kill criteria at M7; Fish Audio (§4.4) exists precisely because OS voices are the version that ruins it |
+| Voice breaks the one-sentence privacy pitch | Voice is off by default and sends only the spoken sentence — never code, output, or diagnostics. Networked features are exactly two (voice, chat's model path), both BYO-key, both listed in the README next to the pitch, not buried |
+| Fish Audio key leaks (settings sync, logs, a screenshot) | `SecretStorage` only, `password: true` input box, never logged or echoed to the output channel, absent from `contributes.configuration` by design |
+| Fish Audio latency, outage, or rate limit mid-briefing | 3s timeout → Tier 0 fallback for that utterance; mp3 cache makes repeat lines instant; failure paths tested before the happy path (M7b) |
+| Unexpected API spend | Daily request cap (default 200) with a one-time notice on trip, cached repeats, short utterances only — briefings and completions, never quips |
+| Host webview has no `SpeechRecognition` (common on Electron) or denies mic access | Probed at M1, not assumed; Tier 1 (Whisper-family HTTP) is the real nl-BE path and needs only `getUserMedia`; if even that fails the mic button hides and typing is unaffected |
+| Flemish Dutch mis-transcribed (heard as German/Afrikaans, or *tussentaal* garbled) | Never auto-detect — explicit `language` from `clarvis.speech.inputLanguage` (`nl-BE` → `nl` for Whisper-family, full tag for Web Speech); multilingual model so Dutch/English code-switching survives; domain-bias prompt with branch + file names; transcript is editable and **never auto-sent** |
+| Users expect Dutch answers because they spoke Dutch | Decoupled by design and stated in the picker: input language ≠ reply language. `clarvis.chat.replyLanguage` defaults to `en`, `"auto"` mirrors the input for anyone who wants Dutch back |
+| Voice input widens the privacy story a third time | Off by default; push-to-talk only, no wake word, no listening with the panel closed; audio held in memory for one request and never cached or logged; Tier 0 sends nothing off-machine (host recognizer excepted — said plainly in the README) |
+| Unexpected transcription spend | `clarvis.speech.dailyRequestCap` (default 200), 60s utterance cap, one request per utterance, same one-time-notice-on-trip as voice and chat |
+| Voice cloning misused | Clone flow requires explicit consent copy ("only a voice you own or may use"); the sample goes to the user's own Fish Audio account, never through us; no cloning without a user-supplied key |
+| Extension-host slowdown blamed on us | `onStartupFinished` activation, cheap listeners, no polling; watch **Developer: Show Running Extensions** activation time each milestone |
+| Scope creep to "all editors" / "all terminals" | §Non-Goals is the answer. One platform, done properly |

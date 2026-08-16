@@ -24,7 +24,9 @@ before this file.
 
 | File / directory | What it is |
 |---|---|
-| `plan.md` | Current spec — concept, personality rules, every feature (§4), milestones (§7), risks, success criteria, and the still-open verification checklist (§10). The normative document. |
+| `plan.md` | Current spec — concept, personality rules, every feature (§4), milestones and their exit checklists (§7), success criteria (§9). The normative document. |
+| `docs/risks.md` | The risk register — what could go wrong, and what is already done about it. Was `plan.md` §8. |
+| `docs/verification.md` | The checks still to be run by hand, needing a real editor, provider or OS. Was `plan.md` §10. |
 | `docs/build-log.md` | Chronological history — every defect found by using the product, and why each fix looks the way it does. Not shipped in the `.vsix` (see `.vscodeignore`). Read when you need to know *why* a decision was made, not *what* the product currently does. |
 | `README.md` | The user-facing pitch and feature list, and the index of every document here — the front door. |
 | `media/MANUAL.md` | The in-product `/help` manual — what a user can actually ask for. Lives in `media/` because it **ships in the `.vsix` and is read at runtime** by `ChatActions.ts`; it is a product asset, not project documentation. |
@@ -170,9 +172,9 @@ actual thing.
 
 ## What is still open
 
-`plan.md` §10 is the live checklist — not this file. Headline items as of 15 Aug:
+[`verification.md`](verification.md) is the live checklist — not this file. Headline items as of 15 Aug:
 the M6 "does the character hold up over days of ordinary use" pass (blocked on
-`agent`-mode runs suppressing the watch surfaces that would exercise it — see §10 for
+`agent`-mode runs suppressing the watch surfaces that would exercise it — see `verification.md` for
 the reasoning), ~45 finer-grained M8 items unverified, and two of four planned
 checklist projects (3 and 4) not yet run.
 

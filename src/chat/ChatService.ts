@@ -1007,45 +1007,9 @@ export class ChatService {
   async ask(question: string): Promise<void> {
     await this.transcript.add({ speaker: 'user', text: question, at: Date.now() });
 
-    // **While planning runs, every message is an answer to the question just asked.**
-    // Routing it — stop, action, job, question — would be four chances to misread
-    // "yes" or "3" as something else entirely, so `ask()` gets out of the way.
-    // Planning owns the message when it is mid-question, or when the offer to plan
-    // is still hanging. Both are questions Clarvis just asked, and routing an answer
-    // to them as a job or a query would be several chances to misread "yes".
-    if (await this.planningTook(question)) return;
+    if (await this.somethingTook(question)) return;
 
-    // Before anything that costs a request: someone typing "stop" wants the thing to
-    // stop, and asking a model about it first is both slow and beside the point.
-    if (await this.stoppedOrAnswered(question)) return;
-
-    // **Typing during a run redirects it.** Anything else is worse: answering it
-    // separately leaves the user watching the agent carry on doing the thing they
-    // just asked it not to, and stopping to restart throws away everything read so
-    // far — so "no, use the other library" would cost a whole run.
-    //
-    // Unless it is not a correction at all. §0: scope discovered mid-build kicks
-    // back to Plan Mode rather than growing silently inside Code Mode.
-    if (await this.runTook(question)) return;
-
-    // Requests to *open* something are handled before answering: "change the voice"
-    // wants the picker, not a paragraph about where the setting lives.
-    const action = chatAction(question);
-    if (action === 'planProject') {
-      await this.startPlanning();
-      return;
-    }
-    if (action) {
-      await this.actions.run(action, question);
-      return;
-    }
-
-    // The matcher missed. A model may recognise it anyway — but only as a suggestion,
-    // and a declined suggestion falls through to a normal answer (M8f2). Planning is
-    // the one action ChatActions cannot run itself: it owns the whole conversation
-    // for the next several minutes, which is ChatService's to hand over, not its.
-    if (await this.inferredActionTook(question)) return;
-
+    // Read after the claimants above, not before: any of them can change the mode.
     const mode = this.actions.mode();
 
     if (await this.continuedTheRun(question, mode)) return;
@@ -1069,14 +1033,78 @@ export class ChatService {
     // not edit anything, and the user was left to work out for themselves that a mode
     // was the reason. Said before the answer rather than instead of it: the answer is
     // still useful, and the note is what makes the refusal make sense.
-    if (decision.route === 'agent' && !canEdit(mode)) {
-      if (await this.offerToBorrowAgent(question, mode)) return;
-    }
+    if (decision.route === 'agent' && !canEdit(mode) && (await this.offerToBorrowAgent(question, mode))) return;
 
-    // **The model phrases it; local state supplies the facts.** Canned answers are
-    // instant and free, and they always sound canned — five fixed shapes, however the
-    // question was asked. Handing the same facts to the model costs one cheap request
-    // and gets an answer in Clarvis's voice that can also reason about them.
+    await this.answerQuestion(question, mode, decision);
+  }
+
+  /**
+   * Whether something with a prior claim already dealt with the message.
+   *
+   * A list rather than a chain of `if`s, because the *order* is the content here and
+   * a list is the shape that shows it. Each returns `true` once it has consumed the
+   * message; anything that declines passes it along.
+   */
+  private async somethingTook(question: string): Promise<boolean> {
+    const claimants = [
+      // **While planning runs, every message is an answer to the question just asked.**
+      // Routing it — stop, action, job, question — would be four chances to misread
+      // "yes" or "3" as something else entirely, so `ask()` gets out of the way.
+      () => this.planningTook(question),
+
+      // Before anything that costs a request: someone typing "stop" wants the thing to
+      // stop, and asking a model about it first is both slow and beside the point.
+      () => this.stoppedOrAnswered(question),
+
+      // **Typing during a run redirects it.** Anything else is worse: answering it
+      // separately leaves the user watching the agent carry on doing the thing they
+      // just asked it not to, and stopping to restart throws away everything read so
+      // far — so "no, use the other library" would cost a whole run.
+      //
+      // Unless it is not a correction at all. §0: scope discovered mid-build kicks
+      // back to Plan Mode rather than growing silently inside Code Mode.
+      () => this.runTook(question),
+
+      // Requests to *open* something are handled before answering: "change the voice"
+      // wants the picker, not a paragraph about where the setting lives.
+      () => this.actionTook(question),
+
+      // The matcher missed. A model may recognise it anyway — but only as a suggestion,
+      // and a declined suggestion falls through to a normal answer (M8f2).
+      () => this.inferredActionTook(question),
+    ];
+
+    for (const claims of claimants) {
+      if (await claims()) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Opens the thing being asked for, if the matcher recognises one.
+   *
+   * Planning is the one action `ChatActions` cannot run itself: it owns the whole
+   * conversation for the next several minutes, which is ChatService's to hand over.
+   */
+  private async actionTook(question: string): Promise<boolean> {
+    const action = chatAction(question);
+    if (!action) return false;
+
+    if (action === 'planProject') await this.startPlanning();
+    else await this.actions.run(action, question);
+
+    return true;
+  }
+
+  /**
+   * The answer of last resort, once nothing else has claimed the message.
+   *
+   * **The model phrases it; local state supplies the facts.** Canned answers are
+   * instant and free, and they always sound canned — five fixed shapes, however the
+   * question was asked. Handing the same facts to the model costs one cheap request
+   * and gets an answer in Clarvis's voice that can also reason about them.
+   */
+  private async answerQuestion(question: string, mode: ChatMode, decision: { because: string }): Promise<void> {
     this.log(`chat: routed to answer — ${decision.because}`);
     this.lastAnswered = question;
     const facts = await this.workspace.read();

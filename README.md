@@ -26,6 +26,23 @@ what he runs on your behalf.
 The name is an acronym nobody needed: **C**lippy-**L**ike, **A** **R**ather **V**ery
 **I**ntelligent **S**ystem.
 
+## Documentation
+
+Everything written about this project, and which one you want.
+
+| Document | What's in it | Read it when |
+|---|---|---|
+| **[plan.md](./plan.md)** | The spec, and the only normative one. Concept, personality rules, every feature (§4), the milestone table and its exit checklists (§7), risks, and the still-open verification list (§10). ~4,400 lines. | You need to know what Clarvis is *meant* to do — or **what is actually built**, which §7 alone decides. |
+| **[docs/CURRENT_STATE.md](./docs/CURRENT_STATE.md)** | A live snapshot: what's built, the architecture map with line counts, the safety model, the complexity budget, and how to verify a change. A map of the two big files, not a replacement for them. | You are picking this project up and want to be useful in five minutes. **Start here.** |
+| **[docs/build-log.md](./docs/build-log.md)** | Chronological history — every defect found by *using* the product, and why each fix looks the way it does. History, not spec. | You want to know **why** a decision was made, and whether the obvious alternative was already tried. |
+| **[AGENTS.md](./AGENTS.md)** | The working rules for any coding agent touching this repo — Plan Mode vs Code Mode, the sign-off gate, the checks to run before shipping. A short, tool-agnostic version of `plan.md` §0. | You are an agent, or you are pointing one at this repo. It stays at the root because that is where agents look for it. |
+| **[media/MANUAL.md](./media/MANUAL.md)** | The in-product manual — what a user can actually ask for, every slash command, every mode. This is what `/help` opens. | You are *using* Clarvis rather than building it. It lives in `media/` because it ships inside the extension and is read at runtime. |
+| **[docs/TUTOR-README.md](./docs/TUTOR-README.md)** | Design notes for Tutor Mode (M12) — the same Clarvis, teaching as it builds. Not built yet. | You are interested in the teaching mode, or about to build it. |
+| **[README.md](./README.md)** | This file: the pitch, the feature list, and the milestone progress list. | You are deciding whether you care. |
+
+If two of these disagree, `plan.md` wins and the other one is stale — that has happened,
+and it is why each of them now says so out loud.
+
 ## Avatar states
 
 <img src="media/states-strip.png" alt="Clarvis avatar in its six expression states: Neutral, Judging, Impressed, Thinking, Talking, Surprised" width="100%">
@@ -167,7 +184,7 @@ the plan is signed off — and a rule the code knows should be one the interface
 - **Tutor Mode** *(planned)* — the same Clarvis, explaining every step, for people
   learning to program on a real project of their own. You choose it when you start a
   project, you can type the code yourself or watch it be typed, and it's built to be
-  outgrown. Full guide: [**TUTOR-README.md**](./TUTOR-README.md).
+  outgrown. Full guide: [**docs/TUTOR-README.md**](./docs/TUTOR-README.md).
 
 Every setting, decision and edge case is written down in [`plan.md`](./plan.md).
 
@@ -289,7 +306,7 @@ section that assumes you know the jargon.* Full notes for each milestone are in
 [`plan.md`](./plan.md).
 
 **`plan.md` §7 is the authority on what is built.** This list, the manual and
-`CURRENT_STATE.md` all restate it, and a claim maintained by hand in four places
+`docs/CURRENT_STATE.md` all restate it, and a claim maintained by hand in four places
 drifts — an external review caught exactly that here on 16 Aug, when this checklist
 still had M9 unticked while the entry beneath it called the same milestone finished.
 If the two disagree, believe §7 and fix this.
@@ -386,7 +403,7 @@ If the two disagree, believe §7 and fix this.
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
 - [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
       people learning to program on a real project of their own. Opt-in per project,
-      and designed to be outgrown — see **[TUTOR-README.md](TUTOR-README.md)**.
+      and designed to be outgrown — see **[docs/TUTOR-README.md](docs/TUTOR-README.md)**.
 - [ ] **M11 — Polish & Release.** Not started.
 
 ## Development process

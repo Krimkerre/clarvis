@@ -6,7 +6,7 @@ agnostic version of `plan.md` §0; `plan.md` is the authority if the two ever di
 
 ## First, orient yourself
 
-1. Read **`CURRENT_STATE.md`** — a live snapshot: what's built, the architecture map,
+1. Read **`docs/CURRENT_STATE.md`** — a live snapshot: what's built, the architecture map,
    how to verify a change. Five minutes, not an hour.
 2. Skim **`plan.md`** §0 (this file's source), §1 (concept), §7 (milestone table).
 3. Only read **`docs/build-log.md`** if you need to know *why* a past decision was
@@ -57,8 +57,8 @@ All three clean, always. Then, for anything touching the sandbox, a gate, or a p
 confidently-wrong fixes that passed review and failed the first time they actually
 ran; `docs/build-log.md` is mostly a record of exactly that pattern.
 
-## Keep `CURRENT_STATE.md` current
+## Keep `docs/CURRENT_STATE.md` current
 
 If your change ships a feature, changes the architecture, or moves a milestone from
-"designed" to "built," update `CURRENT_STATE.md` before you're done. Every number in
+"designed" to "built," update `docs/CURRENT_STATE.md` before you're done. Every number in
 it should be read live (`wc -l`, `npm test`, `git log`), never propagated from memory.

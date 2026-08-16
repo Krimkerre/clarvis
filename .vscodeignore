@@ -10,7 +10,6 @@ tsconfig.json
 plan.md
 docs/**
 AGENTS.md
-CURRENT_STATE.md
 avatar.html
 media/previews/**
 media/states-strip.svg
@@ -18,5 +17,4 @@ media/states-strip.png
 clarvis-probe-log.jsonl
 **/*.map
 eslint.config.mjs
-TUTOR-README.md
 .git/**

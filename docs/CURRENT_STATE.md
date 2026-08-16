@@ -26,10 +26,16 @@ before this file.
 |---|---|
 | `plan.md` | Current spec — concept, personality rules, every feature (§4), milestones (§7), risks, success criteria, and the still-open verification checklist (§10). The normative document. |
 | `docs/build-log.md` | Chronological history — every defect found by using the product, and why each fix looks the way it does. Not shipped in the `.vsix` (see `.vscodeignore`). Read when you need to know *why* a decision was made, not *what* the product currently does. |
-| `README.md` | The user-facing pitch and feature list. |
-| `media/MANUAL.md` | The in-product `/help` manual — what a user can actually ask for. |
-| `TUTOR-README.md` | Design notes for Tutor Mode (M12, not built yet). |
+| `README.md` | The user-facing pitch and feature list, and the index of every document here — the front door. |
+| `media/MANUAL.md` | The in-product `/help` manual — what a user can actually ask for. Lives in `media/` because it **ships in the `.vsix` and is read at runtime** by `ChatActions.ts`; it is a product asset, not project documentation. |
+| `docs/TUTOR-README.md` | Design notes for Tutor Mode (M12, not built yet). |
+| `AGENTS.md` | The working rules for a coding agent in this repo. Stays at the root because that is where agents look for it. |
 | `src/` | The extension itself. See the map below. |
+
+Written documentation lives in `docs/`. Three files stay at the root on purpose:
+`README.md` (the front door), `AGENTS.md` (agents look for it there), and `plan.md` —
+which the extension itself reads and writes at the workspace root, so moving it would
+break Clarvis planning against its own repo.
 
 ## Architecture map
 

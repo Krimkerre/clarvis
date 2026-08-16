@@ -526,7 +526,7 @@ otherwise, twice. Still to come: **voice input**, and
 **Tutor Mode** for people learning to program. See the README for progress.
 
 *`plan.md` §7 is what decides this, not this paragraph. It is restated here, in the
-README and in `CURRENT_STATE.md`, and the copies have drifted before.*
+README and in `docs/CURRENT_STATE.md`, and the copies have drifted before.*
 
 One thing worth knowing about what *is* here: commands he runs are held to the same
 boundary as the files he edits — they cannot change anything outside your project.

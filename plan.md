@@ -1384,7 +1384,8 @@ written. Now `**/*.map`, plus `eslint.config.mjs` and `TUTOR-README.md` — the 
 safe to drop because `vsce` rewrites README's relative link to it into an absolute
 GitHub URL at package time, verified by unzipping the built `.vsix` and reading the
 rewritten link rather than assuming the behavior. Package went from 15 files / 1.28 MB
-to **9 files / 903 KB**. Every remaining file was checked to a runtime reference
+to **9 files / 903 KB** — 10 files and 904 KB once `media/chat.css` was extracted
+from `ButlerViewProvider`. Every remaining file was checked to a runtime reference
 before being kept: `media/bowtie.svg` is the view-container icon in `package.json`,
 `media/planning.png` is the README screenshot the marketplace page renders,
 `avatar.html`/`chat.js`/`MANUAL.md` are all read at runtime by

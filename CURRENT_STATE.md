@@ -83,7 +83,8 @@ which restate it. Current status:
 - **`.vsix` trimmed (16 Aug).** `.vscodeignore`'s `*.map` never matched the nested
   `dist/extension.js.map` — a bare `*.map` only matches at the ignore root. Now
   `**/*.map`, plus `eslint.config.mjs` and `TUTOR-README.md`. 15 files / 1.28 MB →
-  **9 files / 903 KB**, every survivor traced to a runtime reference.
+  **9 files / 903 KB** (10 and 904 KB once `media/chat.css` was extracted), every
+  survivor traced to a runtime reference.
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M11** (packaging/release
   polish), **M12** (Tutor Mode).

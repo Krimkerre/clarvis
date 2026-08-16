@@ -44,7 +44,7 @@ before this file.
 | `src/memory/` | ~1,100 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,000 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~680 | Task/build watching — the walk-away feature. |
-| `src/panels/` | ~430 | The webview host for the avatar. |
+| `src/panels/` | ~340 | The webview host for the avatar. Its stylesheet is `media/chat.css`. |
 | `src/logtailing/` | ~130 | Tailing of VS Code logs into the workspace. |
 | `src/test/` | ~60 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
@@ -89,6 +89,21 @@ which restate it. Current status:
   polish), **M12** (Tutor Mode).
 - Full detail, including *why* each milestone landed the way it did: `plan.md` §7.
 
+## The complexity budget, and where it stands
+
+`eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
+`max-depth: 4` — added after an unanswerable "too much cyclomatic complexity" report,
+so the number is enforced rather than argued about. Two things worth knowing before
+adding a branch anywhere:
+
+- **Six functions sit at exactly 15**, so the next branch in any of them fails the
+  build. Find them with
+  `npx eslint src --rule '{"complexity":["error",14]}'`.
+- `ChatService.ask()` was one of them until 16 Aug (now 7). `ChatService` itself is
+  still ~1,260 lines and **has no test file of its own** — its routing precedence is
+  covered by `pendingOffers.ts`, a pure module, which is the pattern to follow when
+  something in there needs to be made safe to change.
+
 ## Safety model — the part most likely to matter to a change you're making
 
 - **Agency is architectural, not a prompt instruction.** Clarvis edits or runs
@@ -116,7 +131,7 @@ which restate it. Current status:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 802 tests currently
+npm test               # node's built-in test runner, no framework — 814 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

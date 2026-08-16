@@ -1390,6 +1390,29 @@ before being kept: `media/bowtie.svg` is the view-container icon in `package.jso
 `avatar.html`/`chat.js`/`MANUAL.md` are all read at runtime by
 `ButlerViewProvider.ts` and `ChatActions.ts`.
 
+**A refactor pass, and the bug it turned up (16 Aug).** An audit against §0's own
+clean-code rules found the usual suspects — a dead module (`requestCap.ts`, no
+importers, and its message named a setting that does not exist), ~190 lines of CSS
+living in a template literal for want of a file, four hand-written yes-regexes that
+had drifted apart. All cut or collapsed.
+
+The one that mattered was not on the list. `ChatService` states the rule — *"Stop
+first, always: 'stop' means stop even when something is waiting on an answer"* — and
+then consulted five pending offers before the stop check. Two of them ate it: "stop"
+failed the scope offer's yes-test and was filed as declining the scope change, and
+fell past the review offer's branches into "leave the findings alone". The precedence
+now lives in `pendingOffers.ts`, pure and tested, with four of its seven tests going
+red against the old ordering — the file exists because a rule stated in a comment and
+implemented in a chain of `if`s inside a 1,200-line class is a rule nobody can check.
+
+**Deliberately not done: collapsing the five pending-answer flags onto
+`PendingChoice`**, which its own header has proposed since M8. `PendingChoice.ask()`
+opens with `this.cancel()` — one slot — while the flags are designed to be armed at
+once, which is the entire reason a precedence order exists. Putting them on one
+instance would silently cancel an outstanding question; giving each its own leaves
+five fields with better types and no less coupling. The precedence extraction took
+the value out of it either way.
+
 #### Personality under load
 
 The butler voice (§2) governs chat too — dry, brief, helps first. Rule 1 (*helps first*)

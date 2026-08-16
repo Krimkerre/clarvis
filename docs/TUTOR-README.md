@@ -6,7 +6,7 @@ written a line of code.*
 > **Status: designed, not built yet.** Tutor Mode is a planned feature (milestone M12).
 > Everything below describes what it will do and why it is being built that way. If you
 > are reading this to decide whether to wait for it, that is exactly what it is for.
-> What already works today is listed in the main [README](README.md).
+> What already works today is listed in the main [README](../README.md).
 
 ---
 
@@ -194,5 +194,5 @@ You were using the real tool the whole time. You just had the explanations turne
 - You'll learn to read errors, because you'll read your own.
 - Nothing is a toy, nothing is faked, and nothing is at your expense.
 
-*Not built yet — see the [README](README.md) for what works today, and
-[plan.md](plan.md) §4.10 for the full design.*
+*Not built yet — see the [README](../README.md) for what works today, and
+[plan.md](../plan.md) §4.10 for the full design.*

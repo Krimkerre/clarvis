@@ -7,10 +7,13 @@ agnostic version of `plan.md` §0; `plan.md` is the authority if the two ever di
 ## First, orient yourself
 
 1. Read **`docs/CURRENT_STATE.md`** — a live snapshot: what's built, the architecture map,
-   how to verify a change. Five minutes, not an hour.
+   the complexity budget, how to verify a change. Five minutes, not an hour.
 2. Skim **`plan.md`** §0 (this file's source), §1 (concept), §7 (milestone table).
 3. Only read **`docs/build-log.md`** if you need to know *why* a past decision was
    made — it is history, not spec, and it is large.
+
+The README carries a table of every document here and when you would want it. Risks
+live in `docs/risks.md`, and the checks still outstanding in `docs/verification.md`.
 
 ## The one rule that matters most: Plan Mode vs Code Mode
 
@@ -46,12 +49,12 @@ relationship to a user project's plan.
 ## Before shipping a change
 
 ```bash
-npm run check-types
-npm test
-npm run lint
+npm run check          # check-types + lint + the 828-test suite
+npm run test:host      # 4 tests in a real extension host; needs a display
 ```
 
-All three clean, always. Then, for anything touching the sandbox, a gate, or a prompt:
+Clean, always. CI runs both on every push and pull request to `main`, plus
+`npm run package` — so a red build is a merge blocker rather than a note. Then, for anything touching the sandbox, a gate, or a prompt:
 **verify against the real mechanism**, not just the code review — a real
 `sandbox-exec` invocation, a real model call. This project has shipped
 confidently-wrong fixes that passed review and failed the first time they actually

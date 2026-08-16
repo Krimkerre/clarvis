@@ -4221,58 +4221,67 @@ system. Per-milestone exit checklists stay in §7, beside the milestone they tes
 
 ## 11. The codebase, measured
 
-As of 14 Aug, with M9 merged and the first sandbox runs behind us. Kept because §0's
+As of 16 Aug, after the external-review fixes and the refactor pass. Kept because §0's
 clean-code rules are argued about in the abstract otherwise, and because the M8 linter
 report — "too much cyclomatic complexity", no number attached — showed what an unmeasured
-claim costs. **Re-counted rather than edited**: the previous figures were four days old
-and already 2,000 lines out.
+claim costs. **Re-counted rather than edited**, every time.
 
-**28,624 lines of TypeScript across 205 files.**
+**33,132 lines of TypeScript across 240 files.**
 
 | | files | lines |
 |---|---|---|
-| Source | 143 | 22,156 |
-| Tests | 62 | 6,468 |
+| Source | 160 | 25,017 |
+| Tests | 80 | 8,115 |
 
-Of the 22,156 source lines, **7,455 are comments** and 2,391 are blank — so the
-executable surface is roughly **12,300 lines**. That ratio is the deliberate §0
+Of the 25,017 source lines, **8,628 are comments** and 2,690 are blank — so the
+executable surface is roughly **13,700 lines**. That ratio is the deliberate §0
 deviation, not drift: comments are used liberally because this codebase is meant to be
 read as a worked example, and a third of it being prose is what that costs.
 
 | Area | lines | files | classes |
 |---|---|---|---|
-| `agent/` (incl. `tools/`) | 5,968 | 35 | 8 |
-| `chat/` | 3,838 | 17 | 9 |
-| `planning/` | 3,521 | 29 | 1 |
-| `model/` | 2,039 | 11 | 5 |
-| `personality/` | 1,889 | 12 | 5 |
+| `agent/` (incl. `tools/`) | 6,942 | 41 | 8 |
+| `chat/` | 5,043 | 24 | 10 |
+| `planning/` | 3,907 | 32 | 2 |
+| `model/` | 1,961 | 10 | 5 |
+| `personality/` | 1,928 | 12 | 5 |
 | `voice/` | 1,608 | 15 | 3 |
-| root (`extension.ts`, wiring) | 1,175 | 7 | 3 |
+| root (`extension.ts`, wiring) | 1,252 | 7 | 3 |
+| `memory/` | 796 | 6 | 2 |
 | `briefing/` | 700 | 6 | 2 |
-| `memory/` | 535 | 5 | 2 |
 | `watch/` | 453 | 5 | 2 |
-| `panels/` | 430 | 1 | 1 |
+| `panels/` | 299 | 1 | 1 |
+| `logtailing/` | 128 | 1 | 0 |
 
-**41 classes, and 254 exported functions.** The ratio is the point: classes are used
+**43 classes, and 290 exported functions.** The ratio is the point: classes are used
 where something owns state or a lifecycle — `ModelService`, `AgentRunner`,
 `VoiceService`, `BusyTracker` — and everything else is plain functions. `planning/` is
-the clearest case, 29 files and **one** class, which is exactly why M9 could be tested
-as heavily as it was: almost all of it is pure, and pure code needs no extension host
-to run against. Alongside those, 100 interfaces and 38 type aliases.
+still the clearest case at 32 files and two classes, which is exactly why M9 could be
+tested as heavily as it was: almost all of it is pure, and pure code needs no extension
+host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**672 tests**, against Node's built-in runner with no test framework — possible only
-because the logic worth testing lives in files that import nothing from `vscode`. Up
-from 604 four days ago; every one of the 68 new ones was written for a defect found by
-using the product rather than by the suite.
+**828 tests**, against Node's built-in runner with no test framework — possible only
+because the logic worth testing lives in files that import nothing from `vscode`. A
+further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
+which is where activation, command registration and the workspace boundary are checked
+against the actual API rather than a stand-in.
 
-**Where the growth went.** `agent/` gained 739 lines in four days — the OS sandbox
-(`sandboxProfile.ts`, `sandbox.ts`), the trust gate, the confinement note, and the
-bubblewrap offer. That is the security review (above) and the first live sandbox runs,
-measured: the answer to "is a deny-list enough" cost about 700 lines and is the largest
-single addition since M9 landed.
+**Where the growth went.** `chat/` gained ~1,200 lines since 14 Aug, most of it the
+refactor pass rather than features: the pending-offer precedence, the job decision and
+the panel's asset checks all moved out of `ChatService` into pure modules with tests,
+because `ChatService` has no test file and the decisions inside it could not otherwise
+be checked. `panels/` *shrank* from 430 to 299, the stylesheet having moved to
+`media/chat.css` — it was 190 lines of CSS in a template literal.
 
-Documentation, for scale: `plan.md` itself is the largest file in the repository at
-4,390 lines, with the manual at 465, the README at 408 and the tutor guide at 198.
+**Complexity, enforced rather than discussed.** `eslint.config.mjs` caps it at 15; six
+functions sit at exactly that, so the next branch added to any of them fails the build.
+`npx eslint src --rule '{"complexity":["error",14]}'` names them. 63 functions are above
+8. `ChatService.ask()` was at the ceiling until 16 Aug and is now 7.
+
+Documentation, for scale: `plan.md` is still the largest file in the repository at
+4,286 lines, with the build log at 913, the manual at 534, the README at 445, the
+tutor guide at 198, this project's snapshot at 199, the outstanding-checks list at 124
+and the risk register at 60.
 
 ## Special thanks
 

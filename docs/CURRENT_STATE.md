@@ -1,8 +1,8 @@
 # Clarvis — current state
 
-*Snapshot as of 16 Aug 2026, commit `58e36eb`. Written so a different agent, in a
+*Snapshot as of 16 Aug 2026, commit `06fabcc`. Written so a different agent, in a
 different tool, with no memory of how this project got here, can start working on it
-in five minutes instead of reading `plan.md` end to end (4,408 lines) or
+in five minutes instead of reading `plan.md` end to end (4,286 lines) or
 `docs/build-log.md` (913 lines) first. Those two remain the actual source of truth —
 this is a map of them, not a replacement. If this file and `plan.md` disagree,
 `plan.md` is right and this file is stale.*
@@ -43,18 +43,21 @@ break Clarvis planning against its own repo.
 
 | Directory | Lines | What it owns |
 |---|---|---|
-| `src/agent/` | ~9,300 | The agentic loop: `AgentRunner` (the tool-calling loop), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
-| `src/chat/` | ~6,500 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). |
-| `src/planning/` | ~5,500 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions — 29 files, one class. |
+| `src/agent/` | ~9,400 | The agentic loop: `AgentRunner` (the tool-calling loop), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
+| `src/chat/` | ~6,500 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
+| `src/planning/` | ~5,600 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions — 32 files, two classes. |
 | `src/personality/` | ~2,500 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. |
 | `src/model/` | ~2,400 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, Ollama, LM Studio. BYO-key; no Clarvis account, ever. |
 | `src/voice/` | ~2,000 | Spoken output (Fish Audio + system TTS fallback) and the voice-input design (not built — M10). |
 | `src/memory/` | ~1,100 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,000 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~680 | Task/build watching — the walk-away feature. |
-| `src/panels/` | ~340 | The webview host for the avatar. Its stylesheet is `media/chat.css`. |
+| `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
 | `src/logtailing/` | ~130 | Tailing of VS Code logs into the workspace. |
 | `src/test/` | ~60 | Host-level smoke tests (`npm run test:host`), not the main suite. |
+
+**33,132 lines of TypeScript across 240 files** — 25,017 source, 8,115 test. `plan.md`
+§11 breaks that down and is re-counted rather than nudged.
 
 ## What's built vs designed
 
@@ -64,39 +67,46 @@ copies drift** — believe it over this file, the README and the manual, all thr
 which restate it. Current status:
 
 - **Built and shipped: M0 through M9**, plus M9d2 (per-language conventions), M9d3
-  (the agent reads its own code back after a milestone — see below), and the four
-  fixes landed 15 Aug (sensitive-file gate, network-deny-by-default sandbox, the run
-   ledger, and item A/B from an external review — see `docs/build-log.md` for all
-   four).
-- **M13 - Live VS Code Log Tailing.** A gated command to tail the VS Code extension host logs into the workspace.
-- **A macOS containment escape fixed 16 Aug**, from a second external review:
-  `isInside()` inferred filesystem case-sensitivity from `process.platform` alone,
-  which is wrong on case-sensitive APFS volumes. Now probes the real filesystem —
-  see `plan.md` for detail.
-- **README's M9 checklist self-contradiction fixed (16 Aug, same review).** README
-  said M9 (Project Planning) was both unchecked and "usable end to end / nothing
-  outstanding" in the same breath. Verified against the code — it's genuinely built
-  — and the checkbox now agrees with the prose. `media/MANUAL.md` was checked
-  against the same code and found already accurate.
-- **CI added (16 Aug).** `.github/workflows/ci.yml` runs `npm ci`, `npm run check`,
-  `npm run package` on every push/PR to `main`. Also excluded `.github/**` from the
-  `.vsix` in `.vscodeignore` — the workflow file itself would otherwise have shipped.
-- **Host-level smoke test added (16 Aug).** `@vscode/test-electron` +
-  `@vscode/test-cli`, run via `npm run test:host` (`.vscode-test.mjs` config,
-  tests under `src/test/*.spec.ts`). Two suites: extension activation (every
-  `package.json` command actually registers) and workspace containment against a
-  real `vscode.workspace.workspaceFolders`, not a stand-in string — direct coverage
-  of the Phase 1 fix. Wired into CI via `xvfb-run -a npm run test:host` (Linux CI has
-  no display). Not part of `npm run check` — needs a display, kept separate.
-- **`.vsix` trimmed (16 Aug).** `.vscodeignore`'s `*.map` never matched the nested
-  `dist/extension.js.map` — a bare `*.map` only matches at the ignore root. Now
-  `**/*.map`, plus `eslint.config.mjs` and `TUTOR-README.md`. 15 files / 1.28 MB →
-  **9 files / 903 KB** (10 and 904 KB once `media/chat.css` was extracted), every
-  survivor traced to a runtime reference.
+  (the agent reads its own code back after a milestone), and **M13** (a gated command
+  tailing the VS Code extension-host log into the workspace).
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M11** (packaging/release
   polish), **M12** (Tutor Mode).
 - Full detail, including *why* each milestone landed the way it did: `plan.md` §7.
+
+### What landed on 15–16 Aug, outside the milestone numbering
+
+Two external reviews and a refactor pass. Every item below is in `docs/build-log.md`
+or `plan.md` in full; this is the index.
+
+**Safety.** A sensitive-file read gate (`.env`, credentials, private keys — fires in
+every mode). Network denied by default in the command sandbox, opened only for the
+gate categories that cannot work without it. A durable run ledger, and "why did you do
+that" answered from it. And a **macOS containment escape**: `isInside()` inferred
+filesystem case-sensitivity from `process.platform`, which is wrong on case-sensitive
+APFS volumes, so a case-different path outside the workspace read as inside it. It now
+probes the real filesystem.
+
+**A real bug the refactor pass turned up.** `ChatService` documented the rule — *stop
+first, always* — and then consulted five pending offers ahead of the stop check. Two
+of them swallowed "stop" entirely. The precedence is now one pure, tested function
+(`pendingOffers.ts`).
+
+**Verification that runs itself.** CI (`.github/workflows/ci.yml`: `npm ci`,
+`npm run check`, `npm run package`, then the host suite under `xvfb`) on every push and
+PR to `main`. A host-level suite (`npm run test:host`, `@vscode/test-electron`) covering
+activation, command registration, and the workspace boundary against the real API.
+Neither existed before 16 Aug; `npm run check` was a gate nobody was obliged to run.
+
+**Packaging.** `.vscodeignore`'s `*.map` never matched the nested
+`dist/extension.js.map` — a bare `*.map` only matches at the ignore root — so 1.29 MB
+of sourcemap had been shipping in every build. Now `**/*.map`, plus `eslint.config.mjs`,
+`TUTOR-README.md`, `.github/**` and `.vscode-test.mjs`. 15 files / 1.28 MB → **10 files
+/ 904 KB**, every survivor traced to a runtime reference.
+
+**Documentation.** Split and indexed: `docs/` now holds this file, the build log, the
+risk register (was `plan.md` §8), the outstanding-checks list (was §10) and the tutor
+guide, with the README carrying a table of all of them. `plan.md` holds the plan.
 
 ## The complexity budget, and where it stands
 
@@ -107,9 +117,9 @@ adding a branch anywhere:
 
 - **Six functions sit at exactly 15**, so the next branch in any of them fails the
   build. Find them with
-  `npx eslint src --rule '{"complexity":["error",14]}'`.
+  `npx eslint src --rule '{"complexity":["error",14]}'`. 63 sit above 8.
 - `ChatService.ask()` was one of them until 16 Aug (now 7). `ChatService` itself is
-  still ~1,230 lines and **has no test file of its own**. Its decisions are covered
+  still 1,229 lines and **has no test file of its own**. Its decisions are covered
   instead by pure modules it calls — `pendingOffers.ts` (which pending question owns
   a message), `jobDecision.ts` (whether a message becomes a job, including the mode
   gate on every edit), `workspaceSignals.ts` (whether a folder reads as new). That is

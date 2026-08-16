@@ -32,7 +32,7 @@ Everything written about this project, and which one you want.
 
 | Document | What's in it | Read it when |
 |---|---|---|
-| **[plan.md](./plan.md)** | The spec, and the only normative one. Concept, personality rules, every feature (§4), the milestone table and its exit checklists (§7), success criteria (§9). ~4,300 lines. | You need to know what Clarvis is *meant* to do — or **what is actually built**, which §7 alone decides. |
+| **[plan.md](./plan.md)** | The spec, and the only normative one. Concept, personality rules, every feature (§4), the milestone table and its exit checklists (§7), success criteria (§9), and the codebase measured (§11). 4,286 lines. | You need to know what Clarvis is *meant* to do — or **what is actually built**, which §7 alone decides. |
 | **[docs/risks.md](./docs/risks.md)** | The risk register: what could go wrong with Clarvis as a product, and what is already done about each one. Was `plan.md` §8. | You are weighing whether a concern is known, or already answered. |
 | **[docs/verification.md](./docs/verification.md)** | The checks still outstanding — the ones needing a real editor, a real provider or a real OS, so they cannot be unit tests. Was `plan.md` §10. | You are about to release, or want to know what is genuinely unproven. |
 | **[docs/CURRENT_STATE.md](./docs/CURRENT_STATE.md)** | A live snapshot: what's built, the architecture map with line counts, the safety model, the complexity budget, and how to verify a change. A map of the two big files, not a replacement for them. | You are picking this project up and want to be useful in five minutes. **Start here.** |
@@ -426,16 +426,25 @@ comments are used liberally rather than sparingly, because this codebase is mean
 read as a worked example. Anything that can be tested on its own is kept in files that
 know nothing about the editor, which is what makes them testable without running the
 editor at all — `npm test` runs those with Node's built-in test runner and no
-framework.
+framework, **828 of them**. A further four run inside a real extension host
+(`npm run test:host`), covering the handful of things a pure test cannot reach:
+activation, command registration, and the workspace boundary against the real API.
+Both run on every push through GitHub Actions, along with a packaging check.
 
 `npm run lint` checks how complicated each function is allowed to get, rather than
 checking style. It was added after someone reported the project had "too much
 complexity" without saying how much — measuring found five functions at or near the
-limit across ~8,700 lines, and the useful outcome was turning that into a number the
-build checks rather than an opinion to argue about. The limit is stricter than the
-default, which the two worst offenders would have passed unchanged. Breaking those up
-produced the first tests that part of the code had ever had, which is a better argument
-for the rule than the number is.
+limit, and the useful outcome was turning that into a number the build checks rather
+than an opinion to argue about. The limit is stricter than the default, which the two
+worst offenders would have passed unchanged. Breaking those up produced the first tests
+that part of the code had ever had, which is a better argument for the rule than the
+number is.
+
+It keeps earning its place. Six functions currently sit at exactly the limit, so the
+next branch added to any of them fails the build — which is the point. The routing
+method that decides what a chat message *is* sat there until 16 Aug; splitting it apart
+took it to 7 and, again, produced the first tests covering the gate that decides whether
+Clarvis is allowed to edit your files at all.
 
 ## Special thanks
 

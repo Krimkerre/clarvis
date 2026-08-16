@@ -1,6 +1,6 @@
 # Clarvis — current state
 
-*Snapshot as of 16 Aug 2026, commit `aa460bd`. Written so a different agent, in a
+*Snapshot as of 16 Aug 2026, commit `58e36eb`. Written so a different agent, in a
 different tool, with no memory of how this project got here, can start working on it
 in five minutes instead of reading `plan.md` end to end (4,408 lines) or
 `docs/build-log.md` (913 lines) first. Those two remain the actual source of truth —
@@ -36,7 +36,7 @@ before this file.
 | Directory | Lines | What it owns |
 |---|---|---|
 | `src/agent/` | ~9,300 | The agentic loop: `AgentRunner` (the tool-calling loop), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
-| `src/chat/` | ~6,200 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). |
+| `src/chat/` | ~6,500 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). |
 | `src/planning/` | ~5,500 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions — 29 files, one class. |
 | `src/personality/` | ~2,500 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. |
 | `src/model/` | ~2,400 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, Ollama, LM Studio. BYO-key; no Clarvis account, ever. |
@@ -100,9 +100,12 @@ adding a branch anywhere:
   build. Find them with
   `npx eslint src --rule '{"complexity":["error",14]}'`.
 - `ChatService.ask()` was one of them until 16 Aug (now 7). `ChatService` itself is
-  still ~1,260 lines and **has no test file of its own** — its routing precedence is
-  covered by `pendingOffers.ts`, a pure module, which is the pattern to follow when
-  something in there needs to be made safe to change.
+  still ~1,230 lines and **has no test file of its own**. Its decisions are covered
+  instead by pure modules it calls — `pendingOffers.ts` (which pending question owns
+  a message), `jobDecision.ts` (whether a message becomes a job, including the mode
+  gate on every edit), `workspaceSignals.ts` (whether a folder reads as new). That is
+  the pattern to follow when something in there needs to be made safe to change:
+  extract the decision, test it, leave the side effects in the class.
 
 ## Safety model — the part most likely to matter to a change you're making
 
@@ -131,7 +134,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 814 tests currently
+npm test               # node's built-in test runner, no framework — 828 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

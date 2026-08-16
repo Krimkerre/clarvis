@@ -122,18 +122,18 @@ that is a genuine preference rather than a settled practice — see §4.9's *Con
 
 ## Branch flow
 
-How work moves through this project. Clarvis reads this when offering to merge an agent
-run, so changing it here changes what he offers — and he asks about any branch that
-appears and isn't covered by it.
+**There is no branching workflow any more: everything lands on `main`.** The
+`testing` and milestone branches were merged and deleted on 15 Aug — they had stopped
+reflecting how the work actually happened, which is one continuous line.
+
+The two lines below are all that is left, and they stay because Clarvis parses them
+rather than because they describe a process. `BranchFlowWatcher` asks about any branch
+not accounted for here, so with the section gone it would start asking about `main`
+itself; `reviewWizard` offers merge targets from it. Delete them and the product
+nags about its own trunk.
 
 - trunk: main
 - work: clarvis/<task>
-
-Single-branch history as of 15 Aug: `testing` and the milestone branches (`m0-skeleton`
-through `m11-polish-release`) were merged into `main` and deleted — they'd stopped
-reflecting how the work actually happened (one continuous line, not milestone-by-
-milestone) and were just noise Clarvis had to be told to ignore. Agent runs branch from
-`main` and merge back to it.
 
 ---
 

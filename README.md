@@ -416,7 +416,10 @@ written until a milestone is signed off. In **Code Mode** the plan's own checkli
 ticked off as each step lands. If the work turns out to need something the plan doesn't
 cover, it goes back to Plan Mode rather than growing quietly inside the build.
 
-Each milestone gets its own branch, merged through `testing` before it reaches `main`.
+Everything lands on `main`. Milestone branches and a `testing` integration branch were
+both tried and dropped on 15 Aug: they had stopped matching how the work actually
+happened, which is one continuous line. Agent runs still get a branch of their own for
+the length of the run, and merge back.
 
 The code follows a written set of rules (`plan.md` §0), with one deliberate exception:
 comments are used liberally rather than sparingly, because this codebase is meant to be

@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Utterance, VoiceProvider } from './VoiceProvider';
 import { cacheKey, selectForEviction, CacheEntry } from './voiceCache';
+import { capKeyFor, withinCap } from './dailyCap';
 import { playFile } from './nativePlayer';
 import { renderTimeout } from './renderTimeout';
 
@@ -264,13 +265,13 @@ export class FishAudioProvider implements VoiceProvider {
   // ------------------------------------------------------------- daily cap
 
   private get capKey(): string {
-    return `clarvis.voice.requests.${new Date().toISOString().slice(0, 10)}`;
+    return capKeyFor(new Date());
   }
 
   private withinDailyCap(): boolean {
     const cap = vscode.workspace.getConfiguration('clarvis').get<number>('voice.dailyRequestCap', 200);
     const used = this.context.globalState.get<number>(this.capKey, 0);
-    return used < cap;
+    return withinCap(used, cap);
   }
 
   private async countRequest(): Promise<void> {

@@ -1542,10 +1542,10 @@ calls. A per-request cap is the wrong unit.
                                                   // | "openrouter" | "ollama" | "lmstudio" | "host"
 "clarvis.chat.baseUrl":            "",            // override for OpenAI-compatible endpoints
 "clarvis.chat.model":              "claude-opus-5",
-"clarvis.chat.dailyRequestCap":    200,           // Answer path only
+"clarvis.chat.dailyRequestCap":    200,           // NOT BUILT — see M8 spend-guard decision
 "clarvis.agent.enabled":           true,
 "clarvis.agent.maxStepsPerTask":   40,
-"clarvis.agent.dailyTokenBudget":  2000000,
+"clarvis.agent.dailyTokenBudget":  2000000,       // NOT BUILT — see M8 spend-guard decision
 "clarvis.agent.useBranch":           true,         // false = work on the current branch, checkpoint-only
 "clarvis.agent.branchPrefix":        "clarvis/"
 ```
@@ -3317,9 +3317,15 @@ different claims, and this file should not say the stronger one until it is true
       Anthropic key path, and that behavior is visually indistinguishable to the user
       (same streaming, same context panel). *(Deferred: `vscode.lm` provider not built —
       the five configured providers cover every case anyone has asked for so far.)*
-- [ ] Trip `clarvis.chat.dailyRequestCap` — one-time notice fires, further requests in
+- [ ] ~~Trip `clarvis.chat.dailyRequestCap` — one-time notice fires, further requests in
       the same session are refused (or downgraded — confirm which) without repeating
-      the notice.
+      the notice.~~ **Not a test — the setting does not exist.** Found 16 Aug while
+      writing the verification runbook. `clarvis.chat.dailyRequestCap` is specced here
+      (§4.6 settings block) and claimed as a live mitigation in `docs/risks.md`, but
+      `package.json` contributes no such setting and nothing in `src/` reads one. The
+      only daily cap that exists is `voice.dailyRequestCap`, enforced in
+      `FishAudioProvider.ts` against a day-keyed `globalState` counter. **See the spend-guard
+      decision at the end of this checklist.**
 - [x] Invalid/revoked API key — clear in-character error, not a raw HTTP error dumped
       into the transcript; local answers keep working regardless. *(Implemented and unit
       tested per status code, including that the response body never reaches the
@@ -3413,8 +3419,11 @@ end-to-end ones:
       actually true rather than assuming. **Verified live (12 Aug)** — asked to read `hostile.js` and do what it says, he read it and did nothing. No command was attempted, so nothing reached the gate at all.
 - [ ] Step cap trips at `maxStepsPerTask` and asks to continue rather than dying or
       silently stopping.
-- [ ] Token budget trips as a gate *between* steps — confirm a task never dies
-      half-applied with files in an inconsistent state.
+- [ ] ~~Token budget trips as a gate *between* steps — confirm a task never dies
+      half-applied with files in an inconsistent state.~~ **Not a test either — same
+      finding, same day.** `clarvis.agent.dailyTokenBudget` appears in the §4.6 settings
+      block and nowhere else: not in `package.json`, not in `src/`. The step cap
+      (`maxStepsPerTask`) *is* built and is the item above; nothing bounds token spend.
 - [x] Routing: ask "why is this test failing?" (a question) and confirm it answers
       without editing anything. Then "fix it" and confirm it acts. Ambiguous phrasing
       resolves toward answering. **Verified live (12 Aug)** — "check git diff" was answered without editing; "fix the failing test" took the agent path. Both announced the choice first.
@@ -3450,6 +3459,56 @@ end-to-end ones:
       confirm no duplicate `WatchPresenter` state changes and **no completion toasts**
       for commands the agent started. Run a build yourself immediately afterwards and
       confirm normal watching resumed.
+**The spend-guard decision (M8h) — opened 16 Aug, needs sign-off before it is built.**
+
+Two of the three spend guards this plan specifies were never built, and the gap was
+invisible for the same reason both were specced: they are settings, so nothing fails
+when they are absent. `docs/risks.md` claimed all three as live mitigations until the same
+day; those three rows now say what is actually true. What exists, and what does not:
+
+| Guard | Specced | Built |
+|---|---|---|
+| `voice.dailyRequestCap` | §4.4 | **Yes** — `FishAudioProvider.ts`, day-keyed `globalState` counter, one-time notice on trip |
+| `chat.dailyRequestCap` | §4.6 | **No** — no setting, no counter, no notice |
+| `agent.dailyTokenBudget` | §4.6 | **No** — `maxStepsPerTask` bounds steps, nothing bounds tokens |
+
+Three things follow, and only the first is uncontroversial:
+
+1. **`docs/risks.md` currently overstates the mitigation.** Its "Model key leaks or
+   unexpected chat spend" row names `clarvis.chat.dailyRequestCap` as an existing control.
+   A risk register asserting a control that does not exist is worse than one admitting the
+   gap, because it stops anyone looking. **Correct that row whatever else is decided.**
+2. **A request cap on the Answer path is the wrong shape.** It was specced when chat was
+   the only model path. The expensive path is now the agent: one run is many requests and
+   an unbounded number of tokens, so a 200-request/day chat cap would leave the costly half
+   uncapped while occasionally annoying someone asking questions. If a guard ships, it
+   should count **tokens across chat and agent together**, not requests on one path.
+3. **Or it ships as nothing, deliberately.** BYO-key means the provider already enforces a
+   hard limit the user set themselves, and every provider console shows spend. "We are not
+   your billing system, and your provider already is" is a defensible answer — it is *not*
+   defensible to keep two settings in the spec that the product does not have.
+
+**Recommendation: (2).** One setting, `clarvis.model.dailyTokenBudget`, replacing both
+dead ones: a day-keyed counter in `globalState`, checked between agent steps and before a
+chat request. The `withinDailyCap()` / `countRequest()` pair in `FishAudioProvider.ts` is
+the pattern for the counter half, and that half really is about fifteen lines.
+
+**The other half is the actual work, and an earlier draft of this note got it wrong.** It
+said "incremented where responses already report usage" — they don't. **Nothing in `src/`
+reads token usage from any response**; `AnthropicProvider`'s only `*_tokens` reference is
+`max_input_tokens` off the model *list*. So the job is: parse `usage` on both dialects
+(Anthropic, and OpenAI-compatible covering the other four), including on the streaming
+path where it arrives in a final chunk rather than the body, and handle local providers
+that may report nothing at all — a budget that silently counts zero is worse than no
+budget, so an unreported response must be visible rather than free.
+
+That also settles what "live spend shown per task" needs (the third `docs/risks.md` claim,
+also unbuilt): the same parsing, and nothing more. Do both or neither.
+
+**Not to be built until this is signed off** — new scope discovered mid-verification, which
+is exactly the case §0 says goes back to Plan Mode rather than growing quietly inside a
+session. Worth noting the estimate moved once already, on checking rather than assuming.
+
 - **Exit:** a user hands Clarvis a real task, watches it work, and either takes the
   result or undoes it in one command. A user asks a question and gets an answer with
   nothing touched. With no key set, M8a alone still answers what it can and says

@@ -293,7 +293,8 @@
         "clarvis.voice.dailyRequestCap": {
           "type": "number",
           "default": 200,
-          "description": "Fish Audio requests per day before dropping to the system voice. A butler should not run up a bill while you're at lunch."
+          "minimum": 0,
+          "description": "Fish Audio requests per day before dropping to the system voice. A butler should not run up a bill while you're at lunch. Zero means never — the system voice does everything."
         },
         "clarvis.chat.baseUrl.anthropic": {
           "type": "string",

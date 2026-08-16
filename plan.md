@@ -1838,9 +1838,15 @@ integration branch if there is one, and the shape of agent branches:
 ## Branch flow
 
 - trunk: main
-- integration: testing
+- integration: staging
 - work: clarvis/<task>
 ```
+
+*An example of the format, not this project's own declaration — that one is at the top
+of this file, and it has no integration branch since the 15 Aug merge to a single
+line. `parseBranchFlow` reads the first such heading in the document, so the two
+cannot be confused at runtime; the example named `testing` until that branch was
+deleted, which is exactly the drift worth not leaving in a format the product parses.*
 
 **Clarvis reads this back.** The review wizard (§4.6) offers merge targets from the
 project's own declaration rather than from convention — a wizard offering `main` to a

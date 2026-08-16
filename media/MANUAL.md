@@ -525,6 +525,9 @@ and **project planning** (above) both work end to end — that list used to say
 otherwise, twice. Still to come: **voice input**, and
 **Tutor Mode** for people learning to program. See the README for progress.
 
+*`plan.md` §7 is what decides this, not this paragraph. It is restated here, in the
+README and in `CURRENT_STATE.md`, and the copies have drifted before.*
+
 One thing worth knowing about what *is* here: commands he runs are held to the same
 boundary as the files he edits — they cannot change anything outside your project.
 That is enforced by your operating system on macOS and Linux. On Windows there is no

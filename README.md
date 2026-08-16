@@ -288,6 +288,12 @@ build log, and it's written for anyone who wants to check the work — it's the 
 section that assumes you know the jargon.* Full notes for each milestone are in
 [`plan.md`](./plan.md).
 
+**`plan.md` §7 is the authority on what is built.** This list, the manual and
+`CURRENT_STATE.md` all restate it, and a claim maintained by hand in four places
+drifts — an external review caught exactly that here on 16 Aug, when this checklist
+still had M9 unticked while the entry beneath it called the same milestone finished.
+If the two disagree, believe §7 and fix this.
+
 - [x] **M0 — Skeleton.** Extension scaffold, manifest, esbuild bundling,
       activate/deactivate lifecycle. Installs, activates, tears down clean.
 - [x] **M1 — Event Surface Spike.** Every §4.0 event source probed against a

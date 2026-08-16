@@ -51,7 +51,9 @@ before this file.
 ## What's built vs designed
 
 Milestones are numbered M0–M12 in `plan.md` §7 and tracked with per-milestone exit
-checklists (261 checklist lines total). Current status:
+checklists (261 checklist lines total). **§7 is the authority; this is a copy, and
+copies drift** — believe it over this file, the README and the manual, all three of
+which restate it. Current status:
 
 - **Built and shipped: M0 through M9**, plus M9d2 (per-language conventions), M9d3
   (the agent reads its own code back after a milestone — see below), and the four

@@ -13,12 +13,12 @@ import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { chatAction, isStopRequest } from './chatCommands';
 import { ChatActions } from './ChatActions';
 import { ModelService } from '../model/ModelService';
-import { isDoItNow, needsClassification, routeFor } from './routing';
+import { routeFor } from './routing';
 import { classifyIntent } from './intentModel';
 import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM, capabilities } from './modes';
 import { Voice, opening } from '../personality/Voice';
 import { researchWorkspace } from '../planning/workspaceResearch';
-import { describeWorkspaceSignals } from '../planning/workspaceSignals';
+import { looksLikeNewProject, planOfferPrompt } from '../planning/workspaceSignals';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { DraftDocument } from '../planning/DraftDocument';
@@ -28,6 +28,7 @@ import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
 import { offerAnswer } from './offerAnswer';
+import { planJob } from './jobDecision';
 import { ArmedOffer, OFFER_ORDER, offerToConsume } from './pendingOffers';
 import { PendingChoice } from './PendingChoice';
 
@@ -759,7 +760,6 @@ export class ChatService {
       interviewInProgress: Boolean(snapshot && worthResuming(snapshot, Date.now())),
     });
 
-    if (offer === 'nothing') return;
     if (offer === 'resume-build') {
       await this.offerToResumeBuild();
       return;
@@ -768,39 +768,18 @@ export class ChatService {
       await this.offerToResumeInterview();
       return;
     }
+    if (offer !== 'offer-planning') return;
 
     // What is actually here, so the line can react to *this* folder rather than to
-    // the abstract fact of a missing file. An empty one deserves "oh, a new project?";
-    // one with a year of code in it and no plan does not.
+    // the abstract fact of a missing file.
     const signals = await researchWorkspace();
-    const looksNew = signals ? !signals.hasGit && signals.topLevelEntries.length <= 2 : false;
-    this.log(`chat: no plan.md here, offered to plan${looksNew ? ' (looks like a new project)' : ''}`);
+    const { context, fallback } = planOfferPrompt(signals);
+    this.log(`chat: no plan.md here, offered to plan${looksLikeNewProject(signals) ? ' (looks like a new project)' : ''}`);
 
     // **A question with buttons, not an instruction to remember a command.** Spoken
     // as well as written: it is the one line that tells someone this feature exists,
     // and a notice nobody hears is a feature nobody finds.
-    await this.remark(
-      await opening(
-        [
-          looksNew
-            ? 'They have just opened what looks like a brand new project: an empty folder, nothing built yet, and no plan.md.'
-            : 'They have opened a project that already has files in it — someone has been working here — but there is no plan.md, so none of it was ever written down.',
-          signals ? `What is actually in the folder: ${describeWorkspaceSignals(signals)}` : '',
-          '',
-          'Two beats, in this order. First: notice what you have walked into and have a',
-          'view about it — a new project deserves a different remark from one already',
-          'full of code nobody planned, and a line that merely restates "there is no',
-          'plan.md" is a failed line.',
-          'Then: offer to plan it with them — an interview, then a written plan they',
-          'sign off on.',
-        ]
-          .filter(Boolean)
-          .join(' '),
-        looksNew
-          ? 'Oh, a new project? We could sketch out what this is meant to do before the next person asks — or would you rather keep discovering it as we go?'
-          : 'No plan.md, and a folder full of files that presumably mean something to someone. Would you like help working out what this is?'
-      )
-    );
+    await this.remark(await opening(context, fallback));
     this.awaitingPlanAnswer = true;
     this.panel.post({ type: 'choices', items: [{ label: 'Yes' }, { label: 'No' }] });
   }
@@ -975,24 +954,21 @@ export class ChatService {
     mode: ChatMode,
     decision: ReturnType<typeof routeFor>
   ): Promise<{ task: string; because: string } | undefined> {
-    if (!canEdit(mode)) return undefined;
+    const plan = planJob(question, mode, decision, Boolean(this.lastAnswered));
 
-    if (this.lastAnswered && isDoItNow(question)) {
-      const task = this.lastAnswered;
+    if (plan.kind === 'escalate') {
+      const task = this.lastAnswered!;
       this.lastAnswered = undefined;
       this.log(`chat: escalating the previous message to the agent — "${task.slice(0, 60)}"`);
       return { task, because: 'Right — doing it properly this time.' };
     }
 
-    if (decision.route === 'agent') {
+    if (plan.kind === 'job') {
       this.log(`chat: routed to agent — ${decision.because}`);
-      return {
-        task: question,
-        because: mode === 'agent' ? 'Agent mode — treating that as a job.' : decision.because,
-      };
+      return { task: question, because: plan.because };
     }
 
-    if (mode !== 'plan' && needsClassification(question)) {
+    if (plan.kind === 'classify') {
       const classified = await classifyIntent(this.models, question, this.log);
 
       if (classified === 'agent') {

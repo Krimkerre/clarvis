@@ -6,7 +6,7 @@ import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } fro
 import { NameResult, namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
-import { synthesizeAnswerPrompt, cleanSynthesizedAnswer } from './synthesizePrompt';
+import { synthesizeAnswerPrompt, cleanSynthesizedAnswer, discardsOriginalAnswer } from './synthesizePrompt';
 import { researchWorkspace } from './workspaceResearch';
 import { describeWorkspaceSignals } from './workspaceSignals';
 
@@ -257,6 +257,13 @@ async function synthesizeAnswer(
     const cleaned = cleanSynthesizedAnswer(text);
     if (!cleaned) {
       log(`planning: "${topic}" — synthesis returned nothing, kept the raw combination`);
+      return fallback;
+    }
+    // The user answered. A synthesis that comes back saying the topic is still open has
+    // thrown that answer away — see `discardsOriginalAnswer`. Keep the plain combination
+    // instead: it reads worse and loses nothing, which is the right trade.
+    if (discardsOriginalAnswer(original, cleaned)) {
+      log(`planning: "${topic}" — synthesis dropped the original answer, kept the raw combination`);
       return fallback;
     }
     log(`planning: "${topic}" — synthesized — ${cleaned}`);

@@ -3514,6 +3514,85 @@ session. Worth noting the estimate moved once already, on checking rather than a
   nothing touched. With no key set, M8a alone still answers what it can and says
   plainly why it can't do the rest.
 
+### M8i — Reasoning: strip it, and let the user ask to see it *(opened and signed off 19 Aug)*
+
+**Where this came from.** Asked for on 19 Aug while planning the local-model verification:
+a way to toggle reasoning on and off, to *"mitigate some annoyances when running local
+models, whilst keeping users in control"*. Nothing reasoning-aware exists in `src/` today —
+no `thinking` parameter, no `reasoning_effort`, and no handling of inline reasoning blocks.
+
+**Two different things are bundled under "reasoning", and only one is a setting.**
+
+**1 · Inline reasoning blocks are a defect, not a preference.** Qwen3-family models — all
+three of the MLX models cached on this machine — emit `<think>...</think>` inside the
+response content. `speakable.ts` strips markdown and `replyState.ts` strips `[state]` tags;
+neither knows about think blocks. **Predicted, not yet observed:** reasoning renders into
+the transcript and is read aloud by Fish Audio. First thing to check in runbook session 4.
+
+Stripping is correct behaviour rather than an option, and it has a tested precedent in this
+codebase: `replyState.ts` already removes a tag from a **streamed** reply, including the
+case of a tag split across two fragments — which is exactly how a `<think>` open or close
+will arrive. Follow that, do not write a second stripper.
+
+Only *showing* the reasoning is optional: one setting, default off. Name it for what the
+user sees, not the mechanism.
+
+**2 · Provider-side reasoning control cannot be one switch.** Anthropic has `thinking`,
+OpenAI has `reasoning_effort`, and Qwen3's is `/no_think` in the prompt — a model
+convention, not an API. A single toggle claiming to turn reasoning off would be true for
+some providers and a lie for others, which §2 rule 4 forbids more than it forbids missing
+features. If this ships it is per-provider capability, probed the way `supportsTools()`
+already is, and absent from the UI where the provider cannot honour it.
+
+**Signed off 19 Aug, as recommended: ship (1) alone.** It is the annoyance, it is a bug,
+and it reuses an existing tested pattern. (2) — provider-side reasoning parameters — is
+**explicitly not approved**: it waits for evidence that anyone wants it once (1) is fixed,
+and on local models the reason to disable thinking is usually latency, which session 4
+measures rather than guesses at. Build (1) after F2.
+
+### M8j — Model-family recognition, for defaults only *(opened and signed off 19 Aug)*
+
+**Asked for on 19 Aug:** cheap model recognition so Clarvis can apply sane, safe defaults
+per model family. It is cheap — one pure module, regex over the model id, no network — and
+the shape already exists in `openaiCatalog.ts`, which is a labelled regex table over ids.
+
+**The constraint comes from that same file, and it is the whole design.** It says of
+itself: *"a heuristic, and openly labelled as one. It is a display filter, not a safety
+check: the authoritative answer is `supportsTools()`, which asks the model itself."*
+
+So the rule for M8j: **a family may seed a default; it may never assert a capability.**
+Anything safety- or capability-critical stays probed. This project has already shipped one
+capability verdict it should not have trusted — a 401 cached as "no tool support",
+disabling the agent path for a model that supported them fine.
+
+Two corollaries:
+
+- **Fail open, conservatively.** Local model ids are whatever the user named them
+  (`mymodel:latest`). An unrecognised model must land on the cautious default, never on a
+  guess.
+- **Overridable, visibly.** A default the user cannot see or change is F1 in a new place.
+
+**What it is actually for — and two things it is not.** The mechanism is worthless without
+named customers, and two of the obvious three do not need it:
+
+- **Not `<think>` stripping (M8i).** Strip unconditionally. A model that never emits the tag
+  costs nothing; a family table that fails to recognise a merge or a rename leaks reasoning
+  into the transcript and into the spoken output. Gating this on recognition adds a way to
+  be wrong and removes none.
+- **Not tool support.** Already probed authoritatively. A table that answers the same
+  question is a second source of truth that will eventually disagree with the first.
+- **Yes for M9h.** `shouldAsk` degrading toward *ask* on a weaker model needs a notion of
+  tier, and there is no probe for "how good is this model's judgment". This is the real
+  customer, and it is the reason to build M8j at all.
+
+**Signed off 19 Aug as specified — which means deferred, deliberately.** Build it when M9h
+needs it, not before, and scope it to exactly the defaults M9h asks for: a family table
+with no caller is speculative configuration, which §0's ladder rejects on sight. The
+sign-off is on the *design constraints* above (defaults never capabilities; fail open;
+visibly overridable), so that when M9h reaches for this the argument is already settled.
+Runbook session 4 (MLX across a 4B, a coder model and a 27B) sets the tier boundaries from
+observation rather than vendor marketing.
+
 ### M9 — Project Planning *(the front door)*
 
 **M9a started (12 Aug).** `src/planning/interviewTopics.ts` is the pure state machine —
@@ -3964,6 +4043,194 @@ front of it. Both misses are the prompt's boundaries working rather than failing
 - [ ] The feature works on all supported operating systems (macOS, Linux, Windows).
 
 - [ ] A review that fails or times out does not fail the milestone that already landed.
+
+### M9h — Infer, present, ask only on genuine unknowns *(opened and signed off 19 Aug)*
+
+**Where this came from.** The first runbook session walked `3-compliment` four times and
+produced six findings (`clarvis-firstrun/FINDINGS.md`). Five are defects. This one is not:
+it is the user's verdict on how the interview *behaves*, given in his own words —
+
+> Clarvis should be able to figure stuff out himself, assume the most logical option, and
+> present it. Only if he truly doesn't know should he ask. Nag machines get discarded
+> quickly.
+
+An earlier proposal — a pushback budget, the interview's analogue of §6's interruption
+cap — was **rejected on the right grounds: the amount of pushback should not be a
+parameter.** A cap does not change the posture, it just runs out of permission to nag.
+
+**The evidence it is answering.** Run 4 pushed back on five of seven topics, on ordinary
+answers. One pushback re-asked its own question one second after being answered
+("repeats are fine" → *"Does the script need to remember which compliments it has already
+given?"*). Another asked what *"runs"* means, when the seed already said "a script that
+prints a different compliment each time you run it". A third invented a missing-file
+requirement for a thirty-line script — and that invention created the contradiction that
+suppressed `NO-PLAN-NEEDED` (F4). The nagging is not only tiring; in that run it is the
+direct cause of the wrong outcome.
+
+**This is not a new mechanism.** `interviewTopics.ts` already carries
+`languageDetected?: string` — *"whether the model detected the language from files on disk
+rather than asking"*. Infer-instead-of-ask is already a first-class idea here; it is scoped
+to one topic and one signal, and an empty folder falls straight back to asking. M9h
+generalises a pattern this codebase already has.
+
+**Open questions — none of these are settled, and the first two are the ones that decide
+whether this is an improvement or a worse version of F1.**
+
+1. **"Present it" is load-bearing, and getting it wrong is exactly F1.** F1 is a silent
+   assumption (`"you pick"` → JavaScript, never named in chat) that turned a terminal
+   script into a browser page. Assuming *more* while presenting *badly* makes that failure
+   systemic rather than occasional. What does presenting an assumption look like — inline
+   as each is made, or one reviewable summary before drafting?
+2. **A summary nobody reads is a rubber stamp.** If corrections are expensive — re-open the
+   interview, answer again — users will approve a wrong spec rather than fight it. What is
+   the cheapest correction that still lands? This is the same problem the finding cards
+   already solve with buttons, and they are worth looking at first.
+3. **"Truly doesn't know" needs a definition that lives in code.** As a prompt adjective it
+   is untestable, and §2.1 is explicit that a prompt tuned against itself sounds like a
+   prompt. Two candidate shapes: the model marks each topic `assumed | asked` with its
+   reason, and code decides what that licenses; or code decides per topic from project
+   signals and the model only phrases it.
+4. **Facts and preferences may not deserve the same treatment.** *Where it runs*, *what the
+   data is*, *what done means* are facts about the project and are often derivable. *Name*,
+   *language*, *comment style* are preferences: defensible to default, but burying one is
+   how F1 happened. A split — infer facts, default-and-show preferences — is worth weighing
+   against a single rule.
+5. **How does this interact with `NO-PLAN-NEEDED`?** If inference removes the manufactured
+   findings (F4), the no-plan branch may start firing without any change to the analysis.
+   Settle M9h before touching F4's second candidate, or two fixes will be aimed at one
+   cause.
+
+**This is a regression against a stated goal, not a new direction.** §4.6 already says it
+outright — *"it should feel like Claude Code, in a sidebar, with a face"* — and the user
+restated it on 19 Aug as the original point of the product: mimic the Claude Code
+experience for starting new projects as closely as possible, while staying model-agnostic.
+M9h is that target reasserted after the interview drifted away from it.
+
+**The drift has a date, and it was deliberate.** The *Pushback (13 Aug)* entry above
+generalised §4.9's "challenged once, then honoured" rule — **written for the language
+question alone** — to all eight topics, so `challengeAnswer()` now runs after every answer
+except an explicit "I don't know". Five pushbacks in seven questions is that decision
+working as specified. Note the shape of the mistake before repeating it: **the last time a
+per-topic rule was generalised to every topic, it produced the behaviour this milestone
+exists to undo.** M9h proposes generalising a different per-topic mechanism
+(`languageDetected`, inference from disk) the same way, and should be held to that lesson.
+
+**Research-before-asking already exists and is not the gap.** The same 13 Aug pass built
+`workspaceResearch.ts` and `workspaceSignals.ts` to read the workspace up front and fold
+real observed facts into every prompt. On a project with files, that is the Claude Code
+posture already. **The hole is the empty folder** — `3-compliment` had nothing to research,
+so the interview fell straight through to interrogation. Any M9h design that only improves
+inference *from disk* fixes the case that already works.
+
+**One boundary, already settled and easy to cross by accident.** §4.6's M8b0 finding holds:
+the goal is *feeling* as good, never *presenting as* Claude Code — no such naming, no
+visual mimicry, no borrowed identity. Copying the interaction model is in scope; copying
+the surface is not.
+
+**Prior art worth reading before designing this: Claude Code's own plan mode.** It solves
+the same problem and reaches the opposite default — inference first, asking as the
+exception. Four mechanics transfer:
+
+- **No interview.** It reads the project, infers, and writes a plan. There is no fixed
+  topic list to get through, and **no pushback mechanism at all** — a vague answer is acted
+  on under the most reasonable reading, with the reading stated.
+- **A testable bar for when to ask**, which is what open question 3 is missing. Its
+  question tool is rationed by rule: ask only where the answer *changes what you do next* —
+  never for choices with a conventional default, or facts verifiable from the code itself;
+  otherwise pick the obvious option, say so, and proceed. That is a decision code can
+  enforce, not an adjective in a prompt.
+- **Questions are cheap to answer**: two to four options, each with one line on what it
+  costs, several batched into one exchange, and a free-text escape always present. One
+  click rather than a sentence — most of open question 2. **Clarvis already does exactly
+  this for `language`** (`Python | runs anywhere with a shebang | slower than compiled
+  alternatives`) and nowhere else, which is the same shape as `languageDetected`: the right
+  pattern exists, scoped to one topic.
+- **Corrections land against the plan, not the interview.** The whole plan is presented; the
+  user accepts it or says what is wrong and it is revised. Correcting a concrete document is
+  cheaper than answering abstract questions, and it is a direct answer to open question 1.
+
+**Three ways the comparison does not transfer, and each one bites here:**
+
+- It has a codebase to infer *from*. `3-compliment` is an empty folder, which is precisely
+  why `languageDetected` falls back to asking. **Clarvis's hardest case is the one with no
+  evidence on disk**, and it is also the most common one for a new project.
+- Its user is a developer who can spot a wrong assumption in a plan. §6's target is
+  "normies", who may not. Every gram of weight moved from asking to presenting lands on
+  presentation quality, and F1 is what bad presentation already costs.
+- It is not in character and not spoken aloud. Clarvis has to infer, present, and still
+  sound like someone — and a summary of assumptions read by a butler at length is its own
+  failure mode.
+
+**Signed off 19 Aug. The five open questions are resolved as follows** — every answer
+reuses something already built rather than adding a surface, per the ladder.
+
+**1 · Topics split into facts and preferences (open question 4 first, because the rest
+depend on it).**
+
+| Class | Topics | Treatment |
+|---|---|---|
+| **Facts** — properties of the project, derivable | `what-it-does`, `who-and-where`, `scope`, `data`, `definition-of-done` | Infer. Never ask when the seed or workspace supports an answer |
+| **Preferences** — the user's taste, not derivable | `name`, `language`, `linter`, `comment-style` | Default to the obvious choice **and say which**, in chat, in one clause |
+
+The split is the guard against F1: a preference silently assumed is exactly what turned a
+terminal script into a browser page, so preferences are defaulted *visibly* and never
+inferred silently.
+
+**2 · When to ask, as a rule code can enforce (open question 3).** Adopt the Claude Code
+bar: **ask only when the answer changes what gets built.** Made concrete and testable — for
+each topic the model returns its answer plus the **basis** it rests on, citing something
+already said or observed. A pure `shouldAsk(topic, state)`:
+
+- basis is non-empty → **assume**, record the basis alongside the answer
+- basis is empty and the topic is a **preference** → **default**, and say so
+- basis is empty and the topic is a **fact** → **ask**, once
+
+This is one pure function in `interviewTopics.ts`'s idiom, testable without a host, and it
+replaces "is the model confident" — which is unanswerable — with "does it have a reason",
+which is inspectable.
+
+**3 · The draft plan *is* the presentation (open questions 1 and 2).** No summary screen.
+`draftAndApprovePlan()` already shows the rendered plan before writing, and "Keep Refining"
+already takes a free-text note and redraws without re-interrogating. Assumptions are marked
+where they appear in the draft, so what the user reviews is the document itself — the same
+answer Claude Code reaches, using the surface this project already built. Per-assumption
+buttons are **not** built now: refine-by-note is the cheaper rung, and only if it proves too
+coarse in use does the finding-card pattern get borrowed.
+
+**4 · `challengeAnswer()` returns to its original scope.** The 13 Aug generalisation to all
+eight topics is reverted: a challenge fires only when an answer is genuinely unusable —
+empty, or contradicting something already settled — never as a matter of course. This is
+F6's actual fix, and it is a narrowing rather than a budget.
+
+**5 · Order of work, which matters (open question 5).**
+
+1. **[x] F2 — done, 19 Aug.** The root cause was a composition, not a bug in one place:
+   the synthesis prompt licensed saying what "remains open" whenever a follow-up did not
+   settle the question, so an **off-topic** follow-up (the 13 Aug challenge generalisation)
+   made the model report the *original* topic as unsettled and drop a settled answer. The
+   model was obeying the prompt. Two changes: the clause is narrowed so the first answer's
+   settled content can never be dropped, and — because a prompt is a hypothesis until
+   someone reads the output — `discardsOriginalAnswer()` rejects any synthesis that reports
+   the topic as still open and keeps the plain concatenation instead. Inelegant beats lost.
+   6 tests; 836 → 842.
+2. **Then M9h.**
+3. **Then re-walk `3-compliment` and re-test `NO-PLAN-NEEDED`.** If inference stops the
+   interview manufacturing findings, F4 may resolve with no change to the analysis at all —
+   so nothing in `analysisPrompt.ts` is touched until that walk says it is still needed.
+4. **Then F5 and F3**, which survive this redesign untouched.
+
+**The model-agnostic constraint is the hard part, and it is not solved here.** Every
+inference above leans on model judgment, and Clarvis must run on a 4-bit local model as
+well as a frontier one. A confidently-presented wrong assumption from a weak model is worse
+than a question. Two consequences, both deliberately left open: `shouldAsk` degrading toward
+*ask* when the basis is thin is the safe direction, and **session 4 of the verification
+runbook (MLX, three model tiers) is now load-bearing for this milestone** rather than a
+provider checkbox. Do not close M9h without walking it.
+
+**Same rule as M8h.** The defects M9h touches — F2 (a pushback overwrites the answer it
+pushed back on), F3 (a question asked back is consumed as an answer), F5 (a rejected
+finding is recorded and then ignored) — are **separate bugs that survive this redesign**
+and are fixed on their own terms, not folded in.
 
 ### M9g — Project notes, written by the user *(next, after the checklist)*
 

@@ -9,6 +9,7 @@ import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
+import { milestoneSettledDetail, milestoneSettledOffer } from '../planning/planUpdate';
 import { StepExplanation } from '../agent/stepExplanation';
 import { PendingChoice } from './PendingChoice';
 import { reviewMilestone } from '../agent/readBack';
@@ -354,6 +355,22 @@ export class RunSession {
   }
 
   /**
+   * Whether this workspace has a `plan.md` at all.
+   *
+   * Read at the moment it matters rather than remembered from the start of the run: the
+   * plan can arrive or leave while an agent works, and a stale answer here is a wrong
+   * question put to the user.
+   */
+  private static async planExists(): Promise<boolean> {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) return false;
+    return vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
+      () => true,
+      () => false
+    );
+  }
+
+  /**
    * The moment after a milestone: what changed, and whether to write it down.
    *
    * Offered rather than done silently. The plan is the user's document, and a tool
@@ -361,14 +378,15 @@ export class RunSession {
    * say-so — is exactly the thing sign-off exists to prevent.
    */
   private async settleMilestone(summary: string, changed: number): Promise<void> {
+    // A run handed over from `NO-PLAN-NEEDED` has no plan to record against, and
+    // offering to update one anyway is a button that could only do nothing.
+    const hasPlan = await RunSession.planExists();
+    const { message, actions } = milestoneSettledOffer(hasPlan, changed);
+
     const answer = await vscode.window.showInformationMessage(
-      `Milestone finished — ${changed} file(s) changed.`,
-      {
-        modal: true,
-        detail: `${summary}\n\nShall I mark off what's done in plan.md and record what the checks produced?`,
-      },
-      'Update the plan',
-      'Leave it'
+      message,
+      { modal: true, detail: milestoneSettledDetail(hasPlan, summary) },
+      ...actions
     );
 
     if (answer !== 'Update the plan') {

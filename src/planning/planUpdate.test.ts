@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addSteps, appendMilestone, markSteps, milestoneComplete, milestoneSteps, nextMilestone, readMilestones } from './planUpdate';
+import { addSteps, appendMilestone, markSteps, milestoneComplete, milestoneSteps, nextMilestone, readMilestones, milestoneSettledOffer, milestoneSettledDetail } from './planUpdate';
 
 const plan = [
   '## 7. Milestone 1 — v1',
@@ -203,4 +203,37 @@ test('a plan with nothing ticked anywhere is not work in progress', () => {
   const plan = ['# Forecast', '', '### Milestone 1 — Fetch weather', '- [ ] Call the API'].join('\n');
 
   assert.equal(readMilestones(plan).some((entry) => entry.done > 0), false);
+});
+
+// ------------------- F9: a run with no plan behind it is not a milestone
+
+test('with no plan, nothing offers to update one', () => {
+  // NO-PLAN-NEEDED hands a task to the agent with no plan.md behind it. The end of the
+  // run still asked whether to mark off what was done in plan.md — about a file the same
+  // conversation had just decided not to write. Accepting did nothing at all.
+  const { actions } = milestoneSettledOffer(false, 1);
+  assert.ok(!actions.includes('Update the plan'), 'no button that could only do nothing');
+});
+
+test('with no plan, it reports a task done rather than a milestone finished', () => {
+  // "Milestone finished" is a claim about a plan that has milestones in it.
+  const { message } = milestoneSettledOffer(false, 1);
+  assert.match(message, /^Done — 1 file changed\.$/);
+  assert.doesNotMatch(message, /milestone/i);
+});
+
+test('with a plan, the offer is unchanged', () => {
+  const { message, actions } = milestoneSettledOffer(true, 3);
+  assert.match(message, /^Milestone finished — 3 files changed\.$/);
+  assert.deepEqual(actions, ['Update the plan', 'Leave it']);
+});
+
+test('the question about plan.md is only asked when there is one', () => {
+  assert.match(milestoneSettledDetail(true, 'it works'), /mark off what's done in plan\.md/);
+  assert.equal(milestoneSettledDetail(false, 'it works'), 'it works');
+});
+
+test('one file is not "1 files"', () => {
+  assert.match(milestoneSettledOffer(true, 1).message, /1 file changed/);
+  assert.match(milestoneSettledOffer(true, 0).message, /0 files changed/);
 });

@@ -261,3 +261,34 @@ export function milestoneComplete(planText: string): boolean {
   const steps = planText.split('\n').map((line) => STEP_LINE.exec(line)).filter(Boolean);
   return steps.length > 0 && steps.every((match) => match![2].toLowerCase() === 'x');
 }
+
+/**
+ * What to say when a run finishes, given whether there is a plan to record it in.
+ *
+ * **A run started from `NO-PLAN-NEEDED` has no plan.** That branch fired for the first
+ * time on 19 Aug and the end of the run still asked *"shall I mark off what's done in
+ * plan.md and record what the checks produced?"* — about a file the same conversation had
+ * just decided not to write. Accepting did nothing at all: `recordMilestone` finds no plan
+ * and returns. M8d's checklist already names this defect in another place, and the words
+ * fit here exactly: **no button that would just fail.**
+ *
+ * The wording changes too, not only the buttons. "Milestone finished" is a claim about a
+ * plan with milestones in it; a run with no plan behind it finished a task.
+ */
+export function milestoneSettledOffer(
+  hasPlan: boolean,
+  changed: number
+): { message: string; actions: string[] } {
+  const files = `${changed} file${changed === 1 ? '' : 's'} changed`;
+
+  return hasPlan
+    ? { message: `Milestone finished — ${files}.`, actions: ['Update the plan', 'Leave it'] }
+    : { message: `Done — ${files}.`, actions: ['Right you are'] };
+}
+
+/** The question under it, when there is a plan worth offering to update. */
+export function milestoneSettledDetail(hasPlan: boolean, summary: string): string {
+  return hasPlan
+    ? `${summary}\n\nShall I mark off what's done in plan.md and record what the checks produced?`
+    : summary;
+}

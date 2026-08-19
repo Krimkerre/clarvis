@@ -4417,6 +4417,14 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.
+- [x] **F9 — a run with no plan behind it still offered to update one.** Fixed 19 Aug,
+      minutes after F8 made the path reachable. The end of a run asked *"shall I mark off
+      what's done in plan.md and record what the checks produced?"* about a file the same
+      conversation had just decided not to write — and accepting did nothing at all, since
+      `recordMilestone` finds no plan and returns. M8d's checklist already names this
+      defect elsewhere in the words that fit exactly: **no button that would just fail.**
+      The wording moved with it: "Milestone finished" is a claim about a plan that has
+      milestones in it, so a run with none reports a task done. 5 tests; 864 → 869.
 - [x] **F8 — the `NO-PLAN-NEEDED` outcome ended in silence.** Fixed 19 Aug, the same
       evening the branch fired for the first time. §7's M9 exit checklist has always said
       that a project told it needs no plan gets an offer *to just write it instead*; the
@@ -4664,7 +4672,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**864 tests**, against Node's built-in runner with no test framework — possible only
+**869 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

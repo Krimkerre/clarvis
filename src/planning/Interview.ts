@@ -1,7 +1,8 @@
 import { ModelService } from '../model/ModelService';
 import { PlanningIO } from './PlanningIO';
 import { opening, phrase } from '../personality/Voice';
-import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
+import { Answer, InterviewState, knownFacts, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
+import { namedLanguage } from './conventions';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt, ensureNamesChoice } from './interviewPrompt';
 import { NameResult, namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
@@ -111,6 +112,13 @@ async function continueInterview(
   for (;;) {
     const topic = nextTopic(state);
     if (!topic || readyToDraft(state)) break;
+
+    // Asked for something already said? Then do not ask. Checked before the question is
+    // even composed, since phrasing it costs a model call and the answer is already here.
+    if (topic === 'language' && (await settleLanguageAlreadyNamed(state, io, log))) {
+      await remember?.(state, seed);
+      continue;
+    }
 
     const question = await phraseQuestion(models, topic, state, log);
     log(`planning: "${topic}" asked — ${question}`);
@@ -572,6 +580,36 @@ async function askLanguage(
  * about: it keeps the remark tied to something real rather than to a stereotype
  * about the language, which is where a generic model reply would go.
  */
+/**
+ * Settles the language question from something the user already said, or leaves it alone.
+ *
+ * **F11.** `who-and-where` answered *"python script ran locally"* was followed immediately
+ * by "which language?" — a shortlist whose own first option read *"already specified for
+ * this project — none worth mentioning"*. The information was there; nothing looked.
+ *
+ * `languageDetected` is the field that already means *known without asking*; it was only
+ * ever set from files on disk, which a new project does not have. Reusing it means
+ * `nextTopic()` needs no change.
+ *
+ * **Said, never assumed silently.** The remark goes through the same delegated path F1
+ * built, so `ensureNamesChoice` guarantees the language is named out loud — a wrong match
+ * is then one sentence to correct, rather than a browser page three questions later.
+ */
+async function settleLanguageAlreadyNamed(
+  state: InterviewState,
+  io: PlanningIO,
+  log: (message: string) => void
+): Promise<boolean> {
+  const named = namedLanguage(knownFacts(state));
+  if (!named) return false;
+
+  state.languageDetected = named;
+  state.answers.push({ topic: 'language', text: named });
+  log(`planning: "language" — already named in an earlier answer, not asked again — ${named}`);
+  await remarkOnLanguage(io, named, state, log, undefined, true);
+  return true;
+}
+
 async function remarkOnLanguage(
   io: PlanningIO,
   language: string,

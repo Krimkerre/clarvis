@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { conventionsSection, parseCommentStyle } from './conventions';
+import { conventionsSection, parseCommentStyle, namedLanguage } from './conventions';
 
 test('the universal rules are there whatever the language', () => {
   const section = conventionsSection('Python', 'lean');
@@ -78,4 +78,45 @@ test('an unclear answer stays undecided rather than being guessed', () => {
   assert.equal(parseCommentStyle('yes'), undefined);
   assert.equal(parseCommentStyle(''), undefined);
   assert.equal(parseCommentStyle(undefined), undefined);
+});
+
+// ------------------------------------- F11: don't ask for what was just said
+
+test('a language named in an earlier answer is found', () => {
+  // The verbatim answer from 19 Aug. The next question asked which language to use.
+  assert.equal(namedLanguage('python script ran locally'), 'Python');
+});
+
+test('every alias resolves to the canonical label', () => {
+  assert.equal(namedLanguage('a small go tool'), 'Go');
+  assert.equal(namedLanguage('write it in golang'), 'Go');
+  assert.equal(namedLanguage('a node service'), 'TypeScript / JavaScript');
+  assert.equal(namedLanguage('rs, ideally'), 'Rust');
+});
+
+test('a name inside another word is not a language', () => {
+  // "gopher", "pythonic" and friends. A substring match would settle the question on a
+  // word the user never used as a choice.
+  assert.equal(namedLanguage('a gopher-themed screensaver'), undefined);
+  assert.equal(namedLanguage('something pythonic in spirit'), undefined);
+});
+
+test('a negated sentence is left alone entirely', () => {
+  // "not Python" contains "Python", and a scan for names cannot tell a choice from a
+  // rejection. Asking a question that did not need asking costs a moment; recording the
+  // opposite of what someone said costs the project.
+  for (const said of [
+    'anything but Python',
+    'not Python, please',
+    "I don't want Go for this",
+    'Rust rather than C',
+    'avoid JavaScript if you can',
+  ]) {
+    assert.equal(namedLanguage(said), undefined, said);
+  }
+});
+
+test('no language named is no answer', () => {
+  assert.equal(namedLanguage('a command someone types in a terminal'), undefined);
+  assert.equal(namedLanguage('   '), undefined);
 });

@@ -152,3 +152,38 @@ export function parseCommentStyle(answer: string | undefined): CommentStyle | un
   if (/\b(explanatory|throughout|chatty|verbose|lots|many|explain|learning|teach)\b/.test(said)) return 'explanatory';
   return undefined;
 }
+
+/**
+ * A language the user has already named, in something they have already said.
+ *
+ * **F11, found live on 19 Aug.** `who-and-where` was answered *"python script ran
+ * locally"*, and the very next question was which language to use — with a shortlist whose
+ * own top option read `Python | already specified for this project | none worth
+ * mentioning`. The machinery knew. `nextTopic()` skips the language question only when
+ * `languageDetected` is set, and that field is filled from **files on disk**, which a new
+ * project does not have.
+ *
+ * This is the narrowest possible slice of M9h: not inference from context, just declining
+ * to ask for something stated in as many words.
+ *
+ * **It fails toward asking**, which is the safe direction. A sentence containing a
+ * negation is left alone entirely, because *"not Python"* contains "Python" and a scan for
+ * names cannot tell a choice from a rejection. Asking a question that did not need asking
+ * costs a moment; recording the opposite of what someone said costs the project.
+ */
+const NEGATED = /\b(not|never|isn't|aren't|don't|doesn't|avoid|instead of|rather than|anything but|except)\b|n't\b/i;
+
+export function namedLanguage(text: string): string | undefined {
+  if (!text.trim() || NEGATED.test(text)) return undefined;
+
+  for (const entry of LANGUAGES) {
+    for (const alias of entry.aliases) {
+      const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const open = /^\w/.test(alias) ? '\\b' : '';
+      const close = /\w$/.test(alias) ? '\\b' : '';
+      if (new RegExp(`${open}${escaped}${close}`, 'i').test(text)) return entry.label;
+    }
+  }
+
+  return undefined;
+}

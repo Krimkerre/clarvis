@@ -35,7 +35,13 @@ export interface Answer {
 
 export interface InterviewState {
   answers: Answer[];
-  /** Whether the model detected the language from files on disk rather than asking. */
+  /**
+   * The language, when it is known without asking.
+   *
+   * Two ways in: detected from files on disk in an existing project, or — since F11 —
+   * named by the user in an earlier answer. A new project has no files, so the second is
+   * the only route it ever has.
+   */
   languageDetected?: string;
   /** The project's name — given in the seed, suggested, or picked by the user. */
   projectName?: string;

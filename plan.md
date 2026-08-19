@@ -4417,7 +4417,20 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.
-- [x] **F11/F12 — the no-plan handoff dropped answers the user had given.** Fixed 19 Aug.
+- [x] **F11 — asked which language, immediately after being told.** Fixed 19 Aug.
+      `who-and-where` answered *"python script ran locally"* was followed by "which
+      language?", offering a shortlist whose own first option read *"Python | already
+      specified for this project | none worth mentioning"*. `nextTopic()` skips that
+      question only when `languageDetected` is set, and that field was filled from files on
+      disk — which a new project does not have. `namedLanguage()` now settles it from
+      anything already said, before the question is composed (phrasing it costs a model
+      call). **It fails toward asking**: a sentence containing a negation is left alone,
+      because *"not Python"* contains "Python" and a name scan cannot tell a choice from a
+      rejection. And it is **said, never assumed** — routed through F1's delegated path, so
+      `ensureNamesChoice` guarantees the language is named out loud. The narrowest slice of
+      M9h part 1: not inference, just declining to ask for something stated in as many
+      words. 5 tests; 872 → 877.
+- [x] **F12 — the no-plan handoff dropped answers the user had given.** Fixed 19 Aug.
       The task carried six of the eight topics, because `plan.md` carried `data` and
       `linter` and the task was written as a *pointer* to the plan rather than a brief in
       its own right. With no plan there is nothing to point at, so each omission is an
@@ -4680,7 +4693,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**872 tests**, against Node's built-in runner with no test framework — possible only
+**877 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

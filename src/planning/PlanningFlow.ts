@@ -8,7 +8,7 @@ import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
 import { describeProgress, InterviewSnapshot, worthResuming, planningIsSettled } from './interviewStore';
 import { PlanningIO } from './PlanningIO';
-import { handoffTask } from './handoff';
+import { handoffTask, buildOfferQuestion } from './handoff';
 import { Milestone } from './milestonePrompt';
 import { phrase } from '../personality/Voice';
 
@@ -172,7 +172,13 @@ export async function runPlanning(
   // one is right there, and making the user restate it as a fresh request would be
   // the seam §0's two-mode discipline exists to make invisible. Still asked — the
   // sign-off gate is on writing the plan, and starting to build is its own decision.
-  if (approved && startBuild) await offerToBuild(state, seed, verdicts, milestones, io, log, startBuild);
+  // Offered whenever planning **reached an outcome**, which includes "this needs no
+  // plan" — the outcome that most obviously ends in "shall I write it, then", and the
+  // one that used to end in silence. Same predicate as the one deciding the interview is
+  // finished with, because it is the same question.
+  if (planningIsSettled(approved, noPlanNeeded) && startBuild) {
+    await offerToBuild(state, seed, verdicts, milestones, io, log, startBuild, approved);
+  }
 }
 
 /**
@@ -279,7 +285,9 @@ async function offerToBuild(
   milestones: Milestone[],
   io: PlanningIO,
   log: (message: string) => void,
-  startBuild: StartBuild
+  startBuild: StartBuild,
+  /** False on the `NO-PLAN-NEEDED` path, where there is deliberately no plan.md to read. */
+  hasPlan: boolean
 ): Promise<void> {
   // Milestone one, and only milestone one: the rest of the plan is written down and
   // waiting, and starting the next is its own decision after this one lands.
@@ -288,11 +296,12 @@ async function offerToBuild(
     state,
     seed,
     verdicts,
-    first ? { current: first, number: 1, total: milestones.length } : undefined
+    first ? { current: first, number: 1, total: milestones.length } : undefined,
+    hasPlan
   );
 
   const choice = await io.confirm(
-    await phrase('ask', 'Plan approved. Shall I go and build the first milestone, then?', []),
+    await phrase('ask', buildOfferQuestion(hasPlan), []),
     `${await phrase('report', 'This is what I would be handing myself:', [])}\n\n${task}`,
     ['Start Building', 'Edit The Task First', 'Not Yet']
   );

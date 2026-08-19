@@ -4417,6 +4417,16 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.
+- [x] **F8 — the `NO-PLAN-NEEDED` outcome ended in silence.** Fixed 19 Aug, the same
+      evening the branch fired for the first time. §7's M9 exit checklist has always said
+      that a project told it needs no plan gets an offer *to just write it instead*; the
+      build offer was gated on `approved`, which is false on that path, so the one outcome
+      that most obviously ends in "shall I write it, then" was the only one that offered
+      nothing. Gated on `planningIsSettled()` now — the same predicate that decides the
+      interview is finished with, because it is the same question. And the handoff task
+      itself pointed at `plan.md` in **three** places on a path where no plan exists;
+      `planFacingLines()` makes those honest and carries the conventions inline, since
+      they were still decided and had nowhere else to live. 5 tests; 859 → 864.
 - [x] **F7 — a reload at the approve gate threw the whole interview away.** The saved
       interview was cleared the moment the *questions* finished, so the analysis, the
       findings the user had just ruled on one by one, the milestones and the drafted plan
@@ -4654,7 +4664,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**859 tests**, against Node's built-in runner with no test framework — possible only
+**864 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

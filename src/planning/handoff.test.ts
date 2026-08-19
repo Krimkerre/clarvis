@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handoffTask } from './handoff';
+import { handoffTask, buildOfferQuestion, planFacingLines } from './handoff';
 import { InterviewState } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
 
@@ -84,4 +84,48 @@ test('only the milestone being handed over is described, and it stops there', ()
 
   assert.match(task, /Milestone 2 of 4 — Batch renaming/);
   assert.match(task, /Build milestone 2 and no further/);
+});
+
+test('the no-plan outcome still offers to write the thing', () => {
+  // NO-PLAN-NEEDED fired for the first time on 19 Aug and then ended in silence: the
+  // build offer was gated on the plan being approved, so the outcome that most obviously
+  // ends in "shall I write it, then" was the only one that offered nothing. §7's M9 exit
+  // checklist has said "he offers to just write it instead" since before the branch worked.
+  assert.match(buildOfferQuestion(false), /Shall I just write it\?$/);
+  assert.doesNotMatch(buildOfferQuestion(false), /milestone/i);
+});
+
+test('an approved plan is still offered as its first milestone', () => {
+  assert.match(buildOfferQuestion(true), /first milestone/);
+});
+
+test('with no plan, the task never sends the agent to read one', () => {
+  // Three separate references to plan.md sat in this task text, none ever exercised —
+  // the branch that reaches them had not fired until 19 Aug. An agent told to follow a
+  // plan.md that was deliberately never written is being sent to look for nothing.
+  const { opening, conventions, heading } = planFacingLines('Validatron', false, 'add comments');
+
+  // Nothing may *direct* the agent to a plan.
+  for (const line of [heading, ...conventions]) {
+    assert.doesNotMatch(line, /plan\.md/, line);
+  }
+
+  // The opening does name plan.md, on purpose: saying there is none preempts a hunt for
+  // it, which is the opposite of sending the agent looking.
+  assert.match(opening, /there is no plan\.md/);
+  assert.match(opening, /too small to need a plan/);
+});
+
+test('with no plan, the conventions travel in the task itself', () => {
+  // They were still decided in the interview. With no plan.md there is nowhere else for
+  // them to live, and dropping them silently would lose an answer the user gave.
+  const { conventions } = planFacingLines('Validatron', false, 'add comments');
+  assert.deepEqual(conventions, ['Comments: add comments']);
+});
+
+test('with a plan, the task points at it rather than restating it', () => {
+  const { opening, conventions, heading } = planFacingLines('Validatron', true, 'add comments');
+  assert.match(opening, /following the approved plan\.md/);
+  assert.match(conventions[0], /Conventions section in plan\.md/);
+  assert.match(heading, /ticking each off in plan\.md/);
 });

@@ -17,17 +17,60 @@ function answerText(state: InterviewState, topic: TopicId): string | undefined {
   return state.answers.find((answer) => answer.topic === topic)?.text;
 }
 
+/**
+ * The three lines of a handoff task that point at `plan.md`, in both worlds.
+ *
+ * With no plan there is nowhere for the conventions to live except the task itself —
+ * they were still decided during the interview, so they travel inline rather than being
+ * dropped.
+ *
+ * Extracted rather than written as three ternaries in `handoffTask`, which sits close
+ * enough to `eslint.config.mjs`'s complexity ceiling that adding them broke the build.
+ * Pure and tested, which is the better home for them anyway.
+ */
+export function planFacingLines(
+  name: string,
+  hasPlan: boolean,
+  comments: string | undefined
+): { opening: string; conventions: string[]; heading: string } {
+  if (hasPlan) {
+    return {
+      opening: `Start building ${name}, following the approved plan.md in this workspace.`,
+      conventions: ['Follow the Conventions section in plan.md — it says how this project writes code.'],
+      heading: 'Milestone 1 — build these, ticking each off in plan.md as it lands:',
+    };
+  }
+
+  return {
+    opening: `Start building ${name}. It was judged too small to need a plan, so there is no plan.md — this task is the whole brief.`,
+    conventions: comments ? [`Comments: ${comments}`] : [],
+    heading: 'Build the smallest thing that does this, and run it before you call it done:',
+  };
+}
+
 /** Milestone one, as a task the agent can act on. */
 export function handoffTask(
   state: InterviewState,
   seed: string,
   verdicts: FindingVerdict[],
   /** The one milestone being handed over, and where it sits in the plan. */
-  milestone?: { current: Milestone; number: number; total: number }
+  milestone?: { current: Milestone; number: number; total: number },
+  /**
+   * Whether a `plan.md` was actually written.
+   *
+   * False on the `NO-PLAN-NEEDED` path, where the whole point is that no plan exists.
+   * That branch fired for the first time on 19 Aug and this task text sent the agent to
+   * read a file that was never created — three separate references to it, none of which
+   * had ever been exercised because the branch downstream of them had never run.
+   */
+  hasPlan = true
 ): string {
   const name = state.projectName ?? seed;
   const language = answerText(state, 'language');
   const done = answerText(state, 'definition-of-done');
+  const comments = answerText(state, 'comment-style');
+
+  const { opening, conventions, heading } = planFacingLines(name, hasPlan, comments);
 
   // **The steps are the work; the findings are questions.** Handing over a list of
   // "Clarify whether…" items produced a run that read the plan, found nothing to do,
@@ -35,20 +78,20 @@ export function handoffTask(
   const settle = verdicts.filter((verdict) => verdict.status !== 'rejected').map(agreedResolution);
 
   return [
-    `Start building ${name}, following the approved plan.md in this workspace.`,
+    opening,
     '',
     `What it is: ${answerText(state, 'what-it-does') ?? seed}`,
     ...(answerText(state, 'who-and-where') ? [`Where it runs: ${answerText(state, 'who-and-where')}`] : []),
     ...(language ? [`Language: ${language}`] : []),
     // Named rather than restated: the plan carries the rules in full, and a summary
     // of them in the task would be a second copy to drift from the first.
-    'Follow the Conventions section in plan.md — it says how this project writes code.',
+    ...conventions,
     ...(answerText(state, 'scope') ? [`Scope: ${answerText(state, 'scope')}`] : []),
     '',
     ...(done ? [`Done when: ${done}`, ''] : []),
     milestone
       ? `Milestone ${milestone.number} of ${milestone.total} — ${milestone.current.title}. Build these, ticking each off in plan.md as it lands:`
-      : 'Milestone 1 — build these, ticking each off in plan.md as it lands:',
+      : heading,
     ...(milestone && milestone.current.steps.length > 0
       ? milestone.current.steps.flatMap((step) => [
           `- ${step.step}`,
@@ -89,4 +132,24 @@ export function handoffTask(
     '',
     'Start with the smallest thing that runs.',
   ].join('\n');
+}
+
+/**
+ * How the build offer opens, given whether there is a plan to build from.
+ *
+ * **The no-plan path used to end in silence.** `NO-PLAN-NEEDED` is a legitimate outcome —
+ * a thirty-line script told plainly that a plan would be ceremony — and §7's M9 exit
+ * checklist has always said he then *offers to just write it instead*. He did not: the
+ * build offer was gated on the plan being approved, so the one outcome that most obviously
+ * ends in "shall I write it, then" was the one that offered nothing. Found on the 19 Aug
+ * re-walk, the first time the branch had ever fired.
+ *
+ * A pure function rather than a ternary at the call site, for the same reason as
+ * `planningIsSettled`: the caller sits at the complexity ceiling, and this is the half
+ * worth testing anyway.
+ */
+export function buildOfferQuestion(hasPlan: boolean): string {
+  return hasPlan
+    ? 'Plan approved. Shall I go and build the first milestone, then?'
+    : 'No plan needed for this one. Shall I just write it?';
 }

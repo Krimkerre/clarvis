@@ -4,7 +4,7 @@
 checks still to run by hand: the ones that need a real editor, a real provider, or a
 real operating system, and so cannot be a unit test.*
 
-**This is not the automated suite.** `npm run check` (859 tests) and
+**This is not the automated suite.** `npm run check` (864 tests) and
 `npm run test:host` run themselves and are green; see
 [`CURRENT_STATE.md`](CURRENT_STATE.md) for how to run them. Everything below is what
 those two genuinely cannot cover.

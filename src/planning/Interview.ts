@@ -2,7 +2,7 @@ import { ModelService } from '../model/ModelService';
 import { PlanningIO } from './PlanningIO';
 import { opening, phrase } from '../personality/Voice';
 import { Answer, InterviewState, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
-import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt } from './interviewPrompt';
+import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt, ensureNamesChoice } from './interviewPrompt';
 import { NameResult, namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
@@ -551,7 +551,7 @@ async function askLanguage(
 
   if (picked === YOU_PICK) {
     const { name, reasoning } = await pickLanguageForUser(models, options, state, log);
-    await remarkOnLanguage(io, name, state, log, reasoning);
+    await remarkOnLanguage(io, name, state, log, reasoning, true);
     return { topic: 'language', text: name, reasoning };
   }
 
@@ -577,7 +577,8 @@ async function remarkOnLanguage(
   language: string,
   state: InterviewState,
   log: (message: string) => void,
-  cost?: string
+  cost?: string,
+  delegated = false
 ): Promise<void> {
   const line = await opening(
     [
@@ -591,8 +592,11 @@ async function remarkOnLanguage(
     `${language} it is.`,
     false
   );
-  log(`planning: language — remarked: ${line}`);
-  await io.say(line);
+  // A choice made *for* the user has to be said out loud, not alluded to — see
+  // `ensureNamesChoice`. One they made themselves needs no announcing.
+  const said = delegated ? ensureNamesChoice(line, language) : line;
+  log(`planning: language — remarked: ${said}`);
+  await io.say(said);
 }
 
 /**

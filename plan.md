@@ -4390,6 +4390,18 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       remove the settings and say plainly that spend is the provider's console. **M11's own
       `Clarvis: Usage Today` item below assumes "all three daily-cap counters exist by this
       point", which is currently false and is blocked on this decision.**
+- [x] **F1 — a delegated choice is never named. Fixed 19 Aug.** Answering the language question with
+      "you pick" resolves to a real language and says so only in the log; the chat gets an
+      oblique remark that alludes to the choice without naming it. On 19 Aug that silently
+      turned "a script that prints a compliment" into a browser page, with no moment at
+      which objecting was possible. `Interview.ts:653` already holds both the choice and
+      its reasoning — this is saying what is already known, routed through the character
+      like every other line. **Mis-filed at first**: it was to be fixed by M9h's
+      fact/preference split, so deferring parts 1–3 deferred it by accident. Triage rule 2
+      catches it — silently deciding for the user. **Fixed** with `ensureNamesChoice()`:
+      the remark prompt is unchanged, and a delegated choice that the dry line fails to
+      name is prefixed with `remarkOnLanguage`'s own no-model fallback, reused verbatim
+      rather than a second phrasing invented at the call site. 7 tests; 842 → 849.
 - [ ] **M9h part 4 — `challengeAnswer()` narrowed** back to firing only on a genuinely
       unusable answer, reverting the 13 Aug generalisation to all eight topics. Small, and
       it is most of what stops the interview reading as an interrogation. Parts 1–3 are
@@ -4624,7 +4636,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**842 tests**, against Node's built-in runner with no test framework — possible only
+**849 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

@@ -12,6 +12,39 @@ face. Everything that makes it *better* rather than *correct* lives here.
 
 ---
 
+## Triaging the next one
+
+*Added 19 Aug. Quirks will keep arriving from using the product; this is how each one gets
+filed without relitigating the boundary every time.*
+
+**Ask these in order. First hit wins.**
+
+1. **Does it lose or overwrite something the user said?** → blocker. (F2, F3.)
+2. **Does it act against, or silently decide for, something the user decided?** → blocker.
+   (F5, F1.)
+3. **Does it show the machinery** — internals, reasoning blocks, jargon, or a truth that
+   only exists in the log? → blocker. (M8i part 1.)
+4. **Otherwise: is the product *wrong*, or merely *worse*?** Worse ships. (F4, F6.)
+
+Then two overrides, both of which beat the answer above:
+
+- **Cheap beats correct filing.** If the fix is a revert, a deletion, or one line at a seam
+  that already exists, do it now regardless of which bucket it landed in — a triage argument
+  that costs more than the fix is waste. This is why M9h part 4 is in v1 while parts 1–3 are
+  not: same finding, different price.
+- **Predicted is not observed.** A quirk reasoned about but not seen gets verified before it
+  is filed either way. M8i part 1 sat as *predicted* until a real MLX model could confirm it.
+
+**Two things that are never blockers**, however true: *"it would be better if…"*, and a
+defect whose only evidence is that the code looks like it could misbehave. This project has
+a written record of confidently-wrong fixes that passed review and failed live; a fix
+without an observation is the same mistake wearing different clothes.
+
+**Where each one goes.** A blocker becomes a checkbox in `plan.md` §7's M11 release bar. A
+deferral becomes a section in this file, naming the milestone that will specify it. Either
+way, the observation itself — what happened, the log evidence, why it matters — goes in
+`clarvis-firstrun/FINDINGS.md` first, while it is fresh, and is triaged from there.
+
 ## Deferred: the interview redesign (M9h parts 1–3)
 
 **What:** infer rather than ask — a fact/preference split across the eight topics, a

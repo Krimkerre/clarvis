@@ -131,3 +131,43 @@ export function interviewSystemPrompt(): string {
     ONLY_WHAT_YOU_WERE_GIVEN
   );
 }
+
+/**
+ * Makes sure a remark about a **delegated** choice actually names what was chosen.
+ *
+ * **The defect this exists to catch, found by using the product on 19 Aug (F1).**
+ * Answering the language question with "you pick" resolves to a real language, and the
+ * only thing that reached the chat was the dry remark about the trade — which alludes
+ * without naming: *"You've chosen the language that will run anywhere and build nowhere,
+ * which is to say you've chosen to debug this in the browser."* That was JavaScript, and
+ * the user found out by reading the log. The project became a browser page.
+ *
+ * Delegating a decision is an invitation to make it, not to hide it. When the user picked
+ * the language themselves they already know it, so this applies only to the delegated
+ * path.
+ *
+ * The added clause is `remarkOnLanguage`'s own no-model fallback, reused verbatim rather
+ * than inventing a second phrasing at a call site (§2.2).
+ */
+export function ensureNamesChoice(line: string, choice: string): string {
+  const trimmed = line.trim();
+  const wanted = choice.trim();
+  if (!wanted) return trimmed;
+  return mentions(trimmed, wanted) ? trimmed : `${wanted} it is.${trimmed ? ` ${trimmed}` : ''}`;
+}
+
+/**
+ * Whether `text` names `choice` as a word.
+ *
+ * A word boundary is only asserted at an end that is actually a word character, because
+ * `\bC\+\+\b` can never match: `+` is not a word character, so the trailing boundary
+ * has nothing to sit against. `C++`, `F#` and `C#` are all real answers to the language
+ * question, and treating them as never-mentioned would mean announcing the choice twice
+ * rather than once.
+ */
+function mentions(text: string, choice: string): boolean {
+  const escaped = choice.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const open = /^\w/.test(choice) ? '\\b' : '';
+  const close = /\w$/.test(choice) ? '\\b' : '';
+  return new RegExp(`${open}${escaped}${close}`, 'i').test(text);
+}

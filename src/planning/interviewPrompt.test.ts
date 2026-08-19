@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { interviewQuestionPrompt } from './interviewPrompt';
+import { interviewQuestionPrompt, ensureNamesChoice } from './interviewPrompt';
 import { InterviewState } from './interviewTopics';
 
 /**
@@ -49,4 +49,55 @@ test('the model is told not to ask a scoping question first', () => {
 test('every other topic still gets the plain one-question template', () => {
   const prompt = interviewQuestionPrompt('scope', state);
   assert.match(prompt, /Ask ONE question/);
+});
+
+// ------------------------------------------------- F1, naming a delegated choice
+
+test('a remark that only alludes to the choice gets the choice stated first', () => {
+  // The verbatim line from 19 Aug. It was JavaScript, and nothing on screen said so —
+  // the user found out from the log, by which point the project was a browser page.
+  const said = ensureNamesChoice(
+    "You've chosen the language that will run anywhere and build nowhere, which is to say you've chosen to debug this in the browser.",
+    'JavaScript'
+  );
+  assert.match(said, /^JavaScript it is\./);
+  assert.match(said, /run anywhere and build nowhere/);
+});
+
+test('a remark that already names the choice is left exactly as written', () => {
+  // The character does the talking wherever it can. This only adds words when the line
+  // would otherwise leave the user guessing.
+  const line = 'Python for a compliment script. A language most likely to outlive its own performance requirements.';
+  assert.equal(ensureNamesChoice(line, 'Python'), line);
+});
+
+test('naming is case-insensitive', () => {
+  const line = 'python it is, then, with all that implies.';
+  assert.equal(ensureNamesChoice(line, 'Python'), line);
+});
+
+test('a language whose name ends in punctuation is still recognised', () => {
+  // `\bC\+\+\b` never matches — the trailing boundary has no word character to sit
+  // against — so a naive check would announce "C++ it is" on top of a line that already
+  // said C++.
+  for (const [line, choice] of [
+    ['C++ it is, and the segfaults with it.', 'C++'],
+    ['F# on the CLR, which is a choice.', 'F#'],
+    ['C# then. Enterprise beckons.', 'C#'],
+  ] as const) {
+    assert.equal(ensureNamesChoice(line, choice), line, choice);
+  }
+});
+
+test('a name that appears only inside another word does not count as naming it', () => {
+  const said = ensureNamesChoice('The gorgeous option, obviously.', 'Go');
+  assert.match(said, /^Go it is\./);
+});
+
+test('an empty remark still states the choice', () => {
+  assert.equal(ensureNamesChoice('', 'Rust'), 'Rust it is.');
+});
+
+test('no choice to name leaves the line untouched', () => {
+  assert.equal(ensureNamesChoice('Some line.', '   '), 'Some line.');
 });

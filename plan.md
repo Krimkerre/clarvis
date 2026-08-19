@@ -4414,6 +4414,19 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       `parseChallengeResult` treated anything that was not literally `FINE` as a question to
       ask — so *"Fine, that's specific enough"* became a pushback. It now fails toward
       silence: only an actual question is asked. 5 tests; 849 → 854.
+- [ ] **F10 — a reload strands you on the agent's branch, with the offer gone.** When a run
+      finishes with work committed, the offer to fold it back and return you home is held
+      in memory in the extension host. Reload before answering and it is gone; you are left
+      on `clarvis/<task>` with nothing offering a way back. The briefing *notices* — "You're
+      on `clarvis/start-building-…`" — and attaches no action to the fact.
+      `Clarvis: Review Agent Run` is the way home and nothing points at it, so for §6's
+      audience the recourse may as well not exist. §9.5 defines success as coming back to
+      work you keep *or* undoing it in one command; neither is on offer. **Same root cause
+      as F7** — state that must survive a reload held only in the running host — which is
+      two in one day and argues for a sweep rather than waiting for the third. The
+      information already survives (`clarvis.agent.baseBranch` is in `workspaceState`), so
+      the cheap fix is to give the briefing's existing sentence its action. Mind §6: once
+      per session, not on every activation until answered.
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.

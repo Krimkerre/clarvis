@@ -67,18 +67,52 @@ for a week without muting him. For a personality-led product the first session *
 product. Part 4 is the bet that most of the damage is the frequency, not the design. If a
 week of real use after v1 says otherwise, M9h parts 1–3 stop being deferred.
 
-## Deferred: `NO-PLAN-NEEDED` reaching a throwaway project (F4)
+## ~~Deferred: `NO-PLAN-NEEDED` reaching a throwaway project (F4)~~ — CLOSED 19 Aug
 
-**What:** a thirty-line script should be told it does not need a plan. Walked twice on 19
-Aug on its designed input; produced three milestones both times.
+Deferred on a bet: that the analysis suppressed the verdict because the *interview*
+manufactured findings for it to trip over, and that M9h part 4 would remove them. The bet
+was to re-walk before touching `analysisPrompt.ts`.
 
-**Why deferred:** the cause is largely upstream. The analysis suppresses the verdict because
-the interview manufactures findings for it to trip over, and M9h part 4 removes much of
-that. **Re-walk `3-compliment` after part 4 lands before touching `analysisPrompt.ts`** —
-this may resolve without a change, and two fixes aimed at one cause is how the branch got
-this way.
+**It paid.** Two independent walks after part 4 landed, two correct verdicts, and
+`analysisPrompt.ts` was never opened. The analysis had never been broken.
 
-Ceremony for a small project is a bad experience, not a broken one. It ships.
+Kept here rather than deleted, because the reasoning is the reusable part: **when a symptom
+has a plausible upstream cause, fix the cause and re-measure before touching the thing that
+reported it.** Two fixes aimed at one cause is how this branch got into that state to begin
+with.
+
+## Deferred: the character reaching into artifacts (M9h parts 1–3)
+
+**What:** `agentSystemPrompt()` is built on `characterWith(...)`, so the model writing files
+into the user's project carries the butler character block. Asked for a compliment script,
+it produced twelve compliments about programming — nobody said who they were for, and every
+signal available said "a developer".
+
+**Why deferred:** here it is charming, and the assumption is visible in the artifact and
+rewritten in seconds. That is the opposite of F1, where a silent assumption was a *language*
+and its consequences arrived three questions later.
+
+**Why it will not stay deferred forever.** §2.2's one-voice-everywhere rule was written
+about **Clarvis's own surfaces** — briefing, gate copy, findings, chat. Whether it extends
+to **content written into someone else's project** has never been asked, and the answer is
+obviously different for error messages, README text or UI strings in a product that is not
+his. Two things to weigh with M9h: *who is this for* as a ninth interview topic — inferred
+and stated rather than asked, by M9h's own rule — and whether the character should be
+attenuated when generating user-facing content as opposed to talking to the user.
+
+## Deferred: plan vocabulary on a path that has no plan
+
+**What:** the no-plan handoff task still says *"run each check above"* when no checks were
+written, *"Do not build past milestone 1"* where there is no milestone 2, and it recorded
+`Comments: nope` from an answer that does not name a comment style.
+
+**Why deferred:** none of it misled the agent — it wrote the script, ran it, and stopped
+where it should. Cosmetic against a working outcome.
+
+**One of the three is not cosmetic and belongs to M9h**: accepting "nope" as a comment style
+is the narrowed challenge working exactly as written — the answer is *usable*, it just does
+not answer the question. Whether an answer that does not answer should still be accepted is
+an inference question, not a challenge one.
 
 ## Deferred: provider-side reasoning control (M8i part 2)
 
@@ -110,14 +144,15 @@ Unchanged by this decision, listed so the v1 boundary is in one place:
 
 ---
 
-## Not deferred — these are v1 blockers
+## Not deferred — where the blockers actually live
 
-Kept here as a pointer so this file cannot be read as "everything outstanding is optional".
-The live list is **`plan.md` §7, M11 — the v1 release bar**:
+Kept as a pointer so this file cannot be read as "everything outstanding is optional".
 
-- **F3** — a question asked back during the interview is consumed as an answer.
-- **F5** — a rejected finding is recorded and the plan does the rejected thing anyway.
-- **M8i part 1** — reasoning blocks leaking into the transcript and the spoken output.
-- **M8h** — resolve the two settings the spec promises and the product does not have.
-- **M9h part 4** — the `challengeAnswer()` narrowing described above.
-- Runbook sessions 1–5 walked, with findings written down.
+**The list is [`plan.md`](../plan.md) §7, M11 — the v1 release bar, and it is not repeated
+here.** An earlier version of this section copied it, and the copy had already drifted
+within a day: it still named a blocker that was fixed and did not know about one that had
+been found. That is the same failure this file's own preamble warns about, committed in the
+file that warns about it.
+
+Every finding is cross-checked against both documents by `check-findings.mjs` in the
+runbook repository, which fails if one knows about a finding the other does not.

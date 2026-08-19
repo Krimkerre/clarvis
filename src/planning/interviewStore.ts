@@ -1,4 +1,4 @@
-import { InterviewState } from './interviewTopics';
+import { InterviewState, readyToDraft } from './interviewTopics';
 
 /**
  * An interview that outlives the window it was started in.
@@ -34,8 +34,14 @@ export const STALE_AFTER_MS = 7 * 24 * 60 * 60 * 1000;
  * Whether a snapshot is worth offering back.
  *
  * **Not every interruption is worth resuming.** One answer in is barely an interview —
- * offering to resume it costs more attention than retyping the sentence — and a
- * finished one has nothing left to do. Both would be nagging (§6) rather than help.
+ * offering to resume it costs more attention than retyping the sentence.
+ *
+ * A *finished* one very much is worth resuming, which this used to assume otherwise
+ * about. Between the last question and the plan being written sit the analysis, the
+ * findings the user ruled on one by one, and the draft itself; reloading there lost all
+ * of it and asked for the eight answers again. Resuming a complete interview costs
+ * nothing, because `runInterview` breaks out immediately when there is nothing left to
+ * ask.
  */
 export function worthResuming(snapshot: InterviewSnapshot | undefined, now: number): boolean {
   if (!snapshot?.seed) return false;
@@ -46,10 +52,18 @@ export function worthResuming(snapshot: InterviewSnapshot | undefined, now: numb
   return snapshot.state.answers.length >= 2;
 }
 
-/** How far in they got, for the line that offers to carry on. */
+/**
+ * How far in they got, for the line that offers to carry on.
+ *
+ * A complete interview is described as complete rather than counted. "Ego Refill — 8
+ * questions in" is true and useless: it reads as though there are more to come, when what
+ * is actually waiting is the plan itself.
+ */
 export function describeProgress(snapshot: InterviewSnapshot): string {
-  const answered = snapshot.state.answers.filter((answer) => answer.text).length;
   const name = snapshot.state.projectName ?? snapshot.seed;
+  if (readyToDraft(snapshot.state)) return `${name} — all answered, no plan written yet`;
+
+  const answered = snapshot.state.answers.filter((answer) => answer.text).length;
   return `${name} — ${answered} question${answered === 1 ? '' : 's'} in`;
 }
 
@@ -68,4 +82,15 @@ export function parseSnapshot(stored: unknown): InterviewSnapshot | undefined {
   if (!candidate.state || !Array.isArray(candidate.state.answers)) return undefined;
 
   return { seed: candidate.seed, state: candidate.state, at: candidate.at };
+}
+
+/**
+ * Whether planning reached an outcome, and the saved interview can be dropped.
+ *
+ * The plan was written, or there was no plan to write. **A draft the user walked away
+ * from is not an outcome** — the same rule the resume offer already holds to, where
+ * Escape means "not now" and never "delete it".
+ */
+export function planningIsSettled(approved: boolean, noPlanNeeded: string | undefined): boolean {
+  return approved || Boolean(noPlanNeeded);
 }

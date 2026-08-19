@@ -4417,6 +4417,16 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.
+- [x] **F7 — a reload at the approve gate threw the whole interview away.** The saved
+      interview was cleared the moment the *questions* finished, so the analysis, the
+      findings the user had just ruled on one by one, the milestones and the drafted plan
+      all lived only in that extension host. Reloading offered nothing back and the only
+      way forward was to answer everything again — while the now-dead draft sat open in a
+      tab, looking live. Fixed 19 Aug: the snapshot is kept until planning reaches an
+      *outcome* (the plan was written, or there was none to write), and a complete
+      interview resumes for free because `runInterview` breaks out immediately when there
+      is nothing left to ask. The resume offer now says "all answered, no plan written
+      yet" rather than counting questions. 5 tests; 854 → 859.
 - [x] **F2 — a wandering follow-up erasing the answer it followed.** Fixed 19 Aug.
 
 Everything below this line is M11 as originally written, and is unchanged.
@@ -4644,7 +4654,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**854 tests**, against Node's built-in runner with no test framework — possible only
+**859 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

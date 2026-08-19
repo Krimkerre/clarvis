@@ -6,7 +6,7 @@ import { collectVerdicts } from './Verdicts';
 import { formatVerdict, FindingVerdict } from './verdictSummary';
 import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
-import { describeProgress, InterviewSnapshot, worthResuming } from './interviewStore';
+import { describeProgress, InterviewSnapshot, worthResuming, planningIsSettled } from './interviewStore';
 import { PlanningIO } from './PlanningIO';
 import { handoffTask } from './handoff';
 import { Milestone } from './milestonePrompt';
@@ -109,7 +109,6 @@ export async function runPlanning(
   // A paused interview keeps its snapshot: cancelling is not abandoning, and the
   // next window should still offer to carry on.
   if (!result) return;
-  await memory?.clear();
 
   const { state, seed } = result;
   const summary = summaryLines(state, seed);
@@ -142,6 +141,18 @@ export async function runPlanning(
   const approved = readyToDraft(state) && !noPlanNeeded
     ? await draftAndApprovePlan(state, seed, verdicts, milestones, io, lines, log)
     : false;
+
+  // **Kept until there is an outcome, not until the questions run out.** This used to
+  // clear the moment `gatherAnswers` returned, which meant everything after it — the
+  // analysis, the findings the user ruled on, the milestones, the drafted plan — lived
+  // only in this extension host. Reloading the window at the approve gate silently threw
+  // all of it away and offered nothing back, so the only way forward was to answer eight
+  // questions again. Found by using the product, 19 Aug.
+  //
+  // Cleared on an actual outcome: the plan was written, or there was no plan to write.
+  // A draft the user walked away from is *not* an outcome — same rule as the resume
+  // offer's own Escape, where "not now" must never mean "delete it".
+  await forgetInterviewIfSettled(memory, approved, noPlanNeeded);
 
   // Logged, not just shown. An untitled document exists only until the tab closes or
   // VS Code restarts — a two-minute interview producing an artifact neither the user
@@ -190,6 +201,22 @@ async function gatherAnswers(
   }
 
   return runInterview(models, io, log, memory ? (state, seed) => memory.save(state, seed) : undefined, resume);
+}
+
+/**
+ * Drops the saved interview once planning has actually reached an outcome.
+ *
+ * A function rather than an `if` at the call site for a boring reason worth writing down:
+ * `runPlanning` sits at the complexity ceiling `eslint.config.mjs` enforces, so the branch
+ * had to live somewhere. `CURRENT_STATE.md` names the pattern — extract the decision, keep
+ * the side effect where it was.
+ */
+async function forgetInterviewIfSettled(
+  memory: InterviewMemory | undefined,
+  approved: boolean,
+  noPlanNeeded: string | undefined
+): Promise<void> {
+  if (planningIsSettled(approved, noPlanNeeded)) await memory?.clear();
 }
 
 /**

@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { describeProgress, parseSnapshot, STALE_AFTER_MS, worthResuming } from './interviewStore';
+import {
+  describeProgress,
+  parseSnapshot,
+  planningIsSettled,
+  STALE_AFTER_MS,
+  worthResuming,
+} from './interviewStore';
 import { InterviewState } from './interviewTopics';
 
 const now = 1_700_000_000_000;
@@ -58,4 +64,54 @@ test('stored rubbish is rejected rather than crashing a startup', () => {
   assert.equal(parseSnapshot({ seed: 'x' }), undefined);
   assert.equal(parseSnapshot({ seed: 'x', at: 1, state: {} }), undefined);
   assert.equal(parseSnapshot({ seed: 'x', at: 1, state: { answers: [] } })?.seed, 'x');
+});
+
+// ------------------------- a finished interview is the one most worth keeping
+
+/** Everything `readyToDraft` insists on, so the interview counts as complete. */
+const complete: InterviewState = {
+  answers: [
+    { topic: 'what-it-does', text: 'prints a compliment' },
+    { topic: 'who-and-where', text: 'a terminal on my own machine' },
+    { topic: 'scope', text: 'repeats are fine' },
+    { topic: 'linter', text: 'nope' },
+    { topic: 'comment-style', text: 'no comments needed' },
+  ],
+  projectName: 'Ego Refill',
+};
+
+test('a finished interview is still worth resuming', () => {
+  // Found by using the product on 19 Aug: reloading the window at the approve gate lost
+  // the analysis, the findings just ruled on, and the drafted plan — and offered nothing
+  // back, so the only way forward was to answer everything again. The questions are the
+  // cheap half; what sits between the last one and plan.md is the expensive half.
+  assert.equal(worthResuming({ seed: 'prints a compliment', state: complete, at: now }, now), true);
+});
+
+test('a finished interview is described as finished, not counted', () => {
+  // "8 questions in" is true and useless — it reads as though more are coming, when what
+  // is actually waiting is the plan.
+  assert.equal(
+    describeProgress({ seed: 'prints a compliment', state: complete, at: now }),
+    'Ego Refill — all answered, no plan written yet'
+  );
+});
+
+test('a part-way interview is still counted', () => {
+  assert.equal(
+    describeProgress({ seed: 'renames photos', state, at: now }),
+    'Snapshot — 2 questions in'
+  );
+});
+
+test('the interview is dropped only once planning reached an outcome', () => {
+  assert.equal(planningIsSettled(true, undefined), true, 'the plan was written');
+  assert.equal(planningIsSettled(false, 'thirty lines, no state'), true, 'there was no plan to write');
+});
+
+test('a draft walked away from is not an outcome', () => {
+  // Dismissing the approve gate is how the draft gets discarded deliberately, and it is
+  // also what happens when someone reloads the window mid-decision. Neither means throw
+  // the interview away — same rule as the resume offer, where Escape is "not now".
+  assert.equal(planningIsSettled(false, undefined), false);
 });

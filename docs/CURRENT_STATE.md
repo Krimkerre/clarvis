@@ -26,6 +26,7 @@ before this file.
 |---|---|
 | `plan.md` | Current spec — concept, personality rules, every feature (§4), milestones and their exit checklists (§7), success criteria (§9). The normative document. |
 | `docs/risks.md` | The risk register — what could go wrong, and what is already done about it. Was `plan.md` §8. |
+| `docs/future-features.md` | The v1 boundary — what is deferred past the first release and why. Pairs with `plan.md` §7 M11, which holds the release bar itself. |
 | `docs/verification.md` | The checks still to be run by hand, needing a real editor, provider or OS. Was `plan.md` §10. |
 | `docs/build-log.md` | Chronological history — every defect found by using the product, and why each fix looks the way it does. Not shipped in the `.vsix` (see `.vscodeignore`). Read when you need to know *why* a decision was made, not *what* the product currently does. |
 | `README.md` | The user-facing pitch and feature list, and the index of every document here — the front door. |
@@ -153,7 +154,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 828 tests currently
+npm test               # node's built-in test runner, no framework — 842 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

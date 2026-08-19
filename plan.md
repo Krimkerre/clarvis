@@ -4363,6 +4363,44 @@ to run 1.
 
 ### M11 — Polish & Release
 
+**The v1 release bar (set 19 Aug).** The goal became *a stable first release* rather than a
+more complete one. What is deliberately **out** of v1, and why, is
+[`docs/future-features.md`](docs/future-features.md); this is what is **in**, and nothing
+ships until all of it is true.
+
+The bar, in one sentence: **v1 ships when Clarvis does not lose what you told it, does not
+act against what you decided, and does not leak its own internals into your face.** Each
+blocker below is one of those three, or a §9 success criterion it would otherwise break.
+
+- [ ] **F3 — a question asked back during the interview is consumed as an answer.** Asking
+      "what's the simplest solution?" mid-interview records the question as the answer and
+      files the gap as "open". Loses what the user said; §9.9's neighbour.
+- [ ] **F5 — a rejected finding is recorded and the plan does the rejected thing anyway.**
+      "No separate file, embed compliments in script" was recorded as a rejection, and the
+      first step of the first milestone was *create a data file*. `docs/risks.md` answers
+      "a confidently wrong generated plan" by promising rejections are never silently
+      adopted; until this is true, that promise is not.
+- [ ] **M8i part 1 — reasoning blocks stripped** from the transcript and the spoken output.
+      Predicted, not yet observed: verify against a real MLX model in runbook session 4
+      first, then fix. Leaking `<think>` into the chat and reading it aloud is the clearest
+      possible "leaks its own internals".
+- [ ] **M8h — resolved, not necessarily built.** `clarvis.chat.dailyRequestCap` and
+      `clarvis.agent.dailyTokenBudget` are in this spec and in no code. v1 requires the spec
+      to stop promising controls the product does not have — either build the guard or
+      remove the settings and say plainly that spend is the provider's console. **M11's own
+      `Clarvis: Usage Today` item below assumes "all three daily-cap counters exist by this
+      point", which is currently false and is blocked on this decision.**
+- [ ] **M9h part 4 — `challengeAnswer()` narrowed** back to firing only on a genuinely
+      unusable answer, reverting the 13 Aug generalisation to all eight topics. Small, and
+      it is most of what stops the interview reading as an interrogation. Parts 1–3 are
+      deferred; see the risk note in `docs/future-features.md`.
+- [ ] **Runbook sessions 1–5 walked**, findings written down —
+      `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
+      the release.
+- [x] **F2 — a wandering follow-up erasing the answer it followed.** Fixed 19 Aug.
+
+Everything below this line is M11 as originally written, and is unchanged.
+
 **Build.**
 - README: one-sentence privacy pitch (§1) up top, install steps, settings table,
   screenshot/GIF of the panel, list of the three networked features (chat's model
@@ -4586,7 +4624,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**828 tests**, against Node's built-in runner with no test framework — possible only
+**842 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

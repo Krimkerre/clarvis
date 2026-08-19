@@ -4402,10 +4402,18 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       the remark prompt is unchanged, and a delegated choice that the dry line fails to
       name is prefixed with `remarkOnLanguage`'s own no-model fallback, reused verbatim
       rather than a second phrasing invented at the call site. 7 tests; 842 → 849.
-- [ ] **M9h part 4 — `challengeAnswer()` narrowed** back to firing only on a genuinely
+- [x] **M9h part 4 — `challengeAnswer()` narrowed. Done 19 Aug.** back to firing only on a genuinely
       unusable answer, reverting the 13 Aug generalisation to all eight topics. Small, and
       it is most of what stops the interview reading as an interrogation. Parts 1–3 are
-      deferred; see the risk note in `docs/future-features.md`.
+      deferred; see the risk note in `docs/future-features.md`. **Two halves, one in each
+      layer.** The prompt asked whether an answer was *"specific enough to plan against — no
+      meaningful ambiguity, no unstated assumption, no risk worth flagging"*, which almost no
+      short human answer clears; the bar is now whether it is usable at all, with three
+      clauses naming the observed failures (precision the work does not need, wandering
+      subject, re-asking what was just answered) and "when in doubt, FINE". And
+      `parseChallengeResult` treated anything that was not literally `FINE` as a question to
+      ask — so *"Fine, that's specific enough"* became a pushback. It now fails toward
+      silence: only an actual question is asked. 5 tests; 849 → 854.
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.
@@ -4636,7 +4644,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**849 tests**, against Node's built-in runner with no test framework — possible only
+**854 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

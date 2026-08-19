@@ -100,6 +100,62 @@ his. Two things to weigh with M9h: *who is this for* as a ninth interview topic 
 and stated rather than asked, by M9h's own rule — and whether the character should be
 attenuated when generating user-facing content as opposed to talking to the user.
 
+## Deferred: the safety model covers the build, not the artifact
+
+**What:** every safety mechanism in this product binds Clarvis's **conduct**, and none of
+them look at what it **writes**. `resolveInWorkspace()` refuses paths outside the folder;
+`sandbox-exec`/`bwrap` deny writes and network; `Gate.ts` stops destructive, outward-facing
+and privileged *commands* at the tool layer. All of that governs what Clarvis executes.
+
+Writing a file containing `os.system("rm -rf /")` passes every one of them, because at
+write time the string is inert. The danger arrives later, when the user runs it themselves,
+unsandboxed, on their own machine.
+
+**Why it matters, in this project's own terms.** §9.9 — *"never once finds that Clarvis
+changed something they didn't ask him to change"* — is about the workspace during the run.
+§1's one-sentence privacy pitch is about what leaves the machine while he works. Nothing
+covers the user after the run ends, and the asymmetry is stark once named: **Clarvis is
+careful about his own conduct and says nothing about the artifact he hands you.** The same
+shape as the character-bleed entry above, one level more serious.
+
+Raised 19 Aug, from the observation that the sandbox binds the builder and not the built
+thing.
+
+**Why it is deferred rather than a blocker.** *Predicted, not observed* — the triage rule's
+second override. No run has produced dangerous generated code; the gap is real in the
+design and has never fired. It also needs design rather than a fix, and the obvious design
+is the wrong one.
+
+**The obvious wrong shape.** A general "is this code dangerous" scanner. It cannot be
+complete (the question is undecidable), it fires on `subprocess`, `os.remove` and `fetch`
+in perfectly ordinary programs, and a warning on every file is the nag machine this project
+spent a whole day removing. For §6's audience — normies building small things — a false
+positive costs more than it does in a security tool aimed at professionals who expect noise.
+
+**Two shapes worth weighing instead, and they compose:**
+
+1. **Ask the gate about content, not just commands.** `Gate.ts` is already pure, already
+   tested, and already knows what a command it would refuse looks like. A file being written
+   that *contains* such a command is a narrow, deterministic question with an answer that
+   cannot drift from the runtime one, because it is the same code. Not a scanner — the same
+   deny-list, asked a second question.
+2. **Say it in the read-back.** M9d3 already has Clarvis read his own code back after a
+   milestone, and that is a report the user reads rather than a dialog they dismiss. *"This
+   writes outside the project folder"* or *"this makes network calls nothing asked for"*
+   belongs there, as an observation, not a block.
+
+**Recommendation: (2) as the primary, (1) narrow beside it.** Say, do not block — because
+plenty of legitimate projects are *supposed* to contain dangerous code. Someone writing a
+deployment script, an installer, or a disk utility has asked for exactly the thing a
+scanner would refuse, and a product that argues with them about it is wrong rather than
+safe. The value is catching the **unrequested** case, and a report catches that without
+having to be right about intent.
+
+**Open question that decides the shape:** does the interview know enough to tell a
+deployment script from a compliment printer? `what-it-does` and `scope` are answered before
+anything is built, so it may — which would make this another customer for M9h's
+infer-and-state work rather than a mechanism of its own.
+
 ## Deferred: plan vocabulary on a path that has no plan
 
 **What:** the no-plan handoff task still says *"run each check above"* when no checks were

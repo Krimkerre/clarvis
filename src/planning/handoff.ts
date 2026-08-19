@@ -31,13 +31,16 @@ function answerText(state: InterviewState, topic: TopicId): string | undefined {
 export function planFacingLines(
   name: string,
   hasPlan: boolean,
-  comments: string | undefined
-): { opening: string; conventions: string[]; heading: string } {
+  comments: string | undefined,
+  /** Answers that normally live in `plan.md` rather than in the task. */
+  planOnly: { data?: string; linter?: string } = {}
+): { opening: string; conventions: string[]; heading: string; standalone: string[] } {
   if (hasPlan) {
     return {
       opening: `Start building ${name}, following the approved plan.md in this workspace.`,
       conventions: ['Follow the Conventions section in plan.md — it says how this project writes code.'],
       heading: 'Milestone 1 — build these, ticking each off in plan.md as it lands:',
+      standalone: [],
     };
   }
 
@@ -45,6 +48,16 @@ export function planFacingLines(
     opening: `Start building ${name}. It was judged too small to need a plan, so there is no plan.md — this task is the whole brief.`,
     conventions: comments ? [`Comments: ${comments}`] : [],
     heading: 'Build the smallest thing that does this, and run it before you call it done:',
+    // **Every answer, because there is nowhere else for them to be.** This task was written
+    // as a pointer to the plan: `plan.md` carries `data` and `linter`, so the task did not
+    // need to. With no plan the task *is* the brief, and each omission is an answer the
+    // user gave that reaches nobody. Found live on 19 Aug — "generate a dozen or so, and
+    // embed them in the script" never left the interview, and the agent wrote five and
+    // reported success.
+    standalone: [
+      ...(planOnly.data ? [`Data: ${planOnly.data}`] : []),
+      ...(planOnly.linter ? [`Linter: ${planOnly.linter}`] : []),
+    ],
   };
 }
 
@@ -70,7 +83,10 @@ export function handoffTask(
   const done = answerText(state, 'definition-of-done');
   const comments = answerText(state, 'comment-style');
 
-  const { opening, conventions, heading } = planFacingLines(name, hasPlan, comments);
+  const { opening, conventions, heading, standalone } = planFacingLines(name, hasPlan, comments, {
+    data: answerText(state, 'data'),
+    linter: answerText(state, 'linter'),
+  });
 
   // **The steps are the work; the findings are questions.** Handing over a list of
   // "Clarify whether…" items produced a run that read the plan, found nothing to do,
@@ -87,6 +103,7 @@ export function handoffTask(
     // of them in the task would be a second copy to drift from the first.
     ...conventions,
     ...(answerText(state, 'scope') ? [`Scope: ${answerText(state, 'scope')}`] : []),
+    ...standalone,
     '',
     ...(done ? [`Done when: ${done}`, ''] : []),
     milestone

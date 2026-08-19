@@ -4417,6 +4417,14 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.
+- [x] **F11/F12 — the no-plan handoff dropped answers the user had given.** Fixed 19 Aug.
+      The task carried six of the eight topics, because `plan.md` carried `data` and
+      `linter` and the task was written as a *pointer* to the plan rather than a brief in
+      its own right. With no plan there is nothing to point at, so each omission is an
+      answer that reaches nobody: asked for *"a dozen or so, embedded in the script"*, the
+      agent wrote five and reported success. They now travel in the task when — and only
+      when — there is no plan to hold them, so the approved path still avoids a second
+      copy that could drift. 3 tests; 869 → 872.
 - [x] **F9 — a run with no plan behind it still offered to update one.** Fixed 19 Aug,
       minutes after F8 made the path reachable. The end of a run asked *"shall I mark off
       what's done in plan.md and record what the checks produced?"* about a file the same
@@ -4672,7 +4680,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**869 tests**, against Node's built-in runner with no test framework — possible only
+**872 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

@@ -129,3 +129,34 @@ test('with a plan, the task points at it rather than restating it', () => {
   assert.match(conventions[0], /Conventions section in plan\.md/);
   assert.match(heading, /ticking each off in plan\.md/);
 });
+
+test('with no plan, every answer travels in the task', () => {
+  // Found live: "generate a dozen or so, and embed them in the script" was answered, and
+  // never reached the agent — the task carried six of the eight topics because plan.md
+  // carried the rest. With no plan there is no rest, and the agent wrote five compliments
+  // and reported success.
+  const { standalone } = planFacingLines('Ego Refresh', false, undefined, {
+    data: 'generate a dozen or so, and embed them in the script',
+    linter: 'not needed',
+  });
+
+  assert.deepEqual(standalone, [
+    'Data: generate a dozen or so, and embed them in the script',
+    'Linter: not needed',
+  ]);
+});
+
+test('with a plan, they are left to the plan rather than duplicated', () => {
+  // plan.md already carries data and linter. Restating them here would be a second copy
+  // to drift from the first, which is the rule the conventions line already follows.
+  const { standalone } = planFacingLines('Ego Refresh', true, undefined, {
+    data: 'a dozen embedded strings',
+    linter: 'not needed',
+  });
+  assert.deepEqual(standalone, []);
+});
+
+test('answers that were never given add no empty lines', () => {
+  const { standalone } = planFacingLines('Ego Refresh', false, undefined, {});
+  assert.deepEqual(standalone, []);
+});

@@ -246,12 +246,13 @@ one follows chat until you say otherwise:
 | **Coding model** | Writing code, running the agent | Needs to hold a tool loop together. This is where the capable model earns its price. |
 
 A cheap model for talking and a capable one for code is the whole point — asking "which
-branch am I on?" shouldn't cost frontier prices. The provider can differ too, so a local
-Ollama model can answer questions while a hosted one writes the code.
+branch am I on?" shouldn't cost frontier prices. The provider can differ too, so a model
+on your own machine can answer questions while a hosted one writes the code.
 
-**Providers:** Anthropic, OpenAI, OpenRouter, Ollama and LM Studio. **Keys are kept per
-provider**, so switching between them is one click, not a re-entry. They live in your OS
-keychain — never in a settings file, never in the log.
+**Providers:** Anthropic, OpenAI, OpenRouter, and three ways to run something locally —
+LM Studio, Ollama, or any other OpenAI-compatible server. **Keys are kept per provider**,
+so switching between them is one click, not a re-entry. They live in your OS keychain —
+never in a settings file, never in the log.
 
 **Model lists come from the provider, live.** They're filtered to models that can
 actually do the job — on OpenRouter that means only ones that can call tools, which is
@@ -259,11 +260,68 @@ about 330 of 400 — and cached for a day. **Refresh** sits inside the picker fo
 provider adds something new. Nothing is hardcoded, so a model released tomorrow appears
 without updating this extension.
 
-**Local models need no key at all.** Point Clarvis at Ollama or LM Studio and nothing
-leaves your machine.
+**Local models need no key at all.** Point Clarvis at a server on your own machine and
+nothing leaves it. See *Running a model on your own machine* below.
 
 **No "sign in with Claude."** Anthropic doesn't permit third-party products to use
 claude.ai logins or subscription limits without prior approval. Bring an API key.
+
+## Running a model on your own machine
+
+No key, no bill, nothing leaving the machine. The cost is that you supply the hardware,
+and a model small enough to fit is a model less able to hold a tool loop together.
+
+**Three ways in, easiest first.**
+
+**LM Studio** — recommended if you have no preference. Download it, use its search to get
+a model, load it, then open the **Developer** tab and start the server. In Clarvis pick
+**LM Studio (local)**. Nothing else to configure; it listens on port 1234 and Clarvis
+already knows that.
+
+**Ollama** — pick this if you already run it. Models are pulled from a terminal
+(`ollama pull qwen2.5-coder:7b`), and the server runs on port 11434, which Clarvis also
+already knows. Everything else is the same.
+
+**Custom (OpenAI-compatible)** — anything else that speaks the same dialect: llama.cpp,
+vLLM, LocalAI, or a machine on your network. Clarvis asks for the address when you pick
+it. If you dismiss that prompt it says so rather than sitting there broken.
+
+### Which model
+
+Two things decide this, and neither is the leaderboard.
+
+**Does it fit.** Take the file size the app shows you and leave **2–3 GB spare** for the
+conversation itself. On a Mac, memory is shared with everything else — budget about
+two-thirds of what the machine has. On a PC, it needs to fit in the **graphics card's**
+memory; spilling into system RAM works and is slow enough that you will not enjoy it.
+
+**Can it call tools.** The coding model has to, or the agent can't run at all — Clarvis
+probes this and tells you plainly rather than starting a job it can't finish. Chat is far
+more forgiving; a small model answers questions perfectly well.
+
+| Memory to spare | Size to look for | Known to work |
+|---|---|---|
+| ~8 GB | 3–4B, 4-bit | Llama 3.2 3B · Qwen2.5 Coder 3B |
+| ~16 GB | 7–8B, 4-bit | Qwen2.5 Coder 7B · Llama 3.1 8B |
+| ~24 GB | 14B, 4-bit | Qwen2.5 Coder 14B |
+| 32 GB and up | 32B, 4-bit | Qwen2.5 Coder 32B |
+
+**Model names age faster than this manual.** The sizes don't — a 7B at 4-bit needs about
+the same room whatever it is called next year, so read the table as sizes with examples
+rather than a shopping list.
+
+**Prefer 4-bit at a larger size over 8-bit at a smaller one.** They cost about the same
+memory and the larger model is generally the better one.
+
+**Two models or one.** You can point chat and coding at different models, but if both run
+through the same local server it will swap them in and out and everything gets slower.
+On one machine, pointing both at a single capable model is usually the better trade.
+
+**A slow model has one visible cost.** Clarvis writes his own lines — the greeting, the
+briefing, the remarks — and gives that a few seconds before falling back to written ones.
+A large model on modest hardware misses that window, so he still works but sounds more
+like a manual and less like himself. A smaller model often reads *better* for exactly
+that reason.
 
 ## Voice
 

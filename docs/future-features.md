@@ -235,6 +235,24 @@ repeats a rejected call verbatim will do so until the step cap. It is the materi
 exists to gather, and it argues that *"is the local agent path good enough to offer?"*
 depends on which model in a way the product currently says nothing about.
 
+## Deferred: weak tool-loop persistence — one tool call, then it gives up (F21)
+
+**What:** asked the 8B model a question needing real history (*"how long has the build
+been failing, and how many times?"*). It called `gitStatus` once, got nothing relevant to
+a history question, and stopped — reasoning in prose instead of reaching for `gitLog` or a
+diagnostics read. Honest (no invented number, unlike F19), but useless: the loop ended one
+step short of answerable. It also appended an unprompted, unrelated suggestion to rename
+the current branch.
+
+**Why deferred:** nothing lost, nothing done against the user's wishes, no internals leak
+— the model refused to invent rather than inventing. **Same family as F16/F17: local
+reality differs and nothing in the product knows it**, but the opposite failure shape —
+F16 is the loop firing when it shouldn't, F17 is the loop repeating a rejected call, F21 is
+the loop stopping *before* it should. One data point; no fix proposed. Worth another
+occurrence before deciding whether this is **M8j's fourth caller** (a weak model needs more
+steps *and* a nudge to try a second tool, not just fewer steps) or a prompt-level fix (tell
+the model plainly when one tool wasn't enough to answer).
+
 ## Deferred: provider-side reasoning control (M8i part 2)
 
 **What:** `thinking` / `reasoning_effort` per provider. `plan.md` §7, M8i.

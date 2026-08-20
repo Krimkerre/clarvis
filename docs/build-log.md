@@ -911,3 +911,108 @@ command that reads a secret is also stopped from sending it anywhere — is not 
 This is the wording fix; the mechanism is separate work, queued behind M9's remaining
 checklist rather than gating it, per the disagreement recorded with the review's
 proposed moratorium on building anything else until every item lands.
+
+---
+
+#### A §0 audit of the codebase, and the refactor pass that followed
+
+**Why an audit rather than a tidy-up.** §0's clean-code rules travel: §4.9 writes an
+adapted copy of them into every `plan.md` Clarvis generates. They have to be true here
+first. Two of them are already mechanical — eslint enforces `complexity: 15`,
+`max-lines-per-function: 120`, `max-depth: 4`, and the suite is green — so the audit
+looked only at what a linter cannot see, measured with the TypeScript compiler API over
+all 171 source modules rather than by regex. That distinction earned itself: the crude
+scan that seeded the brief reported several 250-line functions in `Interview.ts` that
+turned out to be `log(` calls.
+
+**Most of §0 is being kept, and saying so is part of the measurement.** Law of Demeter:
+two hits, both string-method chains. `return null` for a collection: none. switch where
+polymorphism fits: one switch, on `process.platform`. Tests: 1,004 of them, 1.3% with six
+or more assertions and those table-driven, zero generic names. Naming: no `data`, `info`,
+`manager` or Hungarian anywhere. Dead code: three unreferenced exports out of 558. And the
+comment deviation — the thing a generic refactor pass would have "fixed" — was scanned
+across all 37,419 lines for comments restated by the line below: six candidates, all six
+false positives. There was nothing to delete.
+
+**What was actually wrong, in order of what it cost.**
+
+*One import kept 879 lines out of the test runner.* `Interview.ts` — the module behind six
+of the twenty runbook findings — had no tests, and the reason was `researchWorkspace`,
+imported once and called once at line 84, which needs `vscode`. `node --test` could not
+load the file at all. `PlanningFlow` reads the workspace now and hands the result in. This
+is `CURRENT_STATE.md`'s sixth recommendation applied *before* a fix inside the file
+shipped broken rather than after, which is how it was learned the first time.
+
+*Two comments claimed an invariant the code did not hold.* Both providers' `post()` says
+"Shared request setup, so the two streams cannot drift apart", and in both files `stream()`
+did not call it. They had drifted: Anthropic to two undocumented `max_tokens` budgets, 4096
+and 2048; the OpenAI adapter to two message mappings and two frame parsers, one of them
+re-inlining `readFrame`'s try/catch and log string verbatim. The budgets were deliberate
+and survive as a passed argument. The **read loops were left alone on purpose**:
+`streamWithTools`'s `[DONE]` breaks only the inner payload loop where `stream()`'s breaks
+both, and unifying that is a behaviour change in an edge case rather than a refactor.
+
+*Thirteen copies of one idiom, with the caps already drifted.* Every phrasing call reads a
+stream into a string, stops at a character limit, and swallows only its own abort. Four
+files had it as a private `collect()`; eight more inlined it. The caps had reached 40, 300,
+400, 500, 800, `topic === 'language' ? 2000 : 400`, and a shared constant, far enough apart
+that nobody could see them together. `if (!signal.aborted) throw error` — the subtle half,
+since letting an abort through turns every timeout into an error and swallowing everything
+hides a real provider failure — now appears exactly once in the tree.
+
+*Twenty flag arguments, of thirty-two boolean parameters.* Classified by whether the body
+actually branches on them. Eleven were fixed and nine were left, with reasons; see below.
+
+**Where the pass deliberately stopped.**
+
+*The Git extension is reached from eight places, not the two the audit measured.* Five
+separate `GitExports` interfaces. The two that were byte-identical are now one
+`firstGitRepository`. The other six are recorded rather than merged, because they differ
+in a way that matters: `BranchFlowWatcher`'s copy documents a defect this project already
+paid for — *"`isActive` is false during our own activation — checking it and giving up is
+how the watcher came to never run at all"* — and three of the remaining copies
+(`reviewWizard`, `AgentBranch`, `commandTools`) still check `isActive` and give up. All
+three run well after activation in practice, so this is a latent divergence rather than a
+live bug, and unifying it means making three synchronous functions async. That is a scope
+conversation, not a refactor.
+
+*`isEscalation` has no production caller, and the rule it implements may not be shipped.*
+§4.6 says replying to an unsolicited remark is what turns it into a request — "go on then"
+after a pattern hit is an instruction, the same words unprompted are not. `isEscalation`
+is that rule, and nothing but its own four tests calls it. What the product actually runs
+is `isDoItNow`, the same regex without the guard, gated on `hasLastAnswered` — and
+`lastAnswered` is set only by `answerQuestion`, when Clarvis has answered something the
+user asked. An unsolicited surface never sets it. So replying "go on then" to a pattern hit
+appears not to escalate. Not touched: that is a behaviour question, and this pass changed
+no behaviour.
+
+*Nine flag arguments were left, and the reason is the same for most of them.* §0 says
+split into two named functions, and that is right when the body is two functions in a
+trenchcoat — `AgentRunner.completed(readOnly)`, whose entire body was `if (!readOnly)` four
+times over, split into a three-argument function and a no-argument one. It is wrong when
+the boolean is a *fact being reported* rather than a mode being selected:
+`handleBusyChange(busy)` is an event payload, `noteOutcome(succeeded)` is the outcome the
+function exists to fold in, `afterReply(aborted)` and `askGate(confined)` and
+`planJob(hasLastAnswered)` are facts ANDed into a condition, and `isInside(caseSensitive)`
+is a property of the filesystem relayed twice inside one function — at the containment
+boundary, where changing a signature for style right before a release is a bad trade.
+Where splitting would only have moved a ternary one level up into a caller that was
+itself handed the boolean, the flag became a named union instead — `OpeningKind`,
+`PlanBacking` — which fixes the unreadable `f(x, false)` call site without writing eight
+near-identical functions. `tsc` then named seven more sites a boolean had been accepting
+silently, which is the second argument for the union and turned up on its own.
+
+**Two things worth recording about the method.**
+
+The sandbox change is the one that had to be verified against the real mechanism rather
+than the diff, and was: every profile and argv the new code generates is byte-for-byte what
+`main` generates, checked by building both and diffing three inputs; and a real
+`sandbox-exec` run confirmed a write inside the workspace succeeds, a write outside gets
+"Operation not permitted" and creates no file, `network: 'denied'` gives curl 000, and
+`network: 'allowed'` gives 200 — that last one being the check that proves the polarity is
+not simply stuck closed.
+
+And splitting `AgentRunner.completed` put a ternary in `loop` and took it from 14 to 15,
+leaving no headroom in a function `CURRENT_STATE.md` names as one that keeps needing to
+change. Measured against `main` rather than assumed, and paid back in the same pass by
+collapsing `loop`'s two mode ternaries into one.

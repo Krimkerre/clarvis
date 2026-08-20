@@ -53,12 +53,12 @@ break Clarvis planning against its own repo.
 
 | Directory | Lines | What it owns |
 |---|---|---|
-| `src/agent/` | ~9,584 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
-| `src/chat/` | ~6,750 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
-| `src/planning/` | ~6,664 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
-| `src/personality/` | ~3,191 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
-| `src/model/` | ~2,995 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
-| `src/voice/` | ~2,072 | Spoken output (Fish Audio + system TTS fallback) and the voice-input design (not built — M10). |
+| `src/agent/` | ~9,616 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
+| `src/chat/` | ~6,876 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
+| `src/planning/` | ~6,832 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
+| `src/personality/` | ~3,324 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
+| `src/model/` | ~3,743 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
+| `src/voice/` | ~2,078 | Spoken output (Fish Audio + system TTS fallback) and the voice-input design (not built — M10). |
 | `src/memory/` | ~1,136 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,052 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~679 | Task/build watching — the walk-away feature. |
@@ -66,7 +66,7 @@ break Clarvis planning against its own repo.
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
 | `src/test/` | ~57 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
-**36,173 lines of TypeScript across 257 files** — 26,848 source, 9,325 test. `plan.md`
+**37,429 lines of TypeScript across 263 files** — 27,518 source, 9,911 test. `plan.md`
 §11 breaks that down and is re-counted rather than nudged.
 
 ## What's built vs designed
@@ -206,6 +206,60 @@ steps) — and is still unbuilt. `M8h` (the spend-guard decision) is **resolved*
 — chat and agent get no daily cap, by design, spend is the provider's console. `M8i`
 part 1 (strip reasoning blocks from local models) is still open, awaiting build.
 
+### What landed on 21 Aug: a §0 audit and refactor pass
+
+Fifteen commits, `npm run check` green on both sides of every one. Full reasoning in
+`docs/build-log.md`; this is what a later session needs to know.
+
+**`Interview.ts` is unit-testable now, and has tests.** It had none, and the reason was
+one import: `researchWorkspace` needs `vscode`, so `node --test` could not load the file
+— all 879 lines of it, including the paths behind six of the twenty runbook findings.
+`PlanningFlow` reads the workspace and hands the signals in. Ten tests where there were
+zero. `runInterview`'s three optional trailing parameters became one `InterviewSession`.
+
+**One `collect()` where there were thirteen.** Every phrasing call hand-wrote the same
+capped, self-abort-swallowing stream read. `src/model/collect.ts` is the one copy; each
+caller passes its own limit, which is the part that had drifted. `Interview.ts` 879 → 810
+lines as a result.
+
+**Both providers' `stream()` calls their own `post()`.** The comment saying they "cannot
+drift apart" was false in both files and they had drifted — Anthropic to two undocumented
+`max_tokens` budgets, the OpenAI adapter to two message mappings and two frame parsers.
+The **read loops are deliberately untouched**: their `[DONE]` handling differs, and
+unifying it changes behaviour in an edge case.
+
+**Flag arguments: 20 → 9.** Split where the body was two functions in a trenchcoat
+(`AgentRunner.completed`, `planFacingLines`, the milestone-settled pair). Named where
+splitting would only push the same ternary into a caller that was itself handed the
+boolean (`OpeningKind`, `PlanBacking`, the sandbox's `Confinement`). Deleted where the
+flag was hiding that nobody wanted it — `setMuted(boolean)` had two callers and both
+passed `!isMuted`, so it is `toggleMute()`.
+
+**Three findings recorded and deliberately not acted on.** Each would change behaviour:
+
+- **The Git extension is reached from eight places**, five with their own `GitExports`.
+  Three of them check `isActive` and give up, which is the exact defect
+  `BranchFlowWatcher`'s copy documents having already cost this project. They all run
+  after activation in practice, so it is latent — but unifying means three synchronous
+  functions become async.
+- **`isEscalation` has no production caller, and the §4.6 rule it implements may not be
+  shipped.** "Replying to an unsolicited remark is what makes it a request" lives only
+  in that function and its four tests. The product runs `isDoItNow` gated on
+  `hasLastAnswered`, and `lastAnswered` is set only when Clarvis answered a question the
+  user asked — never by an unsolicited surface. Worth checking live before deciding
+  whether it is a gap or a rule that was superseded.
+- **`ChatService` still holds five temporary offer fields**, armed and disarmed at
+  separate sites and hand-reassembled into an armed-set. The *precedence* was extracted
+  into the tested `pendingOffers.ts` after the "stop was swallowed" bug; the *state* it
+  reads was not. Adding an offer still means a field, an arming site, two disarming
+  sites, an entry in the map and an entry in `OFFER_ORDER`.
+
+Also measured and left alone by decision: §0 caps lines "around 100 characters" and 553
+source lines exceed it (301 code, 252 prose inside template literals). Nothing enforces
+it, reflowing them is a diff across nearly every file, and `eslint.config.mjs` explicitly
+refuses style rules that produce a wall of warnings. The rule and the practice disagree;
+that is recorded rather than resolved.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
@@ -213,9 +267,17 @@ part 1 (strip reasoning blocks from local models) is still open, awaiting build.
 so the number is enforced rather than argued about. Two things worth knowing before
 adding a branch anywhere:
 
-- **Five functions sit at exactly 15** as of 20 Aug (was six on 16 Aug), so the next
-  branch in any of them fails the build. Find them with
-  `npx eslint src --rule '{"complexity":["error",14]}'`. 65 sit above 8.
+- **Six functions sit at exactly 15** as of 21 Aug (five on 20 Aug, six on 16 Aug), so
+  the next branch in any of them fails the build. Find them with
+  `npx eslint src --rule '{"complexity":["error",14]}'`. 64 sit above 8. The six:
+  `AgentRunner.runGated`, `gitPlain.explainState`, `RunSession.close`,
+  `OpenAiCompatibleProvider.streamWithTools`, `Interview.continueInterview`,
+  `PlanWriter.renderPlan`.
+- **The ceiling is a live budget, not a backdrop.** The §0 refactor pass spent a point
+  without meaning to — splitting `AgentRunner.completed`'s flag argument put a ternary
+  in `loop` and took it from 14 to 15 — and only noticed by measuring against `main`
+  rather than by reading the diff. Paid back in the same pass. Measure before and after
+  any change that adds a branch; the build passing says nothing about headroom.
 - `ChatService.ask()` was one of them until 16 Aug (now 7). `ChatService` itself is
   still 1,229 lines and **has no test file of its own**. Its decisions are covered
   instead by pure modules it calls — `pendingOffers.ts` (which pending question owns
@@ -259,7 +321,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1005 tests currently
+npm test               # node's built-in test runner, no framework — 1015 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

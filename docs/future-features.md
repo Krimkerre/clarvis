@@ -174,13 +174,22 @@ not deferred.**
 **Why deferred:** signed off as *design constraints settled, build deferred* — a family
 table with no caller is speculative configuration.
 
-**It now has a second caller, and a nearer one (F14, 20 Aug).** A 27B model via LM Studio
-missed both personality deadlines, so the opening line and the briefing fell back to the
-written bank. The deadlines are tuned for API latency; a local model is slower by nature and
-nothing is waiting on a briefing the way a modal is. "Local provider → longer deadlines" is
-exactly the *default seeded by family, never a capability asserted* that M8j was scoped for,
-and it is a smaller ask than M9h's `shouldAsk`. The half of F14 that ships in v1 is telling
-the user it happened; this is the half that stops it happening.
+**Four callers now want it, which is the argument for building it** *(count corrected
+20 Aug — this section said "a second caller" while `CURRENT_STATE.md` said three, and both
+were behind)*:
+
+- **F14 — longer deadlines on a local provider.** A 27B via LM Studio missed both
+  personality deadlines, so the opening and the briefing fell back to the written bank. The
+  deadlines are tuned for API latency; a local model is slower by nature and nothing waits
+  on a briefing the way a modal does. **F14's telling half shipped 20 Aug** — the user is
+  now told once when it happens. This is the half that stops it happening.
+- **F16 — smaller step budgets** for a question that does not need a tool loop.
+- **F18 — knowing which models can carry the voice at all.**
+- **F21 — possibly the opposite nudge**: a weak model that gives up after one tool call may
+  need *more* steps, not fewer. One data point; not yet confirmed.
+
+"Local provider → longer deadlines" is exactly the *default seeded by family, never a
+capability asserted* that M8j was scoped for, and a smaller ask than M9h's `shouldAsk`.
 
 ## Deferred: the milestones already marked stretch
 

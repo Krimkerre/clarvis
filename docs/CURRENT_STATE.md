@@ -181,10 +181,11 @@ shipped, `grounded.ts`, covers rewritten lines only — the busier `AgentRunner`
 path is still unguarded); and reply length is worst on the *best* model — 73–77s
 against a 20s ceiling on Anthropic, the default provider (F20, open).
 
-**`M8j` (model-family tiering for defaults) now has three independent callers wanting
-the same mechanism** — F14's longer deadlines for slow local models, F16's smaller step
-budgets for questions that don't need a tool loop, F18's knowing which models can carry
-the voice at all — and is still unbuilt. `M8h` (the spend-guard decision) is **resolved**
+**`M8j` (model-family tiering for defaults) now has four callers wanting the same
+mechanism** — F14's longer deadlines for slow local models, F16's smaller step budgets for
+questions that don't need a tool loop, F18's knowing which models can carry the voice at
+all, and possibly F21's opposite nudge (a weak model that gives up early may need *more*
+steps) — and is still unbuilt. `M8h` (the spend-guard decision) is **resolved**
 — chat and agent get no daily cap, by design, spend is the provider's console. `M8i`
 part 1 (strip reasoning blocks from local models) is still open, awaiting build.
 

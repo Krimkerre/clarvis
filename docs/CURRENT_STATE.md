@@ -1,8 +1,8 @@
 # Clarvis — current state
 
-*Snapshot as of 16 Aug 2026, commit `06fabcc`. Written so a different agent, in a
+*Snapshot as of 20 Aug 2026, commit `13baef0`. Written so a different agent, in a
 different tool, with no memory of how this project got here, can start working on it
-in five minutes instead of reading `plan.md` end to end (4,286 lines) or
+in five minutes instead of reading `plan.md` end to end (4,813 lines) or
 `docs/build-log.md` (913 lines) first. Those two remain the actual source of truth —
 this is a map of them, not a replacement. If this file and `plan.md` disagree,
 `plan.md` is right and this file is stale.*
@@ -44,11 +44,11 @@ break Clarvis planning against its own repo.
 
 | Directory | Lines | What it owns |
 |---|---|---|
-| `src/agent/` | ~9,400 | The agentic loop: `AgentRunner` (the tool-calling loop), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
-| `src/chat/` | ~6,500 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
-| `src/planning/` | ~5,600 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions — 32 files, two classes. |
-| `src/personality/` | ~2,500 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. |
-| `src/model/` | ~2,400 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address). BYO-key; no Clarvis account, ever. |
+| `src/agent/` | ~9,500 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
+| `src/chat/` | ~6,600 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
+| `src/planning/` | ~6,500 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
+| `src/personality/` | ~3,000 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
+| `src/model/` | ~2,600 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
 | `src/voice/` | ~2,000 | Spoken output (Fish Audio + system TTS fallback) and the voice-input design (not built — M10). |
 | `src/memory/` | ~1,100 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,000 | The on-launch "where you left off" summary. |
@@ -57,7 +57,7 @@ break Clarvis planning against its own repo.
 | `src/logtailing/` | ~130 | Tailing of VS Code logs into the workspace. |
 | `src/test/` | ~60 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
-**33,132 lines of TypeScript across 240 files** — 25,017 source, 8,115 test. `plan.md`
+**35,029 lines of TypeScript across 247 files** — 26,050 source, 8,979 test. `plan.md`
 §11 breaks that down and is re-counted rather than nudged.
 
 ## What's built vs designed
@@ -71,8 +71,12 @@ which restate it. Current status:
   (the agent reads its own code back after a milestone), and **M13** (a gated command
   tailing the VS Code extension-host log into the workspace).
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
-  `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M11** (packaging/release
-  polish), **M12** (Tutor Mode).
+  `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M12** (Tutor Mode).
+- **M11 is the active gate, not a future milestone.** 19–20 Aug reframed it: the goal
+  became *a stable first release* rather than a more complete one, and M11's exit
+  checklist gained a **v1 release bar** — 17 items, **9 done as of 20 Aug**, each one
+  a defect found by walking the verification runbook on a real fixture rather than by
+  inspection. See the next section and `plan.md` §7's M11 for the live list.
 - Full detail, including *why* each milestone landed the way it did: `plan.md` §7.
 
 ### What landed on 15–16 Aug, outside the milestone numbering
@@ -109,6 +113,81 @@ of sourcemap had been shipping in every build. Now `**/*.map`, plus `eslint.conf
 risk register (was `plan.md` §8), the outstanding-checks list (was §10) and the tutor
 guide, with the README carrying a table of all of them. `plan.md` holds the plan.
 
+### What landed on 19–20 Aug, outside the milestone numbering
+
+The runbook's first scripted session was finally walked, twice, on a real fixture
+project — and every defect below was found by using the product, not by reading it.
+Full detail: `clarvis-firstrun/FINDINGS.md` (20 findings, F1–F20) and its session index
+at the end of that file. This is the shipped subset.
+
+**The interview stopped nagging.** `challengeAnswer()` had been generalised on 13 Aug
+from a rule written for the language question alone to all eight topics; walking it
+found five pushbacks in seven ordinary answers, one re-asking a question one second
+after it was answered. Narrowed back (M9h part 4) to firing only on an answer that is
+genuinely unusable. As a direct consequence, `NO-PLAN-NEEDED` — which had never fired
+on its designed input — fired correctly on two independent re-walks, with
+`analysisPrompt.ts` untouched: the analysis was never broken, the interview was
+manufacturing the contradictions it tripped over.
+
+**Reaching a branch for the first time kept exposing what nobody had read downstream
+of it.** The no-plan path had never fired before 19 Aug, so nothing behind it had ever
+been exercised: the build offer was gated on the plan being *approved* (false on this
+path by definition) and said nothing; the handoff task pointed at a `plan.md` that on
+this path is deliberately never written, in three places; the task carried six of the
+eight interview answers because the other two normally lived in the plan document that
+does not exist here. All three fixed (F8, F9, F12). The same shape recurred with F15
+(below): a fix inside `AgentRunner.ts`, which imports `vscode` at module scope and is
+therefore untestable by `node --test`, was verified by reading it, shipped incomplete,
+and was only caught by re-verifying live the same evening.
+
+**Two more interview defects, both about the interview discarding what the user
+said.** A wandering follow-up's synthesis could report the *original* topic as
+unsettled, overwriting a settled answer (F2) — traced to a licensing clause in the
+synthesis prompt, fixed in both the prompt and a code-level guard
+(`discardsOriginalAnswer`) because "a prompt is a hypothesis until someone reads the
+output" (§7). And a rejected finding's reasoning was filtered out before milestone
+generation ever saw it, so a plan could do the exact thing the user had just declined
+(F5) — `docs/risks.md`'s promise that rejections are "never silently adopted" was true
+on paper and false in the generated plan until this landed.
+
+**A reload could destroy real work.** The saved interview snapshot was cleared the
+moment the *questions* finished, before the analysis, the findings the user ruled on,
+or the drafted plan existed anywhere else — reloading at the approve gate silently
+discarded all of it (F7). Fixed: kept until planning reaches an actual outcome. A
+sibling defect, found and **not yet fixed**: the offer to fold an agent's work back
+into the user's branch also lives only in memory, so a reload after a run leaves the
+user stranded on the temp branch with no route back offered (F10, open).
+
+**A delegated choice went unnamed.** Answering "you pick" for the project language
+resolved to a real choice that only ever reached the log, never the chat — a remark
+alluded to it without naming it (F1). And the interview could ask which language to use
+one line after the user had already stated it in prose (F11) — both fixed, both reusing
+the same mechanism: state the choice out loud rather than assume it silently, because
+silent assumption is what turned a terminal script into a browser page the first time
+this shipped.
+
+**A local-model thread, started by the user running LM Studio and later doing a
+deliberate A/B against Anthropic.** Three provider-picker rows now exist — LM Studio,
+Ollama, Custom (OpenAI-compatible, asks for its address rather than guessing one) — in
+place of a two-row list that described one as "same as Ollama, different port." The
+manual gained a section on running a model locally, including a by-memory model-size
+table. And the A/B surfaced findings nothing else would have: the character prompt
+reproduces its own documented past failure almost verbatim on a small model (F18, and
+must **not** be fixed by rewriting the character — §2.1 already warns against tuning a
+prompt to a weak model's output); a small model re-files a given number under a
+different noun rather than inventing one from nothing, so grounding is fixed by
+comparing `(value, noun)` pairs rather than checking digits (F19, code-level fix
+shipped, `grounded.ts`, covers rewritten lines only — the busier `AgentRunner` reply
+path is still unguarded); and reply length is worst on the *best* model — 73–77s
+against a 20s ceiling on Anthropic, the default provider (F20, open).
+
+**`M8j` (model-family tiering for defaults) now has three independent callers wanting
+the same mechanism** — F14's longer deadlines for slow local models, F16's smaller step
+budgets for questions that don't need a tool loop, F18's knowing which models can carry
+the voice at all — and is still unbuilt. `M8h` (the spend-guard decision) and `M8i`
+part 1 (strip reasoning blocks from local models) are both still open, awaiting
+sign-off/build respectively.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
@@ -116,9 +195,9 @@ guide, with the README carrying a table of all of them. `plan.md` holds the plan
 so the number is enforced rather than argued about. Two things worth knowing before
 adding a branch anywhere:
 
-- **Six functions sit at exactly 15**, so the next branch in any of them fails the
-  build. Find them with
-  `npx eslint src --rule '{"complexity":["error",14]}'`. 63 sit above 8.
+- **Five functions sit at exactly 15** as of 20 Aug (was six on 16 Aug), so the next
+  branch in any of them fails the build. Find them with
+  `npx eslint src --rule '{"complexity":["error",14]}'`. 65 sit above 8.
 - `ChatService.ask()` was one of them until 16 Aug (now 7). `ChatService` itself is
   still 1,229 lines and **has no test file of its own**. Its decisions are covered
   instead by pure modules it calls — `pendingOffers.ts` (which pending question owns
@@ -126,6 +205,14 @@ adding a branch anywhere:
   gate on every edit), `workspaceSignals.ts` (whether a folder reads as new). That is
   the pattern to follow when something in there needs to be made safe to change:
   extract the decision, test it, leave the side effects in the class.
+- **This ceiling was hit three separate times on 19–20 Aug** — `PlanningFlow.runPlanning`,
+  `handoff.ts`'s `handoffTask`, and `AgentRunner`'s `loop` all needed a decision pulled
+  out into its own pure function before the fix that was actually wanted would pass
+  lint. In each case the extraction turned out to be the right structure anyway (and in
+  `AgentRunner`'s case, the only way to make the logic reachable from a unit test at
+  all — see *Recommendations* below). Three hits in one session on a five-function
+  ceiling is worth treating as a signal that these particular functions keep being the
+  ones that need to change, not as friction to route around.
 
 ## Safety model — the part most likely to matter to a change you're making
 
@@ -183,11 +270,24 @@ actual thing.
 
 ## What is still open
 
-[`verification.md`](verification.md) is the live checklist — not this file. Headline items as of 15 Aug:
-the M6 "does the character hold up over days of ordinary use" pass (blocked on
-`agent`-mode runs suppressing the watch surfaces that would exercise it — see `verification.md` for
-the reasoning), ~45 finer-grained M8 items unverified, and two of four planned
-checklist projects (3 and 4) not yet run.
+Three live trackers, not this file — this section only says which one to open.
+
+**The v1 release bar** — `plan.md` §7, M11 — is the one that gates shipping. 17 items,
+9 done as of 20 Aug. Check it, not this paragraph, for the current count.
+
+**The verification runbook** — `clarvis-firstrun/RUNBOOK.md`, a *separate repository*
+from this one — is seven scripted sessions plus two dogfood tracks. Session 1 has run
+(twice, on `3-compliment` and `6-compliment-again`); sessions 2–7 have not. Its findings
+land in `clarvis-firstrun/FINDINGS.md`, cross-checked against this repo's release bar
+and `docs/future-features.md` by `check-findings.mjs` — a finding that exists in only
+one place is a bug in the bookkeeping, and that script fails on it.
+
+**The M6 dogfood pass** — does the character hold up over days of ordinary use — is
+still the one nothing above closes. It needs the same lines heard repeatedly across
+real days of work, which a scripted session cannot produce by design; `RUNBOOK.md`'s
+two tracks (`nanocode`, a Rust OS book) exist for exactly this, and neither has run
+long enough yet. [`verification.md`](verification.md) carries the finer-grained M8
+items (~45, last counted 15 Aug — recount rather than trust that number).
 
 ## Recommendations for working on this from a different tool/model
 
@@ -208,3 +308,10 @@ checklist projects (3 and 4) not yet run.
 5. **Verify sandbox/security changes against the real mechanism**, not the code
    review. `sandbox-exec`/`bwrap` behave differently from what SBPL/bwrap flags read
    like on paper — this project has been burned by that twice.
+6. **A fix inside a file that imports `vscode` at module scope is untestable by
+   `node --test`, and "verified" by reading it is not verified.** 20 Aug: a fix to
+   `AgentRunner.ts` shipped, was reviewed by reading the diff, and did not work —
+   caught only by re-running the product live the same evening. The actual fix moved
+   the logic into a sibling `vscode`-free module specifically so a test could reach it.
+   If a change lives somewhere `node --test` cannot import, that is a reason to extract
+   the pure part before trusting the fix, not after.

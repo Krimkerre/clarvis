@@ -4595,10 +4595,28 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       needs three runs per variant before it claims anything; single-run comparisons here
       measured noise, and this entry said so twice before believing it.
 
-      **Where that leaves F20:** open, with the original defect intact and the two obvious
-      classes of fix both tried — tightening the prompt costs the character, and trimming
-      the audio was not wanted. What has *not* been tried is anything that shortens the
-      reply without either: fewer, better sentences rather than the same reply cut down.
+      **Sixth attempt, and the first from reading the replies rather than counting them.**
+      Sentence by sentence, the 70-second answers contain **no padding**: five lines, each
+      in character, making one point from five angles — *"the question I would ask first…
+      the second question is… after that…"*. That is why every cap flattened him. Quantity
+      was the only thing being constrained, so quantity is what went, and the good lines
+      were quantity too.
+      **Worse, the prompt was asking for it.** The long-answer rule said *"if it runs past
+      a couple of sentences, the voice belongs inside it — **at least one line in the
+      middle**"*, which instructs him to add character lines whenever an answer runs long,
+      on top of the closing line part 2 already requires. The structure being measured was
+      the structure being requested.
+      **So the new rule forbids redundancy rather than length:** *"Make the point once. If
+      two sentences say the same thing from different angles, keep the better one and drop
+      the other — a second angle is not a second point, and a list of questions you would
+      ask is one question with company."* The invitation is replaced by *"the voice is in
+      how you say the thing, not in saying more things"*. **The word budget is untouched**,
+      because it was never the lever and touching it cost the character twice.
+      **And the instrument was fixed first.** `voiceCheck` said each scene **once**, which
+      is how four versions of one rule were compared on one take each while the noise floor
+      was 32%. It now takes **three** and reports the median with the spread beside it,
+      matching `suite2.py`. Nothing about this attempt should be believed on one run —
+      including this one.
 
       **Why this stays open rather than ticked.** §2.1: a prompt is a hypothesis until the
       output is read. A/B on `meta-llama-3.1-8b`, three runs each, same scene that produced

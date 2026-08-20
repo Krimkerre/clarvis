@@ -265,6 +265,34 @@ export function factsGiven(scene: Pick<Scene, 'system' | 'messages'>): string {
  * and a burst of concurrent requests against a rate-limited provider produces a page of
  * errors instead of a page of lines.
  */
+/**
+ * How many times each scene is said before anything is believed.
+ *
+ * Three, matching `suite2.py`. The cost is three times the requests of a debug command
+ * nobody runs in a loop; the alternative is what happened on 20 Aug, when four versions
+ * of one rule were compared on one take each and the differences were inside the noise.
+ */
+const TAKES = 3;
+
+/** One take, or the failure phrased where it can be read. */
+async function say(models: ModelService, scene: Scene): Promise<string> {
+  let text = '';
+  try {
+    // Split across lines deliberately. The meta test that checks every system prompt is
+    // built by `character()` reads one line at a time, and this one forwards a prompt
+    // assembled upstream rather than writing character text here.
+    for await (const fragment of models.stream(
+      { system: scene.system, messages: scene.messages },
+      'chat'
+    )) {
+      text += fragment;
+    }
+  } catch (error) {
+    return `(failed: ${String(error)})`;
+  }
+  return text.trim() || '(nothing came back)';
+}
+
 export async function runVoiceCheck(
   models: ModelService,
   log: (message: string) => void
@@ -281,28 +309,32 @@ export async function runVoiceCheck(
   for (const scene of scenes()) {
     out.push(`## ${scene.name}`, '', `_Looking for: ${scene.looksFor}_`, '');
 
-    let text = '';
-    try {
-      for await (const fragment of models.stream(
-        { system: scene.system, messages: scene.messages },
-        'chat'
-      )) {
-        text += fragment;
-      }
-    } catch (error) {
-      text = `(failed: ${String(error)})`;
-    }
+    const takes: string[] = [];
+    for (let take = 0; take < TAKES; take++) takes.push(await say(models, scene));
 
-    const said = text.trim() || '(nothing came back)';
+    // **The median, and the spread beside it.** One take per scene is what this did until
+    // 20 Aug, and it is why four different versions of the length rule appeared to move
+    // the number: two runs of an *unchanged* prompt varied by 32% (22s→15s, 50s→40s), so
+    // every single-run comparison made that day was reading noise as signal. `suite2.py`
+    // learned this first and takes three; three is not many, but it is the difference
+    // between a measurement and an anecdote.
+    const seconds = takes.map(spokenSeconds).sort((a, b) => a - b);
+    const median = seconds[Math.floor(seconds.length / 2)];
+    const said = takes[takes.indexOf(takes.find((take) => spokenSeconds(take) === median) ?? takes[0])];
     const lifted = parroted(said);
 
-    out.push(said, '', `\`${said.split(/\s+/).length} words · ~${spokenSeconds(said)}s spoken\``);
+    out.push(
+      said,
+      '',
+      `\`${said.split(/\s+/).length} words · ~${median}s spoken (median of ${TAKES}: ${seconds.join('s, ')}s)\``
+    );
     // Length is the failure that keeps coming back, and it is invisible on screen: a
     // reply that reads fine is forty seconds of audio. Flagged rather than judged by
-    // eye, the same way parroting is.
-    if (spokenSeconds(said) > LONG_SECONDS) {
-      out.push('', `> **Too long to listen to:** ~${spokenSeconds(said)}s, against a ${LONG_SECONDS}s ceiling.`);
-      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(said)}s`);
+    // eye, the same way parroting is — and flagged on the median, so one long take does
+    // not condemn a prompt and one short take does not acquit it.
+    if (median > LONG_SECONDS) {
+      out.push('', `> **Too long to listen to:** ~${median}s median, against a ${LONG_SECONDS}s ceiling.`);
+      log(`voice check | ${scene.name} | LONG: ${median}s median of ${seconds.join('/')}`);
     }
     if (lifted.length > 0) {
       out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);
@@ -326,6 +358,7 @@ export async function runVoiceCheck(
     out.push('');
 
     log(`voice check | ${scene.name} | ${said.replace(/\s+/g, ' ')}`);
+    log(`voice check | ${scene.name} | TAKES: ${seconds.join('s, ')}s (median ${median}s)`);
     if (lifted.length > 0) log(`voice check | ${scene.name} | PARROTED: ${lifted.join(' | ')}`);
     if (invented.length > 0) log(`voice check | ${scene.name} | INVENTED: ${invented.join(', ')}`);
   }

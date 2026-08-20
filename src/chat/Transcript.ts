@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
-import { appendTurn, Turn } from './thread';
+import { appendTurn, turnsForModel, Turn } from './thread';
 import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
 
 /**
@@ -94,12 +94,7 @@ export class Transcript {
    * others treat as the model having nothing to say.
    */
   forModel(): { role: 'user' | 'assistant'; content: string }[] {
-    return this.turns
-      .filter((entry) => entry.text.trim().length > 0)
-      .map((entry) => ({
-        role: entry.speaker === 'user' ? ('user' as const) : ('assistant' as const),
-        content: entry.text,
-      }));
+    return turnsForModel(this.turns);
   }
 
   async persist(): Promise<void> {

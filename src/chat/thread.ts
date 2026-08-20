@@ -28,3 +28,31 @@ export function appendTurn(thread: Turn[], turn: Turn, max = MAX_TURNS): Turn[] 
   const next = [...thread, turn];
   return next.length > max ? next.slice(next.length - max) : next;
 }
+
+/**
+ * How much of the conversation a chat request actually sends to the model.
+ *
+ * **Bounds the blast radius of one bad turn (F22).** A run's own closing narration
+ * quoted its raw task instructions and tool output verbatim instead of summarising,
+ * and because the whole unbounded thread was sent back on every later question, that
+ * one turn kept re-poisoning an otherwise ordinary conversation for the rest of the
+ * session — a weak model has strong recency bias toward whatever pattern dominates
+ * recent context. Ten exchanges is real continuity; it is not "the whole session,
+ * forever" regardless of what any one reply happens to contain. Smaller than
+ * `MAX_TURNS`, which bounds what is *kept*, not what is *resent* on every request.
+ */
+export const MAX_MODEL_TURNS = 20;
+
+/** The conversation as the model sees it: recent, non-empty turns, oldest first. */
+export function turnsForModel(
+  thread: Turn[],
+  max = MAX_MODEL_TURNS
+): { role: 'user' | 'assistant'; content: string }[] {
+  return thread
+    .filter((entry) => entry.text.trim().length > 0)
+    .slice(-max)
+    .map((entry) => ({
+      role: entry.speaker === 'user' ? ('user' as const) : ('assistant' as const),
+      content: entry.text,
+    }));
+}

@@ -1731,19 +1731,20 @@ feature. Mitigations in [`docs/risks.md`](docs/risks.md).
 
 ### 4.8 Spend Rollup — *one place to see what the butler cost today*
 
-Three networked features (§4.4 voice, §4.6 chat, §4.7 speech), three independent daily
-caps, three separate `globalState` counters. Nobody should have to remember that to
-find out today's total spend.
+**Narrowed by M8h (resolved 20 Aug): only §4.4 voice and §4.7 speech get a daily cap.**
+§4.6 chat and the agent path do not — BYO-key already puts a hard limit and full visibility
+in the provider's own console, and Clarvis is not duplicating that. This section originally
+assumed three independent caps to roll up; it is one today, a second (speech) once M10
+ships, never three.
 
-- `Clarvis: Usage Today` command → reads the three existing counters
-  (`clarvis.voice.requestsToday`, `clarvis.chat.requestsToday`,
-  `clarvis.speech.requestsToday`) and shows one `QuickPick`/info message: request count
-  and cap per feature, e.g. *"Chat 12/200 · Voice 3/200 · Speech 0/200."*
+- `Clarvis: Usage Today` command → reads the counters that actually exist
+  (`clarvis.voice.requestsToday`, and `clarvis.speech.requestsToday` once M10 ships) and
+  shows one `QuickPick`/info message: request count and cap per feature, e.g. *"Voice
+  3/200 · Speech 0/200."* No chat line — there is nothing under it to show.
 - Read-only aggregator, not a new tracking system — no new storage, no new schema, just
   a display over counters each feature already maintains for its own cap trip. If a
   feature is disabled, its line reads "off," not "0/200."
-- Lands in M11 (§7), since it's the first point where all three caps exist
-  simultaneously — earlier milestones have nothing to roll up yet.
+- Lands in M11 (§7) with voice alone; gains its second line whenever M10 ships.
 
 ---
 
@@ -3478,12 +3479,12 @@ end-to-end ones:
       confirm no duplicate `WatchPresenter` state changes and **no completion toasts**
       for commands the agent started. Run a build yourself immediately afterwards and
       confirm normal watching resumed.
-**The spend-guard decision (M8h) — opened 16 Aug, needs sign-off before it is built.**
+**The spend-guard decision (M8h) — opened 16 Aug, resolved 20 Aug: no guard, by design.**
 
-Two of the three spend guards this plan specifies were never built, and the gap was
+Two of the three spend guards this plan specified were never built, and the gap was
 invisible for the same reason both were specced: they are settings, so nothing fails
-when they are absent. `docs/risks.md` claimed all three as live mitigations until the same
-day; those three rows now say what is actually true. What exists, and what does not:
+when they are absent. `docs/risks.md` claimed all three as live mitigations until 16 Aug.
+What existed, and what did not:
 
 | Guard | Specced | Built |
 |---|---|---|
@@ -3491,42 +3492,34 @@ day; those three rows now say what is actually true. What exists, and what does 
 | `chat.dailyRequestCap` | §4.6 | **No** — no setting, no counter, no notice |
 | `agent.dailyTokenBudget` | §4.6 | **No** — `maxStepsPerTask` bounds steps, nothing bounds tokens |
 
-Three things follow, and only the first is uncontroversial:
+Three shapes were weighed: fix the request cap's unit (it was specced back when chat was
+the only model path, and a per-request cap is the wrong unit against an agent run that is
+many requests and an unbounded number of tokens); build one unified token budget across
+chat and agent, on the pattern `FishAudioProvider.ts` already uses for voice; or ship
+neither, deliberately.
 
-1. **`docs/risks.md` currently overstates the mitigation.** Its "Model key leaks or
-   unexpected chat spend" row names `clarvis.chat.dailyRequestCap` as an existing control.
-   A risk register asserting a control that does not exist is worse than one admitting the
-   gap, because it stops anyone looking. **Correct that row whatever else is decided.**
-2. **A request cap on the Answer path is the wrong shape.** It was specced when chat was
-   the only model path. The expensive path is now the agent: one run is many requests and
-   an unbounded number of tokens, so a 200-request/day chat cap would leave the costly half
-   uncapped while occasionally annoying someone asking questions. If a guard ships, it
-   should count **tokens across chat and agent together**, not requests on one path.
-3. **Or it ships as nothing, deliberately.** BYO-key means the provider already enforces a
-   hard limit the user set themselves, and every provider console shows spend. "We are not
-   your billing system, and your provider already is" is a defensible answer — it is *not*
-   defensible to keep two settings in the spec that the product does not have.
+**Decided: ship neither.** BYO-key means the provider already enforces whatever hard limit
+the user themselves set, and every provider console already shows spend in real time — a
+token-usage parser Clarvis would have to build and keep correct across five providers'
+`usage` shapes, including the streaming path where it arrives in a final chunk rather than
+the body, to duplicate something the user can already see without us. "We are not your
+billing system, and your provider already is" is the position, stated rather than implied
+by an absent setting.
 
-**Recommendation: (2).** One setting, `clarvis.model.dailyTokenBudget`, replacing both
-dead ones: a day-keyed counter in `globalState`, checked between agent steps and before a
-chat request. The `withinDailyCap()` / `countRequest()` pair in `FishAudioProvider.ts` is
-the pattern for the counter half, and that half really is about fifteen lines.
+**What this means concretely:**
 
-**The other half is the actual work, and an earlier draft of this note got it wrong.** It
-said "incremented where responses already report usage" — they don't. **Nothing in `src/`
-reads token usage from any response**; `AnthropicProvider`'s only `*_tokens` reference is
-`max_input_tokens` off the model *list*. So the job is: parse `usage` on both dialects
-(Anthropic, and OpenAI-compatible covering the other four), including on the streaming
-path where it arrives in a final chunk rather than the body, and handle local providers
-that may report nothing at all — a budget that silently counts zero is worse than no
-budget, so an unreported response must be visible rather than free.
-
-That also settles what "live spend shown per task" needs (the third `docs/risks.md` claim,
-also unbuilt): the same parsing, and nothing more. Do both or neither.
-
-**Not to be built until this is signed off** — new scope discovered mid-verification, which
-is exactly the case §0 says goes back to Plan Mode rather than growing quietly inside a
-session. Worth noting the estimate moved once already, on checking rather than assuming.
+- `clarvis.chat.dailyRequestCap` and `clarvis.agent.dailyTokenBudget` are **not** in the
+  spec going forward — removed from §4.6 and §4.8 rather than left as promises the product
+  does not keep. `voice.dailyRequestCap` is untouched; it is real, built, and governs a
+  different cost (Fish Audio's own usage, not the model provider's).
+- §4.8's "Spend Rollup" no longer assumes three caps exist to roll up. `Clarvis: Usage
+  Today` now reports **voice only** until M10 ships speech's own cap (§4.7) — the same
+  per-request pattern voice already uses, unrelated to this decision, which was about the
+  model-call path only.
+- `docs/risks.md`'s "Surprise API bill" and "Unexpected chat spend" rows are corrected to
+  state the actual mitigation (architectural: local answers never reach a model, plain
+  questions never spend a classification request) and the actual position (spend is the
+  provider's console), rather than naming a control that was never built.
 
 - **Exit:** a user hands Clarvis a real task, watches it work, and either takes the
   result or undoes it in one command. A user asks a question and gets an answer with
@@ -4421,12 +4414,15 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       Predicted, not yet observed: verify against a real MLX model in runbook session 4
       first, then fix. Leaking `<think>` into the chat and reading it aloud is the clearest
       possible "leaks its own internals".
-- [ ] **M8h — resolved, not necessarily built.** `clarvis.chat.dailyRequestCap` and
-      `clarvis.agent.dailyTokenBudget` are in this spec and in no code. v1 requires the spec
-      to stop promising controls the product does not have — either build the guard or
-      remove the settings and say plainly that spend is the provider's console. **M11's own
-      `Clarvis: Usage Today` item below assumes "all three daily-cap counters exist by this
-      point", which is currently false and is blocked on this decision.**
+- [x] **M8h — resolved 20 Aug: no guard, by design.** `clarvis.chat.dailyRequestCap` and
+      `clarvis.agent.dailyTokenBudget` were in this spec and in no code. Decided: spend is
+      the provider's console — BYO-key already enforces whatever limit the user set, and
+      every provider console already shows spend, so a token-usage parser kept correct
+      across five providers would only duplicate what the user can already see. Both
+      settings are removed from §4.6/§4.8 rather than left as promises the product does not
+      keep; `voice.dailyRequestCap` is untouched, since it governs a different cost (Fish
+      Audio's own usage) and is real and built. §4.8's rollup and M11's `Clarvis: Usage
+      Today` item are corrected to expect voice only, not three counters.
 - [x] **F1 — a delegated choice is never named. Fixed 19 Aug.** Answering the language question with
       "you pick" resolves to a real language and says so only in the log; the chat gets an
       oblique remark that alludes to the choice without naming it. On 19 Aug that silently
@@ -4482,6 +4478,23 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       the parrot check once, on Haiku only, quoting a calibration example back verbatim —
       one occurrence, but capable models are the ones able to notice and reuse the
       examples.
+- [x] **F22 — a run's own leaked narration poisoned every later chat question. Fixed 20 Aug.**
+      A weak local model's closing summary quoted its raw `STEP:` instructions and tool
+      output verbatim instead of summarising, spoke all 836KB of it aloud, and — because
+      `Transcript.forModel()` sent the entire unbounded conversation back to the model on
+      every later question — kept re-poisoning an otherwise ordinary chat for the rest of
+      the session. Explicitly saying "ignore anything project-related" did nothing, because
+      the poison was not in the new message, it was permanently in history: a weak model
+      has strong recency bias toward whatever pattern dominates recent context. Shows
+      internals (rule 3) and, once poisoned, effectively acts on its own agenda regardless
+      of what is asked (rule 2's neighbour). **Fix, two independent layers:** the run's
+      closing summary now gets the same `readStepMarkers()` stripping the terminal stream
+      already had, so a `STEP:` echo cannot reach the transcript in the first place; and
+      `turnsForModel()` (new, in the already-pure `thread.ts`) caps what is *resent* to the
+      model at the last 20 turns, separate from `MAX_TURNS`'s cap on what is *kept* — so any
+      future version of this bug, however it starts, cannot poison a session forever. 8
+      tests (`thread.test.ts` — no test file existed for this module before, despite being
+      written and documented as pure and testable). 936 → 942.
 - [ ] **F13 — a local provider that isn't running says nothing at all.** Switching to
       Ollama with its server down logs `fetch failed` twice and shows the user an empty
       picker with no explanation. `modelPickers.ts` returns the cached list and says
@@ -4576,8 +4589,8 @@ Everything below this line is M11 as originally written, and is unchanged.
   path, voice output, voice-input transcription) and that all three are BYO-key.
 - Icon (`media/bowtie.svg` already referenced in §3's manifest snippet) + gallery
   banner color in `package.json`.
-- Wire up the `Clarvis: Usage Today` command (§4.8) — all three daily-cap counters
-  exist by this point, first milestone where the rollup has anything to show.
+- Wire up the `Clarvis: Usage Today` command (§4.8) — voice's counter is what exists by
+  this point; the rollup gains a second line whenever M10 ships speech's own cap.
 - `.vscodeignore` excludes source, tests, the M1 probe extension's leftovers (should
   already be deleted per M1's exit checklist), and dev-only assets.
 - Degradation sweep: for each capability in §4.0's table, force it absent (disable
@@ -4613,7 +4626,8 @@ forever. No linter-specific consumption code — diagnostics already arrive gene
       alone.
 - [ ] `.vsix` builds clean, size reasonable (no accidental `node_modules` inclusion).
 - [ ] Degradation sweep passed for every row in §4.0's capability table.
-- [ ] `Clarvis: Usage Today` shows correct counts for all three capped features.
+- [ ] `Clarvis: Usage Today` shows a correct count for voice, the only capped feature at
+      this point — chat and agent deliberately have none (M8h).
 - [ ] M1 fork matrix re-run against release build, no regressions from the M1 baseline.
 - [ ] Published to both Marketplace and Open VSX; install verified from Open VSX on
       at least one fork (not just VS Code stable).

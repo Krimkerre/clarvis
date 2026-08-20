@@ -275,7 +275,13 @@ export class RunSession {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
         if (event.kind === 'done') {
-          summary = event.text.trim();
+          // **Same stripping the terminal stream already gets, applied to the summary
+          // too.** Observed live on a weak local model: the closing narration quoted
+          // its own `STEP:` instructions back verbatim instead of summarising, and
+          // that text became a permanent chat turn — spoken aloud in full and resent
+          // to the model as history on every later question, which is what made an
+          // unrelated conversation keep reopening the finished task (F22).
+          summary = readStepMarkers(event.text.trim()).text.trim();
           closing = event.closing ?? '';
         }
 

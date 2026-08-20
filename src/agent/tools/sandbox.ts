@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs/promises';
 import { realpathOfNearestExisting } from './workspacePaths';
 import { execFile } from 'child_process';
-import { macProfile, Sandbox, sandboxArgv } from './sandboxProfile';
+import { macProfile, Sandbox, sandboxArgv, Confinement } from './sandboxProfile';
 import { installCommand, packageManagers } from './bwrapInstall';
 
 /**
@@ -143,14 +143,20 @@ export async function spawnFor(
 
   if (!workspace) return { file: command, args: [], confined: false };
 
+  const confinement: Confinement = {
+    workspace,
+    caches,
+    network: allowNetwork ? 'allowed' : 'denied',
+  };
+
   let profilePath = '';
   if (sandbox === 'sandbox-exec') {
     await fs.mkdir(storageDir, { recursive: true });
     profilePath = path.join(storageDir, 'commands.sb');
-    await fs.writeFile(profilePath, macProfile(workspace, caches, allowNetwork), 'utf8');
+    await fs.writeFile(profilePath, macProfile(confinement), 'utf8');
   }
 
-  const { file, args } = sandboxArgv(sandbox, profilePath, workspace, caches, command, allowNetwork);
+  const { file, args } = sandboxArgv({ kind: sandbox, profilePath }, confinement, command);
   return { file, args, confined: true, via: sandbox };
 }
 

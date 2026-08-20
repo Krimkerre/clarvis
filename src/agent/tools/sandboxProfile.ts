@@ -33,6 +33,30 @@
 export type Sandbox = 'sandbox-exec' | 'bwrap';
 
 /**
+ * What one confined command may write to, and whether it may reach the network.
+ *
+ * **One value rather than three loose arguments, for two §0 reasons at once.**
+ * `sandboxArgv` took six parameters — double the maximum — and four of them were the
+ * same four `macProfile` took, assembled at the same call site three lines apart. And
+ * `allowNetwork: boolean` was a flag argument on the two functions that decide what a
+ * command can reach: `sandboxArgv(sandbox, path, ws, caches, cmd, false)` gave no hint
+ * at the call site which `false` that was, on the one boundary in this codebase where
+ * being wrong is a containment failure rather than a wrong sentence.
+ *
+ * `network` is a named state rather than a boolean for the same reason: `'denied'`
+ * cannot be confused with `'allowed'` by a caller that got the polarity backwards, and
+ * a wrong polarity here is exactly the class of mistake `isInside()` made about
+ * filesystem case-sensitivity — silent, and wrong in the permissive direction.
+ */
+export interface Confinement {
+  /** The project folder, resolved — a symlinked path matches no rule. See `macProfile`. */
+  workspace: string;
+  /** Build caches a toolchain genuinely needs to write to. */
+  caches: readonly string[];
+  network: 'denied' | 'allowed';
+}
+
+/**
  * Writable paths a build genuinely needs beyond the project itself.
  *
  * **Every one of these was earned by something breaking.** The first profile denied
@@ -56,7 +80,8 @@ const DEVICES = ['/dev/null', '/dev/dtracehelper', '/dev/zero', '/dev/random', '
  * discovered by writing one, watching it deny a write it had explicitly allowed, and
  * being unable to tell the difference from the sandbox working.
  */
-export function macProfile(workspace: string, caches: readonly string[], allowNetwork: boolean): string {
+export function macProfile(confinement: Confinement): string {
+  const { workspace, caches, network } = confinement;
   const writable = [workspace, ...caches].filter(Boolean);
 
   return [
@@ -69,7 +94,7 @@ export function macProfile(workspace: string, caches: readonly string[], allowNe
     '(allow file-write* (regex #"^/dev/tty") (regex #"^/dev/fd/"))',
     // Last-match-wins, same as the write rules above: deny after the blanket allow,
     // narrowed back open only for the commands the gate already trusts with it.
-    ...(allowNetwork ? [] : ['(deny network*)']),
+    ...(network === 'allowed' ? [] : ['(deny network*)']),
   ].join('\n');
 }
 
@@ -86,23 +111,22 @@ function quote(path: string): string {
 
 /** The argv that runs `command` confined, given a sandbox and the writable paths. */
 export function sandboxArgv(
-  sandbox: Sandbox,
-  profilePath: string,
-  workspace: string,
-  caches: readonly string[],
-  command: string,
-  allowNetwork: boolean
+  sandbox: { kind: Sandbox; profilePath: string },
+  confinement: Confinement,
+  command: string
 ): { file: string; args: string[] } {
-  if (sandbox === 'sandbox-exec') {
-    return { file: 'sandbox-exec', args: ['-f', profilePath, '/bin/sh', '-c', command] };
+  if (sandbox.kind === 'sandbox-exec') {
+    return { file: 'sandbox-exec', args: ['-f', sandbox.profilePath, '/bin/sh', '-c', command] };
   }
+
+  const { workspace, caches, network } = confinement;
 
   // bubblewrap takes the opposite shape: everything is read-only unless bound
   // writable, which reaches the same guarantee from the other direction.
   const binds = [workspace, ...caches].filter(Boolean).flatMap((path) => ['--bind', path, path]);
   // `--unshare-net` gives the command its own network namespace with no interfaces —
   // not a firewall rule to get wrong, an absence of network to have an opinion about.
-  const net = allowNetwork ? [] : ['--unshare-net'];
+  const net = network === 'allowed' ? [] : ['--unshare-net'];
 
   return {
     file: 'bwrap',

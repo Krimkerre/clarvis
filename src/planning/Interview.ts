@@ -8,9 +8,8 @@ import { NameResult, namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
 import { synthesizeAnswerPrompt, cleanSynthesizedAnswer, discardsOriginalAnswer } from './synthesizePrompt';
-import { researchWorkspace } from './workspaceResearch';
 import { withDeadline } from '../model/deadline';
-import { describeWorkspaceSignals } from './workspaceSignals';
+import { describeWorkspaceSignals, WorkspaceSignals } from './workspaceSignals';
 
 /**
  * Runs one project-planning interview (M9a — §4.9), start to "enough to draft".
@@ -34,20 +33,48 @@ const PHRASE_TIMEOUT_MS = 6000;
 /** Same "I don't know"-family answers the rest of the interview recognises. */
 const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
 
-export async function runInterview(
-  models: ModelService,
-  io: PlanningIO,
-  log: (message: string) => void,
+/**
+ * Everything about *this* interview that is not the machinery for running one.
+ *
+ * One optional argument rather than three, per §0's 0–2-ideal / 3-max: all three are
+ * optional, all three are about the particular sitting rather than about interviewing,
+ * and the alternative was a fourth, fifth and sixth positional parameter with two
+ * `undefined`s at the call site whenever the middle one did not apply.
+ */
+export interface InterviewSession {
   /**
    * Saves progress after every answer, so a reload costs nothing.
    *
    * Optional: the command-palette route works without it, and an interview that
    * cannot be saved is still an interview.
    */
-  remember?: (state: InterviewState, seed: string) => Promise<void>,
+  remember?: (state: InterviewState, seed: string) => Promise<void>;
+
   /** An interview already under way, to carry on rather than start over. */
-  resume?: { state: InterviewState; seed: string }
+  resume?: { state: InterviewState; seed: string };
+
+  /**
+   * What the workspace already says about itself, read before the interview starts.
+   *
+   * **Handed in rather than fetched here, and that is the point of the parameter.**
+   * Reading a directory needs `vscode`, and importing the module that does it made
+   * this entire 879-line file impossible for `node --test` to load — one import, one
+   * call site, and every question, pushback and synthesis behind it unreachable by a
+   * unit test. `CURRENT_STATE.md`'s sixth recommendation is about exactly this, written
+   * after a fix to another such file shipped broken because reading the diff was the
+   * only verification available. `PlanningFlow` does the reading now.
+   */
+  workspace?: WorkspaceSignals;
+}
+
+export async function runInterview(
+  models: ModelService,
+  io: PlanningIO,
+  log: (message: string) => void,
+  session?: InterviewSession
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
+  const { remember, resume, workspace } = session ?? {};
+
   if (resume) return continueInterview(models, io, log, resume.state, resume.seed, remember);
 
   // The first question of the interview, written for the moment rather than
@@ -81,9 +108,8 @@ export async function runInterview(
   // Grounds every question that follows in what's actually here, rather than only
   // in what was just typed — an existing package.json or README is worth more than
   // asking from a blank slate.
-  const signals = await researchWorkspace();
-  if (signals) {
-    state.workspaceContext = describeWorkspaceSignals(signals);
+  if (workspace) {
+    state.workspaceContext = describeWorkspaceSignals(workspace);
     log(`planning: workspace — ${state.workspaceContext}`);
   }
 

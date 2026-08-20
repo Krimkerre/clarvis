@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { runInterview } from './Interview';
+import { researchWorkspace } from './workspaceResearch';
 import { planMilestone, runAnalysis } from './Analysis';
 import { collectVerdicts } from './Verdicts';
 import { formatVerdict, FindingVerdict } from './verdictSummary';
@@ -215,7 +216,13 @@ async function gatherAnswers(
     if (opening) await io.say(opening);
   }
 
-  return runInterview(models, io, log, memory ? (state, seed) => memory.save(state, seed) : undefined, resume);
+  // Read here rather than inside the interview: `researchWorkspace` needs `vscode`, and
+  // importing it there put all of `Interview.ts` out of reach of `node --test`.
+  return runInterview(models, io, log, {
+    remember: memory ? (state, seed) => memory.save(state, seed) : undefined,
+    resume,
+    workspace: await researchWorkspace(),
+  });
 }
 
 /**

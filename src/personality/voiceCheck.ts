@@ -4,6 +4,7 @@ import { ANSWER_SHAPE, EXAMPLES, ONLY_WHAT_YOU_WERE_GIVEN, characterWith } from 
 import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
 import { rewritePrompt } from './say';
+import { ungroundedClaims } from './grounded';
 import { capabilities } from '../chat/modes';
 
 /**
@@ -292,10 +293,21 @@ export async function runVoiceCheck(
     if (lifted.length > 0) {
       out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);
     }
+
+    // **Counted rather than spotted.** Invented figures were found by reading two model
+    // transcripts side by side and noticing that "40 minutes ago" had become "the 40th
+    // time" — which is not a method, and would not survive being tired. The scene's own
+    // system prompt is the set of facts it was entitled to use, so the same check that
+    // guards a rewrite can measure a raw answer here.
+    const invented = ungroundedClaims(said, scene.system);
+    if (invented.length > 0) {
+      out.push('', `> **Numbers nobody gave it:** ${invented.join(', ')}`);
+    }
     out.push('');
 
     log(`voice check | ${scene.name} | ${said.replace(/\s+/g, ' ')}`);
     if (lifted.length > 0) log(`voice check | ${scene.name} | PARROTED: ${lifted.join(' | ')}`);
+    if (invented.length > 0) log(`voice check | ${scene.name} | INVENTED: ${invented.join(', ')}`);
   }
 
   return out.join('\n');

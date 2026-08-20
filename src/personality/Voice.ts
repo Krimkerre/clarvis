@@ -51,7 +51,18 @@ export class Voice {
         new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
       ]);
 
-      return acceptRewrite(line, raw) ?? line.fallback;
+      const rewritten = acceptRewrite(line, raw);
+
+      // **Logged like `open()` does, and for the reason written there**: "rejected" on its
+      // own says a rule fired and not which one, and every guess about which costs a
+      // rebuild and a live run. A rejection was silent here until 20 Aug, which made the
+      // grounding check — the whole point of which is to catch a wrong number before
+      // anyone reads it — impossible to observe working.
+      if (!rewritten && raw?.trim()) {
+        this.log(`voice: rewrite rejected, kept the written line — model said: ${JSON.stringify(raw.trim())}`);
+      }
+
+      return rewritten ?? line.fallback;
     } catch (error) {
       this.log(`voice: rewrite failed (${String(error)})`);
       return line.fallback;

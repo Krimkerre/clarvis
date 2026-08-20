@@ -9,7 +9,7 @@ import { renderPlan } from './PlanWriter';
 import { InterviewState, openQuestions, readyToDraft } from './interviewTopics';
 import { describeProgress, InterviewSnapshot, worthResuming, planningIsSettled } from './interviewStore';
 import { PlanningIO } from './PlanningIO';
-import { handoffTask, buildOfferQuestion } from './handoff';
+import { handoffTask, BUILD_OFFER_QUESTION, PlanBacking } from './handoff';
 import { Milestone } from './milestonePrompt';
 import { phrase } from '../personality/Voice';
 
@@ -187,7 +187,7 @@ export async function runPlanning(
   // one that used to end in silence. Same predicate as the one deciding the interview is
   // finished with, because it is the same question.
   if (planningIsSettled(approved, noPlanNeeded) && startBuild) {
-    await offerToBuild(state, seed, verdicts, milestones, io, log, startBuild, approved);
+    await offerToBuild(state, seed, verdicts, milestones, io, log, startBuild, approved ? 'plan' : 'no-plan');
   }
 }
 
@@ -302,8 +302,8 @@ async function offerToBuild(
   io: PlanningIO,
   log: (message: string) => void,
   startBuild: StartBuild,
-  /** False on the `NO-PLAN-NEEDED` path, where there is deliberately no plan.md to read. */
-  hasPlan: boolean
+  /** `'no-plan'` is the `NO-PLAN-NEEDED` path, where there is deliberately no plan.md. */
+  backing: PlanBacking
 ): Promise<void> {
   // Milestone one, and only milestone one: the rest of the plan is written down and
   // waiting, and starting the next is its own decision after this one lands.
@@ -313,11 +313,11 @@ async function offerToBuild(
     seed,
     verdicts,
     first ? { current: first, number: 1, total: milestones.length } : undefined,
-    hasPlan
+    backing
   );
 
   const choice = await io.confirm(
-    await phrase('ask', buildOfferQuestion(hasPlan), []),
+    await phrase('ask', BUILD_OFFER_QUESTION[backing], []),
     `${await phrase('report', 'This is what I would be handing myself:', [])}\n\n${task}`,
     ['Start Building', 'Edit The Task First', 'Not Yet']
   );

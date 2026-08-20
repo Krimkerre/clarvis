@@ -281,20 +281,31 @@ export function milestoneComplete(planText: string): boolean {
  * The wording changes too, not only the buttons. "Milestone finished" is a claim about a
  * plan with milestones in it; a run with no plan behind it finished a task.
  */
-export function milestoneSettledOffer(
-  hasPlan: boolean,
-  changed: number
-): { message: string; actions: string[] } {
-  const files = `${changed} file${changed === 1 ? '' : 's'} changed`;
-
-  return hasPlan
-    ? { message: `Milestone finished — ${files}.`, actions: ['Update the plan', 'Leave it'] }
-    : { message: `Done — ${files}.`, actions: ['Right you are'] };
+export interface SettledOffer {
+  message: string;
+  detail: string;
+  actions: string[];
 }
 
-/** The question under it, when there is a plan worth offering to update. */
-export function milestoneSettledDetail(hasPlan: boolean, summary: string): string {
-  return hasPlan
-    ? `${summary}\n\nShall I mark off what's done in plan.md and record what the checks produced?`
-    : summary;
+/** How many files, said so that one file is never "1 files". */
+function filesChanged(changed: number): string {
+  return `${changed} file${changed === 1 ? '' : 's'} changed`;
+}
+
+/** A milestone finished against a plan: offer to tick it off. */
+export function plannedMilestoneOffer(summary: string, changed: number): SettledOffer {
+  return {
+    message: `Milestone finished — ${filesChanged(changed)}.`,
+    detail: `${summary}\n\nShall I mark off what's done in plan.md and record what the checks produced?`,
+    actions: ['Update the plan', 'Leave it'],
+  };
+}
+
+/** A task finished with no plan behind it: acknowledge it, offer nothing. */
+export function unplannedRunOffer(summary: string, changed: number): SettledOffer {
+  return {
+    message: `Done — ${filesChanged(changed)}.`,
+    detail: summary,
+    actions: ['Right you are'],
+  };
 }

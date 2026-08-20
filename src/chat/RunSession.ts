@@ -9,7 +9,7 @@ import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
-import { milestoneSettledDetail, milestoneSettledOffer } from '../planning/planUpdate';
+import { plannedMilestoneOffer, unplannedRunOffer } from '../planning/planUpdate';
 import { StepExplanation } from '../agent/stepExplanation';
 import { PendingChoice } from './PendingChoice';
 import { reviewMilestone } from '../agent/readBack';
@@ -386,14 +386,11 @@ export class RunSession {
   private async settleMilestone(summary: string, changed: number): Promise<void> {
     // A run handed over from `NO-PLAN-NEEDED` has no plan to record against, and
     // offering to update one anyway is a button that could only do nothing.
-    const hasPlan = await RunSession.planExists();
-    const { message, actions } = milestoneSettledOffer(hasPlan, changed);
+    const { message, detail, actions } = (await RunSession.planExists())
+      ? plannedMilestoneOffer(summary, changed)
+      : unplannedRunOffer(summary, changed);
 
-    const answer = await vscode.window.showInformationMessage(
-      message,
-      { modal: true, detail: milestoneSettledDetail(hasPlan, summary) },
-      ...actions
-    );
+    const answer = await vscode.window.showInformationMessage(message, { modal: true, detail }, ...actions);
 
     if (answer !== 'Update the plan') {
       this.log('agent: milestone finished, plan left untouched');

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handoffTask, buildOfferQuestion, planFacingLines } from './handoff';
+import { handoffTask, BUILD_OFFER_QUESTION, plannedFacingLines, standaloneFacingLines } from './handoff';
 import { InterviewState } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
 
@@ -91,19 +91,19 @@ test('the no-plan outcome still offers to write the thing', () => {
   // build offer was gated on the plan being approved, so the outcome that most obviously
   // ends in "shall I write it, then" was the only one that offered nothing. §7's M9 exit
   // checklist has said "he offers to just write it instead" since before the branch worked.
-  assert.match(buildOfferQuestion(false), /Shall I just write it\?$/);
-  assert.doesNotMatch(buildOfferQuestion(false), /milestone/i);
+  assert.match(BUILD_OFFER_QUESTION['no-plan'], /Shall I just write it\?$/);
+  assert.doesNotMatch(BUILD_OFFER_QUESTION['no-plan'], /milestone/i);
 });
 
 test('an approved plan is still offered as its first milestone', () => {
-  assert.match(buildOfferQuestion(true), /first milestone/);
+  assert.match(BUILD_OFFER_QUESTION.plan, /first milestone/);
 });
 
 test('with no plan, the task never sends the agent to read one', () => {
   // Three separate references to plan.md sat in this task text, none ever exercised —
   // the branch that reaches them had not fired until 19 Aug. An agent told to follow a
   // plan.md that was deliberately never written is being sent to look for nothing.
-  const { opening, conventions, heading } = planFacingLines('Validatron', false, 'add comments');
+  const { opening, conventions, heading } = standaloneFacingLines('Validatron', 'add comments');
 
   // Nothing may *direct* the agent to a plan.
   for (const line of [heading, ...conventions]) {
@@ -119,12 +119,12 @@ test('with no plan, the task never sends the agent to read one', () => {
 test('with no plan, the conventions travel in the task itself', () => {
   // They were still decided in the interview. With no plan.md there is nowhere else for
   // them to live, and dropping them silently would lose an answer the user gave.
-  const { conventions } = planFacingLines('Validatron', false, 'add comments');
+  const { conventions } = standaloneFacingLines('Validatron', 'add comments');
   assert.deepEqual(conventions, ['Comments: add comments']);
 });
 
 test('with a plan, the task points at it rather than restating it', () => {
-  const { opening, conventions, heading } = planFacingLines('Validatron', true, 'add comments');
+  const { opening, conventions, heading } = plannedFacingLines('Validatron');
   assert.match(opening, /following the approved plan\.md/);
   assert.match(conventions[0], /Conventions section in plan\.md/);
   assert.match(heading, /ticking each off in plan\.md/);
@@ -135,7 +135,7 @@ test('with no plan, every answer travels in the task', () => {
   // never reached the agent — the task carried six of the eight topics because plan.md
   // carried the rest. With no plan there is no rest, and the agent wrote five compliments
   // and reported success.
-  const { standalone } = planFacingLines('Ego Refresh', false, undefined, {
+  const { standalone } = standaloneFacingLines('Ego Refresh', undefined, {
     data: 'generate a dozen or so, and embed them in the script',
     linter: 'not needed',
   });
@@ -149,14 +149,11 @@ test('with no plan, every answer travels in the task', () => {
 test('with a plan, they are left to the plan rather than duplicated', () => {
   // plan.md already carries data and linter. Restating them here would be a second copy
   // to drift from the first, which is the rule the conventions line already follows.
-  const { standalone } = planFacingLines('Ego Refresh', true, undefined, {
-    data: 'a dozen embedded strings',
-    linter: 'not needed',
-  });
+  const { standalone } = plannedFacingLines('Ego Refresh');
   assert.deepEqual(standalone, []);
 });
 
 test('answers that were never given add no empty lines', () => {
-  const { standalone } = planFacingLines('Ego Refresh', false, undefined, {});
+  const { standalone } = standaloneFacingLines('Ego Refresh', undefined, {});
   assert.deepEqual(standalone, []);
 });

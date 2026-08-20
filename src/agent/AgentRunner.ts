@@ -423,7 +423,13 @@ export class AgentRunner {
     signal: AbortSignal,
     options: { readOnly: boolean; addendum: string }
   ): AsyncGenerator<AgentEvent> {
-    const role = options.readOnly ? 'chat' : 'agent';
+    // **The two things a turn's mode actually decides**, side by side rather than as
+    // ternaries forty lines apart: which model answers, and how many steps it may take.
+    // A question that needs a dozen tool calls has become a task, and capping it lower
+    // keeps an answer from quietly costing what a run costs.
+    const { role, cap } = options.readOnly
+      ? { role: 'chat' as const, cap: Math.min(this.maxSteps, 10) }
+      : { role: 'agent' as const, cap: this.maxSteps };
 
     const refusal = await this.refuseToStart(role, signal);
     if (refusal) {
@@ -443,10 +449,6 @@ export class AgentRunner {
     if (!options.readOnly) yield* this.protect(checkpoint, branch, task);
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
-
-    // A question that needs a dozen tool calls has become a task; capping lower keeps
-    // an answer from quietly costing what a run costs.
-    const cap = options.readOnly ? Math.min(this.maxSteps, 10) : this.maxSteps;
 
     while (this.steps < cap) {
       if (signal.aborted) {

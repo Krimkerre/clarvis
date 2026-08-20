@@ -28,22 +28,50 @@ function answerText(state: InterviewState, topic: TopicId): string | undefined {
  * enough to `eslint.config.mjs`'s complexity ceiling that adding them broke the build.
  * Pure and tested, which is the better home for them anyway.
  */
-export function planFacingLines(
-  name: string,
-  hasPlan: boolean,
-  comments: string | undefined,
-  /** Answers that normally live in `plan.md` rather than in the task. */
-  planOnly: { data?: string; linter?: string } = {}
-): { opening: string; conventions: string[]; heading: string; standalone: string[] } {
-  if (hasPlan) {
-    return {
-      opening: `Start building ${name}, following the approved plan.md in this workspace.`,
-      conventions: ['Follow the Conventions section in plan.md — it says how this project writes code.'],
-      heading: 'Milestone 1 — build these, ticking each off in plan.md as it lands:',
-      standalone: [],
-    };
-  }
+/**
+ * Whether a run has a `plan.md` behind it, or is the whole brief on its own.
+ *
+ * **Named rather than `hasPlan: boolean`.** It read as `handoffTask(state, seed,
+ * verdicts, undefined, false)` at the call site — false what? — and it is threaded
+ * through three functions here from a caller that was itself handed it, so splitting
+ * each into a pair would only move the same ternary one level up into `offerToBuild`,
+ * which the comment on `planFacingLines` records as already too branchy to take one.
+ * `plannedFacingLines` / `standaloneFacingLines` *is* that split, done where the two
+ * halves genuinely differ; this is what carries the choice to them.
+ */
+export type PlanBacking = 'plan' | 'no-plan';
 
+export interface FacingLines {
+  opening: string;
+  conventions: string[];
+  heading: string;
+  standalone: string[];
+}
+
+/**
+ * The lines for a task with a plan behind it — which is to say, pointers to it.
+ *
+ * One argument, because that is all this half ever used. It was
+ * `planFacingLines(name, hasPlan, comments, planOnly)` with the other three arguments
+ * ignored whenever `hasPlan` was true: the flag was hiding that the two halves do not
+ * take the same inputs.
+ */
+export function plannedFacingLines(name: string): FacingLines {
+  return {
+    opening: `Start building ${name}, following the approved plan.md in this workspace.`,
+    conventions: ['Follow the Conventions section in plan.md — it says how this project writes code.'],
+    heading: 'Milestone 1 — build these, ticking each off in plan.md as it lands:',
+    standalone: [],
+  };
+}
+
+/** The lines for a task with no plan behind it, where the task itself is the brief. */
+export function standaloneFacingLines(
+  name: string,
+  comments: string | undefined,
+  /** Answers that would normally live in `plan.md` rather than in the task. */
+  planOnly: { data?: string; linter?: string } = {}
+): FacingLines {
   return {
     opening: `Start building ${name}. It was judged too small to need a plan, so there is no plan.md — this task is the whole brief.`,
     conventions: comments ? [`Comments: ${comments}`] : [],
@@ -71,22 +99,25 @@ export function handoffTask(
   /**
    * Whether a `plan.md` was actually written.
    *
-   * False on the `NO-PLAN-NEEDED` path, where the whole point is that no plan exists.
-   * That branch fired for the first time on 19 Aug and this task text sent the agent to
-   * read a file that was never created — three separate references to it, none of which
-   * had ever been exercised because the branch downstream of them had never run.
+   * `'no-plan'` is the `NO-PLAN-NEEDED` path, where the whole point is that no plan
+   * exists. That branch fired for the first time on 19 Aug and this task text sent the
+   * agent to read a file that was never created — three separate references to it, none
+   * of which had ever been exercised because the branch downstream of them had never run.
    */
-  hasPlan = true
+  backing: PlanBacking = 'plan'
 ): string {
   const name = state.projectName ?? seed;
   const language = answerText(state, 'language');
   const done = answerText(state, 'definition-of-done');
   const comments = answerText(state, 'comment-style');
 
-  const { opening, conventions, heading, standalone } = planFacingLines(name, hasPlan, comments, {
-    data: answerText(state, 'data'),
-    linter: answerText(state, 'linter'),
-  });
+  const { opening, conventions, heading, standalone } =
+    backing === 'plan'
+      ? plannedFacingLines(name)
+      : standaloneFacingLines(name, comments, {
+          data: answerText(state, 'data'),
+          linter: answerText(state, 'linter'),
+        });
 
   // **The steps are the work; the findings are questions.** Handing over a list of
   // "Clarify whether…" items produced a run that read the plan, found nothing to do,
@@ -165,8 +196,7 @@ export function handoffTask(
  * `planningIsSettled`: the caller sits at the complexity ceiling, and this is the half
  * worth testing anyway.
  */
-export function buildOfferQuestion(hasPlan: boolean): string {
-  return hasPlan
-    ? 'Plan approved. Shall I go and build the first milestone, then?'
-    : 'No plan needed for this one. Shall I just write it?';
-}
+export const BUILD_OFFER_QUESTION: Record<PlanBacking, string> = {
+  plan: 'Plan approved. Shall I go and build the first milestone, then?',
+  'no-plan': 'No plan needed for this one. Shall I just write it?',
+};

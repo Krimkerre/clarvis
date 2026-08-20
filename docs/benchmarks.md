@@ -134,32 +134,80 @@ implementations and rewritten:
 
 ## Screening: two checks worth doing before downloading anything
 
-Both learned the expensive way, both free, both from `tokenizer_config.json`.
+Both learned the expensive way, both free — and **the screen itself was wrong twice before
+it was right**, which is recorded below because a screening table nobody has tested is the
+most dangerous kind of confident artifact.
 
-**1 · Does the chat template have a `tool_call` path?** A template can accept `tools` and
-have no trained way to *emit* a call. `LFM2-24B-A2B` — a 24B mixture-of-experts with only
-2B active, which looked ideal for a fanless machine — has exactly that shape. It would
-have been 13.4 GB downloaded for a model that cannot drive the agent loop.
+**1 · Does the chat template have a tool-call path?** A template can accept `tools` and have
+no trained way to *emit* a call. `LFM2-24B-A2B` — a 24B mixture-of-experts with 2B active,
+which looked ideal for a fanless machine — has exactly that shape.
 
-**2 · Does it carry `<think>` markers?** Reasoning models are a distinct failure here, and
-which failure depends on an LM Studio setting (finding F29). Skipping them is cheaper than
-diagnosing them.
+**2 · Does it carry `<think>` markers?** Reasoning models fail differently here, and which
+failure you get depends on an LM Studio setting (F29).
 
-Applied to a batch of candidates:
+**But `<think>` is not automatically disqualifying**, and an earlier version of this
+document treated it as if it were. Qwen3, GLM and Hunyuan all support turning thinking off
+(`enable_thinking: false`, or `/no_think` in the prompt — which is what `plan.md`'s M8i
+part 2 is about). So a `THINKS` verdict means *"needs thinking disabled before it is
+usable"*, not *"unusable"*. Whether that switch works on a given model is a live question,
+not a settled one.
 
-| model | GB | `tool_call` | reasoning | verdict |
-|---|---|---|---|---|
-| `Qwen2.5-Coder-7B-Instruct-4bit` | 4.3 | ✅ | — | screened in |
-| `Ministral-8B-Instruct-2410-4bit` | 4.5 | ✅ | — | screened in |
-| `Qwen2.5-Coder-14B-Instruct-MLX-4bit` | 8.3 | ✅ | — | screened in |
-| `Devstral-Small-2505` | 13.3 | ❌ | — | **no tool_call**, despite being sold as an agent model |
-| `gemma-3-12b-it-4bit` | 8.1 | ❌ | — | no tool_call |
-| `Codestral-22B-v0.1-4bit` | 12.5 | ❌ | — | no tool_call |
-| `LFM2-24B-A2B-MLX-4bit` | 13.4 | ❌ | — | no tool_call (MoE, otherwise ideal) |
-| `LFM2.5-2.6B-MLX-4bit` | 1.5 | ✅ | `<think>` | screened in, with a caveat |
+### Screening results
 
-**Three models marketed for coding cannot drive an agent loop.** That is the single most
-useful thing on this page for anyone choosing a local coding model.
+| model | GB | arch | tools | reasoning | verdict |
+|---|---:|---|:---:|---|---|
+| `Qwen2.5-Coder-7B-Instruct` | 4.3 | qwen2 | ✅ | — | **usable** |
+| `Ministral-8B-Instruct-2410` | 4.5 | mistral | ✅ | — | **usable** |
+| `Qwen2.5-Coder-14B-Instruct` | 8.3 | qwen2 | ✅ | — | **usable** |
+| `Qwen3-Coder-30B-A3B-Instruct` | 17.2 / 13.4 (3-bit) | qwen3_moe | ✅ | — | usable, **does not fit at 4-bit** |
+| `LFM2.5-2.6B` | 1.5 | lfm2 | ✅ | `<think>` | needs thinking off |
+| `Hunyuan-4B-Instruct` | 2.4 | hunyuan | ✅ | `<think>` | needs thinking off |
+| `gpt-oss-20b` | 12.1 | gpt_oss | ✅ | thinking | needs thinking off — **explains its 27s** |
+| `GLM-4.7-Flash` | 16.9 | glm4_moe | ✅ | `<think>` | needs thinking off; too big |
+| `NVIDIA-Nemotron-3.5-Lightning-30B-A3B` | 17.8 | nemotron_h | ✅ | `<think>` | needs thinking off; too big |
+| `GLM-4.5-Air` | 46.8 | glm4_moe | ✅ | `<think>` | far too big |
+| `Codestral-22B` | 12.5 | mistral | ❌ | — | no tool path |
+| `gemma-3-12b-it` | 8.1 | gemma3 | ❌ | — | no tool path |
+| `Devstral-Small-2505` | 13.3 | mistral | ❌ | — | no tool path, **despite being sold as an agent model** |
+| `ERNIE-4.5-21B-A3B` | 12.3 | ernie4_5_moe | ❌ | — | no tool path |
+| `Phi-3.5-MoE-instruct` | 23.6 | phimoe | ❌ | — | no tool path |
+| `LFM2-24B-A2B` | 13.4 | lfm2_moe | ❌ | thinking | no tool path (MoE, otherwise ideal) |
+
+**Six models sold or assumed usable for coding have no tool-call path at all** — Codestral,
+Devstral, gemma-3-12b, ERNIE, Phi-3.5-MoE, LFM2-24B. They can write code and cannot drive an
+agent loop. That is the single most useful line on this page, and it costs nothing to check.
+
+### On mixture-of-experts, since it looks like the obvious answer for a fanless machine
+
+**All weights must be resident; only a slice is computed.** `Qwen3-Coder-30B-A3B` has 128
+experts and activates 8 per token, and the router picks a different 8 each time — so all
+17.2 GB has to be in memory, while roughly 3B parameters do the arithmetic. **MoE buys speed
+and heat, not memory.** That is the reverse of what it looks like, and it is why the 30B
+does not fit here despite behaving like a 3B.
+
+*(LM Studio does expose `numCpuExpertLayersRatio` — expert offloading to CPU — which trades
+away exactly the speed MoE is bought for.)*
+
+**A pattern worth knowing before hunting:** among non-Qwen MoE models in this size range,
+**every one with a tool-call path is a reasoning model**, and the two that are not have no
+tool path. That is a fact about what has been published, not a preference.
+
+### The screen was wrong twice — both bugs are instructive
+
+**1 · It read only `tokenizer_config.json`.** Newer repositories put the chat template in a
+separate `chat_template.jinja`, so the screen saw an empty template and reported *no tool
+support* for **`Qwen3-Coder-30B-A3B`** — a model built for agentic tool use. Caught only
+because the result was too implausible to accept. It now reads both files and takes
+whichever has content. Every earlier rejection was re-run against the fixed screen: all of
+them held except the two Qwen3 MoE entries.
+
+**2 · It matched only the literal string `tool_call`.** Templates use several shapes
+(`tool_calls`, `<tools>`, `tool_response`), so the marker set is now wider.
+
+**The lesson, since this is the third instrument bug in this document:** a screen that has
+never been run against a known-good *and* a known-bad example is a guess with a table around
+it. Both fixes came from a result that looked wrong, not from a test — which is luck, and
+the reason every verdict above was re-run rather than trusted.
 
 ---
 
@@ -296,13 +344,18 @@ not *nothing invented*. A human still has to read the replies. That is exactly w
 | `qwen3.5-9b-optiq` | 8.2 | **Fails to load** — same |
 | `prism-ml/bonsai-27b` | 8.5 | 2-bit quantisation; missed the personality deadlines (this was F14's origin) |
 | `gemma-4-12b-coder` | 6.7 | Works, but leaks a `<turn\|>` template token into output and loses to a smaller model |
-| `LFM2-24B-A2B` | 13.4 | Never downloaded — **no `tool_call` path** in its chat template. A 24B MoE with 2B active, otherwise ideal for a fanless machine |
-| `Devstral-Small-2505` | 13.3 | Never downloaded — no `tool_call` path, despite being sold as a coding agent model |
-| `Codestral-22B` | 12.5 | Never downloaded — no `tool_call` path |
-| `gemma-3-12b-it` | 8.1 | Never downloaded — no `tool_call` path |
+| `LFM2-24B-A2B` | 13.4 | Never downloaded — **no tool-call path**. A 24B MoE with 2B active, otherwise ideal for a fanless machine |
+| `Devstral-Small-2505` | 13.3 | Never downloaded — no tool-call path, despite being sold as a coding agent model |
+| `Codestral-22B` | 12.5 | Never downloaded — no tool-call path |
+| `gemma-3-12b-it` | 8.1 | Never downloaded — no tool-call path |
+| `ERNIE-4.5-21B-A3B` | 12.3 | Never downloaded — no tool-call path |
+| `Phi-3.5-MoE-instruct` | 23.6 | Never downloaded — no tool-call path, and too big |
+| `Qwen3-Coder-30B-A3B` | 17.2 | **Not rejected on merit — it does not fit.** Full tool support, non-reasoning, MoE with 3B active. 17.2 GB + ~7.6 GB of system is 24.8 GB on a 24 GB machine. Only the 3-bit build (13.4 GB) fits, and 3-bit costs enough quality that it is not clearly better than a 7B at 4-bit. **Untested** |
 
-**The last four cost nothing to reject.** The screening step is the highest-value part of
-this exercise: four models, 47 GB of downloads avoided, from reading a JSON file.
+**Rejecting on the screen cost nothing.** Six models, well over 80 GB of downloads avoided,
+from reading one file per repository — **once the screen was reading the right files.** See
+the two bugs above; four of these six were re-verified after the fix rather than left on the
+original verdict.
 
 ---
 

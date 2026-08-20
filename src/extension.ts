@@ -42,6 +42,7 @@ import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
+import { SlowModelWatch, slowModelLine } from './personality/slowModel';
 import { startTailing, stopTailing } from './logtailing/logTailing';
 
 
@@ -119,9 +120,23 @@ export function activate(context: vscode.ExtensionContext): void {
   // Declared before the watcher, which reads it.
   const agentBusy: { running: boolean; noteCommit?: (hash: string) => void } = { running: false };
 
+  // **F14: said once, when the character has demonstrably gone quiet.** A missed
+  // deadline falls back to the written bank and always has — correct, and until now
+  // entirely silent, so choosing a slow local model turned the product's central
+  // claim into a static bank with the only evidence in a log file. Counted here
+  // rather than per-surface so two different surfaces missing once each still adds
+  // up to the pattern that earns the telling.
+  const slowModel = new SlowModelWatch();
+  const noticeSlowModel = (): void => {
+    if (!slowModel.missedDeadline()) return;
+    const line = slowModelLine(models.spec('chat').label, models.model('chat'));
+    logger.write(`voice: ${slowModel.count} missed deadlines — telling them once`);
+    void vscode.window.showInformationMessage(`Clarvis: ${line}`);
+  };
+
   const tracker = startTaskWatching(context, avatar, logger, announcer, () => agentBusy.running);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript);
+  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript, noticeSlowModel);
 
   const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
   // **Wired, and deliberately never called.** ChatService has no call site for this: the
@@ -147,7 +162,7 @@ export function activate(context: vscode.ExtensionContext): void {
   chat.setLiveLines(liveLines);
   // One writer, reachable from every surface — see §2.2. Set as early as the model
   // layer exists, so the first dialog of a session is already in character.
-  const voiceWriter = new Voice(models, (message) => logger.write(message));
+  const voiceWriter = new Voice(models, (message) => logger.write(message), noticeSlowModel);
   setVoice(voiceWriter);
   chat.setVoiceWriter(voiceWriter);
 
@@ -296,9 +311,10 @@ function startBriefing(
   memory: PatternMemory,
   voice: VoiceService,
   models: ModelService,
-  toTranscript: (message: string) => void
+  toTranscript: (message: string) => void,
+  onSlow: () => void
 ): BriefingService {
-  const briefing = new BriefingService(context, (message) => log.write(message));
+  const briefing = new BriefingService(context, (message) => log.write(message), onSlow);
 
   // M5 supplies the briefing's fourth line. M4 needed no changes for this — it was
   // built to omit the line until something could provide it.

@@ -21,10 +21,24 @@
 export async function withDeadline<T>(
   timeoutMs: number,
   work: (signal: AbortSignal) => Promise<T>,
-  onAbort: () => T
+  onAbort: () => T,
+  /**
+   * Fired the moment the deadline passes, before the abort.
+   *
+   * **Not the same as `onAbort`, and the difference is not obvious.** Collectors
+   * swallow their own abort and return whatever text arrived, so `work` resolves
+   * normally and `onAbort` never runs — which left callers unable to tell "the
+   * model was too slow" from "the model finished". That distinction is the whole
+   * of F14: it is what makes the character quietly falling back to written lines
+   * something the product can mention rather than a fact only the log knows.
+   */
+  onTimeout?: () => void
 ): Promise<T> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => {
+    onTimeout?.();
+    controller.abort();
+  }, timeoutMs);
   try {
     return await work(controller.signal);
   } catch (error) {

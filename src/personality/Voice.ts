@@ -34,7 +34,15 @@ export class Voice {
 
   constructor(
     private readonly models: ModelService,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /**
+     * Told whenever a line fell back because the model missed its deadline (F14).
+     *
+     * Optional, so every existing caller and every test still constructs a `Voice`
+     * unchanged — a character that cannot speak because nobody wired a reporter
+     * would be a worse bug than the one this reports.
+     */
+    private readonly onSlow?: () => void
   ) {}
 
   /** The line, in character where possible and verbatim where not. */
@@ -47,7 +55,12 @@ export class Voice {
     try {
       if (!(await this.models.isReady('chat'))) return line.fallback;
 
-      const raw = await withDeadline(DEADLINE_MS, (signal) => this.collect(rewritePrompt(line), signal), () => '');
+      const raw = await withDeadline(
+        DEADLINE_MS,
+        (signal) => this.collect(rewritePrompt(line), signal),
+        () => '',
+        () => this.tooSlow('rewrite')
+      );
 
       const rewritten = acceptRewrite(line, raw);
 
@@ -86,7 +99,8 @@ export class Voice {
       const raw = await withDeadline(
         OPENING_DEADLINE_MS,
         (signal) => this.collect(openingPrompt(situation, mustAsk, keep), signal),
-        () => ''
+        () => '',
+        () => this.tooSlow('opening')
       );
 
       const line = acceptOpening(raw, mustAsk, keep);
@@ -102,6 +116,18 @@ export class Voice {
       this.log(`voice: opening failed (${String(error)})`);
       return fallback;
     }
+  }
+
+  /**
+   * One line lost to a missed deadline (F14).
+   *
+   * Logged here as well as counted, so the log still shows every occurrence even
+   * though the user hears about it once — the count is what earns the telling, and
+   * a log that only recorded the announced one would hide its own evidence.
+   */
+  private tooSlow(what: string): void {
+    this.log(`voice: ${what} missed its deadline, using the written line`);
+    this.onSlow?.();
   }
 
   /**

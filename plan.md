@@ -4531,14 +4531,24 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       existing behaviour: a timeout means "use the written line", never "throw away what
       arrived". 4 tests, including one asserting the signal actually fires rather than the
       caller merely walking away. 944 → 948.
-- [ ] **F14 — the character silently falls back to canned lines on a local model.** A 27B
-      via LM Studio missed both personality deadlines (`OPENING_DEADLINE_MS` 5s, briefing
-      12s), so the opening and the briefing came from the written bank. The degradation is
-      graceful and correct; **the silence is not.** Choosing a local model quietly turns the
-      product's central claim into a static bank and the only evidence is in the log. **v1
-      needs the telling, once** — a fact the user can act on. **Scaling the deadlines by
-      provider is M8j** and stays deferred; F14 is the first thing that actually needs it.
-      Not to be fixed by shortening the character (§2.1).
+- [x] **F14 — the character silently falls back to canned lines on a local model. Fixed 20 Aug.**
+      A 27B via LM Studio missed both personality deadlines (`OPENING_DEADLINE_MS` 5s,
+      briefing 12s), so the opening and the briefing came from the written bank. The
+      degradation is graceful and correct; **the silence was not.** Choosing a local model
+      quietly turned the product's central claim into a static bank with the only evidence
+      in the log. **Fix — the telling, and only the telling:** `SlowModelWatch` (new, pure,
+      `slowModel.ts`) counts missed deadlines across every character surface and returns
+      true exactly once, at the second one; `extension.ts` turns that into a single
+      notification naming the provider and model. **Deliberately not one:** a cold LM Studio
+      JIT load was **measured at 5.3s against the 5s deadline**, so the first call after
+      switching models misses on a model that is quick once warm — a threshold of one would
+      announce that every time. **Deadlines are untouched** — scaling them per provider is
+      still **M8j**, still deferred, and this is the telling M8j does not provide. The
+      character prompt is untouched too (§2.1). **Needed a change in `withDeadline` to be
+      possible at all:** collectors swallow their own abort and return partial text, so
+      `work` resolves normally and `onAbort` never fires — callers could not distinguish
+      "too slow" from "finished". A new `onTimeout` hook fires when the timer does,
+      independent of what the collector then decides to do. 8 tests; 948 → 956.
 - [x] **F10 — a reload strands you on the agent's branch, with the offer gone. Fixed 20 Aug.**
       When a run finishes with work committed, the offer to fold it back and return you
       home is held in memory in the extension host. Reload before answering and it is gone;

@@ -54,7 +54,9 @@ export class BriefingService {
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /** Told when the briefing fell back because the model was too slow (F14). */
+    private readonly onSlow?: () => void
   ) {
     // Restored from the previous session — the briefing reads this before the user has
     // saved anything, so an empty start would mean the line never appears.
@@ -172,7 +174,10 @@ export class BriefingService {
       const text = await withDeadline<string | undefined | typeof TIMED_OUT>(
         PHRASE_TIMEOUT_MS,
         (signal) => phraser(prompt, signal),
-        () => TIMED_OUT
+        () => TIMED_OUT,
+        // F14: the briefing falling back to the bank is one of the two surfaces
+        // where a slow model is most visible as "the character has gone flat".
+        () => this.onSlow?.()
       );
 
       if (text === TIMED_OUT) {

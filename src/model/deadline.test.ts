@@ -36,6 +36,35 @@ test('the signal fires when the deadline passes', async () => {
   assert.equal(result, 'fell back');
 });
 
+// F14 needs to know the deadline was missed even when the collector swallows its own
+// abort and returns partial text -- in that case `work` resolves and onAbort never runs.
+test('onTimeout fires even when the work swallows its abort and resolves', async () => {
+  let timedOut = false;
+
+  const result = await withDeadline(
+    10,
+    (signal) =>
+      new Promise<string>((resolve) => {
+        signal.addEventListener('abort', () => resolve('partial text'));
+      }),
+    () => 'never reached',
+    () => {
+      timedOut = true;
+    }
+  );
+
+  assert.equal(timedOut, true, 'the caller must be able to tell slow from finished');
+  assert.equal(result, 'partial text', 'and partial text is still kept');
+});
+
+test('onTimeout does not fire when the work finishes in time', async () => {
+  let timedOut = false;
+  await withDeadline(1000, async () => 'done', () => 'aborted', () => {
+    timedOut = true;
+  });
+  assert.equal(timedOut, false);
+});
+
 test('a real error still propagates rather than being read as a timeout', async () => {
   await assert.rejects(
     withDeadline(1000, async () => {

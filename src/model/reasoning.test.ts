@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ReasoningWatch, ThinkFilter, reasoningOnlyError, saidNothingButThought } from './reasoning';
+import {
+  ReasoningWatch,
+  ThinkFilter,
+  reasoningFieldError,
+  saidNothingButThought,
+  unfinishedThinkingError,
+} from './reasoning';
 
 /**
  * Built against the wire, not against a guess.
@@ -124,7 +130,7 @@ test('silence with no reasoning behind it is left to the slow-model notice', () 
 });
 
 test('the LM Studio user is told which setting to change', () => {
-  const error = reasoningOnlyError('lmstudio', 'LM Studio', 'qwen/qwen3-1.7b', 'separate');
+  const error = reasoningFieldError({ id: 'lmstudio', label: 'LM Studio' }, 'qwen/qwen3-1.7b');
 
   assert.match(error.friendly, /separateReasoningContentInAPI/);
   assert.match(error.friendly, /qwen\/qwen3-1\.7b/);
@@ -133,7 +139,7 @@ test('the LM Studio user is told which setting to change', () => {
 
 test('another OpenAI-compatible server gets advice that applies to it', () => {
   // Naming an LM Studio setting to an Ollama user is a wrong answer stated confidently.
-  const error = reasoningOnlyError('ollama', 'Ollama', 'deepseek-r1', 'separate');
+  const error = reasoningFieldError({ id: 'ollama', label: 'Ollama' }, 'deepseek-r1');
 
   assert.doesNotMatch(error.friendly, /separateReasoningContentInAPI/);
   assert.match(error.friendly, /does not reason/);
@@ -147,7 +153,7 @@ test('a reply that is only thinking and a blank line is still nothing said', () 
 
   assert.equal(watch.push({ content: '<think>Deliberating.</think>' }), '');
   assert.equal(watch.push({ content: '\n\n' }), '\n\n');
-  assert.equal(watch.saidNothing(false), true);
+  assert.equal(watch.saidNothing(), true);
 });
 
 test('the blank line is still shown, because trimming a stream glues words together', () => {
@@ -155,13 +161,13 @@ test('the blank line is still shown, because trimming a stream glues words toget
 
   assert.equal(watch.push({ content: 'The build ' }), 'The build ');
   assert.equal(watch.push({ content: 'has been ' }), 'has been ');
-  assert.equal(watch.saidNothing(false), false);
+  assert.equal(watch.saidNothing(), false);
 });
 
 test('a reply that was all thinking is not blamed on a setting that is already off', () => {
   // Caught by replaying both captured streams: the inline branch means the setting is
   // *off* already, so "turn it off" is advice that sounds right and changes nothing.
-  const error = reasoningOnlyError('lmstudio', 'LM Studio', 'qwen/qwen3-1.7b', 'inline');
+  const error = unfinishedThinkingError({ id: 'lmstudio', label: 'LM Studio' }, 'qwen/qwen3-1.7b');
 
   assert.doesNotMatch(error.friendly, /separateReasoningContentInAPI/);
   assert.match(error.friendly, /never got past the thinking/);

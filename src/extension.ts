@@ -44,6 +44,7 @@ import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character
 import { runVoiceCheck } from './personality/voiceCheck';
 import { SlowModelWatch, slowModelLine } from './personality/slowModel';
 import { dropLoads, ourLoadedIds, staleLoads, tuneLoads } from './model/lmStudioTune';
+import { spokenPart } from './chat/replyDelivery';
 import { startTailing, stopTailing } from './logtailing/logTailing';
 
 
@@ -336,13 +337,15 @@ function startPatternMemory(
  * loads on demand regardless, which is exactly today's behaviour.
  */
 /**
- * Whether long replies are trimmed before they are spoken.
+ * The rule the voice is actually using, for anything that needs to report on it.
  *
- * Read here and handed to the check, so `voiceCheck.ts` needs no `vscode` import and
- * stays loadable — and testable — outside the extension host.
+ * Read here and handed over as a function, so `voiceCheck.ts` needs no `vscode` import —
+ * which keeps it loadable, and testable, outside the extension host — and so the check
+ * cannot describe a trim the product is not applying.
  */
-function trimsLongReplies(): boolean {
-  return vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.trimLongReplies', true);
+function spokenAloud(): (reply: string) => string {
+  const trims = vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.trimLongReplies', true);
+  return trims ? spokenPart : (reply) => reply;
 }
 
 async function releaseLocalModels(models: ModelService, log: (message: string) => void): Promise<void> {
@@ -1003,7 +1006,7 @@ function registerAgentCommands(
       const report = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Clarvis: saying a few things…' },
         () =>
-          runVoiceCheck(models, (message) => logger.write(message), trimsLongReplies())
+          runVoiceCheck(models, (message) => logger.write(message), spokenAloud())
       );
 
       const document = await vscode.workspace.openTextDocument({ content: report, language: 'markdown' });

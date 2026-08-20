@@ -80,6 +80,13 @@ which restate it. Current status:
   tailing the VS Code extension-host log into the workspace).
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M12** (Tutor Mode).
+- **Three things shipped on 20 Aug (late) that the map above predates.** Reasoning models
+  are handled at the provider — their thinking is stripped from the reply, and a stream
+  that carries reasoning and no visible text is named as such instead of being reported as
+  slow (`src/model/reasoning.ts`, M8i part 1). Local models Clarvis loaded are released
+  when nothing points at them any more (`lmStudioTune.ts`). And a spoken reply past ~20
+  seconds is trimmed to its opening sentence and his closing line, behind
+  `clarvis.voice.trimLongReplies` (`src/chat/replyDelivery.ts`, F20).
 - **M11 is the active gate, not a future milestone.** 19–20 Aug reframed it: the goal
   became *a stable first release* rather than a more complete one, and M11's exit
   checklist gained a **v1 release bar** — now **23 items, 21 done** as of 20 Aug
@@ -251,7 +258,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 992 tests currently
+npm test               # node's built-in test runner, no framework — 1005 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below
@@ -283,9 +290,16 @@ actual thing.
 Three live trackers, not this file — this section only says which one to open.
 
 **The v1 release bar** — `plan.md` §7, M11 — is the one that gates shipping. **23 items,
-21 done** as of 20 Aug (late evening); two open: F20 (reply length, needs one `voiceCheck`
-run on Anthropic) and runbook sessions A–C. M8i part 1 closed with both of its failure
-modes observed on the wire rather than one of them predicted. Check it, not this paragraph, for the current
+21 done** as of 20 Aug (late evening); two open: F20 and runbook sessions A–C. M8i part 1
+closed with both of its failure modes observed on the wire rather than one of them
+predicted.
+
+**F20 is now a listening decision rather than a coding one.** Six versions of
+`ANSWER_SHAPE` failed to shorten spoken replies — the effect proved smaller than the
+measurement noise, and tightening cost the character — so the ceiling moved into
+`spokenPart` (`src/chat/replyDelivery.ts`): past about twenty seconds the voice gets the
+opening sentence and his closing line, the panel keeps every word, and
+`clarvis.voice.trimLongReplies` turns it off. Check it, not this paragraph, for the current
 count — it has changed six times in two days.
 
 **The verification runbook** — `clarvis-firstrun/RUNBOOK.md`, a *separate repository*

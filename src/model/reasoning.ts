@@ -168,6 +168,7 @@ export class ReasoningWatch {
   private readonly filter = new ThinkFilter();
   private sawText = false;
   private sawReasoning = false;
+  private sawTool = false;
 
   /**
    * One delta in, whatever the user may see out.
@@ -187,6 +188,17 @@ export class ReasoningWatch {
     return text;
   }
 
+  /**
+   * Told when the model asked for a tool.
+   *
+   * **Recorded rather than passed in.** `saidNothing(toolCalls)` took a boolean flag,
+   * which §0 forbids for the reason on display here: the caller had to remember to hand
+   * over a fact the watch was already positioned to observe.
+   */
+  sawToolCall(): void {
+    this.sawTool = true;
+  }
+
   /** Anything the filter was still holding when the stream ended. */
   flush(): string {
     const tail = this.filter.flush();
@@ -195,12 +207,12 @@ export class ReasoningWatch {
   }
 
   /** Whether this stream said nothing because its thinking went elsewhere. */
-  saidNothing(toolCalls: boolean): boolean {
+  saidNothing(): boolean {
     return saidNothingButThought({
       text: this.sawText,
       reasoningField: this.sawReasoning,
       thinkingStripped: this.filter.suppressed,
-      toolCalls,
+      toolCalls: this.sawTool,
     });
   }
 
@@ -227,34 +239,37 @@ export class ReasoningWatch {
  * Composed once here rather than at the two call sites — F25's lesson, where the same
  * explanation existed one function away from the path that needed it and was not shared.
  */
-export function reasoningOnlyError(
-  providerId: string,
-  label: string,
-  model: string,
-  /**
-   * Which of the two shapes was seen.
-   *
-   * **Not cosmetic.** Told to turn off a setting that is *already off*, a user follows
-   * correct-sounding advice into no change at all — and the first version of this did
-   * exactly that, because it assumed the branch instead of asking. Caught by replaying
-   * both captured streams through it rather than by reading it.
-   */
-  shape: 'separate' | 'inline'
-): ModelError {
-  const cause =
-    shape === 'separate'
-      ? `${label} is keeping the thinking to itself, so nothing reaches me at all.`
-      : 'it never got past the thinking — the whole reply was deliberation, with no answer at the end of it.';
-
+/**
+ * Told the thinking went to a field nothing here reads.
+ *
+ * Its own function rather than a `shape` argument, per §0: two behaviours behind one
+ * parameter is the flag argument that rule exists to prevent, and the advice differs
+ * completely — this one names a setting to change, the other one cannot.
+ */
+export function reasoningFieldError(spec: { id: string; label: string }, model: string): ModelError {
   const fix =
-    shape === 'separate'
-      ? providerId === 'lmstudio'
-        ? 'Turn off separateReasoningContentInAPI in LM Studio\'s developer settings, or run a model that does not reason.'
-        : 'Run a model that does not reason, or one whose thinking comes back with the reply rather than beside it.'
-      : 'Give it more room to finish — a larger context — or run a model that does not reason.';
+    spec.id === 'lmstudio'
+      ? 'Turn off separateReasoningContentInAPI in LM Studio\'s developer settings, or run a model that does not reason.'
+      : 'Run a model that does not reason, or one whose thinking comes back with the reply rather than beside it.';
 
   return new ModelError(
-    `${model} thinks before it answers, and ${cause} ${fix}`,
-    `${providerId}/${model}: stream carried ${shape} reasoning only, no visible content`
+    `${model} thinks before it answers, and ${spec.label} is keeping the thinking to itself, so nothing reaches me at all. ${fix}`,
+    `${spec.id}/${model}: stream carried separate reasoning only, no visible content`
+  );
+}
+
+/**
+ * Told the whole reply was deliberation and it never reached an answer.
+ *
+ * **Not "turn off that setting".** On this branch the setting is already off — the
+ * thinking arrived inline and was stripped — so advice to change it is advice that
+ * sounds right and does nothing. The first version made exactly that mistake, and it was
+ * caught by replaying both captured streams rather than by reading it.
+ */
+export function unfinishedThinkingError(spec: { id: string; label: string }, model: string): ModelError {
+  return new ModelError(
+    `${model} thinks before it answers, and it never got past the thinking — the whole reply was deliberation, with no answer at the end of it. ` +
+      'Give it more room to finish — a larger context — or run a model that does not reason.',
+    `${spec.id}/${model}: stream carried inline reasoning only, no visible content`
   );
 }

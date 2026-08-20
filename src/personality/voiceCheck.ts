@@ -296,14 +296,16 @@ export async function runVoiceCheck(
   models: ModelService,
   log: (message: string) => void,
   /**
-   * Whether the spoken trim is on, read from settings by the caller.
+   * What the voice would actually be handed, given the user's settings.
    *
-   * **Passed in rather than read here.** Importing `vscode` for one boolean would make
-   * this module unloadable outside the extension host, and every pure part of it
-   * untestable with it — which was already true once, through a re-export, and cost the
-   * grounding fix its regression test until it was found.
+   * **A function rather than a boolean.** §0 forbids flag arguments, and this is why:
+   * `trims: boolean` made the check re-derive the product's rule from a switch, so the
+   * two could disagree. Handed the rule itself, the report cannot describe behaviour the
+   * product does not have. The caller reads the setting and passes `spokenPart` or the
+   * text unchanged — and this module still needs no `vscode` import, which is what keeps
+   * its pure parts testable.
    */
-  trims = true
+  aloud: (reply: string) => string = spokenPart
 ): Promise<string> {
   const out: string[] = [
     '# Clarvis — voice check',
@@ -333,24 +335,24 @@ export async function runVoiceCheck(
     // What the voice would really say — including whether the user has the trim turned
     // off, since a check that ignores the setting reports a product nobody is running.
     // Chat replies only; a quip or a briefing is spoken whole regardless.
-    const aloud = scene.spoken === false || !trims ? said : spokenPart(said);
+    const heard = scene.spoken === false ? said : aloud(said);
 
     out.push(
       said,
       '',
-      `\`${said.split(/\s+/).length} words · ~${median}s if read whole (median of ${TAKES}: ${seconds.join('s, ')}s) · **~${spokenSeconds(aloud)}s actually spoken**\``
+      `\`${said.split(/\s+/).length} words · ~${median}s if read whole (median of ${TAKES}: ${seconds.join('s, ')}s) · **~${spokenSeconds(heard)}s actually spoken**\``
     );
     // Length is the failure that keeps coming back, and it is invisible on screen: a
     // reply that reads fine is forty seconds of audio. Flagged rather than judged by
     // eye, the same way parroting is — and flagged on the median, so one long take does
     // not condemn a prompt and one short take does not acquit it.
-    if (spokenSeconds(aloud) > SPOKEN_CEILING_SECONDS) {
-      out.push('', `> **Too long to listen to:** ~${spokenSeconds(aloud)}s spoken, against a ${SPOKEN_CEILING_SECONDS}s ceiling.`);
-      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(aloud)}s spoken (${median}s median if read whole)`);
+    if (spokenSeconds(heard) > SPOKEN_CEILING_SECONDS) {
+      out.push('', `> **Too long to listen to:** ~${spokenSeconds(heard)}s spoken, against a ${SPOKEN_CEILING_SECONDS}s ceiling.`);
+      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(heard)}s spoken (${median}s median if read whole)`);
     } else if (median > SPOKEN_CEILING_SECONDS) {
       // Worth seeing rather than hiding: the writing ran long and the ceiling caught it.
-      out.push('', `> Ran to ~${median}s written; the voice says his closing line only (~${spokenSeconds(aloud)}s).`);
-      log(`voice check | ${scene.name} | TRIMMED: ${median}s written -> ${spokenSeconds(aloud)}s spoken`);
+      out.push('', `> Ran to ~${median}s written; the voice says his closing line only (~${spokenSeconds(heard)}s).`);
+      log(`voice check | ${scene.name} | TRIMMED: ${median}s written -> ${spokenSeconds(heard)}s spoken`);
     }
     if (lifted.length > 0) {
       out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);

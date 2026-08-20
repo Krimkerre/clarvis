@@ -11,7 +11,7 @@ import { buildCatalog } from './openrouterCatalog';
 import { buildOpenAiCatalog } from './openaiCatalog';
 import { ProviderSpec, resolveBaseUrl } from './providers';
 import { SseParser, decodeStream } from './sse';
-import { ReasoningWatch, reasoningOnlyError } from './reasoning';
+import { ReasoningWatch, reasoningFieldError, unfinishedThinkingError } from './reasoning';
 
 /**
  * One adapter, four providers: OpenAI, OpenRouter, Ollama and LM Studio.
@@ -234,6 +234,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
 
         const text = watch.push(choice.delta);
         if (text) yield { type: 'text', text };
+        if (choice.delta?.tool_calls?.length) watch.sawToolCall();
         absorbToolDeltas(pending, choice.delta?.tool_calls);
       }
     }
@@ -243,7 +244,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     const tail = watch.flush();
     if (tail) yield { type: 'text', text: tail };
 
-    this.refuseReasoningOnly(watch, request.model, pending.size > 0);
+    this.refuseReasoningOnly(watch, request.model);
 
     // Emitted at the end rather than as they complete: nothing marks a tool call
     // finished mid-stream, so the arguments are only known to be whole once the
@@ -349,7 +350,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     const tail = watch.flush();
     if (tail) yield tail;
 
-    this.refuseReasoningOnly(watch, request.model, false);
+    this.refuseReasoningOnly(watch, request.model);
   }
 
   /**
@@ -360,11 +361,13 @@ export class OpenAiCompatibleProvider implements ModelProvider {
    * this exists to end: two models were written off as slow on 20 Aug when they were
    * talking into a field nothing here reads.
    */
-  private refuseReasoningOnly(watch: ReasoningWatch, model: string, toolCalls: boolean): void {
-    if (!watch.saidNothing(toolCalls)) return;
+  private refuseReasoningOnly(watch: ReasoningWatch, model: string): void {
+    if (!watch.saidNothing()) return;
 
     this.log(`model: ${this.id}/${model} returned ${watch.shape()} reasoning only`);
-    throw reasoningOnlyError(this.id, this.spec.label, model, watch.shape());
+    throw watch.shape() === 'separate'
+      ? reasoningFieldError(this.spec, model)
+      : unfinishedThinkingError(this.spec, model);
   }
 
   private async headers(): Promise<Record<string, string>> {

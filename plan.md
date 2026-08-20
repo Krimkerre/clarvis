@@ -4567,9 +4567,17 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       `HEAD.commit` and refuses to treat an unborn ref as a place to return to. 6 tests
       (3 new, `branchNames.test.ts` — no test file existed for this module before);
       933 → 936.
-- [ ] **Runbook sessions 1–5 walked**, findings written down —
-      `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
-      the release.
+- [ ] **Runbook sessions A–C walked**, findings written down —
+      `clarvis-firstrun/RUNBOOK.md`. **Rescoped 20 Aug from "sessions 1–5" (seven sessions,
+      ~10 hours) to four sessions of ~50 minutes**, because the seven were not being walked
+      and a runbook nobody finishes verifies nothing. The cut is evidence-led rather than
+      arbitrary: 20 Aug produced eight findings and *not one* came from ticking a box —
+      they came from using the product and reading the log, and the two worst (F22, F23)
+      were invisible to every checklist in that runbook. What was dropped is listed in the
+      runbook's "Cut, and why" table with its reasoning, including Ollama (superseded by LM
+      Studio), the VSCodium pass (already an M11 release-prep item) and Track B's Rust OS
+      book (weeks of evenings to fire two thresholds — recorded as a finding about the
+      thresholds instead, in `VOICE-LOG.md`). Session D can follow the release; A–C cannot.
 - [x] **F11 — asked which language, immediately after being told.** Fixed 19 Aug.
       `who-and-where` answered *"python script ran locally"* was followed by "which
       language?", offering a shortlist whose own first option read *"Python | already

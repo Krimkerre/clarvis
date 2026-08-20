@@ -148,16 +148,41 @@ export async function tuneLoads(
 
   for (const id of pending) {
     await new Promise<void>((resolve) => {
-      execFile(lms, ['load', id, '-y', '--parallel', PARALLEL], { timeout: LOAD_TIMEOUT_MS }, (error) => {
+      execFile(lms, ['load', id, '-y', '--parallel', PARALLEL], { timeout: LOAD_TIMEOUT_MS }, (error, _out, stderr) => {
         log(
           error
-            ? `model: could not pre-load ${id} (${error.message.split('\n')[0]}) — LM Studio will load it on demand`
+            ? `model: could not pre-load ${id} — ${loadFailureReason(stderr ?? '', error.message)}`
             : `model: pre-loaded ${id} with parallel=${PARALLEL}`
         );
         resolve();
       });
     });
   }
+}
+
+/**
+ * The reason a load failed, in LM Studio's own words.
+ *
+ * **Its `stderr` says something useful and `error.message` does not.** The latter is
+ * `Command failed: /Users/…/lms load <id> -y`, which is the command line rather than
+ * the cause — and it carries an absolute path, which is the exact complaint F25 was
+ * filed about. `stderr` carries the real sentence: a missing model, or a refusal from
+ * LM Studio's own resource guardrails, phrased for a person.
+ *
+ * **One source of truth, deliberately.** Clarvis could estimate free memory itself and
+ * predict the refusal — but `os.freemem()` reports 0.2 GB on a Mac with 8.7 GB actually
+ * available, so a correct version needs `vm_stat` on macOS, `MemAvailable` on Linux and
+ * WMI on Windows, and would then be a second opinion that can disagree with the one
+ * enforcing the limit. Same reasoning that settled M8h: do not build a meter the
+ * provider already has.
+ */
+export function loadFailureReason(stderr: string, fallback: string): string {
+  const line = stderr
+    .split('\n')
+    .map((entry) => entry.trim())
+    .find((entry) => entry.length > 0 && !entry.startsWith('lms ') && !entry.includes('--yes'));
+
+  return line ?? fallback.split('\n')[0];
 }
 
 /** The models we want that the server says are not loaded. Empty on any doubt. */

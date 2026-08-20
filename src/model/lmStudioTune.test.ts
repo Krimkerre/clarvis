@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { needsLoading, parseModelStates } from './lmStudioTune';
+import { needsLoading, parseModelStates, loadFailureReason } from './lmStudioTune';
 
 // The shape /api/v0/models actually returns, trimmed to what this reads.
 const BODY = {
@@ -48,4 +48,28 @@ test('a model the server has never heard of is skipped', () => {
 
 test('an empty model name is skipped rather than loaded', () => {
   assert.deepEqual(needsLoading(parseModelStates(BODY), ['', 'qwen3.5-9b-optiq']), ['qwen3.5-9b-optiq']);
+});
+
+// The reason a load failed comes from stderr, which says something useful. error.message
+// is `Command failed: /Users/…/lms load <id> -y` -- the command line, with an absolute
+// path in it, which is F25's complaint reproduced.
+test('the failure reason comes from stderr, not the command line', () => {
+  const stderr = 'Model not found\n\nNo model found that matches model key "nope".\n\nTo see a list of all downloaded models, run:\n\n    lms ls\n';
+  const reason = loadFailureReason(stderr, 'Command failed: /Users/someone/.lmstudio/bin/lms load nope -y');
+  assert.equal(reason, 'Model not found');
+  assert.doesNotMatch(reason, /\/Users\//, 'never an absolute path');
+});
+
+test('a guardrail refusal is passed through in LM Studio\'s own words', () => {
+  const stderr = 'This model may not be loaded based on your resource guardrails settings.';
+  assert.match(loadFailureReason(stderr, 'Command failed'), /resource guardrails/);
+});
+
+test('the CLI\'s own suggestion lines are skipped, not reported as the reason', () => {
+  const stderr = '\n    lms ls\n\nOut of memory.\n';
+  assert.equal(loadFailureReason(stderr, 'x'), 'Out of memory.');
+});
+
+test('empty stderr falls back to the first line of the error', () => {
+  assert.equal(loadFailureReason('', 'Command failed: boom\nstack trace'), 'Command failed: boom');
 });

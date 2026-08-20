@@ -366,8 +366,11 @@ absent.
 ## 2.1 The System Prompt
 
 §2 describes the character; this is the character made executable. It ships in
-`src/personality/systemPrompt.ts` as a base block plus mode addenda, assembled per
-request (M8g).
+`src/personality/character.ts` as a base block plus mode addenda, assembled per
+request (M8g) — every surface draws from that one block, which is the fix for the
+mistake this project made twice: a second, then a third place writing its own voice.
+*(Named `systemPrompt.ts` in this spec until 20 Aug; the file has always been
+`character.ts`.)*
 
 **Design notes, because the shape is deliberate:**
 
@@ -1549,24 +1552,26 @@ panel closed still sees that he's waiting rather than working.
 Agentic runs cost dramatically more than chat turns — one task can be dozens of model
 calls. A per-request cap is the wrong unit.
 
-- `clarvis.agent.maxStepsPerTask` (default 40) — hard stop, then asks whether to continue.
-- `clarvis.agent.dailyTokenBudget` — counted in `globalState`, trips a gate rather than
-  failing mid-edit, so a task never dies half-applied.
-- The panel shows steps used and tokens spent for the current task, live. Surprise bills
-  are a trust failure, not a billing detail.
+- `clarvis.agent.maxStepsPerTask` (default 25) — hard stop, then asks whether to continue.
+  **This is the only cost control that exists**, and it bounds *steps*, not spend.
+- ~~`clarvis.agent.dailyTokenBudget`~~ and ~~`clarvis.chat.dailyRequestCap`~~ — **removed
+  from this spec on 20 Aug by the M8h decision (§7).** Neither was ever built. BYO-key
+  means the provider's own console already enforces a hard limit and shows spend in real
+  time; duplicating that across five providers' `usage` formats buys nothing and would be
+  one more thing to keep correct. Spend is the provider's console, said plainly rather than
+  implied by a setting that does not exist.
+- The panel shows steps used for the current task, live. **Not tokens** — nothing in `src/`
+  reads token usage from a response, and the same M8h decision is why.
 
 ```jsonc
-"clarvis.chat.enabled":            true,          // primary agent; on by default
-"clarvis.chat.provider":           "anthropic",   // "anthropic" | "openai" | "openrouter" | "ollama" | "lmstudio"
-                                                  // | "openrouter" | "ollama" | "lmstudio" | "host"
-"clarvis.chat.baseUrl":            "",            // override for OpenAI-compatible endpoints
+"clarvis.chat.provider":           "anthropic",   // "anthropic" | "openai" | "openrouter"
+                                                  // | "lmstudio" | "ollama" | "custom"
 "clarvis.chat.model":              "claude-opus-5",
-"clarvis.chat.dailyRequestCap":    200,           // NOT BUILT — see M8 spend-guard decision
-"clarvis.agent.enabled":           true,
-"clarvis.agent.maxStepsPerTask":   40,
-"clarvis.agent.dailyTokenBudget":  2000000,       // NOT BUILT — see M8 spend-guard decision
-"clarvis.agent.useBranch":           true,         // false = work on the current branch, checkpoint-only
-"clarvis.agent.branchPrefix":        "clarvis/"
+"clarvis.chat.baseUrl.<provider>": "",            // per-provider override, machine-scoped
+"clarvis.agent.provider":          "",            // empty = follow chat
+"clarvis.agent.model":             "",            // empty = follow chat
+"clarvis.agent.maxStepsPerTask":   25,
+"clarvis.model.tuneLocalLoads":    true,          // load LM Studio models with parallel=1
 ```
 
 API key deliberately absent — `SecretStorage`, like the voice key.
@@ -2700,7 +2705,9 @@ executions with an empty command line are ignored outright.
 **Build.**
 - `src/briefing/BriefingBuilder.ts`, single `buildBriefing(): Promise<string[]>`
   returning ≤4 lines, called once from `activate()` behind `onStartupFinished` and a
-  short (~1s) delay so it doesn't race the window's own paint.
+  short (~1s) delay so it doesn't race the window's own paint. *(Shipped as
+  `BriefingService.ts`, which owns the cross-session memory as well as the assembly —
+  the two belong together rather than sharing a storage key across two files.)*
 - Line 1: `git.getAPI(1)` → `repository.state.HEAD.name` + `workingTreeChanges.length`.
 - Line 2: last-failure record — **does not exist yet** at M4 (M3 tracks live busy
   state but doesn't persist outcomes across sessions). M4 must add the persistence:
@@ -4886,7 +4893,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**929 tests**, against Node's built-in runner with no test framework — possible only
+**970 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

@@ -1,6 +1,6 @@
 # Clarvis — current state
 
-*Snapshot as of 20 Aug 2026, commit `13baef0`. Written so a different agent, in a
+*Snapshot as of 20 Aug 2026 (evening), commit `f66e69a`. Written so a different agent, in a
 different tool, with no memory of how this project got here, can start working on it
 in five minutes instead of reading `plan.md` end to end (4,813 lines) or
 `docs/build-log.md` (913 lines) first. Those two remain the actual source of truth —
@@ -44,20 +44,20 @@ break Clarvis planning against its own repo.
 
 | Directory | Lines | What it owns |
 |---|---|---|
-| `src/agent/` | ~9,500 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
-| `src/chat/` | ~6,600 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
-| `src/planning/` | ~6,500 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
-| `src/personality/` | ~3,000 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
-| `src/model/` | ~2,600 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
-| `src/voice/` | ~2,000 | Spoken output (Fish Audio + system TTS fallback) and the voice-input design (not built — M10). |
-| `src/memory/` | ~1,100 | Pattern memory (repeat-error detection) and the lingering-error notice. |
-| `src/briefing/` | ~1,000 | The on-launch "where you left off" summary. |
-| `src/watch/` | ~680 | Task/build watching — the walk-away feature. |
+| `src/agent/` | ~9,584 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
+| `src/chat/` | ~6,750 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
+| `src/planning/` | ~6,664 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
+| `src/personality/` | ~3,191 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
+| `src/model/` | ~2,995 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
+| `src/voice/` | ~2,072 | Spoken output (Fish Audio + system TTS fallback) and the voice-input design (not built — M10). |
+| `src/memory/` | ~1,136 | Pattern memory (repeat-error detection) and the lingering-error notice. |
+| `src/briefing/` | ~1,052 | The on-launch "where you left off" summary. |
+| `src/watch/` | ~679 | Task/build watching — the walk-away feature. |
 | `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
-| `src/logtailing/` | ~130 | Tailing of VS Code logs into the workspace. |
-| `src/test/` | ~60 | Host-level smoke tests (`npm run test:host`), not the main suite. |
+| `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
+| `src/test/` | ~57 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
-**35,029 lines of TypeScript across 247 files** — 26,050 source, 8,979 test. `plan.md`
+**36,173 lines of TypeScript across 257 files** — 26,848 source, 9,325 test. `plan.md`
 §11 breaks that down and is re-counted rather than nudged.
 
 ## What's built vs designed
@@ -74,7 +74,8 @@ which restate it. Current status:
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M12** (Tutor Mode).
 - **M11 is the active gate, not a future milestone.** 19–20 Aug reframed it: the goal
   became *a stable first release* rather than a more complete one, and M11's exit
-  checklist gained a **v1 release bar** — 17 items, **9 done as of 20 Aug**, each one
+  checklist gained a **v1 release bar** — now **23 items, 20 done** as of 20 Aug
+  (evening); it grew as walking the product found more, which is the point. Each one
   a defect found by walking the verification runbook on a real fixture rather than by
   inspection. See the next section and `plan.md` §7's M11 for the live list.
 - Full detail, including *why* each milestone landed the way it did: `plan.md` §7.
@@ -242,7 +243,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 929 tests currently
+npm test               # node's built-in test runner, no framework — 970 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below
@@ -273,12 +274,17 @@ actual thing.
 
 Three live trackers, not this file — this section only says which one to open.
 
-**The v1 release bar** — `plan.md` §7, M11 — is the one that gates shipping. 17 items,
-9 done as of 20 Aug. Check it, not this paragraph, for the current count.
+**The v1 release bar** — `plan.md` §7, M11 — is the one that gates shipping. **23 items,
+20 done** as of 20 Aug (evening); three open: M8i part 1 (strip reasoning blocks), F20
+(reply length), and runbook sessions A–C. Check it, not this paragraph, for the current
+count — it has changed six times in two days.
 
 **The verification runbook** — `clarvis-firstrun/RUNBOOK.md`, a *separate repository*
-from this one — is seven scripted sessions plus two dogfood tracks. Session 1 has run
-(twice, on `3-compliment` and `6-compliment-again`); sessions 2–7 have not. Its findings
+from this one — was **rescoped on 20 Aug from seven ~90-minute sessions to four of ~50**
+(A safety, B loop seams, C local models, D fixtures), because the seven were not being
+walked and a runbook nobody finishes verifies nothing. Session 1's content is largely
+covered and walked; **A–C have not run.** The cut is recorded with its reasoning in the
+runbook's own *Cut, and why* table, including one dogfood track dropped entirely. Its findings
 land in `clarvis-firstrun/FINDINGS.md`, cross-checked against this repo's release bar
 and `docs/future-features.md` by `check-findings.mjs` — a finding that exists in only
 one place is a bug in the bookkeeping, and that script fails on it.
@@ -286,7 +292,10 @@ one place is a bug in the bookkeeping, and that script fails on it.
 **The M6 dogfood pass** — does the character hold up over days of ordinary use — is
 still the one nothing above closes. It needs the same lines heard repeatedly across
 real days of work, which a scripted session cannot produce by design; `RUNBOOK.md`'s
-two tracks (`nanocode`, a Rust OS book) exist for exactly this, and neither has run
+remaining track (`nanocode`, scoped to chapters 1–3) exists for exactly this and has
+barely started. The Rust OS track was cut on 20 Aug: it existed almost entirely to fire
+`buildSlow` and `bigDiff`, and weeks of evenings for two thresholds is a bad trade — that
+neither fires on real work is itself recorded as the finding, in `VOICE-LOG.md`
 long enough yet. [`verification.md`](verification.md) carries the finer-grained M8
 items (~45, last counted 15 Aug — recount rather than trust that number).
 

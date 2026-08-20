@@ -207,11 +207,19 @@ and you can cut in at any point.
 | Anthropic (Claude) | an API key | yes |
 | OpenAI | an API key | yes |
 | OpenRouter | an API key | yes |
-| Ollama *(runs on your machine)* | nothing | depends which model |
 | LM Studio *(runs on your machine)* | nothing | depends which model |
+| Ollama *(runs on your machine)* | nothing | depends which model |
+| Anything OpenAI-compatible *(your own server)* | its address | depends which model |
 
 **Running everything on your own machine is a proper option**, not an afterthought.
-Point him at Ollama or LM Studio and nothing you write ever leaves your computer.
+Point him at LM Studio or Ollama and nothing you write ever leaves your computer. The
+last row is for llama.cpp, vLLM, LocalAI or a box on your network — Clarvis asks for the
+address when you choose it, rather than shipping a guessed default.
+
+**Chat and the coding work can use different models**, which matters more than it
+sounds: the chat role carries the character, the planning interview and the analysis,
+while the coding role only runs builds. A capable model on chat and a local one on code
+is a sensible pairing; the reverse usually is not.
 
 **There's no "sign in with Claude", on purpose.** Anthropic doesn't allow other
 products to use claude.ai logins or subscription limits without permission, so Clarvis

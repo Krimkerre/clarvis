@@ -4450,6 +4450,16 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       `AgentRunner` now, so both paths share one stripper. 4 tests, including that prose
       containing `[[a link]]` is left alone. **Worth reading the other `[x]` lines with
       this in mind: "verified" has meant *on the path someone walked*.**
+- [ ] **F20 — replies run three to four times over the spoken ceiling, worst on the best
+      model.** `voiceCheck` flags anything past **20 seconds spoken**. An A/B on 20 Aug put
+      Llama 3.1 8B at 22s and 42s on two chat scenes, and **Haiku 4.5 at 73s and 77s** on
+      the same ones. The long answers are good — dry, specific, in character — and §2.1
+      names length creep as *the most likely failure* of this prompt, to be answered by
+      tightening rather than more adjectives. It is happening on the **default provider**,
+      which makes it a v1 concern rather than a local-model curiosity. The same run tripped
+      the parrot check once, on Haiku only, quoting a calibration example back verbatim —
+      one occurrence, but capable models are the ones able to notice and reuse the
+      examples.
 - [ ] **F13 — a local provider that isn't running says nothing at all.** Switching to
       Ollama with its server down logs `fetch failed` twice and shows the user an empty
       picker with no explanation. `modelPickers.ts` returns the cached list and says

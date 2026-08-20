@@ -170,6 +170,33 @@ is the narrowed challenge working exactly as written — the answer is *usable*,
 not answer the question. Whether an answer that does not answer should still be accepted is
 an inference question, not a challenge one.
 
+## Deferred: the character has a capability floor, and nothing says so (F18, F19)
+
+**What:** the same eleven `voiceCheck` scenes through Llama 3.1 8B and Haiku 4.5, 20 Aug.
+The prompt produces the character on a capable model and a helpdesk on a small one. The
+`conversation, not a task` scene reproduced, nearly word for word, the live failure its own
+`looksFor` was written to catch — sincere paragraphs with a jab stapled on.
+
+Worse, and the reason this is not merely cosmetic: the small model **invented figures the
+prompt forbids it to invent.** Given only *"probe-build-fail (exit 1), 40 minutes ago"* it
+produced *"failed for the 40th time"*, turning a duration into a tally.
+`ONLY_WHAT_YOU_WERE_GIVEN` holds on a capable model and dissolves on a small one. A flat
+butler is disappointing; a butler who states a confident wrong number about your build is
+one you cannot trust about anything, and §9 is almost entirely about trust.
+
+**Why deferred:** it is not a defect in any line of code — the prompt is right, the model is
+small. And **it must not be fixed by rewriting the character**: §2.1's warning is precisely
+this, that a prompt tuned against a weak model's output sounds like a prompt on a strong one.
+
+**The lever is saying which models carry the voice**, which is M8j's tiering — now on its
+**third caller**, alongside F14's deadlines and F16's step budgets. Three independent
+findings all wanting the same mechanism is the argument for building it.
+
+**The nearer half, and it is nearly free:** the manual now actively helps someone choose an
+8B, and says nothing about what they lose. One honest paragraph — a small model answers
+questions perfectly well and will sound less like him, and may state a number it invented —
+is worth more than any prompt change, and can ship before the tiering does.
+
 ## Deferred: every question gets a tool loop, whenever the model can (F16, F17)
 
 **What:** `Replier.withModel()` sends a question to the read-only agent loop on one

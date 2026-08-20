@@ -295,6 +295,38 @@ test('reading a directory is refused with a useful message', async () => {
   await assert.rejects(() => readFile(root, 'src'), /listFiles/);
 });
 
+// F25 -- listFiles and search threw a bare `ENOENT ... scandir '/absolute/path'`, which
+// reached the chat transcript and taught the model that absolute paths were wanted. It
+// then retried the same wrong path four more times.
+test('listing a directory that is not there names the path the caller asked for', async () => {
+  const root = await populated();
+
+  await assert.rejects(
+    () => listFiles(root, { directory: 'src/main.go' }),
+    (error: Error) => {
+      assert.match(error.message, /isn't there/);
+      assert.match(error.message, /relative to the workspace root/);
+      assert.doesNotMatch(error.message, /ENOENT|scandir/, 'no raw errno');
+      assert.doesNotMatch(error.message, new RegExp(root), 'never the absolute path');
+      return true;
+    }
+  );
+});
+
+test('searching under a directory that is not there fails the same way', async () => {
+  // search() delegates to listFiles, so it inherited the bare ENOENT too.
+  const root = await populated();
+
+  await assert.rejects(
+    () => search(root, /anything/, { directory: 'nope/missing' }),
+    (error: Error) => {
+      assert.doesNotMatch(error.message, /ENOENT|scandir/);
+      assert.match(error.message, /isn't there/);
+      return true;
+    }
+  );
+});
+
 test('listing skips node_modules and .git', async () => {
   // Not a preference: they are never the answer, and walking them turns a one-second
   // listing into a thirty-second one.

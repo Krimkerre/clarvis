@@ -54,6 +54,20 @@ export interface ReadResult {
  * is *reported*, so a model is never quietly reasoning about a fragment it thinks is
  * whole — which is how confident wrong answers get made.
  */
+/**
+ * The one sentence said when a path is not there (§2.2 — never composed at a call site).
+ *
+ * **Names the path the caller asked for, never the resolved absolute one.** The absolute
+ * path is the single form the argument must not take, so an error containing it is an
+ * argument for repeating the mistake — which is exactly what happened on 20 Aug, when
+ * `listFiles` and `search` threw a bare `ENOENT … scandir '/Users/…'` and the model
+ * retried the same wrong path four more times (F25). `readFile` had this guard from the
+ * start; its two siblings never got it.
+ */
+function missingPath(requested: string, tail: string): string {
+  return `\`${requested}\` isn't there. Paths are relative to the workspace root — no leading folder name for the project itself. ${tail}`;
+}
+
 export async function readFile(root: string | undefined, requested: string): Promise<ReadResult> {
   const target = await resolveInWorkspace(root, requested);
   // **A missing file says what to do about it.** The raw ENOENT names an absolute
@@ -62,9 +76,7 @@ export async function readFile(root: string | undefined, requested: string): Pro
   // here rather than in the prompt: a rule read at the start loses to the evidence in
   // front of the model at the time.
   const stat = await fs.stat(target).catch(() => {
-    throw new Error(
-      `\`${requested}\` isn't there. Paths are relative to the workspace root — no leading folder name for the project itself. Use listFiles to see what is.`
-    );
+    throw new Error(missingPath(requested, 'Use listFiles to see what is.'));
   });
 
   if (stat.isDirectory()) {
@@ -107,14 +119,27 @@ export async function listFiles(
   root: string | undefined,
   options: ListOptions = {}
 ): Promise<string[]> {
-  const start = await resolveInWorkspace(root, options.directory ?? '.');
+  const requested = options.directory ?? '.';
+  const start = await resolveInWorkspace(root, requested);
   const limit = options.limit ?? 1000;
   const found: string[] = [];
+
+  // **The same guard `readFile` has always had** (F25). Without it a missing directory
+  // threw a raw `ENOENT … scandir '/absolute/path'` — shown to the user, because
+  // `Replier.withTools` posts tool failures straight into the chat stream, and read by
+  // the model as evidence that absolute paths are what this tool wants.
+  await fs.stat(start).catch(() => {
+    throw new Error(missingPath(requested, 'Use `.` for the project root.'));
+  });
 
   async function walk(directory: string): Promise<void> {
     if (found.length >= limit) return;
 
-    const entries = await fs.readdir(directory, { withFileTypes: true });
+    // **A subdirectory that cannot be read loses that subdirectory, not the listing.**
+    // Separate from the guard above, and a judgement rather than an observed defect: an
+    // unreadable or vanished folder deep in a tree should not turn a useful partial
+    // answer into no answer at all.
+    const entries = await fs.readdir(directory, { withFileTypes: true }).catch(() => []);
 
     for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
       if (found.length >= limit) return;

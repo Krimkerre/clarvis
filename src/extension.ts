@@ -335,6 +335,16 @@ function startPatternMemory(
  * the model must not already be loaded. Failure is silent by design — LM Studio
  * loads on demand regardless, which is exactly today's behaviour.
  */
+/**
+ * Whether long replies are trimmed before they are spoken.
+ *
+ * Read here and handed to the check, so `voiceCheck.ts` needs no `vscode` import and
+ * stays loadable — and testable — outside the extension host.
+ */
+function trimsLongReplies(): boolean {
+  return vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.trimLongReplies', true);
+}
+
 async function releaseLocalModels(models: ModelService, log: (message: string) => void): Promise<void> {
   if (!vscode.workspace.getConfiguration('clarvis').get<boolean>('model.tuneLocalLoads', true)) return;
 
@@ -992,7 +1002,8 @@ function registerAgentCommands(
     vscode.commands.registerCommand('clarvis.debug.voiceCheck', async () => {
       const report = await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: 'Clarvis: saying a few things…' },
-        () => runVoiceCheck(models, (message) => logger.write(message))
+        () =>
+          runVoiceCheck(models, (message) => logger.write(message), trimsLongReplies())
       );
 
       const document = await vscode.workspace.openTextDocument({ content: report, language: 'markdown' });

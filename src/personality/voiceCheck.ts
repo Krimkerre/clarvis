@@ -294,7 +294,16 @@ async function say(models: ModelService, scene: Scene): Promise<string> {
 
 export async function runVoiceCheck(
   models: ModelService,
-  log: (message: string) => void
+  log: (message: string) => void,
+  /**
+   * Whether the spoken trim is on, read from settings by the caller.
+   *
+   * **Passed in rather than read here.** Importing `vscode` for one boolean would make
+   * this module unloadable outside the extension host, and every pure part of it
+   * untestable with it — which was already true once, through a re-export, and cost the
+   * grounding fix its regression test until it was found.
+   */
+  trims = true
 ): Promise<string> {
   const out: string[] = [
     '# Clarvis — voice check',
@@ -321,9 +330,10 @@ export async function runVoiceCheck(
     const median = seconds[Math.floor(seconds.length / 2)];
     const said = takes[takes.indexOf(takes.find((take) => spokenSeconds(take) === median) ?? takes[0])];
     const lifted = parroted(said);
-    // What the voice would really say: everything, under the ceiling — his closing line
-    // alone, past it. Chat replies only; a quip or a briefing is spoken whole.
-    const aloud = scene.spoken === false ? said : spokenPart(said);
+    // What the voice would really say — including whether the user has the trim turned
+    // off, since a check that ignores the setting reports a product nobody is running.
+    // Chat replies only; a quip or a briefing is spoken whole regardless.
+    const aloud = scene.spoken === false || !trims ? said : spokenPart(said);
 
     out.push(
       said,

@@ -4639,6 +4639,15 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       preceded this is deleted rather than kept beside it: the general rule covers the
       cases it was catching. On the logged replies: *"Depends what you mean by trust. I
       would not leave it alone."* and *"No. Everything else is logistics."*
+      **Behind `clarvis.voice.trimLongReplies`, default on.** How he sounds is taste, and
+      this changes it — the user asked for a switch rather than a future git revert across
+      three interleaved commits. Off reads every reply in full, which is what shipped
+      before 20 Aug. `voiceCheck` is told the setting rather than reading it, so the module
+      keeps loading outside the extension host: importing `vscode` for one boolean made it
+      untestable the first time it was tried, an hour earlier, through a re-export.
+      **The two halves stay independent.** The trim is the setting; part 2 standing on its
+      own is `ANSWER_SHAPE` and applies whether or not anything is trimmed.
+
       **Known weak case:** an opening sentence that is one word (*"No."*) spends almost
       none of the budget, so those replies still come in at two seconds. Filling the
       remaining seconds with the sentences that follow would fix it and would also let a

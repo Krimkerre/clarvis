@@ -317,6 +317,11 @@
           "default": "",
           "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here."
         },
+        "clarvis.voice.trimLongReplies": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep spoken replies under about twenty seconds. A reply that would run longer is read aloud as its opening sentence and Clarvis's own closing line; the panel always shows the whole thing, and nothing is cut mid-sentence. Turn this off to hear every reply in full — replies of a minute or more have been measured, which is the reason this exists."
+        },
         "clarvis.model.tuneLocalLoads": {
           "type": "boolean",
           "default": true,

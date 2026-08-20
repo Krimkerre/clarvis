@@ -152,9 +152,17 @@ export class Replier {
     if (!delivery.speak) return;
 
     this.transcript.note(text);
-    // **The panel keeps every word.** Past the spoken ceiling the voice gets his closing
-    // line alone, rather than a paragraph read at someone (F20).
-    this.voice.say(spokenPart(text), 'chatReply');
+
+    // **The panel keeps every word either way.** Past the spoken ceiling the voice gets
+    // the opening sentence and his own closing line rather than a paragraph read at
+    // someone (F20) — and behind a setting, because how he sounds is a matter of taste
+    // and this changes it. Off means the whole reply is read, which is what shipped
+    // before 20 Aug.
+    const trim = vscode.workspace
+      .getConfiguration('clarvis')
+      .get<boolean>('voice.trimLongReplies', true);
+
+    this.voice.say(trim ? spokenPart(text) : text, 'chatReply');
   }
 
   /**

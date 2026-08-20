@@ -6,6 +6,7 @@ import type { Pattern } from '../memory/patterns';
 import { VoiceService } from '../voice/VoiceService';
 import { Transcript } from './Transcript';
 import { Busy } from './Busy';
+import { pickAside } from '../personality/asides';
 import { Replier } from './Replier';
 import { RunSession } from './RunSession';
 import { factsBlock, localAnswer } from './localAnswer';
@@ -859,7 +860,13 @@ export class ChatService {
     // so rather than silently doing nothing — which, on an always-visible button, would
     // read as the button being broken.
     this.panel.onDidRequestStop(() => void this.stopFromChat());
-    this.panel.onDidRequestModels(() => void vscode.commands.executeCommand('clarvis.configureModels'));
+    this.panel.onDidRequestModels(() => {
+      // The remark and the picker go at once, deliberately. Awaiting a line before opening
+      // the picker would make a joke the thing standing between the user and a button they
+      // pressed — and on a local model that wait is seconds, not milliseconds (F14).
+      void this.remarkOnModels();
+      void vscode.commands.executeCommand('clarvis.configureModels');
+    });
     this.panel.onDidRequestMode(() => void this.actions.chooseMode());
 
     // Keep the bowtie's tooltip honest when the settings change underneath it —
@@ -1175,6 +1182,21 @@ export class ChatService {
    * replacement: the toast still fires, and the budget that governs whether it
    * fires at all is unchanged (§6).
    */
+  /** Lines already used for a button this session. A new window is a new sitting. */
+  private readonly asidesSaid = new Set<string>();
+
+  /**
+   * A word about being tinkered with, when the model picker is opened.
+   *
+   * Recorded, not spoken. The picker is about to take the screen and a spoken line would
+   * be talking over it — and unlike a briefing, nothing here is worth waiting for. It
+   * still goes through `phrase('aside')`, so the written line is a fallback rather than
+   * the script.
+   */
+  private async remarkOnModels(): Promise<void> {
+    await this.note(await this.phrase('aside', pickAside('models', this.asidesSaid), []));
+  }
+
   async note(text: string): Promise<void> {
     // No setState here on purpose: the caller already chose a face and owns the hold
     // timer that returns it to rest. Setting it again from here would fight them.

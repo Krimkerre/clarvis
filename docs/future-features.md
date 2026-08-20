@@ -191,6 +191,76 @@ were behind)*:
 "Local provider → longer deadlines" is exactly the *default seeded by family, never a
 capability asserted* that M8j was scoped for, and a smaller ask than M9h's `shouldAsk`.
 
+## Deferred: read a provider's own capability data instead of probing for it (F27)
+
+**What:** LM Studio's `/api/v0/models` — the same port Clarvis already talks to — publishes
+`state`, `max_context_length`, `quantization` and a `capabilities` array carrying
+`tool_use`. `supportsTools()` answers that last question by spending a real one-tool,
+one-token request instead.
+
+**The code's own comment says why it does that**, and it was right when written: *"a
+one-tool, one-token request is the only honest test: `/v1/models` reports nothing about
+tool support."* True of `/v1/models`; false of `/api/v0/models`, which is a newer,
+provider-specific endpoint.
+
+**Why it is worth doing:** it removes a spent request per model per session, it is faster
+than a round trip, and it removes the mechanism behind the known **cached-401** bug — an
+access error recorded as a capability verdict. A published field cannot be misread that way.
+
+**The rule has to be asymmetric, and this is the part to get right.** `phi-4-mini-instruct`
+publishes `tools: no` and was measured producing a **well-formed tool call** on the same
+machine an hour earlier. So: **trust a published `yes`, probe on a `no`.** Strictly better
+than probing blind, and honest about which half is evidence.
+
+**Why deferred:** the current path works and only costs a request — nothing is lost, nothing
+acts against the user, no internals leak. It is also **one provider's extension**: Ollama and
+llama.cpp publish different things or nothing, so this is a per-provider enrichment behind
+the existing interface, never a replacement for `supportsTools()`.
+
+## Deferred: notice when the local server's own settings are fighting us (F28)
+
+**What:** LM Studio ships `unloadPreviousJITModelOnLoad: true`, a 1-hour JIT TTL, and `high`
+loading guardrails. The first **evicts the chat model when the coding model loads, and the
+reverse** — so the separate-models setup Clarvis itself recommends reloads a model from disk
+on every switch. A cold JIT load measured **5.3s** against a 5s deadline, which means that
+one setting makes **F14 fire permanently, by configuration**.
+
+**What Clarvis must not do:** write those settings. They live in another application's
+config file outside the workspace; changing them silently breaks §9.9 — *never once finds
+that Clarvis changed something they didn't ask him to change* — and is exactly what
+`resolveInWorkspace()` refuses on principle. It would not work anyway: LM Studio rewrites
+that file on quit, clobbering edits made while it runs.
+
+**What it could do:** the `gitOffer.ts` shape — diagnose the specific cause, name the
+specific fix, no button that could only fail, remember a decline forever. Detection is free
+and read-only, since `/api/v0/models` reports `state`: Clarvis can see the model it is about
+to use is not resident and say what that will cost *before* spending a deadline on it.
+
+**Partly built, 20 Aug — the load-parameter half shipped.** `lmStudioTune.ts` warms the
+configured LM Studio models at startup with `--parallel 1`, on the reasoning the user gave
+when signing it off: *choosing a local provider is itself the signal that it will be used*.
+It replaces a just-in-time load that was going to happen anyway, with better parameters —
+the same event, not a new action. Three gates: LM Studio only, a setting the user can turn
+off (`clarvis.model.tuneLocalLoads`), and **never a model that is already loaded**, because
+one the user loaded themselves is theirs, settings and all. Verified against a live server:
+cold → both loaded at `parallel=1`; warm → does nothing; server down → logs and carries on.
+
+**Only `--parallel`, and only because it was verified.** `--context-length` is silently
+ignored on MLX (`autoFit` appears to win) and speculative decoding lives only under
+`llm.load.llama.*`. Passing either would make Clarvis the fourth thing in this stack to
+quietly ignore its own options.
+
+**What stays deferred:** noticing that LM Studio's *own* settings are hostile — the JIT
+eviction, the TTL, the guardrails — and offering the fix in `gitOffer.ts`'s shape. Those
+live in another application's config file and Clarvis must never write them. The honest
+half of *that* — telling the user the local model is missing these deadlines — **shipped as
+F14's fix** the same afternoon; this would say *why*, which is better, but F14's notice is
+not wrong without it.
+
+**The cheap half is already done:** `media/MANUAL.md` gained *Making LM Studio quick*, naming
+all four settings — and correcting a claim that two models "will swap them in and out and
+everything gets slower", which described a **setting** as if it were a limitation.
+
 ## Deferred: the milestones already marked stretch
 
 Unchanged by this decision, listed so the v1 boundary is in one place:

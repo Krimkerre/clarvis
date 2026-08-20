@@ -316,6 +316,11 @@
           "type": "string",
           "default": "",
           "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here."
+        },
+        "clarvis.model.tuneLocalLoads": {
+          "type": "boolean",
+          "default": true,
+          "description": "Load LM Studio models with Clarvis's own settings rather than the app's defaults, and warm them at startup. LM Studio reserves room for four answers at once; Clarvis asks for one at a time, and the rest is memory you are not using. It never touches a model you loaded yourself, never changes LM Studio's own settings, and does nothing on other providers."
         }
       }
     }

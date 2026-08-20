@@ -43,6 +43,7 @@ import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers'
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
 import { SlowModelWatch, slowModelLine } from './personality/slowModel';
+import { tuneLoads } from './model/lmStudioTune';
 import { startTailing, stopTailing } from './logtailing/logTailing';
 
 
@@ -113,6 +114,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // when a question falls outside what Clarvis watched happen.
   const models = new ModelService(context, (message) => logger.write(message));
   registerModelCommands(context, models, (message) => logger.write(message));
+
+  // **Loads the local models properly, rather than letting them arrive by default.**
+  // LM Studio just-in-time loads whatever a request names, reserving room for four
+  // concurrent answers when Clarvis asks for one — and a cold load costs 5.3s against
+  // a 5s deadline, which is F14 firing on the first thing said. Warming them at
+  // startup is defensible precisely because choosing a local provider *is* the signal
+  // that they will be used. Never blocks activation, never touches a model the user
+  // loaded themselves, and does nothing at all on any other provider. See F28.
+  void warmLocalModels(models, (message) => logger.write(message));
 
   // One place that knows what a run is doing: whether one is in progress, and what it
   // committed. Quips stay out of the way during one (§4.6 personality under load), the
@@ -301,6 +311,26 @@ function startPatternMemory(
 
   void memory.start(tracker, context);
   return memory;
+}
+
+/**
+ * Pre-loads the local models Clarvis is configured to use, with its own parameters.
+ *
+ * Gated three ways, all of them deliberate: the provider must be LM Studio (this is
+ * that server's CLI and nobody else's), the user must not have switched it off, and
+ * the model must not already be loaded. Failure is silent by design — LM Studio
+ * loads on demand regardless, which is exactly today's behaviour.
+ */
+async function warmLocalModels(models: ModelService, log: (message: string) => void): Promise<void> {
+  if (!vscode.workspace.getConfiguration('clarvis').get<boolean>('model.tuneLocalLoads', true)) return;
+  if (models.spec('chat').id !== 'lmstudio' && models.spec('agent').id !== 'lmstudio') return;
+
+  // Only the roles actually pointed at LM Studio; a mixed setup is normal.
+  const wanted = (['chat', 'agent'] as const)
+    .filter((role) => models.spec(role).id === 'lmstudio')
+    .map((role) => models.model(role));
+
+  await tuneLoads(models.baseUrl('chat'), wanted, log);
 }
 
 function startBriefing(

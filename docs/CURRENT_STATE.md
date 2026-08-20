@@ -13,6 +13,13 @@ A VS Code extension: a sarcastic butler that lives in the editor, watches builds
 errors, and — when asked — plans and builds projects as an agentic coding assistant.
 Ships as a `.vsix`. Bound to one workspace folder; dies when the window closes.
 
+## Continuing a session in progress?
+
+**`clarvis-firstrun/NEXT.md`** is the handoff from the last working session: what is in
+flight, what was decided and should not be relitigated, and — usefully — a list of claims
+that turned out to be wrong, so a stale quotation of one does not get trusted. Read it
+before this file if you are picking up rather than starting cold.
+
 ## Read this first, always
 
 **`AGENTS.md`** in the repo root. It states the working-process rule that governs how

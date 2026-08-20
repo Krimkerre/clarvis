@@ -2,6 +2,7 @@ import { ModelService } from '../model/ModelService';
 import { acceptRewrite, Line, Purpose, rewritePrompt, worthRewriting } from './say';
 import { acceptOpening, openingPrompt } from './originalLine';
 import { withDeadline } from '../model/deadline';
+import { collect } from '../model/collect';
 
 /**
  * Puts a line in Clarvis's voice, when there is a model to do it.
@@ -138,26 +139,17 @@ export class Voice {
    * keeping (F23) — a timeout has always meant "use the written line", never "throw
    * away what the model had already said".
    */
-  private async collect(prompt: string, signal: AbortSignal): Promise<string> {
-    let text = '';
-
-    try {
-      for await (const fragment of this.models.stream(
-        {
-          system: 'You rewrite one line in character. Nothing else.',
-          messages: [{ role: 'user', content: prompt }],
-          signal,
-        },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > 300) break;
-      }
-    } catch (error) {
-      if (!signal.aborted) throw error;
-    }
-
-    return text;
+  /** One line, in character. 300 characters is already twice any line he says. */
+  private collect(prompt: string, signal: AbortSignal): Promise<string> {
+    return collect(
+      this.models,
+      {
+        system: 'You rewrite one line in character. Nothing else.',
+        messages: [{ role: 'user', content: prompt }],
+        signal,
+      },
+      300
+    );
   }
 }
 

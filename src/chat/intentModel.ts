@@ -1,4 +1,5 @@
 import { ModelService } from '../model/ModelService';
+import { collect } from '../model/collect';
 import { intentPrompt, parseIntent, Route } from './routing';
 import { actionPrompt, parseAction } from './actionIntent';
 import { ChatAction } from './chatCommands';
@@ -30,7 +31,7 @@ export async function classifyIntent(
   if (!(await models.isReady('chat'))) return undefined;
 
   try {
-    const raw = await withDeadline(DEADLINE_MS, (signal) => collect(models, intentPrompt(text), signal), () => '');
+    const raw = await withDeadline(DEADLINE_MS, (signal) => oneWord(models, intentPrompt(text), signal), () => '');
 
     const route = parseIntent(raw);
     log(`intent: model said ${route ?? 'nothing usable'} for "${text.slice(0, 50)}"`);
@@ -56,7 +57,7 @@ export async function classifyAction(
   if (!(await models.isReady('chat'))) return undefined;
 
   try {
-    const raw = await withDeadline(DEADLINE_MS, (signal) => collect(models, actionPrompt(text), signal), () => '');
+    const raw = await withDeadline(DEADLINE_MS, (signal) => oneWord(models, actionPrompt(text), signal), () => '');
 
     const action = parseAction(raw);
     log(`action intent: model said ${action ?? 'none'} for "${text.slice(0, 50)}"`);
@@ -67,21 +68,16 @@ export async function classifyAction(
   }
 }
 
-async function collect(models: ModelService, prompt: string, signal: AbortSignal): Promise<string> {
-  let text = '';
-
-  try {
-    for await (const fragment of models.stream(
-      { system: 'You answer with exactly one word.', messages: [{ role: 'user', content: prompt }], signal },
-      'chat'
-    )) {
-      text += fragment;
-      // One word is expected; anything past this is a reply that will be rejected anyway.
-      if (text.length > 40) break;
-    }
-  } catch (error) {
-    if (!signal.aborted) throw error;
-  }
-
-  return text;
+/**
+ * One word, and no more of one than is worth reading.
+ *
+ * 40 characters: a one-word answer is expected, and anything past that is a reply that
+ * will be rejected anyway.
+ */
+function oneWord(models: ModelService, prompt: string, signal: AbortSignal): Promise<string> {
+  return collect(
+    models,
+    { system: 'You answer with exactly one word.', messages: [{ role: 'user', content: prompt }], signal },
+    40
+  );
 }

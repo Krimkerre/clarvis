@@ -1,5 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { withDeadline } from '../model/deadline';
+import { collect } from '../model/collect';
 import { QuipTrigger } from './quipBank';
 import {
   acknowledgementPrompt,
@@ -94,28 +95,18 @@ export class LiveQuips {
     }
   }
 
-  private async collect(prompt: string, signal: AbortSignal): Promise<string> {
-    let text = '';
-
-    try {
-      for await (const fragment of this.models.stream(
-        {
-          // Kept out of the chat transcript deliberately: this is Clarvis thinking of
-          // something to say, not a conversation the user is part of.
-          system: 'You write one short, dry remark. Nothing else.',
-          messages: [{ role: 'user', content: prompt }],
-          signal,
-        },
-        'chat'
-      )) {
-        text += fragment;
-        // No point streaming past the length limit — the answer is already too long.
-        if (text.length > 400) break;
-      }
-    } catch (error) {
-      if (!signal.aborted) throw error;
-    }
-
-    return text;
+  /** One dry remark. 400 characters, which a one-line quip never approaches. */
+  private collect(prompt: string, signal: AbortSignal): Promise<string> {
+    return collect(
+      this.models,
+      {
+        // Kept out of the chat transcript deliberately: this is Clarvis thinking of
+        // something to say, not a conversation the user is part of.
+        system: 'You write one short, dry remark. Nothing else.',
+        messages: [{ role: 'user', content: prompt }],
+        signal,
+      },
+      400
+    );
   }
 }

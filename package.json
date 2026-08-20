@@ -195,15 +195,17 @@
             "anthropic",
             "openai",
             "openrouter",
+            "lmstudio",
             "ollama",
-            "lmstudio"
+            "custom"
           ],
           "enumDescriptions": [
             "Anthropic API with your own key. Best tool calling.",
             "OpenAI with your own key.",
             "OpenRouter — one key, many models. Use \"Clarvis: Choose Model\" for the filtered list.",
-            "Ollama on this machine. No key, nothing leaves it.",
-            "LM Studio on this machine. No key, nothing leaves it."
+            "LM Studio on this machine. No key, nothing leaves it. Models are browsed and loaded in the app.",
+            "Ollama on this machine. No key, nothing leaves it. Models are pulled from a terminal.",
+            "Any other OpenAI-compatible server — llama.cpp, vLLM, LocalAI, or one on your network. Clarvis asks for the address."
           ],
           "description": "Which model provider to use. No Claude-subscription option: Anthropic does not permit third-party products to use claude.ai logins without prior approval."
         },
@@ -220,16 +222,18 @@
             "anthropic",
             "openai",
             "openrouter",
+            "lmstudio",
             "ollama",
-            "lmstudio"
+            "custom"
           ],
           "enumDescriptions": [
             "Use the same provider as chat.",
             "Anthropic API with your own key.",
             "OpenAI with your own key.",
             "OpenRouter — one key, many models.",
+            "LM Studio on this machine.",
             "Ollama on this machine.",
-            "LM Studio on this machine."
+            "Any other OpenAI-compatible server. Clarvis asks for the address."
           ],
           "description": "Provider for writing code and running the agent. Empty follows the chat provider — set it to keep a cheap model for chat and a capable one for code."
         },
@@ -307,6 +311,11 @@
           "default": "",
           "scope": "machine",
           "markdownDescription": "Send OpenRouter requests somewhere other than the default. Leave empty unless you are pointing at your own server. **Machine-scoped on purpose:** a project you open cannot set this, because your API key travels with every request."
+        },
+        "clarvis.chat.baseUrl.custom": {
+          "type": "string",
+          "default": "",
+          "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here."
         }
       }
     }

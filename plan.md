@@ -970,12 +970,31 @@ interface.
 | ~~Claude subscription~~ | — | — | **Ruled out at M8b0.** Anthropic does not permit third-party products to offer claude.ai login or subscription rate limits without prior approval. See the finding below |
 | **OpenAI** | user's API key | yes | Tool calling is solid |
 | **OpenRouter** | user's API key | yes | OpenAI-compatible; one adapter covers it |
-| **Ollama** | none (localhost) | *model-dependent* | OpenAI-compatible endpoint. Fully local, no key, nothing leaves the machine |
-| **LM Studio** | none (localhost) | *model-dependent* | Same adapter as Ollama, different default port |
+| **LM Studio** | none (localhost) | *model-dependent* | Fully local, no key, nothing leaves the machine. **Offered first of the three** |
+| **Ollama** | none (localhost) | *model-dependent* | Also fully local. Standard port, nothing to configure — but models are pulled from a terminal |
+| **Custom (OpenAI-compatible)** | none | *model-dependent* | Any other such server — llama.cpp, vLLM, LocalAI, one on the network. **No default address; Clarvis asks** |
 | **Host LM API** | none | only if the host exposes tools | `vscode.lm` where present; probed, never assumed (§4.0) |
 
-OpenAI, OpenRouter, Ollama, and LM Studio are all OpenAI-compatible, so **one adapter
-plus a configurable base URL covers all four** — not four integrations.
+OpenAI, OpenRouter and all three local rows are OpenAI-compatible, so **one adapter plus a
+configurable base URL covers every one of them** — not six integrations.
+
+**The order of the three local rows is the recommendation (20 Aug).** §6 budgets the whole
+product one install step and says that if it needs a config file, it has failed. Choosing a
+model in LM Studio is a search box and a button; in Ollama it is `ollama pull` in a
+terminal. Both remain, because they share an adapter and removing one would save no
+maintenance while costing everyone who already runs it — the intervention is which one a
+new user meets first, and what each row says about itself. The old copy read *"same as
+Ollama, different port"*, which presented a GUI and a terminal as equivalent and told a
+newcomer nothing about which to pick.
+
+**`custom` is the row that lets this list stop growing.** Every local runtime worth using
+speaks the same dialect and differs by port; they do not each need a row, they need one row
+that asks. It is the only provider with `needsUrl`, and the only one shipping no `baseUrl`
+— a default would be a silent lie, connecting to whatever happened to be on that port. The
+address is asked for **at the moment the provider is chosen**, in the same breath as a key,
+because §6 means a user should never have to open `settings.json` to make the product work.
+Dismissing that prompt says so rather than leaving a provider with nowhere to send anything
+— the failure F13 describes, which it would otherwise be creating on purpose.
 
 **Two caveats. The first is now answered; the second still stands:**
 
@@ -4728,7 +4747,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**882 tests**, against Node's built-in runner with no test framework — possible only
+**890 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelService } from './ModelService';
 import { ModelChoice } from './ModelProvider';
-import { PROVIDERS, ProviderId, providerSpec } from './providers';
+import { PROVIDERS, ProviderId, providerSpec, acceptableOverride } from './providers';
 import { ModelRole } from './roles';
 import { phrase } from '../personality/Voice';
 
@@ -57,6 +57,13 @@ export async function chooseProvider(
   const spec = providerSpec(picked.id)!;
   if (spec.needsKey && !keyed[picked.id]) {
     await promptForKey(models, picked.id, log);
+  }
+
+  // **A URL is to this provider what a key is to Anthropic**, so it is asked for in the
+  // same breath. Without it the model list cannot be fetched and the next picker would
+  // open empty, which is the failure F13 describes from the other direction.
+  if (spec.needsUrl) {
+    await promptForBaseUrl(picked.id, log);
   }
 
   // **Straight on to the models.** Choosing a provider clears the model — carrying one
@@ -331,6 +338,51 @@ async function promptForModelName(
 }
 
 /** Captures a key into the OS keychain. Never settings, never the log. */
+/**
+ * Asks for the address of a server Clarvis has no way to guess.
+ *
+ * Validated with `acceptableOverride()` — the same rule the stored override already goes
+ * through, rather than a second opinion about what a safe URL is. For a keyless provider
+ * that means any http or https address, since nothing secret travels to it; the tighter
+ * loopback-or-https rule exists to stop a key leaving over plain http, and there is no key
+ * here.
+ *
+ * Rejection re-asks rather than failing, with what was typed still in the box. A URL is
+ * easy to typo and losing it to a dismissed dialog is the kind of small rudeness §6 counts.
+ */
+export async function promptForBaseUrl(provider: ProviderId, log: (m: string) => void): Promise<void> {
+  const spec = providerSpec(provider)!;
+  const stored = vscode.workspace.getConfiguration('clarvis').get<string>(`chat.baseUrl.${provider}`, '');
+
+  const value = await vscode.window.showInputBox({
+    prompt: `Address of your ${spec.label} server`,
+    placeHolder: 'http://localhost:8080',
+    value: stored,
+    ignoreFocusOut: true,
+    validateInput: (typed) =>
+      !typed.trim() || acceptableOverride(typed, spec.needsKey)
+        ? undefined
+        : 'That is not an http or https address I can reach.',
+  });
+  if (!value?.trim()) {
+    log(`model: no address given for ${provider}`);
+    // Said, not just logged. Dismissing this prompt leaves a provider with nowhere to
+    // send a request, and the next picker would open empty with no explanation — which
+    // is precisely the silence F13 is about, self-inflicted.
+    void vscode.window.showWarningMessage(
+      await phrase(
+        'report',
+        `No address, so ${spec.label} has nowhere to send anything. Run "Clarvis: Choose Model Provider" again when you have one.`,
+        [spec.label]
+      )
+    );
+    return;
+  }
+
+  await writeSetting(`chat.baseUrl.${provider}`, value.trim());
+  log(`model: ${provider} address set to ${value.trim()}`);
+}
+
 export async function promptForKey(
   models: ModelService,
   provider: ProviderId,

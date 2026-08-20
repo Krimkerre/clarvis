@@ -10,7 +10,7 @@
  * third-party products to offer claude.ai login or subscription rate limits without
  * prior approval, so the Anthropic path is API-key-only.
  */
-export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'lmstudio';
+export type ProviderId = 'anthropic' | 'openai' | 'openrouter' | 'ollama' | 'custom' | 'lmstudio';
 
 export type Dialect = 'anthropic' | 'openai';
 
@@ -27,6 +27,15 @@ export interface ProviderSpec {
   defaultModel: string;
   /** One line on the trade, shown in the picker — the version that helps someone choose. */
   detail: string;
+  /**
+   * Whether this provider has no address of its own and must be told one.
+   *
+   * True only for `custom`, which exists precisely because the field is empty: any
+   * OpenAI-compatible server the user runs. A URL is to this provider what a key is to
+   * Anthropic, and it is asked for in the same place for the same reason (§6 — a user who
+   * never wants to hear him should also never have to open settings.json).
+   */
+  needsUrl?: boolean;
 }
 
 export const PROVIDERS: ProviderSpec[] = [
@@ -57,15 +66,15 @@ export const PROVIDERS: ProviderSpec[] = [
     defaultModel: 'anthropic/claude-opus-4.5',
     detail: 'One key, many models. Quality depends entirely on which you pick.',
   },
-  {
-    id: 'ollama',
-    label: 'Ollama (local)',
-    dialect: 'openai',
-    baseUrl: 'http://localhost:11434',
-    needsKey: false,
-    defaultModel: 'llama3.1',
-    detail: 'Runs on your machine. No key, nothing leaves it — tool calling varies by model.',
-  },
+  // **LM Studio sits above Ollama deliberately**, and the order is the recommendation.
+  // §6 gives the whole product a one-install-step setup budget and says that if it needs a
+  // config file it has failed. Choosing a model in LM Studio is a search box and a button;
+  // in Ollama it is `ollama pull` in a terminal, which is the failure §6 describes.
+  //
+  // Both stay. They share `OpenAiCompatibleProvider` — a base URL and a label between them
+  // — so removing one saves no maintenance and costs everyone who already runs it. Order
+  // and wording are the whole intervention. Anthropic stays first: this array's head is
+  // also the fallback in `ModelService.spec()`.
   {
     id: 'lmstudio',
     label: 'LM Studio (local)',
@@ -73,7 +82,31 @@ export const PROVIDERS: ProviderSpec[] = [
     baseUrl: 'http://localhost:1234',
     needsKey: false,
     defaultModel: 'local-model',
-    detail: 'Same as Ollama, different port. Whatever you have loaded.',
+    detail: 'Runs on your machine, nothing leaves it. Browse and load models in the app — no terminal. Start its server first.',
+  },
+  {
+    id: 'ollama',
+    label: 'Ollama (local)',
+    dialect: 'openai',
+    baseUrl: 'http://localhost:11434',
+    needsKey: false,
+    defaultModel: 'llama3.1',
+    detail: 'Also local, also private. Standard port, nothing to configure — but models are pulled from a terminal.',
+  },
+  // **The escape hatch, and the reason the list can stop growing.** Every local runtime
+  // worth using speaks the OpenAI dialect: llama.cpp, vLLM, LocalAI, Jan, a colleague's
+  // box, a proxy. They differ by port and nothing else, so they do not each need a row —
+  // they need one row that asks. `needsUrl` puts that question where the key question
+  // already lives, rather than in settings.json (§6).
+  {
+    id: 'custom',
+    label: 'Custom (OpenAI-compatible)',
+    dialect: 'openai',
+    baseUrl: '',
+    needsKey: false,
+    needsUrl: true,
+    defaultModel: 'local-model',
+    detail: 'Any other OpenAI-compatible server — llama.cpp, vLLM, LocalAI, or one on your network. Clarvis asks for the address.',
   },
 ];
 

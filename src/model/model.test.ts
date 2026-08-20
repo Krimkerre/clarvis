@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SseParser } from './sse';
-import { PROVIDERS, providerSpec, resolveBaseUrl } from './providers';
+import { PROVIDERS, providerSpec, resolveBaseUrl, acceptableOverride } from './providers';
 import { describeHttpFailure, ModelError } from './ModelProvider';
 
 test('an event split across chunks is not lost', () => {
@@ -41,9 +41,14 @@ test('a trailing partial line waits rather than being emitted half-formed', () =
   assert.deepEqual(parser.push('lete\n'), ['incomplete']);
 });
 
-test('every provider has a usable spec', () => {
+test('every provider either ships an address or asks for one', () => {
+  // Was "every provider has a usable spec", asserting a baseUrl starting with http.
+  // `custom` broke that on purpose: it exists because the address is unknowable, and a
+  // default would connect to whatever happened to be on that port. The invariant it
+  // replaces is stricter, not looser — no provider may end up with nowhere to send a
+  // request and no way to be told where.
   for (const provider of PROVIDERS) {
-    assert.ok(provider.baseUrl.startsWith('http'), provider.id);
+    assert.ok(provider.baseUrl.startsWith('http') || provider.needsUrl === true, provider.id);
     assert.ok(provider.defaultModel.length > 0, provider.id);
     assert.ok(provider.detail.length > 0, provider.id);
   }
@@ -146,4 +151,61 @@ test('whitespace-only settings count as unset', () => {
 
   assert.equal(resolved.provider, 'ollama');
   assert.equal(resolved.inherited, true);
+});
+
+test('Anthropic stays at the head of the provider list', () => {
+  // Not cosmetic: ModelService.spec() falls back to PROVIDERS[0] when it cannot resolve a
+  // configured provider, so reordering this array changes the default.
+  assert.equal(PROVIDERS[0].id, 'anthropic');
+});
+
+test('the local providers are offered easiest-first', () => {
+  // The order is the recommendation. §6 budgets one install step and says that needing a
+  // config file is a failure: LM Studio picks a model in a search box, Ollama needs
+  // `ollama pull` in a terminal, and Custom needs you to know a URL. All three ship —
+  // order and wording are the intervention, not removal.
+  const local = PROVIDERS.filter((spec) => !spec.needsKey).map((spec) => spec.id);
+  assert.deepEqual(local, ['lmstudio', 'ollama', 'custom']);
+});
+
+test('only the custom provider has to ask for an address', () => {
+  // Every other row knows where its server is. Asking anyway would be a question with a
+  // right answer already in the code.
+  const asking = PROVIDERS.filter((spec) => spec.needsUrl).map((spec) => spec.id);
+  assert.deepEqual(asking, ['custom']);
+});
+
+test('the custom provider ships no address to guess with', () => {
+  // A default would be a lie about a server we cannot know the location of, and worse, a
+  // silent one: it would connect to whatever happened to be on that port.
+  assert.equal(PROVIDERS.find((spec) => spec.id === 'custom')?.baseUrl, '');
+});
+
+test('a keyless provider accepts a plain-http address anywhere', () => {
+  // The loopback-or-https rule exists to stop a key crossing the wire in clear text.
+  // There is no key here, and a local server on another machine is an ordinary setup.
+  assert.equal(acceptableOverride('http://192.168.1.50:8080', false), 'http://192.168.1.50:8080');
+  assert.equal(acceptableOverride('http://192.168.1.50:8080', true), undefined);
+});
+
+test('a custom address still has to be a real http address', () => {
+  for (const nonsense of ['localhost:8080', 'ftp://box/v1', 'not a url', '']) {
+    assert.equal(acceptableOverride(nonsense, false), undefined, nonsense);
+  }
+});
+
+test('neither local provider describes itself in terms of the other', () => {
+  // "Same as Ollama, different port" told a new user nothing about which to pick, and
+  // presented a GUI and a terminal as equivalent.
+  for (const spec of PROVIDERS.filter((s) => !s.needsKey)) {
+    assert.doesNotMatch(spec.detail ?? '', /same as/i, spec.id);
+  }
+});
+
+test('both local providers still say the work stays on the machine', () => {
+  // The demotion must not cost Ollama the privacy claim, which is the reason either of
+  // them is offered.
+  for (const spec of PROVIDERS.filter((s) => !s.needsKey)) {
+    assert.match(spec.detail ?? '', /local|nothing leaves it/i, spec.id);
+  }
 });

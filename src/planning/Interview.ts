@@ -3,7 +3,7 @@ import { PlanningIO } from './PlanningIO';
 import { opening, phrase } from '../personality/Voice';
 import { Answer, InterviewState, knownFacts, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { namedLanguage } from './conventions';
-import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt, ensureNamesChoice } from './interviewPrompt';
+import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt, ensureNamesChoice, looksLikeQuestionBack, answerBackPrompt } from './interviewPrompt';
 import { NameResult, namePrompt, parseNameResult } from './namePrompt';
 import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
@@ -153,6 +153,16 @@ async function continueInterview(
         return { state, seed };
       }
 
+      // A question asked back (F3) is never an answer, however it parses — answer
+      // it, then loop back to the same topic rather than recording the question as
+      // "remains open" or pushing back on it as if it were vague.
+      if (looksLikeQuestionBack(raw)) {
+        log(`planning: "${topic}" — asked back — ${raw}`);
+        const reply = await answerQuestionBack(models, topic, raw, state, log);
+        await io.say(reply ?? "I don't have a good answer for that one — your call.");
+        continue;
+      }
+
       answer = toAnswer(topic, raw);
       answer.question = question;
     }
@@ -215,7 +225,7 @@ async function challengeAnswer(
     // No placeholder. The main question's hint was reduced to once for being a form
     // reciting its own rules — and this one repeated under *every* follow-up, which
     // is the same defect in the place it is most tiring.
-    const raw = await io.askText(result.followUp);
+    const raw = await answerIfAskedBack(models, io, topic, result.followUp, state, log);
     if (!raw?.trim()) {
       log(`planning: "${topic}" — follow-up declined, kept original answer`);
       return answer;
@@ -280,6 +290,67 @@ async function synthesizeAnswer(
     log(`planning: "${topic}" — synthesis failed (${String(error)}), kept the raw combination`);
     return fallback;
   }
+}
+
+/**
+ * Answers a question the user asked back mid-interview (F3), rather than treating
+ * it as an answer or silently filing it as "remains open".
+ *
+ * No model, no answer: there is no honest written fallback for an arbitrary
+ * question, so the caller says so plainly instead of inventing one.
+ */
+async function answerQuestionBack(
+  models: ModelService,
+  topic: TopicId,
+  question: string,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<string | undefined> {
+  if (!(await models.isReady('chat'))) return undefined;
+
+  try {
+    let text = '';
+    const collect = (async () => {
+      for await (const fragment of models.stream(
+        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: answerBackPrompt(topic, question, state) }] },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 500) break;
+      }
+    })();
+    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    return text.trim() || undefined;
+  } catch (error) {
+    log(`planning: "${topic}" — answering a question back failed (${String(error)})`);
+    return undefined;
+  }
+}
+
+/**
+ * Asks a follow-up question, answering it first if the reply asks it back (F3)
+ * instead of answering it.
+ *
+ * **One retry, matching §4.9's "challenged once, then honoured" rule** — a second
+ * question back is left as a decline rather than answered a second time, the same
+ * way a vague follow-up is only challenged once elsewhere in this interview.
+ */
+async function answerIfAskedBack(
+  models: ModelService,
+  io: PlanningIO,
+  topic: TopicId,
+  followUpQuestion: string,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<string | undefined> {
+  const raw = await io.askText(followUpQuestion);
+  if (!raw?.trim() || !looksLikeQuestionBack(raw)) return raw;
+
+  log(`planning: "${topic}" — follow-up asked back — ${raw.trim()}`);
+  const reply = await answerQuestionBack(models, topic, raw.trim(), state, log);
+  await io.say(reply ?? "I don't have a good answer for that one — your call.");
+  const retry = await io.askText(followUpQuestion);
+  return retry?.trim() && !looksLikeQuestionBack(retry) ? retry : undefined;
 }
 
 /**

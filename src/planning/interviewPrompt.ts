@@ -171,3 +171,39 @@ function mentions(text: string, choice: string): boolean {
   const close = /\w$/.test(choice) ? '\\b' : '';
   return new RegExp(`${open}${escaped}${close}`, 'i').test(text);
 }
+
+/**
+ * Whether a reply is a question asked *back*, rather than an answer (F3).
+ *
+ * Same rule `parseChallengeResult` already uses for the model's own output, applied
+ * here to the user's: unmistakable beats clever. A reply that merely contains a
+ * question mark mid-sentence ("is 30 lines ok? either way is fine") is still an
+ * answer; one that *ends* in one, without saying much else, is not.
+ */
+export function looksLikeQuestionBack(text: string): boolean {
+  const trimmed = text.trim();
+  return trimmed.length > 0 && trimmed.endsWith('?');
+}
+
+/**
+ * Answering a question asked back, in one plain paragraph, in character.
+ *
+ * **Answer only — never a new question.** The interview re-asks its own question
+ * next; a reply that asks something back too would just be the same defect one
+ * level down.
+ */
+export function answerBackPrompt(topic: TopicId, question: string, state: InterviewState): string {
+  const known = knownFacts(state);
+  return [
+    `Topic: ${TOPIC_BRIEF[topic]}`,
+    '',
+    `What is known so far:\n${known}`,
+    '',
+    `Instead of answering, they asked you: "${question}"`,
+    '',
+    'Answer it plainly and briefly — a real opinion where one is warranted, grounded',
+    'only in what is known above. Do not invent facts you were not given. Do not ask',
+    'a question back, and do not restate the interview question — they will be asked',
+    'it again right after this.',
+  ].join('\n');
+}

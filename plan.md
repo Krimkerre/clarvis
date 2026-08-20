@@ -4391,9 +4391,19 @@ The bar, in one sentence: **v1 ships when Clarvis does not lose what you told it
 act against what you decided, and does not leak its own internals into your face.** Each
 blocker below is one of those three, or a §9 success criterion it would otherwise break.
 
-- [ ] **F3 — a question asked back during the interview is consumed as an answer.** Asking
-      "what's the simplest solution?" mid-interview records the question as the answer and
-      files the gap as "open". Loses what the user said; §9.9's neighbour.
+- [x] **F3 — a question asked back during the interview is consumed as an answer. Fixed 20 Aug.**
+      Asking "what's the simplest solution?" mid-interview recorded the question as the
+      answer and filed the gap as "open"; asking a question back during a follow-up got
+      synthesized into the answer verbatim. Loses what the user said; §9.9's neighbour.
+      **Cause:** neither the free-text answer path nor the follow-up path ever asked whether
+      a reply was itself a question — every reply was an answer by construction. **Fix:**
+      `looksLikeQuestionBack()` reuses the exact rule `parseChallengeResult` already applies
+      to the model's own output (ends in `?`, unmistakably) against the user's reply too. A
+      question asked back is answered in character via a new prompt (`answerBackPrompt`,
+      grounded only in `knownFacts`), said aloud, and the same question is asked again —
+      never recorded as an answer, never silently filed as "remains open". The follow-up
+      path gets one retry, matching §4.9's "challenged once" rule; a second question back is
+      left as a decline rather than answered twice. 5 tests; 929 → 933.
 - [x] **F5 — a rejected finding is recorded and the plan does the rejected thing anyway. Fixed 19 Aug.**
       "No separate file, embed compliments in script" was recorded as a rejection, and the
       first step of the first milestone was *create a data file*. `docs/risks.md` answers

@@ -82,8 +82,8 @@ which restate it. Current status:
   `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M12** (Tutor Mode).
 - **M11 is the active gate, not a future milestone.** 19–20 Aug reframed it: the goal
   became *a stable first release* rather than a more complete one, and M11's exit
-  checklist gained a **v1 release bar** — now **23 items, 20 done** as of 20 Aug
-  (evening); it grew as walking the product found more, which is the point. Each one
+  checklist gained a **v1 release bar** — now **23 items, 21 done** as of 20 Aug
+  (late evening); it grew as walking the product found more, which is the point. Each one
   a defect found by walking the verification runbook on a real fixture rather than by
   inspection. See the next section and `plan.md` §7's M11 for the live list.
 - Full detail, including *why* each milestone landed the way it did: `plan.md` §7.
@@ -251,7 +251,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 970 tests currently
+npm test               # node's built-in test runner, no framework — 992 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below
@@ -283,8 +283,9 @@ actual thing.
 Three live trackers, not this file — this section only says which one to open.
 
 **The v1 release bar** — `plan.md` §7, M11 — is the one that gates shipping. **23 items,
-20 done** as of 20 Aug (evening); three open: M8i part 1 (strip reasoning blocks), F20
-(reply length), and runbook sessions A–C. Check it, not this paragraph, for the current
+21 done** as of 20 Aug (late evening); two open: F20 (reply length, needs one `voiceCheck`
+run on Anthropic) and runbook sessions A–C. M8i part 1 closed with both of its failure
+modes observed on the wire rather than one of them predicted. Check it, not this paragraph, for the current
 count — it has changed six times in two days.
 
 **The verification runbook** — `clarvis-firstrun/RUNBOOK.md`, a *separate repository*

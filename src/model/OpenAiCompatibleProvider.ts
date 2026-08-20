@@ -11,6 +11,7 @@ import { buildCatalog } from './openrouterCatalog';
 import { buildOpenAiCatalog } from './openaiCatalog';
 import { ProviderSpec, resolveBaseUrl } from './providers';
 import { SseParser, decodeStream } from './sse';
+import { ReasoningWatch, reasoningOnlyError } from './reasoning';
 
 /**
  * One adapter, four providers: OpenAI, OpenRouter, Ollama and LM Studio.
@@ -34,6 +35,14 @@ interface OpenAiChunk {
   choices?: {
     delta?: {
       content?: string;
+      /**
+       * A reasoning model's thinking, routed away from `content` by the server (F29).
+       *
+       * Read only to know that it happened — never shown, never spoken. LM Studio's
+       * `separateReasoningContentInAPI` puts it here and leaves `content` empty, which
+       * is otherwise indistinguishable from a model that said nothing.
+       */
+      reasoning_content?: string;
       tool_calls?: {
         index?: number;
         id?: string;
@@ -214,6 +223,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     const response = await this.post(request, openAiTools(request.tools));
     const parser = new SseParser();
     const pending = new Map<number, PartialCall>();
+    const watch = new ReasoningWatch();
 
     for await (const chunk of decodeStream(response.body!)) {
       for (const payload of parser.push(chunk)) {
@@ -222,10 +232,18 @@ export class OpenAiCompatibleProvider implements ModelProvider {
         const choice = this.readFrame(payload)?.choices?.[0];
         if (!choice) continue;
 
-        if (choice.delta?.content) yield { type: 'text', text: choice.delta.content };
+        const text = watch.push(choice.delta);
+        if (text) yield { type: 'text', text };
         absorbToolDeltas(pending, choice.delta?.tool_calls);
       }
     }
+
+    // Whatever the filter was still holding when the stream ended — text that looked
+    // like it might become a tag and never did.
+    const tail = watch.flush();
+    if (tail) yield { type: 'text', text: tail };
+
+    this.refuseReasoningOnly(watch, request.model, pending.size > 0);
 
     // Emitted at the end rather than as they complete: nothing marks a tool call
     // finished mid-stream, so the arguments are only known to be whole once the
@@ -303,24 +321,50 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     }
 
     const parser = new SseParser();
+    const watch = new ReasoningWatch();
+    let done = false;
 
     for await (const chunk of decodeStream(response.body)) {
       for (const payload of parser.push(chunk)) {
-        if (payload === '[DONE]') return;
+        // `[DONE]` used to return outright, which would now walk away from whatever the
+        // filter is still holding. It ends the reading, not the function.
+        if (payload === '[DONE]') {
+          done = true;
+          break;
+        }
 
         // A malformed frame is skipped rather than thrown: one bad chunk should cost a
         // few tokens, not the whole answer the user is watching arrive.
         try {
-          const event = JSON.parse(payload) as {
-            choices?: { delta?: { content?: string } }[];
-          };
-          const text = event.choices?.[0]?.delta?.content;
+          const event = JSON.parse(payload) as OpenAiChunk;
+          const text = watch.push(event.choices?.[0]?.delta);
           if (text) yield text;
         } catch {
           this.log(`model: skipped an unparseable ${this.id} frame`);
         }
       }
+      if (done) break;
     }
+
+    const tail = watch.flush();
+    if (tail) yield tail;
+
+    this.refuseReasoningOnly(watch, request.model, false);
+  }
+
+  /**
+   * Says so when a model spent the whole stream thinking and showed none of it (F29).
+   *
+   * Thrown rather than returned quietly, and thrown *after* the stream so anything that
+   * did arrive is delivered first. The alternative — an empty reply — is the failure
+   * this exists to end: two models were written off as slow on 20 Aug when they were
+   * talking into a field nothing here reads.
+   */
+  private refuseReasoningOnly(watch: ReasoningWatch, model: string, toolCalls: boolean): void {
+    if (!watch.saidNothing(toolCalls)) return;
+
+    this.log(`model: ${this.id}/${model} returned ${watch.shape()} reasoning only`);
+    throw reasoningOnlyError(this.id, this.spec.label, model, watch.shape());
   }
 
   private async headers(): Promise<Record<string, string>> {

@@ -4448,30 +4448,44 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       from the log. Separately, and marked as the judgement it is rather than an observed
       defect: a subdirectory that cannot be read now loses that subdirectory rather than the
       whole listing. 2 tests; 961 → 963.
-- [ ] **M8i part 1 — reasoning blocks stripped** from the transcript and the spoken output.
-      Leaking `<think>` into the chat and reading it aloud is the clearest possible "leaks
-      its own internals". **Rewritten 20 Aug: this is two failure modes, not one, and which
-      one you get is an LM Studio setting.** `separateReasoningContentInAPI` (default
-      **on**) routes a reasoning model's thinking into a separate `reasoning_content` field
-      that Clarvis never reads. So:
-      **(a) setting on** — `content` comes back **empty**. Observed live: `qwen3.5-9b`
-      returned nothing at all across four scenes while reporting healthy timings, and
-      `ornith-1.0-9b` took 40s per scene to say nothing. That does not look like a leak, it
-      looks like a slow or broken model — and F14's "the character has gone quiet" notice
-      would fire for a reason that is not the real one.
-      **(b) setting off** — the `<think>` block arrives inline in `content`, which is the
-      leak this item was written about, and is still *predicted rather than observed*.
-      **Consequences for the fix:** stripping `<think>` (b) is necessary but not sufficient
-      — an empty reply (a) needs its own answer, because a model that says nothing is not
-      served by a stripper. Candidate: treat an empty `content` with a non-empty
-      `reasoning_content` as "this model does not work here", and say so, rather than
-      falling through to the written line as though the model were merely slow.
-      **Consequence for the runbook:** session C must record *which* setting was in force,
-      or it will verify one branch and tick both. Detecting a reasoning model up front is
-      cheap and was proven on 20 Aug — the chat template carries `<think>` markers, which is
-      a pre-download check (see `clarvis-firstrun/FINDINGS.md`, F27's screen). Recorded in
-      full as **F29**, which does not add a blocker so much as correct this one, which had
-      been describing half of itself.
+- [x] **M8i part 1 — reasoning blocks handled, both ways. Fixed 20 Aug.** Leaking
+      `<think>` into the chat and reading it aloud is the clearest possible "leaks its own
+      internals" — and F29 established it is **two failure modes, not one**, picked by LM
+      Studio's `separateReasoningContentInAPI` (default **on**). Both were then observed on
+      the wire against `qwen/qwen3-1.7b`, same prompt, same server, rather than reasoned
+      about:
+      **(a) setting on** — thinking goes to a `reasoning_content` field Clarvis never read,
+      leaving `content` empty *for as long as the thinking lasts*: 199 frames of reasoning
+      and not one character of content. **Corrected here, by running it: an empty reply is
+      not what the setting produces, it is what a *cut* stream produces.** Left alone, the
+      same model on the same setting answers normally in 3.5s. The defect needs a token
+      cap, a context limit or a deadline to appear — which is exactly what `qwen3.5-9b` and
+      `ornith-1.0-9b` were hitting when they were written off as slow.
+      **(b) setting off** — the `<think>` block arrives inline in `content`. **No longer
+      predicted: observed 20 Aug**, 948 of 4103 characters, opening tag in the first frame
+      and closing tag at frame 189 — around 68 seconds of deliberation that Fish Audio
+      would have read out before reaching the answer.
+      **Fix — `src/model/reasoning.ts`.** A streaming `ThinkFilter` that drops the block as
+      it arrives (holding back a tag split across fragments, since a build without those
+      tokens in its vocabulary emits `<`/`think`/`>`), and `saidNothingButThought()`: the
+      rule that a stream carrying reasoning and no visible text has not merely been slow.
+      Wired into both `OpenAiCompatibleProvider` loops — **at the provider rather than
+      beside the reply**, because F15's lesson was one stripper for both reply paths and
+      the provider is strictly more shared than that: every quip, briefing line, intent
+      classification and planning prompt streams without ever meeting `ReplyStateReader`,
+      and a `<think>` block reaching those is F22's shape. The notice names
+      `separateReasoningContentInAPI` and does not touch it (§9.9), and says something
+      different to a provider where that setting does not exist. A tool call counts as
+      having said something, or it would fire on the happy path of every agent run.
+      Anthropic is deliberately uncovered: thinking arrives there as typed blocks, only
+      when asked for, and Clarvis never asks.
+      **Verified by running it.** The real provider against live LM Studio on both
+      settings: with the block stripped the user sees only the answer (4.3s and 7.0s), and
+      the agent path calls its tool and leaks nothing. That run also caught what reading
+      the diff had not — the `\n\n` left behind after a block was counting as speech, so a
+      reply that was *nothing but* thinking would have passed for one that spoke — and that
+      the notice told an LM Studio user to turn off a setting that, on the inline branch,
+      is *already off*. Both are now what the shape decides. 18 tests; 974 → 992.
 - [x] **M8h — resolved 20 Aug: no guard, by design.** `clarvis.chat.dailyRequestCap` and
       `clarvis.agent.dailyTokenBudget` were in this spec and in no code. Decided: spend is
       the provider's console — BYO-key already enforces whatever limit the user set, and

@@ -407,6 +407,20 @@ a tool.
 | `Qwen3.8-27B-MLX-4bit` | 16.1 | — | yes | over budget |
 | `Qwen3.6-35B-A3B-4bit` | 20.4 | 3/tok | yes | over budget |
 
+**Every earlier rejection was re-checked per build — all six hold.** `LFM2-24B-A2B`,
+`Devstral`, `ERNIE`, `Phi-3.5-MoE`, `Codestral` and `gemma-3-12b` gained nothing in either
+packaging. LFM2-24B's repacks (MLX *and* GGUF) ship the same stripped template, so that
+rejection is right about the build and wrong about the model (F33).
+
+**A rejection also belongs to a role.** `lfm2.5-2.6b` is a forced-reasoning model — its
+template opens a thinking block unconditionally, so no switch turns it off, and on the chat
+path it produced **zero visible characters in 8.7 seconds**. On the agent path, which has no
+deadline, the same build makes 8/8 well-formed calls, recovers from a bad path, and finishes
+a two-file editing job with a written summary — inconsistently, 4 runs of 7, looping on
+absolute paths when it fails, and slower as the fanless machine heats. Not a recommendation;
+the point is that one list was judging two different jobs (F34). `agentrole.js` measures the
+second.
+
 **Two corrections to earlier rejections.** `gemma-4` has a tool path where `gemma-3` had
 none, so that family is worth revisiting. And **Qwen3.8 has no small MoE** — the generation
 shipped a 27B dense model and a 2.4T-A95B one, nothing between.

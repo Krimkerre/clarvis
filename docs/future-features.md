@@ -295,10 +295,25 @@ three other model families.
   `LFM2-24B-A2B` renders a tool call upstream and cannot in its LM Studio build. Screen the
   repository you will actually download.
 
+**Every earlier rejection was re-checked against this (F33), per build rather than per
+model: all six hold.** No model gained a tool path. The sweep did find two more holes in the
+screen — it could not read GGUF templates at all, which is the runtime that makes granite
+work, and it reported a repository's every quantisation as one model's size. Both fixed.
+
+**And a rejection belongs to a role, not to a model (F34).** `lfm2.5-2.6b` was rejected as
+unusable — it is a forced-reasoning model that produces nothing visible inside a deadline,
+and no `enable_thinking` switch can change that. On the *agent* path, which has no deadline,
+the same build makes well-formed tool calls, recovers from a bad path, and finishes a
+two-file editing job with a written summary. It is inconsistent about it — 4 of 7 runs, and
+the failures loop on absolute paths — and is **not** recommended; what survives is that the
+talking role and the working role were being judged by one list. `agentrole.js` in the
+runbook repository now measures the second, using the product's own agent prompt, tool
+schemas and edit rules rather than copies of them.
+
 **What stays deferred.** Nothing in the product. `docs/benchmarks.md` carries the numbers and
-the method; if a benchmark command is ever built (next section), the streamed tool test and
-the several phrasings are the part worth keeping, because the single-phrase unstreamed check
-is what passed a broken build.
+the method; if a benchmark command is ever built (next section), the streamed tool test, the
+several phrasings and the working-role loop are the parts worth keeping, because the
+single-phrase unstreamed check is what passed a broken build.
 
 ## Deferred: a benchmark command, because `voiceCheck` is most of one already
 

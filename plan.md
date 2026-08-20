@@ -4540,8 +4540,8 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       17 tests, built against the verbatim strings from both models. **Covers rewritten
       lines only**; a free-form chat reply has no written fallback to fall back *to*, and
       that half stays open.
-- [~] **F20 — replies run three to four times over the spoken ceiling, worst on the best
-      model. Prompt tightened 20 Aug; NOT yet verified against the model that showed it.** `voiceCheck` flags anything past **20 seconds spoken**. An A/B on 20 Aug put
+- [x] **F20 — replies run three to four times over the spoken ceiling, worst on the best
+      model. Fixed 20 Aug in the audio rather than the writing; ticked on a listening pass.** `voiceCheck` flags anything past **20 seconds spoken**. An A/B on 20 Aug put
       Llama 3.1 8B at 22s and 42s on two chat scenes, and **Haiku 4.5 at 73s and 77s** on
       the same ones. The long answers are good — dry, specific, in character — and §2.1
       names length creep as *the most likely failure* of this prompt, to be answered by
@@ -4652,9 +4652,15 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       none of the budget, so those replies still come in at two seconds. Filling the
       remaining seconds with the sentences that follow would fix it and would also let a
       third and fourth sentence back in, which is the thing this exists to stop.
-      **Still `[~]`.** The trim is deterministic and tested; the *quality* of the closing
-      lines is a prompt change, and prompt changes here have been refuted six times by
-      output. It needs a run.
+      **Ticked 20 Aug on the user's listening verdict** — *"initial tests sound mainly
+      good"* — with the remainder explicitly left open to revisit. What is settled: the
+      spoken length is bounded deterministically and tested, and it is switchable rather
+      than baked in. What is not: whether the closing lines are good enough now that they
+      carry a reply on their own, which rests on an `ANSWER_SHAPE` change that has had one
+      listening pass and no measured run, and the one-word-opening case below.
+      **If it is revisited, the thing not to repeat** is tuning `ANSWER_SHAPE` for length:
+      six versions, four of them compared against a noise floor of 32%, and the two that
+      moved the number also flattened the character.
 
       **The sixth attempt, in full, so it is not tried again:**
       Sentence by sentence, the 70-second answers contain **no padding**: five lines, each

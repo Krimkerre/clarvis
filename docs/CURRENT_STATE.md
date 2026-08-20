@@ -89,7 +89,7 @@ which restate it. Current status:
   `clarvis.voice.trimLongReplies` (`src/chat/replyDelivery.ts`, F20).
 - **M11 is the active gate, not a future milestone.** 19–20 Aug reframed it: the goal
   became *a stable first release* rather than a more complete one, and M11's exit
-  checklist gained a **v1 release bar** — now **23 items, 21 done** as of 20 Aug
+  checklist gained a **v1 release bar** — now **23 items, 22 done** as of 20 Aug
   (late evening); it grew as walking the product found more, which is the point. Each one
   a defect found by walking the verification runbook on a real fixture rather than by
   inspection. See the next section and `plan.md` §7's M11 for the live list.
@@ -290,11 +290,11 @@ actual thing.
 Three live trackers, not this file — this section only says which one to open.
 
 **The v1 release bar** — `plan.md` §7, M11 — is the one that gates shipping. **23 items,
-21 done** as of 20 Aug (late evening); two open: F20 and runbook sessions A–C. M8i part 1
+22 done** as of 20 Aug (late evening); **one open: runbook sessions A–C**. M8i part 1
 closed with both of its failure modes observed on the wire rather than one of them
 predicted.
 
-**F20 is now a listening decision rather than a coding one.** Six versions of
+**F20 is closed, on a listening pass rather than a measurement.** Six versions of
 `ANSWER_SHAPE` failed to shorten spoken replies — the effect proved smaller than the
 measurement noise, and tightening cost the character — so the ceiling moved into
 `spokenPart` (`src/chat/replyDelivery.ts`): past about twenty seconds the voice gets the

@@ -29,7 +29,8 @@ import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
 import { ANSWER_SHAPE } from '../personality/character';
-import { STATE_TAG_INSTRUCTION, stripTags } from '../chat/replyState';
+import { ReplyStateReader, STATE_TAG_INSTRUCTION, stripTags } from '../chat/replyState';
+import { absorbStreamEvent } from './streamNarration';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -445,6 +446,14 @@ export class AgentRunner {
 
       const calls: ToolCall[] = [];
       let narration = '';
+      // **Buffers the head so a leading `[[state]]` tag never reaches a `text` event.**
+      // The earlier fix stripped the *logged* copy of the narration after the loop below
+      // had already finished — by which point every fragment had been yielded and was on
+      // screen. This is the same problem the reply path solved with the same class: strip
+      // before the first fragment leaves, not after the last one arrives. Found live,
+      // 20 Aug, on the very build that shipped the first fix — a post-hoc strip is not the
+      // same guarantee as never emitting the tag.
+      const reader = new ReplyStateReader();
 
       try {
         for await (const event of this.models.streamWithTools(
@@ -456,11 +465,9 @@ export class AgentRunner {
           },
           role
         )) {
-          if (event.type === 'text') {
-            narration += event.text;
-            yield { kind: 'text', text: event.text };
-          }
-          if (event.type === 'toolCall') calls.push(event.call);
+          const outcome = absorbStreamEvent(event, calls, reader, narration);
+          narration = outcome.narration;
+          if (outcome.visible) yield { kind: 'text', text: outcome.visible };
         }
       } catch (error) {
         if (signal.aborted) {
@@ -480,6 +487,9 @@ export class AgentRunner {
         // one is the model's, so it arrived on screen with `[[talking]]` still on the
         // front of it. Found live, 20 Aug, and it makes a liar of §7's checklist item
         // saying the tag never appears in reply text — true of one path, not both.
+        // The reader may still hold a tag that arrived too late to flush as a `text`
+        // event (the stream ended before HEAD_CHARS was reached). One more pass over the
+        // full narration guarantees it never survives into the log or the summary either.
         narration = stripTags(narration).trimStart();
         // **Why it stopped, in the log.** A run that ended after two reads with an
         // empty summary left nothing to diagnose from — found live, and the closing

@@ -189,8 +189,9 @@ Unchanged by this decision, listed so the v1 boundary is in one place:
 - **M9g** — project notes the user writes, read from `AGENTS.md` / `CLAUDE.md`.
 - **M10** — voice input. Designed, not built.
 - **M12** — Tutor Mode. Depends on everything above it.
-- **M8h's guard, if it is built at all** — see the release bar in M11; v1 requires the
-  *spec* to stop promising controls that do not exist, not that the controls exist.
+
+**M8h is no longer listed here.** Resolved 20 Aug — chat and agent get no spend guard, by
+design, rather than one deferred to a later milestone. Nothing left to build.
 
 ---
 

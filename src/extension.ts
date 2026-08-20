@@ -43,7 +43,7 @@ import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers'
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
 import { SlowModelWatch, slowModelLine } from './personality/slowModel';
-import { tuneLoads } from './model/lmStudioTune';
+import { dropLoads, ourLoadedIds, staleLoads, tuneLoads } from './model/lmStudioTune';
 import { startTailing, stopTailing } from './logtailing/logTailing';
 
 
@@ -123,6 +123,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // that they will be used. Never blocks activation, never touches a model the user
   // loaded themselves, and does nothing at all on any other provider. See F28.
   void warmLocalModels(models, (message) => logger.write(message));
+
+  // **The other half of warming: letting go.** Switching a role to a hosted provider, or
+  // to a different local model, leaves whatever Clarvis loaded resident and idle — 4-8 GB
+  // on a 24 GB machine until LM Studio's one-hour TTL notices. The same signal that
+  // justifies loading justifies this in reverse, and it unloads *only* ids Clarvis loaded
+  // itself, never a model the user loaded for their own use.
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((event) => {
+      const touched = ['chat.provider', 'chat.model', 'agent.provider', 'agent.model'].some((key) =>
+        event.affectsConfiguration(`clarvis.${key}`)
+      );
+      if (touched) void releaseLocalModels(models, (message) => logger.write(message));
+    })
+  );
 
   // One place that knows what a run is doing: whether one is in progress, and what it
   // committed. Quips stay out of the way during one (§4.6 personality under load), the
@@ -320,6 +334,21 @@ function startPatternMemory(
  * that server's CLI and nobody else's), the user must not have switched it off, and
  * the model must not already be loaded. Failure is silent by design — LM Studio
  * loads on demand regardless, which is exactly today's behaviour.
+ */
+async function releaseLocalModels(models: ModelService, log: (message: string) => void): Promise<void> {
+  if (!vscode.workspace.getConfiguration('clarvis').get<boolean>('model.tuneLocalLoads', true)) return;
+
+  // What is wanted *now*, after the change. A role pointed somewhere else wants nothing
+  // local, and a mixed setup — agent on LM Studio, chat on Anthropic — keeps its half.
+  const wanted = (['chat', 'agent'] as const)
+    .filter((role) => models.spec(role).id === 'lmstudio')
+    .map((role) => models.model(role));
+
+  await dropLoads(staleLoads(ourLoadedIds(), wanted), log);
+}
+
+/**
+ * Pre-loads the local models Clarvis is configured to use, with its own parameters.
  */
 async function warmLocalModels(models: ModelService, log: (message: string) => void): Promise<void> {
   if (!vscode.workspace.getConfiguration('clarvis').get<boolean>('model.tuneLocalLoads', true)) return;

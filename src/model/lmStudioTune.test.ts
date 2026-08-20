@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { needsLoading, parseModelStates, loadFailureReason } from './lmStudioTune';
+import { needsLoading, parseModelStates, loadFailureReason, staleLoads } from './lmStudioTune';
 
 // The shape /api/v0/models actually returns, trimmed to what this reads.
 const BODY = {
@@ -72,4 +72,43 @@ test('the CLI\'s own suggestion lines are skipped, not reported as the reason', 
 
 test('empty stderr falls back to the first line of the error', () => {
   assert.equal(loadFailureReason('', 'Command failed: boom\nstack trace'), 'Command failed: boom');
+});
+
+/**
+ * Unloading, which is the half that can do harm.
+ *
+ * `staleLoads` is the whole decision: everything else is a CLI call. The cases below are
+ * the two the user asked for, plus the three that must never fire — because the failure
+ * mode here is not "a model stays loaded", it is Clarvis pulling a model out from under
+ * someone who was using it.
+ */
+test('switching to a hosted provider makes every local load stale', () => {
+  // Nothing points at LM Studio any more, so nothing Clarvis loaded is wanted.
+  assert.deepEqual(staleLoads(['qwen2.5-coder-7b-instruct'], []), ['qwen2.5-coder-7b-instruct']);
+});
+
+test('switching to a different local model releases only the old one', () => {
+  assert.deepEqual(
+    staleLoads(['qwen2.5-coder-7b-instruct'], ['granite-4.0-h-tiny']),
+    ['qwen2.5-coder-7b-instruct']
+  );
+});
+
+test('a mixed setup keeps the half that is still local', () => {
+  // Agent on LM Studio, chat moved to Anthropic. The agent's model is still wanted.
+  assert.deepEqual(
+    staleLoads(['qwen2.5-coder-7b-instruct', 'granite-4.0-h-tiny'], ['granite-4.0-h-tiny']),
+    ['qwen2.5-coder-7b-instruct']
+  );
+});
+
+test('a model the user loaded is never in the set, so it is never unloaded', () => {
+  // The guard that matters: `ourLoads` holds what Clarvis loaded, so a model loaded in
+  // LM Studio by hand cannot appear here however idle it looks.
+  assert.deepEqual(staleLoads([], []), []);
+});
+
+test('changing an unrelated setting releases nothing', () => {
+  const ours = ['qwen2.5-coder-7b-instruct'];
+  assert.deepEqual(staleLoads(ours, ours), []);
 });

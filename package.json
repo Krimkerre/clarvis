@@ -320,7 +320,7 @@
         "clarvis.model.tuneLocalLoads": {
           "type": "boolean",
           "default": true,
-          "description": "Load LM Studio models with Clarvis's own settings rather than the app's defaults, and warm them at startup. LM Studio reserves room for four answers at once; Clarvis asks for one at a time, and the rest is memory you are not using. It never touches a model you loaded yourself, never changes LM Studio's own settings, and does nothing on other providers."
+          "description": "Load LM Studio models with Clarvis's own settings rather than the app's defaults, warm them at startup, and unload them once nothing points at them. LM Studio reserves room for four answers at once; Clarvis asks for one at a time, and the rest is memory you are not using. When you switch a role to a hosted provider or to a different local model, the model Clarvis loaded is released instead of sitting idle until LM Studio's own timeout. It only ever unloads models it loaded itself, never touches a model you loaded yourself, never changes LM Studio's own settings, and does nothing on other providers."
         }
       }
     }

@@ -21,7 +21,14 @@ import { join } from 'path';
  *   application and sits outside the workspace; settings there are the user's to
  *   change, and the manual explains the ones worth touching. See F28.
  *
- * - **Never unloads anything.**
+ * - **Unloads only what it loaded itself, and only once nothing wants it.** This was
+ *   "never unloads anything" until 20 Aug. The argument for loading is that choosing a
+ *   local provider is itself the signal it will be used; switching away, or to a
+ *   different local model, is the same signal in reverse, and a 4-8 GB model sitting
+ *   idle on a 24 GB machine is worth reclaiming sooner than LM Studio's one-hour TTL
+ *   would. What does **not** change is whose models these are: a model the user loaded
+ *   themselves is never touched, loading or unloading, which is why the ids Clarvis
+ *   loaded are remembered rather than inferred from what happens to be resident.
  *
  * **Why warm at startup rather than on first use:** a cold just-in-time load was
  * measured at **5.3s**, against `Voice.open`'s 5s deadline — so the first thing said
@@ -130,6 +137,68 @@ export function forgetLmsBinary(): void {
  * Studio to just-in-time load exactly as it does today, which is the behaviour this
  * improves on rather than replaces.
  */
+/**
+ * The ids this session loaded, and the only ones it may unload.
+ *
+ * **Remembered rather than inferred.** "Resident and not currently wanted" would also
+ * describe a model the user loaded for their own LM Studio chat, and unloading that is
+ * precisely the surprise §9.9 exists to prevent. Session-scoped on purpose: after a
+ * reload Clarvis has loaded nothing, so it may unload nothing.
+ */
+const ourLoads = new Set<string>();
+
+/** Test seam, and the reason a stale set never leaks between cases. */
+export function forgetOurLoads(): void {
+  ourLoads.clear();
+}
+
+/** What Clarvis has loaded this session — the only ids it is allowed to unload. */
+export function ourLoadedIds(): readonly string[] {
+  return [...ourLoads];
+}
+
+/**
+ * Which of our loads nothing wants any more.
+ *
+ * One rule covers both cases the user asked for: switching to a hosted provider leaves
+ * `wanted` empty, so everything we loaded is stale; switching local model A to B leaves
+ * `wanted` as [B], so A is stale. Pure, because the decision is the part worth testing
+ * and the CLI call is not.
+ */
+export function staleLoads(ours: Iterable<string>, wanted: readonly string[]): string[] {
+  return [...ours].filter((id) => !wanted.includes(id));
+}
+
+/**
+ * Unloads models Clarvis loaded and nothing needs.
+ *
+ * Silent on every failure, like its counterpart: a model that will not unload is a
+ * model still resident, which is exactly today's behaviour and costs the user nothing
+ * they were not already paying.
+ */
+export async function dropLoads(ids: readonly string[], log: (message: string) => void): Promise<void> {
+  if (ids.length === 0) return;
+
+  const lms = await findLmsBinary();
+  if (!lms) return;
+
+  for (const id of ids) {
+    await new Promise<void>((resolve) => {
+      execFile(lms, ['unload', id], { timeout: LOAD_TIMEOUT_MS }, (error, _out, stderr) => {
+        log(
+          error
+            ? `model: could not unload ${id} — ${loadFailureReason(stderr ?? '', error.message)}`
+            : `model: unloaded ${id}, nothing points at it any more`
+        );
+        // Forgotten either way: if it would not unload, Clarvis is no longer the thing
+        // holding it, and retrying on every settings change would be noise.
+        ourLoads.delete(id);
+        resolve();
+      });
+    });
+  }
+}
+
 export async function tuneLoads(
   baseUrl: string,
   wanted: readonly string[],
@@ -149,6 +218,7 @@ export async function tuneLoads(
   for (const id of pending) {
     await new Promise<void>((resolve) => {
       execFile(lms, ['load', id, '-y', '--parallel', PARALLEL], { timeout: LOAD_TIMEOUT_MS }, (error, _out, stderr) => {
+        if (!error) ourLoads.add(id);
         log(
           error
             ? `model: could not pre-load ${id} — ${loadFailureReason(stderr ?? '', error.message)}`

@@ -256,6 +256,17 @@ ignored on MLX (`autoFit` appears to win) and speculative decoding lives only un
 `llm.load.llama.*`. Passing either would make Clarvis the fourth thing in this stack to
 quietly ignore its own options.
 
+**The unload half shipped 20 Aug (late), at the user's request.** `lmStudioTune.ts` said
+"never unloads anything" as a deliberate bullet; that is now "unloads only what it loaded
+itself, and only once nothing wants it". The argument is the same one in reverse — choosing
+a local provider is the signal it will be used, so switching a role to a hosted provider, or
+to a different local model, is the signal it will not be, and a 4-8 GB model idling on a
+24 GB machine is worth reclaiming sooner than LM Studio's one-hour TTL manages. One pure
+rule decides it (`staleLoads`: what we loaded, minus what is still wanted), which covers both
+cases, and the ids come from a session-scoped record of what Clarvis loaded — **never from
+what happens to be resident**, because "resident and unwanted" also describes a model the
+user loaded for their own chat. Verified against a live server: loaded, switched, gone.
+
 **What stays deferred:** noticing that LM Studio's *own* settings are hostile — the JIT
 eviction, the TTL, the guardrails — and offering the fix in `gitOffer.ts`'s shape. Those
 live in another application's config file and Clarvis must never write them. The honest

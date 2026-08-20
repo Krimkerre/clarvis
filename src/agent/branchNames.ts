@@ -47,6 +47,20 @@ export function isAgentBranch(name: string): boolean {
 }
 
 /**
+ * Whether HEAD's current name is a real place to come back to (F10's second edge).
+ *
+ * **An unborn HEAD names a branch that has never had a commit.** `git init` points
+ * HEAD at `refs/heads/master` (or whatever `init.defaultBranch` says) before a single
+ * commit exists, so `head` reads as `"master"` on a repository where `master` has
+ * never really existed. Treated as an ordinary base, that produced an offer to "fold
+ * it into `master` and put you back there" naming a place nothing could be folded
+ * into or returned to — untested what accepting it would even do.
+ */
+export function isRealBase(head: string, unborn: boolean): boolean {
+  return !unborn && !isAgentBranch(head);
+}
+
+/**
  * What is wrong with git here, and what would fix it.
  *
  * §4.6 requires the *cause-specific* remedy rather than a generic "git is

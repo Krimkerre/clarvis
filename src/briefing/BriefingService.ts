@@ -5,6 +5,7 @@ import { isWorthRemembering, RecentFiles } from './recentFiles';
 import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLines';
 import { readGitSummary } from './gitSummary';
 import { activeFailure, foldOutcome, parseRecord, FailureRecord, FAILURE_KEY } from './lastFailure';
+import { isAgentBranch } from '../agent/branchNames';
 
 /** Key under which the last failing job is persisted for the next session. */
 
@@ -92,7 +93,7 @@ export class BriefingService {
    * Collection begins immediately; only the *speaking* is delayed. A file saved in
    * the first second still counts.
    */
-  start(tracker: BusyTracker, deliver: (lines: string[]) => void): void {
+  start(tracker: BusyTracker, deliver: (lines: string[], onAgentBranch: boolean) => void): void {
     this.context.subscriptions.push(
       vscode.workspace.onDidSaveTextDocument((doc) => {
         this.recentFiles.record(doc.uri.fsPath);
@@ -107,16 +108,22 @@ export class BriefingService {
     // so a rejection inside would be unhandled and silent.
     this.startupTimer = setTimeout(() => void (async () => {
       const facts = await this.facts();
+      // **The reload that strands you (F10).** A run leaves you on `clarvis/<task>`
+      // with the offer to fold it back held only in memory — reload before answering
+      // and it is gone, though the briefing still notices and names the branch. The
+      // briefing fires once per session, so attaching the action here rather than
+      // building a second surface is the shape that does not also become a nag.
+      const onAgentBranch = facts.git ? isAgentBranch(facts.git.branch) : false;
       const spoken = await this.phrase(facts);
 
       if (spoken) {
-        deliver([spoken]);
+        deliver([spoken], onAgentBranch);
         this.log('briefing: phrased by the model');
         return;
       }
 
       const lines = buildBriefingLines(facts);
-      if (lines.length > 0) deliver(lines);
+      if (lines.length > 0) deliver(lines, onAgentBranch);
       this.log(`briefing: ${lines.length} line(s), from the bank`);
     })(), STARTUP_DELAY_MS);
   }

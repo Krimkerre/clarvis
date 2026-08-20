@@ -332,10 +332,20 @@ function startBriefing(
     return text;
   });
 
-  briefing.start(tracker, (lines) => {
+  briefing.start(tracker, (lines, onAgentBranch) => {
     // Speaking, briefly — then back to resting. Voice (M7) will read these aloud;
     // for now the notification is the delivery and the face just marks the moment.
-    void vscode.window.showInformationMessage(lines.join(' '));
+    // **F10: the briefing already notices it's on an agent branch — give that fact
+    // its action** rather than leaving the recourse (`Clarvis: Review Agent Run`)
+    // undiscoverable, which for a reload before the run's own offer is the same as
+    // not existing.
+    if (onAgentBranch) {
+      void vscode.window.showInformationMessage(lines.join(' '), 'Review that branch').then((choice) => {
+        if (choice === 'Review that branch') void vscode.commands.executeCommand('clarvis.reviewRun');
+      });
+    } else {
+      void vscode.window.showInformationMessage(lines.join(' '));
+    }
     lines.forEach((line) => log.write(`briefing | ${line}`));
     toTranscript(lines.join(' '));
 

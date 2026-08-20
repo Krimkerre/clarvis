@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'path';
-import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch, stackedAdvice } from './branchNames';
+import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch, isRealBase, stackedAdvice } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
 import { atRiskPaths } from './atRisk';
@@ -99,7 +99,10 @@ export class AgentBranch {
     );
 
     const head = repository.state.HEAD?.name;
-    const base = await this.baseFor(head, existing);
+    // `HEAD.commit` is absent before the first commit exists — `git init` points HEAD
+    // at a branch name before anything real is there to return to (F10's second edge).
+    const unborn = !repository.state.HEAD?.commit;
+    const base = await this.baseFor(head, existing, unborn);
     this.noteTheirWork(repository);
 
     const name = branchNameFor(task, existing);
@@ -132,8 +135,8 @@ export class AgentBranch {
    * unrelated work and letting a bad first run poison the second. Observed live: run two
    * branched off run one.
    */
-  private async baseFor(head: string | undefined, existing: string[]): Promise<string | undefined> {
-    const base = head && !isAgentBranch(head) ? head : this.rememberedBase(existing);
+  private async baseFor(head: string | undefined, existing: string[], unborn: boolean): Promise<string | undefined> {
+    const base = head && isRealBase(head, unborn) ? head : this.rememberedBase(existing);
     if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
     return base;
   }

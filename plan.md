@@ -4496,19 +4496,24 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       needs the telling, once** — a fact the user can act on. **Scaling the deadlines by
       provider is M8j** and stays deferred; F14 is the first thing that actually needs it.
       Not to be fixed by shortening the character (§2.1).
-- [ ] **F10 — a reload strands you on the agent's branch, with the offer gone.** When a run
-      finishes with work committed, the offer to fold it back and return you home is held
-      in memory in the extension host. Reload before answering and it is gone; you are left
-      on `clarvis/<task>` with nothing offering a way back. The briefing *notices* — "You're
-      on `clarvis/start-building-…`" — and attaches no action to the fact.
-      `Clarvis: Review Agent Run` is the way home and nothing points at it, so for §6's
-      audience the recourse may as well not exist. §9.5 defines success as coming back to
-      work you keep *or* undoing it in one command; neither is on offer. **Same root cause
-      as F7** — state that must survive a reload held only in the running host — which is
-      two in one day and argues for a sweep rather than waiting for the third. The
-      information already survives (`clarvis.agent.baseBranch` is in `workspaceState`), so
-      the cheap fix is to give the briefing's existing sentence its action. Mind §6: once
-      per session, not on every activation until answered.
+- [x] **F10 — a reload strands you on the agent's branch, with the offer gone. Fixed 20 Aug.**
+      When a run finishes with work committed, the offer to fold it back and return you
+      home is held in memory in the extension host. Reload before answering and it is gone;
+      you are left on `clarvis/<task>` with nothing offering a way back. The briefing
+      *notices* — "You're on `clarvis/start-building-…`" — and attached no action to the
+      fact. §9.5 defines success as coming back to work you keep *or* undoing it in one
+      command; neither was on offer. **Fix:** the briefing's already-computed git facts now
+      say whether the current branch is one of Clarvis's own (`isAgentBranch`), and when it
+      is, the one-time startup notification carries a "Review that branch" button wired to
+      the existing `clarvis.reviewRun` command — no new state, no second surface, and it
+      fires once per session rather than on every activation. **The second edge, same
+      root cause one layer down:** on a repository with zero commits, `git init` points
+      HEAD at a branch name (typically `master`) before anything is really there, and that
+      unborn name was being recorded as a real base — the offer said "fold it into
+      `master`" on a repository where `master` had never existed. `isRealBase()` now checks
+      `HEAD.commit` and refuses to treat an unborn ref as a place to return to. 6 tests
+      (3 new, `branchNames.test.ts` — no test file existed for this module before);
+      933 → 936.
 - [ ] **Runbook sessions 1–5 walked**, findings written down —
       `clarvis-firstrun/RUNBOOK.md`. Sessions 6 and 7 are judgement calls that can follow
       the release.

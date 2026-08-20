@@ -39,6 +39,7 @@ before this file.
 | `docs/build-log.md` | Chronological history — every defect found by using the product, and why each fix looks the way it does. Not shipped in the `.vsix` (see `.vscodeignore`). Read when you need to know *why* a decision was made, not *what* the product currently does. |
 | `README.md` | The user-facing pitch and feature list, and the index of every document here — the front door. |
 | `media/MANUAL.md` | The in-product `/help` manual — what a user can actually ask for. Lives in `media/` because it **ships in the `.vsix` and is read at runtime** by `ChatActions.ts`; it is a product asset, not project documentation. |
+| `docs/refactor-brief.md` | A cold-start prompt for a refactor pass — the constraints a fresh session would otherwise break, and the measured starting points, marked crude where they are crude. |
 | `docs/TUTOR-README.md` | Design notes for Tutor Mode (M12, not built yet). |
 | `AGENTS.md` | The working rules for a coding agent in this repo. Stays at the root because that is where agents look for it. |
 | `src/` | The extension itself. See the map below. |

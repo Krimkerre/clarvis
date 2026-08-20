@@ -268,26 +268,36 @@ export class AgentRunner {
    * the narration**, which has already been streamed as text events and printed every
    * answer twice when it was repeated here.
    */
-  private async completed(
-    branch: AgentBranch,
-    task: string,
-    narration: string,
-    readOnly: boolean
-  ): Promise<AgentEvent> {
-    if (!readOnly) {
-      await this.finish(branch, task, narration);
-      // Nothing was kept, so the isolation branch is clutter. Tidied here rather than
-      // left for the review wizard, which would otherwise offer five options about an
-      // empty branch.
-      this.tidied = await branch.discardIfEmpty();
-    }
+  /**
+   * The end of a question — nothing was written, so there is nothing to say about it.
+   *
+   * **Was the `readOnly` half of one `completed(…, readOnly)`**, whose entire body was
+   * `if (!readOnly)` four times over: two functions sharing a name and a signature.
+   * §0 forbids the flag argument and says to split, and splitting is what makes it
+   * visible that this path commits nothing, tidies nothing, logs nothing and says
+   * nothing — it answers, and the answer already went out as it streamed.
+   *
+   * `files` is still reported: a question is offered read-only tools, but which files
+   * it read is worth knowing and the ledger records it.
+   */
+  private completedAnswer(): AgentEvent {
+    return { kind: 'done', text: '', closing: undefined, files: [...this.touched] };
+  }
+
+  /** The end of a task: commit what was kept, tidy what was not, and say what he said. */
+  private async completedRun(branch: AgentBranch, task: string, narration: string): Promise<AgentEvent> {
+    await this.finish(branch, task, narration);
+    // Nothing was kept, so the isolation branch is clutter. Tidied here rather than
+    // left for the review wizard, which would otherwise offer five options about an
+    // empty branch.
+    this.tidied = await branch.discardIfEmpty();
 
     // **What he actually said, in the conversation.** Narration went to the terminal
     // only, and the chat got the branch note — so a run that ended by asking four
     // questions ("Suggestions shown as a preview, or applied straight away?") put
     // them where nobody was looking, and the panel showed a line about branches.
     // Questions the agent needs answered are the whole point of it asking.
-    if (!readOnly) this.log(`agent: finished with ${narration.trim() ? 'a message' : 'nothing to say'}`);
+    this.log(`agent: finished with ${narration.trim() ? 'a message' : 'nothing to say'}`);
 
     // **Kept apart, because folding them together hid a silent run.** The closing note
     // is about branches — "your own work on `master` is untouched" — and joining it to
@@ -297,8 +307,8 @@ export class AgentRunner {
     // branches followed by an aside about the hard part being over.
     return {
       kind: 'done',
-      text: readOnly ? '' : narration.trim(),
-      closing: readOnly ? undefined : this.closingNote(branch) || undefined,
+      text: narration.trim(),
+      closing: this.closingNote(branch) || undefined,
       files: [...this.touched],
     };
   }
@@ -498,7 +508,9 @@ export class AgentRunner {
         this.log(
           `agent: model stopped after ${this.steps} step(s), ${this.touched.size} file(s) touched — said: ${JSON.stringify(narration.trim() || '(nothing)')}`
         );
-        yield this.record(await this.completed(branch, task, narration, options.readOnly));
+        yield this.record(
+          options.readOnly ? this.completedAnswer() : await this.completedRun(branch, task, narration)
+        );
         return;
       }
 

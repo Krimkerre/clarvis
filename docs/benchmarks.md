@@ -183,6 +183,43 @@ executed coding tasks.
 **Every model except one clears every deadline with room to spare.** The tightest is
 `Voice.say` at 2s; the slowest qualifying model reaches first token in 0.8s.
 
+### Generation speed, in real tokens per second
+
+Counted from the server's own `usage.completion_tokens` (via `stream_options.include_usage`),
+not estimated from characters. Median of three, ~150-word prose task.
+
+| model | GB | tok/s generating | tok/s effective | TTFT |
+|---|---:|---:|---:|---:|
+| `qwen3.5-2b-mlx` | 1.8 | **93.6** | 88.2 | 0.14 |
+| `phi-4-mini-instruct` | 2.2 | 48.8 | 47.6 | 0.20 |
+| `qwen/qwen3-4b-2507` | 2.3 | 46.5 | 44.7 | 0.16 |
+| `qwen2.5-coder-7b-instruct` | 4.3 | 29.5 | 27.0 | 0.22 |
+| `ministral-8b-instruct-2410` | 4.5 | 25.3 | 24.4 | 0.22 |
+| `meta-llama-3.1-8b-instruct` | 4.5 | 19.9 | 19.3 | 0.23 |
+| `qwen2.5-coder-14b-instruct-mlx` | 8.3 | **9.6** | 9.2 | 0.62 |
+| `lfm2.5-2.6b-mlx` | 1.5 | — | — | no visible output |
+
+**Two rates, because conflating them is how a benchmark recommends an unusable model.**
+*Generating* is the sustained rate once the model is talking — the number people mean by
+"tok/s". *Effective* counts from the request being sent, so it includes prompt processing
+and any preamble emitted before visible content.
+
+For every model here the two are within ~5% of each other, which is itself the finding:
+none of them front-load. **`gpt-oss-20b` is why the distinction exists** — a perfectly
+healthy generation rate and **27 seconds** before its first visible character. A table
+reporting only the first column would have recommended it.
+
+**Rate falls off roughly with size, and the fall is steep.** `qwen2.5-coder-7b` generates
+**three times faster** than the 14B (29.5 vs 9.6) while scoring identically on every
+accuracy measure in this document. That is the single strongest argument for the
+recommendation below, and it was invisible until tokens were counted — the two models look
+similar on time-to-first-token (0.22s vs 0.62s), because that measures how quickly they
+*start*, not how quickly they finish.
+
+**A caveat on the headline number.** `qwen3.5-2b` at 93.6 tok/s is the fastest thing here
+and is a `vlm`-typed model that has produced invented facts in earlier scenes. Speed is not
+the whole ranking; see the accuracy section.
+
 ### Co-resident (both models loaded at once)
 
 | pairing | GB | first token A | first token B | notes |
@@ -273,11 +310,15 @@ this exercise: four models, 47 GB of downloads avoided, from reading a JSON file
 
 **One model, both roles: `qwen2.5-coder-7b-instruct` — 4.3 GB.**
 
-It wins or ties on everything measurable: 0.26s to first token, 3/3 tool calls, correct
-follow-up behaviour, 6/6 on both coding tasks, no invented facts in its briefing, and a
-one-sentence quip that stays one sentence. At 4.3 GB it leaves roughly 19 GB of a 24 GB
-machine alone, needs no second model, and therefore never meets the JIT-eviction problem
-at all.
+It wins or ties on everything measurable: 0.26s to first token, **29.5 tok/s — three times
+the 14B's rate**, 3/3 tool calls, correct follow-up behaviour, 6/6 on both coding tasks, no
+invented facts in its briefing, and a one-sentence quip that stays one sentence. At 4.3 GB
+it leaves roughly 19 GB of a 24 GB machine alone and needs no second model.
+
+**The token-rate measurement is what settles it against the 14B.** They look close on
+time-to-first-token (0.22s vs 0.62s) and score identically on accuracy — but that measures
+how fast each *starts*, and the 14B generates at 9.6 tok/s against the 7B's 29.5. On a
+long answer that is the difference between four seconds and twelve.
 
 **If you want two:** add `meta-llama-3.1-8b-instruct` (4.5 GB) on chat, which produced the
 closest thing to the character in this whole run — *"Your build has once again failed,

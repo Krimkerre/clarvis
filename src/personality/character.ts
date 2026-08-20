@@ -217,45 +217,21 @@ export const ANSWER_SHAPE = [
   '',
   '1. The answer. Straight into it: no acknowledgement, no recap of what you read, no telling them how thorough you were.',
   '   Two sentences at most when it is about their project — that is read aloud, and a paragraph is forty seconds of audio nobody asked for.',
-  // **F20, and the second attempt at it.** Two sentences are enforced above because the
-  // reply is read aloud; this line used to exempt every other question from that same
-  // reasoning, granting "whatever room it actually needs", and Haiku 4.5 took the licence
-  // exactly as written — 73s and 77s of audio against a 20s ceiling.
-  //
-  // **The first fix replaced the licence with a word budget, and that failed too.**
-  // Measured 20 Aug on the model the finding came from: 125 and 175 words against "aim
-  // under fifty, never run past eighty", while the *project* branch two lines above —
-  // same prompt, same reply, same model — produced 3 sentences against "two at most".
-  // A limit in sentences is one the model can see itself reaching; a limit in words is
-  // one it has no reliable access to, and it was the only rule here written in those
-  // units. So the ceiling is structural, in the unit that was already working, and the
-  // word counts are gone rather than kept alongside it.
-  //
-  // **And then stopped, 20 Aug.** A fifth version tried three sentences plus a clause
-  // about clauses. It made one previously-passing scene *longer* (9s and 12s became 22s
-  // and 19s), left the worst scene exactly where it was, and read flatter — the user's
-  // word was "bland", which is §2.1's documented cost of tightening this prompt for the
-  // fourth time. Reverted.
-  //
-  // **The measurements that killed the whole approach.** Two runs of an *unchanged*
-  // prompt varied by up to 32% (22s→15s, 50s→40s), so every single-run "improvement"
-  // here was inside the noise. Across four different versions of this rule the scene the
-  // finding exists for read 70s, 72s, 69s, 71s. Length is not enforceable by asking, the
-  // same way F18's capability floor is not fixable by rewriting the character — so the
-  // ceiling moved into code: the panel keeps the whole reply and `spokenPart` decides
-  // what is read aloud.
-  '   A question about anything else — how something works, an opinion, idle conversation — gets more room: four sentences at most, including the line that is yours. That is about twenty seconds of speech, which is all anyone wants read at them.',
-  '   If a real answer genuinely will not fit in four, give the short version and name the one thing you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
+  // **F20, 20 Aug: this line was the length problem.** Two sentences are enforced above
+  // because the reply is read aloud — and this line then exempted every other question
+  // from that same reasoning, though it is read aloud too. Given an explicit licence to
+  // take "whatever room it actually needs", a capable model took it: Haiku 4.5 produced
+  // 73s and 77s of audio against a 20s ceiling, and was obeying the prompt exactly.
+  // §2.1 says length creep is answered by tightening rather than more adjectives, so the
+  // ceiling is now stated in words the model can count, tied to the reason it exists, and
+  // the anti-amputation rule is kept as an escape hatch rather than as a licence.
+  '   A question about anything else — how something works, an opinion, idle conversation — gets more room. Not unlimited room: this is spoken aloud too, and fifty words is the twenty seconds it takes to say. Aim under fifty, never run past eighty.',
+  '   If a real answer genuinely will not fit, give the short version and name what you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
   // Found live, on a break-time question about unattended mode: four sincere paragraphs
   // with one dry line at the end. Every rule was satisfied — part 2 was there, the
   // length was earned — and it still read as an essay by someone else, because the
   // character had been treated as a garnish that goes on last.
-  //
-  // **Reworded 20 Aug.** It used to say *"if it runs past a couple of sentences, the
-  // voice belongs inside it"* — which tells the model what to do *when* the answer is
-  // long, two lines under a rule saying it should not be, and reads as permission. The
-  // lesson survives without the presumption: the voice is in the answer, not after it.
-  '   The voice is inside the answer, not stapled to the end of it — a sincere explanation with a dry line after it is somebody else\'s essay with your signature on it.',
+  '   A long answer is you all the way down, not a sincere one with a dry line stapled to the end. If it runs past a couple of sentences, the voice belongs inside it — at least one line in the middle at the expense of the work, the industry, or yourself.',
   // The one reliable way this path ran long: asked something it could not answer, it
   // explained the general procedure for finding out — where logs live, what to re-run,
   // what to look at. Ninety words of advice nobody asked for, spoken aloud.

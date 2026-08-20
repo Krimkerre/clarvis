@@ -65,30 +65,14 @@ test('the answer shape requires a line of his own, rather than banning things', 
   // amputating a real answer to hit a length made him useless for the other half of
   // what people actually ask. So it still gets more than the two-sentence project rule...
   assert.match(ANSWER_SHAPE, /gets more room/);
-  // "the one thing you left out" rather than "what you left out": a list of omissions is
-  // itself an answer that ran long, which is the failure the escape hatch sits under.
-  assert.match(ANSWER_SHAPE, /give the short version and name the one thing you left out/);
+  assert.match(ANSWER_SHAPE, /give the short version and name what you left out/);
 
-  // ...but **not unlimited room** (F20), and the ceiling is **structural**. Two earlier
-  // versions failed on Haiku 4.5: `whatever room it actually needs` produced 73s and 77s
-  // of audio against a 20s ceiling, and the word budget that replaced it produced 125 and
-  // 175 words against "never run past eighty". In the same replies the project branch,
-  // limited in sentences, came back with 3 against "two at most" — so the unit is what
-  // decides whether the limit is obeyed, and no word counts survive here.
-  assert.match(ANSWER_SHAPE, /four sentences at most, including the line that is yours/);
-  assert.doesNotMatch(ANSWER_SHAPE, /three sentences at most/);
-
-  // **A fifth version tried three sentences and a clause about clauses, and was
-  // reverted.** It made a previously-passing scene longer (9s and 12s became 22s and
-  // 19s), left the worst scene where it was, and read flatter. Two runs of an unchanged
-  // prompt varied by up to 32%, so the single-run "improvements" that motivated it were
-  // inside the noise. The ceiling lives in `spokenPart` now; this rule only has to keep
-  // the reply from being an essay.
-  assert.doesNotMatch(ANSWER_SHAPE, /wearing one full stop/);
-  // The long-answer line used to begin "if it runs past a couple of sentences", which
-  // told the model what to do *when* it went long, directly under a rule saying not to.
-  assert.doesNotMatch(ANSWER_SHAPE, /If it runs past a couple of sentences/);
-  assert.match(ANSWER_SHAPE, /The voice is inside the answer/);
+  // ...but **not unlimited room** (F20). This assertion replaced `whatever room it
+  // actually needs`, which was the licence a capable model took at its word: Haiku 4.5
+  // produced 73s and 77s of audio against a 20s ceiling while obeying the prompt exactly.
+  // The ceiling has to be a number the model can count against, not an adjective.
+  assert.match(ANSWER_SHAPE, /Aim under fifty, never run past eighty/);
+  assert.doesNotMatch(ANSWER_SHAPE, /whatever room it actually needs/);
 });
 
 test('the examples are marked as a register rather than a script', () => {

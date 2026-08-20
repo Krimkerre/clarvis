@@ -4575,51 +4575,30 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       rests on: the ceiling is now **four sentences at most, including the line that is
       yours**, in the unit the obeyed rule already used, with the word counts removed
       rather than kept beside them.
-      **Settled 20 Aug by moving the ceiling into code, after five prompt versions failed
-      to.** The scene this finding exists for read **70s, 72s, 69s, 71s** across four
-      different versions of the rule, and two runs of an *unchanged* prompt varied by up to
-      **32%** — so most of the movement attributed to those versions was noise. The fifth
-      version (three sentences plus a clause about clauses) made a previously-passing scene
-      *longer* and read flat; the user's word was "bland", which is §2.1's documented cost
-      of tightening this prompt and the same trap as F18. Reverted to four sentences.
-      **The constraint was never "his answers must be short".** It is that twenty seconds
-      is all anyone wants read aloud, and those are different things. `spokenPart` in
-      `replyDelivery.ts` bounds the audio and nothing else: the panel keeps every word, and
-      the voice gets **the first sentence and his own closing line** — the substance and the
-      character, which are the two parts that must survive. Applied against the real logged
-      replies from the last run: 51s → 13s, 71s → **14s**, 28s → 3s, and the two that were
-      already short are untouched. `voiceCheck` now reports both numbers, because a check
-      that measures what the product no longer speaks is measuring a product that does not
-      exist.
-      **Still `[~]`, and the closing condition is now one listen rather than one run.** The
-      length is deterministic and tested; what nobody has heard yet is whether dropping the
-      middle sounds abrupt out loud.
+      **Everything tried on 20 Aug was reverted at the user's request, and the state is
+      back to the word budget above — which has still never run.** What was tried, so
+      nobody repeats it:
 
-      **Third run, 21:26 — the first that ever tested a fix, and it moved.** Four sentences
-      took three of the four chat scenes from 65s/50s/22s to **38s/30s/17s**, and the
-      ceiling was roughly obeyed at four and five sentences. **The fourth scene gamed it:**
-      five sentences at **34 words each** against 19 on every scene that passed — the same
-      69 seconds of audio, with fewer full stops in it. A limit on full stops is not a limit
-      on talking. One previously-passing scene regressed the same way, 9s to 22s in two
-      sentences of 27 words.
-      **So: three sentences rather than four, plus the clause that was missing** — *"a
-      sentence carrying three clauses is three sentences wearing one full stop, and it is
-      counted as three."* Still `[~]`; this is the fourth version of this rule and the first
-      with a measurement behind it, which is not the same as being verified.
+      - **Four sentences instead of a word budget.** One run: three of four chat scenes
+        improved, the fourth did not.
+      - **Three sentences plus "a clause carrying three clauses is three sentences wearing
+        one full stop".** Made a previously-passing scene *longer* (9s and 12s became 22s
+        and 19s), left the worst scene where it was, and read flat — the user's word was
+        **"bland"**, which is §2.1's documented cost of tightening this prompt.
+      - **`spokenPart`: bound the audio in code**, speaking the first sentence and his
+        closing line while the panel kept the whole reply. It hit the ceiling on every
+        scene (71s → 14s) and the user was **not happy with the result**. Reverted whole.
 
-      **The lesson, recorded because it is the fourth of its kind today:** a prompt in
-      source is not a prompt in the product. `voiceCheck` runs inside the extension host,
-      so it measures **the installed build** — and reading its output without checking what
-      was in that build is asserting from an artifact again. Rebuild and reinstall before
-      the run, or the check answers a question about last week's code.
-      **The same runs exposed an instrument bug, since fixed.** Scenes were flagged for
-      inventing numbers they were quoting: the check scored replies against `scene.system`
-      alone while the file excerpt arrives in the scene's *messages*, and `numberUses`
-      skipped any token containing a separator — so `Rule 1:` in the facts was invisible
-      while `Rule 1` in the reply was counted. Both fixed; `grounded.ts`'s half also
-      loosens `acceptRewrite`, in the direction of rejecting fewer honest rewrites. A third
-      flag is real and outstanding: Haiku quoted an example back verbatim — *"And I say
-      that as the one who would be tidying up afterwards."*
+      **The measurement that outlives all of it.** Two runs of an *unchanged* prompt varied
+      by up to **32%** (22s→15s, 50s→40s), and across four different versions of the rule
+      the scene this finding exists for read **70s, 72s, 69s, 71s**. Any future attempt
+      needs three runs per variant before it claims anything; single-run comparisons here
+      measured noise, and this entry said so twice before believing it.
+
+      **Where that leaves F20:** open, with the original defect intact and the two obvious
+      classes of fix both tried — tightening the prompt costs the character, and trimming
+      the audio was not wanted. What has *not* been tried is anything that shortens the
+      reply without either: fewer, better sentences rather than the same reply cut down.
 
       **Why this stays open rather than ticked.** §2.1: a prompt is a hypothesis until the
       output is read. A/B on `meta-llama-3.1-8b`, three runs each, same scene that produced

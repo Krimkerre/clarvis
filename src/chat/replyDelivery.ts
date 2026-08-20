@@ -39,36 +39,3 @@ export function afterReply(text: string, aborted: boolean): ReplyDelivery {
 
   return { speak: true };
 }
-
-/**
- * The part of a finished reply that is read aloud (F20).
- *
- * **Why this is code and not a sentence in the prompt.** Five versions of `ANSWER_SHAPE`
- * tried to cap spoken length by asking — "whatever room it actually needs" became a word
- * budget, then four sentences, then three plus a clause about clauses. Measured on Haiku
- * 4.5, the scene the finding exists for read **70s, 72s, 69s and 71s** across four of
- * them, and two runs of an *unchanged* prompt varied by up to 32%, so most of the
- * apparent movement was noise. Tightening further only made the replies flatter, which
- * is §2.1's documented cost and the same trap as F18: the fix that removes the defect by
- * removing the character is not a fix.
- *
- * **The constraint was never "his answers must be short".** It is that twenty seconds is
- * all anyone wants read at them. Those are different things, and conflating them is what
- * made this a prompt problem. The panel keeps every word; only the audio is bounded.
- *
- * **First sentence, plus his own line if there is one.** `ANSWER_SHAPE` puts the answer
- * first and the line that is his last, so those two are the opening and the close by
- * construction — the substance and the voice, which are exactly the two things that must
- * survive. What is dropped is the middle, which is where the elaboration lives.
- */
-export function spokenPart(text: string): string {
-  const said = text.trim();
-  if (!said) return said;
-
-  // Split on sentence ends followed by a space, so "src/app.ts" and "1.5" stay whole —
-  // the same reason `numberUses` stopped treating a dot as structure.
-  const sentences = said.split(/(?<=[.!?])\s+/).filter((piece) => piece.trim());
-  if (sentences.length <= 2) return said;
-
-  return `${sentences[0]} ${sentences[sentences.length - 1]}`;
-}

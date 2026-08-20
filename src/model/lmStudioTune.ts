@@ -125,11 +125,6 @@ export async function findLmsBinary(): Promise<string | undefined> {
   return binary;
 }
 
-/** Only for tests — the cache is a session-long fact everywhere else. */
-export function forgetLmsBinary(): void {
-  binary = null;
-}
-
 /**
  * Loads the named models with the parameters Clarvis actually wants.
  *
@@ -146,11 +141,6 @@ export function forgetLmsBinary(): void {
  * reload Clarvis has loaded nothing, so it may unload nothing.
  */
 const ourLoads = new Set<string>();
-
-/** Test seam, and the reason a stale set never leaks between cases. */
-export function forgetOurLoads(): void {
-  ourLoads.clear();
-}
 
 /** What Clarvis has loaded this session — the only ids it is allowed to unload. */
 export function ourLoadedIds(): readonly string[] {

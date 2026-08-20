@@ -252,8 +252,3 @@ export async function mayRunUnconfined(
   log(`sandbox: none available, unconfined commands ${allowed ? 'allowed' : 'refused'} for this workspace`);
   return allowed ? 'allowed' : 'refused';
 }
-
-/** Forgets the answer, for the command that lets someone change their mind. */
-export async function forgetUnconfinedAnswer(context: vscode.ExtensionContext): Promise<void> {
-  await context.workspaceState.update(UNCONFINED_KEY, undefined);
-}

@@ -122,9 +122,18 @@ export function numberUses(text: string): NumberUse[] {
 
   tokens.forEach((raw, index) => {
     if (/[a-z].*\d|\d.*[a-z]/i.test(raw.replace(/^(\d+)(st|nd|rd|th)$/i, '$1'))) return;
-    if (/[/\\.@:]/.test(raw)) return;
 
-    const value = valueOf(raw.replace(/[^a-z0-9]/gi, ''));
+    // **Trailing punctuation is punctuation, not structure.** Separators inside a token
+    // mean it is a time, a path, a version or an address — `14:30`, `src/a.ts`, `1.5` —
+    // and none of those are a count of anything. A separator at the *end* is just where
+    // the sentence stopped, and treating the two alike made the guard asymmetric: a
+    // reference written `Rule 1:` in the facts was invisible, while `Rule 1` in the reply
+    // was counted, so the model was told it had invented a number it was quoting. Seen on
+    // Haiku 4.5 citing three rules out of a file it had just been shown.
+    const trimmed = raw.replace(/[^a-z0-9]+$/i, '');
+    if (/[/\\.@:]/.test(trimmed)) return;
+
+    const value = valueOf(trimmed.replace(/[^a-z0-9]/gi, ''));
     if (value === undefined) return;
 
     const nouns = new Set<string>();

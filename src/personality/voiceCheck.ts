@@ -1,5 +1,8 @@
 import { ModelService } from '../model/ModelService';
-import { agentSystemPrompt } from '../agent/AgentRunner';
+// From `agentPrompt`, not from `AgentRunner` which re-exports it: the latter pulls in
+// `vscode` and made this module unloadable outside the extension host, so the pure parts
+// of the check could not be tested at all.
+import { agentSystemPrompt } from '../agent/agentPrompt';
 import { ANSWER_SHAPE, EXAMPLES, ONLY_WHAT_YOU_WERE_GIVEN, characterWith } from './character';
 import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
@@ -245,6 +248,17 @@ function parroted(said: string): string[] {
 }
 
 /**
+ * Everything the scene handed the model, as one block of text.
+ *
+ * The system prompt *and* the conversation: a tool result is a fact the model was given
+ * as surely as a line in its brief, and a file excerpt it was asked to read is the most
+ * fact-carrying thing in the whole scene.
+ */
+export function factsGiven(scene: Pick<Scene, 'system' | 'messages'>): string {
+  return [scene.system, ...scene.messages.map((message) => message.content)].join('\n');
+}
+
+/**
  * Says every line and returns them as a report.
  *
  * Run sequentially rather than in parallel: this exists to be read while it fills in,
@@ -296,10 +310,16 @@ export async function runVoiceCheck(
 
     // **Counted rather than spotted.** Invented figures were found by reading two model
     // transcripts side by side and noticing that "40 minutes ago" had become "the 40th
-    // time" — which is not a method, and would not survive being tired. The scene's own
-    // system prompt is the set of facts it was entitled to use, so the same check that
-    // guards a rewrite can measure a raw answer here.
-    const invented = ungroundedClaims(said, scene.system);
+    // time" — which is not a method, and would not survive being tired. The same check
+    // that guards a rewrite can measure a raw answer here.
+    //
+    // **Against everything the model was shown, not just the system prompt.** This read
+    // `scene.system` alone until 20 Aug, and the scenes that hand over a *tool result*
+    // were scored against a set of facts that excluded it: Haiku quoted `Rule 1`,
+    // `Rule 2` and `Rule 3` back from the file excerpt it had just been given, and all
+    // three were reported as numbers nobody gave it. A checker that cries wolf on a
+    // correct citation trains the reader to skip the column.
+    const invented = ungroundedClaims(said, factsGiven(scene));
     if (invented.length > 0) {
       out.push('', `> **Numbers nobody gave it:** ${invented.join(', ')}`);
     }

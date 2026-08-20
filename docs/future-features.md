@@ -261,6 +261,54 @@ not wrong without it.
 all four settings — and correcting a claim that two models "will swap them in and out and
 everything gets slower", which described a **setting** as if it were a limitation.
 
+## Deferred: a benchmark command, because `voiceCheck` is most of one already
+
+**What:** `Clarvis: Debug — Benchmark Model`, beside `Clarvis: Debug — Voice Check`. Run
+it against the configured model, get a markdown report, switch model, run again, compare.
+
+**Why it is cheap:** `voiceCheck.ts` is already the harness. It runs fixed scenes through
+the configured model, applies a spoken-length ceiling, detects parroted calibration
+examples, and **already calls `ungroundedClaims()`**. What a benchmark adds on top is
+mostly instrumentation of a loop that exists:
+
+| measurement | cost | note |
+|---|---|---|
+| timings at the caps Clarvis actually reads to (40 / 300 / 400 chars) | trivial | a timestamp at each threshold in the existing streaming loop |
+| grounding, length, parroting | **free** | already implemented and running |
+| tool-call reliability over N attempts | small | `streamWithTools` instead of `stream`; same provider layer |
+| multi-turn tool follow-up | small | one extra round-trip with a synthetic tool result |
+
+**Measure time-to-cap, never total generation.** Every timed caller stops reading at a
+character cap — `Voice.collect` at 300, `LiveQuips.collect` at 400, `intentModel` at 40 —
+so a verbose model is not penalised for verbosity nobody waits for, only for being slow to
+reach the cap. A scratch harness written on 20 Aug measured total generation first and had
+to be thrown away: it made a model that emitted nothing for 27 seconds look merely slow,
+and libelled a chatty-but-quick one.
+
+**The multi-turn follow-up is the part worth having**, and the part no one-shot scene can
+see. **F17** was not a model that could not write code — it was a model that malformed a
+path, was told plainly *"use listFiles to see what is"*, and reissued the same call four
+times. Replaying that exchange and classifying what comes next — used-the-result, retried,
+gave-up — measures the single failure that decides whether a local model can hold the agent
+role at all.
+
+**One thing that must not move in: executing generated code.** The 20 Aug scratch harness
+runs `dedupe()` against test cases in a subprocess, which is fine for a script on a
+developer's own machine and is *not* fine inside the product — that is Clarvis executing
+untrusted model output, precisely what `Gate.ts` and the sandbox exist to prevent, and it
+is the open *safety model covers the build, not the artifact* item above. Either it goes
+through the sandbox properly, or the in-product version reports the code for a human to
+judge and does not run it.
+
+**Keep the measurement pure.** Timings-to-cap, verdict classification and report formatting
+belong in a `vscode`-free module beside the command, not inside it — this session lost two
+fixes (F15, F22) to logic that lived where no test could reach it, and gained tests for
+`branchNames.ts` and `thread.ts` only because a defect dragged them into the light.
+
+**Why deferred:** the runbook answers *"is the local agent path good enough to offer?"* once,
+by hand, in session C. This would answer it repeatably, for any model, in a command — which
+is better but is not what stands between here and v1.
+
 ## Deferred: the milestones already marked stretch
 
 Unchanged by this decision, listed so the v1 boundary is in one place:

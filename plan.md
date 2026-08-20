@@ -4449,9 +4449,29 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       defect: a subdirectory that cannot be read now loses that subdirectory rather than the
       whole listing. 2 tests; 961 → 963.
 - [ ] **M8i part 1 — reasoning blocks stripped** from the transcript and the spoken output.
-      Predicted, not yet observed: verify against a real MLX model in runbook session 4
-      first, then fix. Leaking `<think>` into the chat and reading it aloud is the clearest
-      possible "leaks its own internals".
+      Leaking `<think>` into the chat and reading it aloud is the clearest possible "leaks
+      its own internals". **Rewritten 20 Aug: this is two failure modes, not one, and which
+      one you get is an LM Studio setting.** `separateReasoningContentInAPI` (default
+      **on**) routes a reasoning model's thinking into a separate `reasoning_content` field
+      that Clarvis never reads. So:
+      **(a) setting on** — `content` comes back **empty**. Observed live: `qwen3.5-9b`
+      returned nothing at all across four scenes while reporting healthy timings, and
+      `ornith-1.0-9b` took 40s per scene to say nothing. That does not look like a leak, it
+      looks like a slow or broken model — and F14's "the character has gone quiet" notice
+      would fire for a reason that is not the real one.
+      **(b) setting off** — the `<think>` block arrives inline in `content`, which is the
+      leak this item was written about, and is still *predicted rather than observed*.
+      **Consequences for the fix:** stripping `<think>` (b) is necessary but not sufficient
+      — an empty reply (a) needs its own answer, because a model that says nothing is not
+      served by a stripper. Candidate: treat an empty `content` with a non-empty
+      `reasoning_content` as "this model does not work here", and say so, rather than
+      falling through to the written line as though the model were merely slow.
+      **Consequence for the runbook:** session C must record *which* setting was in force,
+      or it will verify one branch and tick both. Detecting a reasoning model up front is
+      cheap and was proven on 20 Aug — the chat template carries `<think>` markers, which is
+      a pre-download check (see `clarvis-firstrun/FINDINGS.md`, F27's screen). Recorded in
+      full as **F29**, which does not add a blocker so much as correct this one, which had
+      been describing half of itself.
 - [x] **M8h — resolved 20 Aug: no guard, by design.** `clarvis.chat.dailyRequestCap` and
       `clarvis.agent.dailyTokenBudget` were in this spec and in no code. Decided: spend is
       the provider's console — BYO-key already enforces whatever limit the user set, and

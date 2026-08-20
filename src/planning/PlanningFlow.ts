@@ -135,7 +135,16 @@ export async function runPlanning(
   // only questions — folding all of them in is what emptied milestone one before.
   const milestones =
     readyToDraft(state) && !noPlanNeeded
-      ? await planMilestone(models, state, log, verdicts.filter((verdict) => verdict.status !== 'rejected'))
+      ? await planMilestone(
+          models,
+          state,
+          log,
+          verdicts.filter((verdict) => verdict.status !== 'rejected'),
+          // **Rejections travel too.** They used to be filtered out here, so the planner
+          // never learned a decision had been made and planned the rejected thing anyway
+          // — F5, found live.
+          verdicts.filter((verdict) => verdict.status === 'rejected')
+        )
       : [];
 
   const approved = readyToDraft(state) && !noPlanNeeded

@@ -1,5 +1,5 @@
 import { InterviewState, knownFacts } from './interviewTopics';
-import { agreedResolution, FindingVerdict } from './verdictSummary';
+import { agreedResolution, FindingVerdict, rejectionNote } from './verdictSummary';
 
 /**
  * Turning an interview into actual build steps (M9d — §4.9).
@@ -28,9 +28,19 @@ const MAX_STEPS = 6;
  */
 const MAX_MILESTONES = 4;
 
-export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[] = []): string {
+export function milestonePrompt(
+  state: InterviewState,
+  accepted: FindingVerdict[] = [],
+  /**
+   * Findings the user turned down. **Passed in, not filtered out — F5.** These used to be
+   * dropped before this prompt was built, so the planner never learned that a decision had
+   * been made and planned the rejected thing anyway.
+   */
+  rejected: FindingVerdict[] = []
+): string {
   // The user's own wording wins for a modified finding, same rule as everywhere else.
   const findings = accepted.map(agreedResolution);
+  const turnedDown = rejected.map(rejectionNote);
 
   return [
     'Here is everything established in a project-planning interview:',
@@ -51,6 +61,22 @@ export function milestonePrompt(state: InterviewState, accepted: FindingVerdict[
           'they belong in the order — a fix agreed before building starts is part of',
           'building, not a note about it. Leave out the ones that only ask a question',
           'to be settled; those are recorded separately and are not work.',
+          '',
+        ]
+      : []),
+    ...(turnedDown.length > 0
+      ? [
+          'They were also offered these and turned them down:',
+          ...turnedDown.map((note) => `- ${note}`),
+          '',
+          // **A rejection is a decision, and the reason is often another one.** Found
+          // live: "no separate file, embed compliments in script" was given as a reason
+          // for dropping a finding, and it contradicted the data answer given earlier in
+          // the same interview. Planning from the interview alone produced a first step
+          // that created the file they had just said not to create.
+          'Do not plan any of these. Where the reason states a decision, it was made',
+          'after everything above and wins over anything it contradicts — including an',
+          'earlier answer in the interview.',
           '',
         ]
       : []),

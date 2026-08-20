@@ -39,6 +39,31 @@ export function agreedResolution(verdict: FindingVerdict): string {
 }
 
 /**
+ * A finding the user turned down, as the one line the milestone planner needs.
+ *
+ * **F5, found live on 19 Aug.** The user rejected a finding about file format with *"no
+ * separate file, embed compliments in script"*, and three seconds later the first step of
+ * the first milestone was *"Create a compliments data file with 30 entries"*, checked by
+ * asserting that file existed. The rejection was recorded and then ignored.
+ *
+ * The cause was a filter: rejected verdicts were dropped before milestone generation ever
+ * saw them, so the model planned from the interview alone — and the interview's `data`
+ * answer *had* said the compliments would live in a file. The user's later correction
+ * never reached it.
+ *
+ * So the reason travels, and it is worth being clear about what it is. **A rejection
+ * reason is frequently not a reason but a decision** — "no separate file, embed them in
+ * the script" is an instruction, given later than the answer it overrides. Dropping it
+ * loses a decision; keeping it as prose lets the model weigh it against what came before.
+ */
+export function rejectionNote(verdict: FindingVerdict): string {
+  const why = verdict.reasoning?.trim();
+  return why
+    ? `${verdict.finding.what} — turned down, because: ${why}`
+    : `${verdict.finding.what} — turned down, no reason given`;
+}
+
+/**
  * Renders one verdict as the lines it contributes to the plan/summary.
  *
  * Pure and separate from `Verdicts.ts` for the same reason `interviewPrompt.ts` is

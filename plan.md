@@ -4375,11 +4375,19 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
 - [ ] **F3 — a question asked back during the interview is consumed as an answer.** Asking
       "what's the simplest solution?" mid-interview records the question as the answer and
       files the gap as "open". Loses what the user said; §9.9's neighbour.
-- [ ] **F5 — a rejected finding is recorded and the plan does the rejected thing anyway.**
+- [x] **F5 — a rejected finding is recorded and the plan does the rejected thing anyway. Fixed 19 Aug.**
       "No separate file, embed compliments in script" was recorded as a rejection, and the
       first step of the first milestone was *create a data file*. `docs/risks.md` answers
       "a confidently wrong generated plan" by promising rejections are never silently
-      adopted; until this is true, that promise is not.
+      adopted; until this is true, that promise is not. **Cause:** `PlanningFlow` filtered
+      rejected verdicts out before `planMilestone` ever saw them, so the planner worked
+      from the interview alone — and the interview's `data` answer *had* said the
+      compliments would live in a file. The later correction never reached it. Rejections
+      now travel with their reasoning, and the prompt says two things about them: do not
+      plan these, and **where the reason states a decision it was made after everything
+      above and wins over anything it contradicts, including an earlier interview
+      answer** — because a rejection reason is frequently not a reason but an
+      instruction. 5 tests; 877 → 882.
 - [ ] **M8i part 1 — reasoning blocks stripped** from the transcript and the spoken output.
       Predicted, not yet observed: verify against a real MLX model in runbook session 4
       first, then fix. Leaking `<think>` into the chat and reading it aloud is the clearest
@@ -4706,7 +4714,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**877 tests**, against Node's built-in runner with no test framework — possible only
+**882 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

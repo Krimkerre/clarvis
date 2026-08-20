@@ -155,3 +155,52 @@ test('more milestones than the cap are ignored, not crammed in', () => {
   const many = Array.from({ length: 9 }, (_, index) => `MILESTONE: ${index}\nA step | a check`).join('\n');
   assert.equal(parseMilestones(many).length, 4);
 });
+
+// ------------------------- F5: a rejection is a decision, and it must reach here
+
+/** The live case from 19 Aug, verbatim. */
+const rejectedFileFormat = {
+  finding: {
+    class: 'scope' as const,
+    what: 'The script needs to read and parse a compliments file, but no decision has been made about the file format.',
+    whyItMatters: 'The plan says what data to load but not how it is stored.',
+    fixes: ['Specify the file format (newline-delimited, JSON, CSV) before writing code.'],
+  },
+  status: 'rejected' as const,
+  reasoning: 'no separate file, embed compliments in script',
+};
+
+test('a rejected finding reaches the planner instead of being filtered away', () => {
+  // It used to be dropped before this prompt was built, so the planner worked from the
+  // interview alone — whose data answer had said the compliments would live in a file.
+  // Three seconds after "no separate file", step one was "Create a compliments data file".
+  const prompt = milestonePrompt(state, [], [rejectedFileFormat]);
+
+  assert.match(prompt, /turned them down/);
+  assert.match(prompt, /no separate file, embed compliments in script/);
+});
+
+test('the planner is told not to build what was turned down', () => {
+  const prompt = milestonePrompt(state, [], [rejectedFileFormat]);
+  assert.match(prompt, /Do not plan any of these/);
+});
+
+test('a rejection reason outranks an earlier interview answer', () => {
+  // The reason is usually not a reason at all but a decision, given later than the answer
+  // it overrides. Without this the model has two contradictory statements and no rule for
+  // choosing, and it picked the older one.
+  const prompt = milestonePrompt(state, [], [rejectedFileFormat]);
+  assert.match(prompt, /it was made\s*after everything above and wins over anything it contradicts/);
+});
+
+test('a rejection with no reason still says it was turned down', () => {
+  const prompt = milestonePrompt(state, [], [{ ...rejectedFileFormat, reasoning: undefined }]);
+  assert.match(prompt, /turned down, no reason given/);
+});
+
+test('no rejections adds nothing to the prompt', () => {
+  // The block must not appear as an empty heading when every finding was accepted.
+  const prompt = milestonePrompt(state, [], []);
+  assert.doesNotMatch(prompt, /turned them down/);
+  assert.doesNotMatch(prompt, /Do not plan any of these/);
+});

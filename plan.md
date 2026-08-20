@@ -4560,29 +4560,34 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       fifty, never run past eighty."* The anti-amputation rule is kept as an escape hatch
       (give the short version, name what you left out) rather than as a licence. §2.1's
       tightening, not more adjectives.
-      **Second attempt, 20 Aug (late): the word budget failed too, and the run finally
-      happened on Haiku.** `voiceCheck` on `claude-haiku-4-5-20251001` — the model the
-      finding came from — returned **175 words / 70s**, **163 / 65s**, **125 / 50s** and
-      **54 / 22s** on the four chat scenes, against a prompt saying *"Aim under fifty,
-      never run past eighty"*. Roughly a 10% improvement on a 3x problem.
-      **What the same run shows in the same replies** is the diagnosis: the *project*
-      branch, limited to "two sentences at most", produced **three sentences**. A limit in
-      sentences was nearly obeyed; a limit in words was exceeded twofold. Words are the one
-      unit in this prompt the model cannot count itself against, and it was the only rule
-      written in them. So the ceiling is now **four sentences at most, including the line
-      that is yours**, and the word counts are gone rather than kept beside it. The
-      long-answer line — *"if it runs past a couple of sentences, the voice belongs
-      inside it"* — is also rewritten: it told the model what to do *when* the answer ran
-      long, two lines under a rule saying it should not, which reads as permission.
-      **Still `[~]`, for the same reason as last time:** this is a hypothesis until a
-      `voiceCheck` run on Haiku is read. Two fixes have now shipped here on reasoning about
-      the prompt; only the output settles it.
-      **The same run exposed an instrument bug, since fixed.** Three scenes were flagged for
+      **Two runs on Haiku, 20 Aug (late) — and both measured the *original* prompt.**
+      `voiceCheck` on `claude-haiku-4-5-20251001` returned 70s/65s/50s/22s and then
+      72s/56s/40s/15s on the four chat scenes. **Neither run tested a fix.** The installed
+      build was packaged at 15:51 and contains `whatever room it actually needs` — the
+      licence F20 was filed against. The word-budget fix existed only in source, and was
+      never built, so the claim first written here that "the word budget failed on Haiku"
+      was wrong and is withdrawn. It has still never run.
+      **What those runs do establish:** the original prompt reproduces reliably at
+      **56–72 seconds** against a 20s ceiling, on the default provider, which confirms F20
+      rather than advancing it. And in both runs the *project* branch — "two sentences at
+      most" — produced two and three sentences, while the exempted branch ran to seven and
+      ten. That is the only comparison the runs support, and it is what the current fix
+      rests on: the ceiling is now **four sentences at most, including the line that is
+      yours**, in the unit the obeyed rule already used, with the word counts removed
+      rather than kept beside them.
+      **The lesson, recorded because it is the fourth of its kind today:** a prompt in
+      source is not a prompt in the product. `voiceCheck` runs inside the extension host,
+      so it measures **the installed build** — and reading its output without checking what
+      was in that build is asserting from an artifact again. Rebuild and reinstall before
+      the run, or the check answers a question about last week's code.
+      **The same runs exposed an instrument bug, since fixed.** Scenes were flagged for
       inventing numbers they were quoting: the check scored replies against `scene.system`
       alone while the file excerpt arrives in the scene's *messages*, and `numberUses`
       skipped any token containing a separator — so `Rule 1:` in the facts was invisible
       while `Rule 1` in the reply was counted. Both fixed; `grounded.ts`'s half also
-      loosens `acceptRewrite`, in the direction of rejecting fewer honest rewrites.
+      loosens `acceptRewrite`, in the direction of rejecting fewer honest rewrites. A third
+      flag is real and outstanding: Haiku quoted an example back verbatim — *"And I say
+      that as the one who would be tidying up afterwards."*
 
       **Why this stays open rather than ticked.** §2.1: a prompt is a hypothesis until the
       output is read. A/B on `meta-llama-3.1-8b`, three runs each, same scene that produced

@@ -1,3 +1,4 @@
+import { normaliseStepText } from '../planning/planUpdate';
 /**
  * Knowing which build step a run is on, while it is on it.
  *
@@ -53,27 +54,18 @@ export function readStepMarkers(text: string): StepProgress {
  * `undefined` and the display holds where it was.
  */
 export function matchStep(announced: string, steps: string[]): number | undefined {
-  const target = normalise(announced);
+  const target = normaliseStepText(announced);
   if (!target) return undefined;
 
-  const exact = steps.findIndex((step) => normalise(step) === target);
+  const exact = steps.findIndex((step) => normaliseStepText(step) === target);
   if (exact !== -1) return exact;
 
   // One contains the other: "Create the CLI entry point" announced as "Create the CLI
   // entry point that takes a filename" is plainly the same step.
   const contained = steps.findIndex((step) => {
-    const candidate = normalise(step);
+    const candidate = normaliseStepText(step);
     return candidate.includes(target) || target.includes(candidate);
   });
 
   return contained === -1 ? undefined : contained;
-}
-
-function normalise(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[`*_]/g, '')
-    .replace(/[^a-z0-9 ]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
 }

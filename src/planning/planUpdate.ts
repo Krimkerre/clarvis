@@ -31,8 +31,14 @@ const RESULT_LINE = /^\s*- Result:/;
  * tick the wrong one: punctuation and case are ignored, everything else must match.
  * An exact-match rule ticked nothing at all the moment a step was reworded, and a
  * fuzzy one would tick a neighbouring step, which is worse than ticking none.
+ *
+ * Exported because `stepProgress.ts` needs the same comparison for the same reason —
+ * it matches an announced step against the written ones to show progress *during* a
+ * run, where this ticks them off *after* one. Two copies of this rule that disagreed
+ * would put the progress indicator on a different step from the one about to be
+ * ticked, which is the kind of drift nobody reports as a bug.
  */
-function normalise(text: string): string {
+export function normaliseStepText(text: string): string {
   return text
     .toLowerCase()
     .replace(/[`*_]/g, '')
@@ -69,7 +75,7 @@ export function markSteps(planText: string, results: StepResult[]): string {
     }
 
     const [, indent, mark, text] = match;
-    const result = results.find((candidate) => normalise(candidate.step) === normalise(text));
+    const result = results.find((candidate) => normaliseStepText(candidate.step) === normaliseStepText(text));
 
     if (!result) {
       output.push(line);

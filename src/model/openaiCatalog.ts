@@ -58,6 +58,34 @@ export function buildOpenAiCatalog(raw: unknown): { id: string; label: string; d
     .map((model) => ({
       id: model.id,
       label: model.id,
-      detail: model.owned_by ? `by ${model.owned_by}` : 'chat model',
+      detail: describeOwner(model.id, model.owned_by),
     }));
+}
+
+/**
+ * Values of `owned_by` that carry no information, whatever they look like.
+ *
+ * `organization_owner` is the OpenAI schema's own placeholder, and LM Studio returns it
+ * for **every** model — so a local list read "by organization_owner" all the way down,
+ * which is a column of noise where a useful word should be. `openai` is real but equally
+ * useless under a provider already labelled OpenAI, and local runtimes fill the field with
+ * whatever was handy.
+ */
+const UNINFORMATIVE_OWNERS = new Set(['organization_owner', 'organization-owner', 'openai', 'openai-internal', 'system', 'local', 'user', 'library']);
+
+/**
+ * What to say about a model beyond its name.
+ *
+ * **The id usually knows the answer the field does not.** Local model ids are commonly
+ * `vendor/name` — `prism-ml/bonsai-27b`, `lmstudio-community/Qwen3-Coder-Next-MLX-4bit` —
+ * so where `owned_by` is a placeholder, the prefix is the genuine owner and is already in
+ * hand. Falling back to it turns a useless line into a true one without asking the server
+ * anything.
+ */
+export function describeOwner(id: string, ownedBy: string | undefined): string {
+  const stated = ownedBy?.trim();
+  if (stated && !UNINFORMATIVE_OWNERS.has(stated.toLowerCase())) return `by ${stated}`;
+
+  const vendor = id.includes('/') ? id.split('/')[0].trim() : '';
+  return vendor ? `by ${vendor}` : 'chat model';
 }

@@ -74,7 +74,7 @@ test('context and price are readable at a glance', () => {
   assert.match(big.detail, /\$1\.00\/M in/);
 });
 
-import { buildOpenAiCatalog, isLikelyChatModel } from './openaiCatalog';
+import { buildOpenAiCatalog, describeOwner, isLikelyChatModel } from './openaiCatalog';
 
 test('non-chat OpenAI models are filtered out of the picker', () => {
   // The list mixes in embeddings, speech and image models. Picking one produces an
@@ -123,4 +123,39 @@ test('a malformed OpenAI list degrades to what parses', () => {
     'gpt-5',
   ]);
   assert.deepEqual(buildOpenAiCatalog('nonsense'), []);
+});
+
+// --------------------------------- what a model says about itself beyond its name
+
+test('the schema placeholder is not read out as an owner', () => {
+  // LM Studio returns organization_owner for every model, so a local list read
+  // "by organization_owner" all the way down — a column of noise.
+  assert.equal(describeOwner('bonsai-27b', 'organization_owner'), 'chat model');
+});
+
+test('the id supplies the owner the field withheld', () => {
+  // Local ids are usually vendor/name, and the prefix is the real answer — already in
+  // hand, no second request needed.
+  assert.equal(describeOwner('prism-ml/bonsai-27b', 'organization_owner'), 'by prism-ml');
+  assert.equal(describeOwner('lmstudio-community/Qwen3-Coder-Next-MLX-4bit', undefined), 'by lmstudio-community');
+});
+
+test('a real owner is still used', () => {
+  assert.equal(describeOwner('claude-opus-5', 'anthropic'), 'by anthropic');
+});
+
+test('an owner that merely repeats the provider is dropped', () => {
+  // "by openai" under a provider already labelled OpenAI is a word that says nothing.
+  assert.equal(describeOwner('gpt-5', 'openai'), 'chat model');
+});
+
+test('a bare id with nothing to say says so plainly', () => {
+  assert.equal(describeOwner('llama3', undefined), 'chat model');
+});
+
+test('the catalogue uses it', () => {
+  const catalog = buildOpenAiCatalog({
+    data: [{ id: 'prism-ml/bonsai-27b', owned_by: 'organization_owner' }],
+  });
+  assert.equal(catalog[0].detail, 'by prism-ml');
 });

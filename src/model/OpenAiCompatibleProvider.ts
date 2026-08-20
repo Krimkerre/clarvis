@@ -272,7 +272,14 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     }
   }
 
-  /** Shared request setup, so the two streams cannot drift apart. */
+  /**
+   * Shared request setup, so the two streams cannot drift apart.
+   *
+   * They had. `stream()` built its own request until now, and the two were extended
+   * separately on 20 Aug — leaving one mapping messages with `toOpenAiMessages` and the
+   * other by hand, and one parsing frames through `readFrame` while the other inlined
+   * the same try/catch and the same log line.
+   */
   private async post(request: CompletionRequest, tools?: unknown[]): Promise<Response> {
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
@@ -299,33 +306,23 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     return response;
   }
 
+  /**
+   * The plain reply stream — no tools offered.
+   *
+   * Shares `post()` with the tool stream rather than building its own request, which is
+   * what that method's comment has always claimed and did not do. `messages` goes
+   * through `toOpenAiMessages` as a result: not a behaviour change, because only
+   * `AgentRunner` attaches tool calls or results to a message and it uses
+   * `streamWithTools`, and for a message without either the mapping returns the single
+   * `{ role, content }` this used to build by hand.
+   */
   async *stream(request: CompletionRequest): AsyncIterable<string> {
-    const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: await this.headers(),
-      signal: request.signal,
-      body: JSON.stringify({
-        model: request.model,
-        stream: true,
-        messages: [
-          { role: 'system', content: request.system },
-          ...request.messages.map((message) => ({ role: message.role, content: message.content })),
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw describeHttpFailure(response.status, await response.text(), this.spec.label);
-    }
-    if (!response.body) {
-      throw new ModelError(`${this.spec.label} sent nothing back.`, 'empty response body');
-    }
-
+    const response = await this.post(request);
     const parser = new SseParser();
     const watch = new ReasoningWatch();
     let done = false;
 
-    for await (const chunk of decodeStream(response.body)) {
+    for await (const chunk of decodeStream(response.body!)) {
       for (const payload of parser.push(chunk)) {
         // `[DONE]` used to return outright, which would now walk away from whatever the
         // filter is still holding. It ends the reading, not the function.
@@ -336,13 +333,11 @@ export class OpenAiCompatibleProvider implements ModelProvider {
 
         // A malformed frame is skipped rather than thrown: one bad chunk should cost a
         // few tokens, not the whole answer the user is watching arrive.
-        try {
-          const event = JSON.parse(payload) as OpenAiChunk;
-          const text = watch.push(event.choices?.[0]?.delta);
-          if (text) yield text;
-        } catch {
-          this.log(`model: skipped an unparseable ${this.id} frame`);
-        }
+        const event = this.readFrame(payload);
+        if (!event) continue;
+
+        const text = watch.push(event.choices?.[0]?.delta);
+        if (text) yield text;
       }
       if (done) break;
     }

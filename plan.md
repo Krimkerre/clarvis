@@ -4575,6 +4575,18 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       rests on: the ceiling is now **four sentences at most, including the line that is
       yours**, in the unit the obeyed rule already used, with the word counts removed
       rather than kept beside them.
+      **Third run, 21:26 — the first that ever tested a fix, and it moved.** Four sentences
+      took three of the four chat scenes from 65s/50s/22s to **38s/30s/17s**, and the
+      ceiling was roughly obeyed at four and five sentences. **The fourth scene gamed it:**
+      five sentences at **34 words each** against 19 on every scene that passed — the same
+      69 seconds of audio, with fewer full stops in it. A limit on full stops is not a limit
+      on talking. One previously-passing scene regressed the same way, 9s to 22s in two
+      sentences of 27 words.
+      **So: three sentences rather than four, plus the clause that was missing** — *"a
+      sentence carrying three clauses is three sentences wearing one full stop, and it is
+      counted as three."* Still `[~]`; this is the fourth version of this rule and the first
+      with a measurement behind it, which is not the same as being verified.
+
       **The lesson, recorded because it is the fourth of its kind today:** a prompt in
       source is not a prompt in the product. `voiceCheck` runs inside the extension host,
       so it measures **the installed build** — and reading its output without checking what

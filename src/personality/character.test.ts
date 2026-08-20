@@ -68,6 +68,7 @@ test('the answer shape requires a line of his own, rather than banning things', 
   // "the one thing you left out" rather than "what you left out": a list of omissions is
   // itself an answer that ran long, which is the failure the escape hatch sits under.
   assert.match(ANSWER_SHAPE, /give the short version and name the one thing you left out/);
+  assert.doesNotMatch(ANSWER_SHAPE, /four sentences/);
 
   // ...but **not unlimited room** (F20), and the ceiling is **structural**. Two earlier
   // versions failed on Haiku 4.5: `whatever room it actually needs` produced 73s and 77s
@@ -75,7 +76,11 @@ test('the answer shape requires a line of his own, rather than banning things', 
   // 175 words against "never run past eighty". In the same replies the project branch,
   // limited in sentences, came back with 3 against "two at most" — so the unit is what
   // decides whether the limit is obeyed, and no word counts survive here.
-  assert.match(ANSWER_SHAPE, /four sentences at most, including the line that is yours/);
+  assert.match(ANSWER_SHAPE, /three sentences at most, including the line that is yours/);
+  // The count alone is gameable: given four, Haiku returned four and five sentences and
+  // doubled their length — 34 words per sentence against 19 on the scenes that passed, for
+  // the same 69 seconds of audio. A limit on full stops is not a limit on talking.
+  assert.match(ANSWER_SHAPE, /three clauses is three sentences wearing one full stop/);
   assert.doesNotMatch(ANSWER_SHAPE, /whatever room it actually needs/);
   assert.doesNotMatch(ANSWER_SHAPE, /fifty|eighty/);
 

@@ -228,10 +228,23 @@ export const ANSWER_SHAPE = [
   // same prompt, same reply, same model — produced 3 sentences against "two at most".
   // A limit in sentences is one the model can see itself reaching; a limit in words is
   // one it has no reliable access to, and it was the only rule here written in those
-  // units. So the ceiling is structural now, in the unit that was already working, and
-  // the word counts are gone rather than kept alongside it.
-  '   A question about anything else — how something works, an opinion, idle conversation — gets more room: four sentences at most, including the line that is yours. That is about twenty seconds of speech, which is all anyone wants read at them.',
-  '   If a real answer genuinely will not fit in four, give the short version and name the one thing you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
+  // units. So the ceiling is structural, in the unit that was already working, and the
+  // word counts are gone rather than kept alongside it.
+  //
+  // **Tightened again 20 Aug after the first real measurement of it.** Four sentences
+  // took three of the four chat scenes from 65s/50s/22s to 38s/30s/17s — the first
+  // change here to move the number at all — and the fourth stayed at 69s by inflating
+  // sentences rather than adding them. Hence three rather than four, and an explicit
+  // clause about clauses.
+  '   A question about anything else — how something works, an opinion, idle conversation — gets more room: three sentences at most, including the line that is yours. That is about twenty seconds of speech, which is all anyone wants read at them.',
+  // **The count alone is gameable, and Haiku gamed it** (measured 20 Aug, first run of
+  // this rule that ever reached the product): given "four sentences at most" it returned
+  // four and five sentences and doubled their length instead — 34 words per sentence on
+  // the failing scene against 19 on every scene that passed, for the same 69 seconds of
+  // audio as before. A limit on full stops is not a limit on talking, so the clause it was
+  // missing is the one that says so.
+  '   Short sentences. A sentence carrying three clauses is three sentences wearing one full stop, and it is counted as three.',
+  '   If a real answer genuinely will not fit in three, give the short version and name the one thing you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
   // Found live, on a break-time question about unattended mode: four sincere paragraphs
   // with one dry line at the end. Every rule was satisfied — part 2 was there, the
   // length was earned — and it still read as an essay by someone else, because the

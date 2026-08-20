@@ -4609,9 +4609,24 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       affordable number of runs that would settle it.
       **F20 stays on the bar** because it is §9's seventh criterion — *"keeps him running
       for a week and doesn't mute him"* — and a 63-second spoken reply is what muting is
-      for. The remaining lever is the audio, not the text: `spokenPart` bounded it
-      deterministically (71s → 14s) and was rejected on how it sounded, which leaves the
-      shape of the trim open rather than the approach.
+      for.
+      **Fixed 20 Aug, in the audio rather than the writing, to the user's design.** Under
+      the ceiling he speaks the whole reply, exactly as before; past it the voice gets
+      **his closing line and nothing else**, and the panel keeps every word. `ANSWER_SHAPE`
+      is untouched — six attempts established that the writing cannot be tuned shorter
+      without costing the character, and that the effect is smaller than the noise anyway.
+      Applied to the real replies from the last run: **63s → 2s** (*"I would not leave it
+      alone."*), 44s → 8s, 41s → 2s, and the scenes already under the ceiling are spoken
+      whole, untouched. Nothing is ever cut mid-thought: part 2 is required and last, so
+      the final sentence is the character by construction, and a single sentence that runs
+      long is finished rather than halved.
+      **`voiceCheck` reports both numbers** from one shared threshold — what he wrote, and
+      what is actually heard — because the check owning its own copy of the ceiling is the
+      drift this file keeps warning about.
+      **Still `[~]`: one listen from ticking.** The length is deterministic and tested; what
+      nobody has heard is whether a two-second answer after a long written one lands as dry
+      or as curt. The weakest case is a closing line that does not stand alone — *"Everything
+      else is logistics."* answers nothing by itself.
 
       **The sixth attempt, in full, so it is not tried again:**
       Sentence by sentence, the 70-second answers contain **no padding**: five lines, each

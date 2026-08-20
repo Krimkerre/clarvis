@@ -8,6 +8,9 @@ import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
 import { rewritePrompt } from './say';
 import { ungroundedClaims } from './grounded';
+// **Imported, not restated.** The check must flag the number the product acts on; a
+// second copy of a threshold is the drift this file's own header warns about.
+import { SPOKEN_CEILING_SECONDS, spokenPart, spokenSeconds } from '../chat/replyDelivery';
 import { capabilities } from '../chat/modes';
 
 /**
@@ -29,6 +32,14 @@ import { capabilities } from '../chat/modes';
 /** One thing to say, built from the same prompt the real surface uses. */
 interface Scene {
   name: string;
+  /**
+   * False for the surfaces that speak everything they produce.
+   *
+   * The ceiling applies to *chat replies*, which are the ones that ran to a minute. A
+   * quip, an aside, a rewritten line or a briefing goes to the voice whole — trimming
+   * them in the report would show a rule the product does not apply to them.
+   */
+  spoken?: false;
   /** What is being judged, so the output is readable without this file open. */
   looksFor: string;
   system: string;
@@ -116,6 +127,7 @@ function scenes(): Scene[] {
     ...chatScenes(),
     {
       name: 'a question about something he was given no numbers for',
+      spoken: false,
       looksFor:
         'No invented duration, count or frequency. He may say a linter is complaining — he cannot say for how long, because nothing measures that.',
       system: `${agentSystemPrompt(true)}\n\nCurrent branch: m8-chat-agent, working tree clean\nProblems open right now: 2 error(s), 1 warning(s), most of them in src/app.ts — you have no information about how long any of them have been there\n\n${ANSWER_SHAPE}`,
@@ -123,6 +135,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'agent run summary',
+      spoken: false,
       looksFor: 'What changed, in one line, in his voice — not a changelog.',
       system: agentSystemPrompt(false),
       messages: [
@@ -142,6 +155,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'morning briefing',
+      spoken: false,
       looksFor: 'The surface that already sounded right. If this regresses, the change hurt more than it helped.',
       system: characterWith(
         'This is the first thing the user hears today. Do not greet them.',
@@ -151,6 +165,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'briefing with no git facts at all',
+      spoken: false,
       looksFor:
         'No invented branch, commit or timing. A folder with no repository should be described as having no repository — not filled in with a plausible history.',
       system: characterWith(
@@ -166,6 +181,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'quip — same failure again',
+      spoken: false,
       looksFor: 'Pointed, and about this failure rather than failure in general.',
       system: 'You write one short, dry remark. Nothing else.',
       messages: [
@@ -181,6 +197,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'aside after a task',
+      spoken: false,
       looksFor: 'Comic relief that does not restate the summary.',
       system: 'You write one short, dry remark. Nothing else.',
       messages: [
@@ -192,6 +209,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'rewrite of a written line',
+      spoken: false,
       looksFor: 'Better than the plain original, or the layer is not paying for itself.',
       system: 'You rewrite one line in character. Nothing else.',
       messages: [
@@ -206,25 +224,6 @@ function scenes(): Scene[] {
       ],
     },
   ];
-}
-
-/**
- * Roughly how long a line takes to say.
- *
- * The number that mattered most and was hardest to see: a reply that reads fine on
- * screen was thirty-nine seconds of audio. Speech runs near 150 words a minute, so this
- * is deliberately crude — it only has to make "that is too long" obvious at a glance.
- */
-/**
- * The point at which a spoken reply has outstayed its welcome.
- *
- * Two sentences and an aside runs to about fifteen seconds. Twenty allows for a long
- * one; past that it is a paragraph being read at someone.
- */
-const LONG_SECONDS = 20;
-
-function spokenSeconds(text: string): number {
-  return Math.round((text.trim().split(/\s+/).length / 150) * 60);
 }
 
 /**
@@ -322,19 +321,26 @@ export async function runVoiceCheck(
     const median = seconds[Math.floor(seconds.length / 2)];
     const said = takes[takes.indexOf(takes.find((take) => spokenSeconds(take) === median) ?? takes[0])];
     const lifted = parroted(said);
+    // What the voice would really say: everything, under the ceiling — his closing line
+    // alone, past it. Chat replies only; a quip or a briefing is spoken whole.
+    const aloud = scene.spoken === false ? said : spokenPart(said);
 
     out.push(
       said,
       '',
-      `\`${said.split(/\s+/).length} words · ~${median}s spoken (median of ${TAKES}: ${seconds.join('s, ')}s)\``
+      `\`${said.split(/\s+/).length} words · ~${median}s if read whole (median of ${TAKES}: ${seconds.join('s, ')}s) · **~${spokenSeconds(aloud)}s actually spoken**\``
     );
     // Length is the failure that keeps coming back, and it is invisible on screen: a
     // reply that reads fine is forty seconds of audio. Flagged rather than judged by
     // eye, the same way parroting is — and flagged on the median, so one long take does
     // not condemn a prompt and one short take does not acquit it.
-    if (median > LONG_SECONDS) {
-      out.push('', `> **Too long to listen to:** ~${median}s median, against a ${LONG_SECONDS}s ceiling.`);
-      log(`voice check | ${scene.name} | LONG: ${median}s median of ${seconds.join('/')}`);
+    if (spokenSeconds(aloud) > SPOKEN_CEILING_SECONDS) {
+      out.push('', `> **Too long to listen to:** ~${spokenSeconds(aloud)}s spoken, against a ${SPOKEN_CEILING_SECONDS}s ceiling.`);
+      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(aloud)}s spoken (${median}s median if read whole)`);
+    } else if (median > SPOKEN_CEILING_SECONDS) {
+      // Worth seeing rather than hiding: the writing ran long and the ceiling caught it.
+      out.push('', `> Ran to ~${median}s written; the voice says his closing line only (~${spokenSeconds(aloud)}s).`);
+      log(`voice check | ${scene.name} | TRIMMED: ${median}s written -> ${spokenSeconds(aloud)}s spoken`);
     }
     if (lifted.length > 0) {
       out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);

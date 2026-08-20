@@ -39,3 +39,56 @@ export function afterReply(text: string, aborted: boolean): ReplyDelivery {
 
   return { speak: true };
 }
+
+/**
+ * Roughly how long a line takes to say.
+ *
+ * Speech runs near 150 words a minute, so this is deliberately crude — it only has to
+ * make "that is too long" obvious. It lived in `voiceCheck.ts` until 20 Aug, which meant
+ * the debug tool owned a threshold the product needed; the check imports it from here
+ * now, so the number the report flags and the number the voice acts on cannot drift.
+ */
+export function spokenSeconds(text: string): number {
+  return Math.round((text.trim().split(/\s+/).length / 150) * 60);
+}
+
+/**
+ * The point where a spoken reply has outstayed its welcome.
+ *
+ * Two sentences and an aside runs to about fifteen seconds. Twenty allows for a long one;
+ * past that it is a paragraph being read at someone, and §9's seventh criterion — *keeps
+ * him running for a week and doesn't mute him* — is what a paragraph read aloud costs.
+ */
+export const SPOKEN_CEILING_SECONDS = 20;
+
+/**
+ * What is read aloud when a reply runs past the ceiling (F20).
+ *
+ * **Under the ceiling, nothing changes** — he says the whole thing, which is the case
+ * that was never broken. Past it, the voice gets **his own line and nothing else**: the
+ * answer stays in the panel to be read, and what is heard is the part that is him.
+ *
+ * **Why this rather than a shorter prompt.** Six versions of `ANSWER_SHAPE` tried to cap
+ * length by asking, and the honest result was that the effect is smaller than the noise:
+ * one scene returned 36s, 44s and 84s on three takes of the *same* prompt. Every version
+ * that appeared to work was judged on a single take. Worse, tightening cost the character
+ * — the long replies contain no padding, they are good lines making one point from
+ * several angles — so trimming quantity trims the thing worth keeping. This bounds the
+ * audio instead, and leaves the writing alone.
+ *
+ * **Why the closing line specifically.** `ANSWER_SHAPE` requires part 2 to be his own —
+ * an opinion, a jab, something he noticed — and puts it last. So the final sentence is
+ * the character by construction, and it is the one part of a long reply that stands on
+ * its own: an aside does not depend on the paragraph before it the way a conclusion does.
+ */
+export function spokenPart(text: string): string {
+  const said = text.trim();
+  if (spokenSeconds(said) <= SPOKEN_CEILING_SECONDS) return said;
+
+  // Split on sentence ends followed by a space, so `src/app.ts` and `1.5` stay whole.
+  const sentences = said.split(/(?<=[.!?])\s+/).filter((piece) => piece.trim());
+
+  // A single sentence over the ceiling has no line to fall back to, and cutting one in
+  // half is worse than reading it. He gets to finish it.
+  return sentences.length > 1 ? sentences[sentences.length - 1] : said;
+}

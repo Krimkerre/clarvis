@@ -11,7 +11,7 @@ import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { Transcript } from './Transcript';
 import { Turn } from './thread';
 import { Busy } from './Busy';
-import { afterReply } from './replyDelivery';
+import { afterReply, spokenPart } from './replyDelivery';
 
 /**
  * Answering: the two paths a question can take once a model is involved.
@@ -152,7 +152,9 @@ export class Replier {
     if (!delivery.speak) return;
 
     this.transcript.note(text);
-    this.voice.say(text, 'chatReply');
+    // **The panel keeps every word.** Past the spoken ceiling the voice gets his closing
+    // line alone, rather than a paragraph read at someone (F20).
+    this.voice.say(spokenPart(text), 'chatReply');
   }
 
   /**

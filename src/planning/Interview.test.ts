@@ -1,0 +1,195 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { runInterview } from './Interview';
+import { PlanningIO } from './PlanningIO';
+import { ModelService } from '../model/ModelService';
+import { InterviewState } from './interviewTopics';
+import { WorkspaceSignals } from './workspaceSignals';
+
+/**
+ * The first tests this file has ever had.
+ *
+ * `Interview.ts` is 879 lines and produced six of the twenty findings the verification
+ * runbook turned up (F2, F5, F8, F9, F11, F12). It had no tests for one reason: it
+ * imported `researchWorkspace`, which needs `vscode`, so `node --test` could not load
+ * it at all. The workspace facts are handed in now and the file loads, so the paths
+ * below are reachable for the first time.
+ *
+ * **Every test here runs with no model configured**, which is not a shortcut — it is
+ * the only deterministic way to drive the interview, and it is a real configuration
+ * (Clarvis ships without a key). With `isReady()` false, `phraseQuestion` returns the
+ * written question, `challengeAnswer` returns the answer untouched, `resolveProjectName`
+ * skips, and `Voice` is unwired so `opening()`/`phrase()` return their fallbacks. What
+ * is left is the state machine, which is the part that had the defects.
+ */
+
+/** A model service that is configured but has nothing behind it. */
+function noModel(): ModelService {
+  return {
+    isReady: async () => false,
+    stream: () => {
+      throw new Error('no test here should reach the model');
+    },
+  } as unknown as ModelService;
+}
+
+/** What the interview asked, and what it was told, in order. */
+interface Sitting {
+  io: PlanningIO;
+  /** Every prompt passed to `askText`, in the order they were asked. */
+  asked: string[];
+  /** Everything said back through `io.say` — remarks, not questions. */
+  said: string[];
+}
+
+/**
+ * A scripted user.
+ *
+ * Answers are consumed in order; running out means the next question is cancelled,
+ * which is how these tests stop the interview at a chosen point rather than having to
+ * script all eight topics every time. `undefined` in the script is an explicit Escape.
+ */
+function sitting(answers: (string | undefined)[]): Sitting {
+  const asked: string[] = [];
+  const said: string[] = [];
+  let next = 0;
+
+  const io: PlanningIO = {
+    askText: async (prompt: string) => {
+      asked.push(prompt);
+      return next < answers.length ? answers[next++] : undefined;
+    },
+    askChoice: async () => undefined,
+    confirm: async () => undefined,
+    say: async (text: string) => {
+      said.push(text);
+    },
+    showDocument: async () => {},
+    closeDocument: async () => {},
+  };
+
+  return { io, asked, said };
+}
+
+/** The answers recorded for a topic, as plain text. */
+function answerFor(state: InterviewState, topic: string): string | undefined {
+  return state.answers.find((answer) => answer.topic === topic)?.text;
+}
+
+test('the workspace facts handed in become the context the questions are grounded in', async () => {
+  // The seam that replaced the `vscode` import. If this stops working the interview
+  // silently goes back to asking from a blank slate, which is exactly the failure
+  // `workspaceContext` exists to prevent and is invisible from the outside.
+  const workspace: WorkspaceSignals = {
+    hasGit: true,
+    manifestFile: 'package.json',
+    topLevelEntries: ['src', 'package.json'],
+    readmeFirstLine: 'Photo renamer',
+    planMdExists: false,
+  };
+
+  const { io } = sitting(['renames photos by EXIF date']);
+  const result = await runInterview(noModel(), io, () => {}, { workspace });
+
+  assert.ok(result, 'the interview should hand back what it gathered when it pauses');
+  assert.match(result.state.workspaceContext ?? '', /package\.json/);
+});
+
+test('no workspace facts means no invented context', async () => {
+  // `researchWorkspace` returns undefined when there is no folder open. The interview
+  // has to be able to run from nothing at all — a brand new project is the case it was
+  // built for, and it has no files by definition.
+  const { io } = sitting(['renames photos by EXIF date']);
+  const result = await runInterview(noModel(), io, () => {}, {});
+
+  assert.ok(result);
+  assert.equal(result.state.workspaceContext, undefined);
+});
+
+test('a language named in the first sentence is never asked about again (F11)', async () => {
+  // F11: the interview asked which language to use one line after the user had already
+  // said it in prose. The fix checks before the question is composed, so the topic is
+  // settled without ever reaching `askText`.
+  const { io, asked } = sitting(['a CLI in Python that renames photos', 'me, in a terminal']);
+  const result = await runInterview(noModel(), io, () => {}, {});
+
+  assert.ok(result);
+  assert.equal(result.state.languageDetected, 'Python');
+  assert.equal(answerFor(result.state, 'language'), 'Python');
+  assert.equal(
+    asked.some((prompt) => /language/i.test(prompt)),
+    false,
+    'nothing should have asked about a language the user already named'
+  );
+});
+
+test('the settled language is said out loud, not just recorded (F1)', async () => {
+  // F1: a language that resolved without being asked about reached the log and never
+  // the conversation, so the user learned what had been chosen for them by reading the
+  // generated plan. Deciding quietly is the behaviour, saying nothing about it is the bug.
+  const { io, said } = sitting(['a CLI in Python that renames photos', 'me, in a terminal']);
+  await runInterview(noModel(), io, () => {}, {});
+
+  assert.ok(
+    said.some((line) => /python/i.test(line)),
+    'the language settled without asking should be named in the conversation'
+  );
+});
+
+test('cancelling the very first question records nothing at all', async () => {
+  // Escape at "what are you building" is someone changing their mind before they
+  // started, not an interview with one empty answer in it.
+  const { io } = sitting([undefined]);
+  const result = await runInterview(noModel(), io, () => {}, {});
+
+  assert.equal(result, undefined);
+});
+
+test('cancelling later keeps what was already answered', async () => {
+  // The other half of the same rule, and the one that matters: pausing partway is
+  // resumable, so the answers already given have to survive it. F7 was a version of
+  // this going wrong one level up.
+  const { io } = sitting(['renames photos by EXIF date', undefined]);
+  const result = await runInterview(noModel(), io, () => {}, {});
+
+  assert.ok(result);
+  assert.equal(answerFor(result.state, 'what-it-does'), 'renames photos by EXIF date');
+});
+
+test('resuming carries on rather than asking what you are building again', async () => {
+  // A resumed interview that took a different path from a fresh one would drift, and
+  // the difference would only show in the half of the product nobody walks twice.
+  const state: InterviewState = {
+    answers: [{ topic: 'what-it-does', text: 'renames photos', question: 'What are you building?' }],
+  };
+
+  const { io, asked } = sitting([undefined]);
+  await runInterview(noModel(), io, () => {}, { resume: { state, seed: 'renames photos' } });
+
+  assert.equal(
+    asked.some((prompt) => /what are you building/i.test(prompt)),
+    false,
+    'the seed question belongs to starting an interview, not continuing one'
+  );
+});
+
+test('every answer is saved as it lands, not once at the end', async () => {
+  // The end is exactly what a reload does not reach. F7: the saved snapshot was cleared
+  // before the analysis existed anywhere else, and reloading at the approve gate threw
+  // away everything the user had ruled on.
+  const saved: number[] = [];
+  const { io } = sitting(['renames photos by EXIF date', 'me, in a terminal', 'Python', 'no web interface', undefined]);
+
+  await runInterview(noModel(), io, () => {}, {
+    remember: async (state) => {
+      saved.push(state.answers.length);
+    },
+  });
+
+  assert.ok(saved.length >= 3, `expected a save per answer, got ${saved.length}`);
+  assert.deepEqual(
+    [...saved].sort((a, b) => a - b),
+    saved,
+    'each save should hold at least as much as the one before it'
+  );
+});

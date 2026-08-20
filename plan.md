@@ -4595,7 +4595,25 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       needs three runs per variant before it claims anything; single-run comparisons here
       measured noise, and this entry said so twice before believing it.
 
-      **Sixth attempt, and the first from reading the replies rather than counting them.**
+      **Sixth attempt, reverted — and it is the one that ended the approach.** The rule
+      forbade redundancy rather than length (*"make the point once… a second angle is not a
+      second point"*) and removed the line that was **asking** for extra character lines in
+      a long answer. Measured with the fixed instrument, three takes per scene: the scene
+      that had been fine went from 15-22s to a **40s median**, and nothing improved.
+      **The number that matters is the spread, not the median.** One scene returned **36s,
+      44s and 84s** on three takes of the *same* prompt, minutes apart. A 2.3x range means
+      three takes cannot resolve a 20-30% effect, and every comparison made here before the
+      instrument was fixed — five versions of this rule, each judged on one take — was
+      measuring weather. **Prompt tuning is abandoned for this defect**, not because the
+      last idea was wrong but because the effect is smaller than the noise and there is no
+      affordable number of runs that would settle it.
+      **F20 stays on the bar** because it is §9's seventh criterion — *"keeps him running
+      for a week and doesn't mute him"* — and a 63-second spoken reply is what muting is
+      for. The remaining lever is the audio, not the text: `spokenPart` bounded it
+      deterministically (71s → 14s) and was rejected on how it sounded, which leaves the
+      shape of the trim open rather than the approach.
+
+      **The sixth attempt, in full, so it is not tried again:**
       Sentence by sentence, the 70-second answers contain **no padding**: five lines, each
       in character, making one point from five angles — *"the question I would ask first…
       the second question is… after that…"*. That is why every cap flattened him. Quantity

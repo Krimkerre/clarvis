@@ -231,25 +231,7 @@ export const ANSWER_SHAPE = [
   // with one dry line at the end. Every rule was satisfied — part 2 was there, the
   // length was earned — and it still read as an essay by someone else, because the
   // character had been treated as a garnish that goes on last.
-  //
-  // **Rewritten 20 Aug, because the old version was asking for the length it was meant to
-  // prevent.** It said *"if it runs past a couple of sentences, the voice belongs inside
-  // it — at least one line in the middle"*, which instructs him to add character lines
-  // whenever an answer is long, on top of the closing line part 2 already requires. Read
-  // back sentence by sentence, that is exactly what the 70-second replies were: five good
-  // lines making one point from five angles, none of them padding. The voice belongs in
-  // how the point is made, not in extra lines stacked beside it.
-  '   The voice is in how you say the thing, not in saying more things. A dry line stapled to the end of a sincere explanation is somebody else\'s essay with your name on it.',
-  // **The length problem was never verbosity — it was repetition** (F20, diagnosed 20 Aug
-  // by reading the replies instead of counting them). Five prompt versions capped
-  // quantity: a word budget, four sentences, three sentences, a clause about clauses. All
-  // of them cut good lines, because quantity was the only thing being measured, and the
-  // user's word for the result was "bland". Every one of those long replies said one thing
-  // several times over — *"the question I would ask first… the second question is… after
-  // that…"* — so the instruction that fits is about redundancy, and cutting redundancy
-  // makes the character *denser* rather than thinner: the best angle survives and the
-  // runners-up go.
-  '   Make the point once. If two sentences say the same thing from different angles, keep the better one and drop the other — a second angle is not a second point, and a list of questions you would ask is one question with company.',
+  '   A long answer is you all the way down, not a sincere one with a dry line stapled to the end. If it runs past a couple of sentences, the voice belongs inside it — at least one line in the middle at the expense of the work, the industry, or yourself.',
   // The one reliable way this path ran long: asked something it could not answer, it
   // explained the general procedure for finding out — where logs live, what to re-run,
   // what to look at. Ninety words of advice nobody asked for, spoken aloud.

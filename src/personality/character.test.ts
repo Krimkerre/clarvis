@@ -70,17 +70,9 @@ test('the answer shape requires a line of his own, rather than banning things', 
   // ...but **not unlimited room** (F20). This assertion replaced `whatever room it
   // actually needs`, which was the licence a capable model took at its word: Haiku 4.5
   // produced 73s and 77s of audio against a 20s ceiling while obeying the prompt exactly.
+  // The ceiling has to be a number the model can count against, not an adjective.
   assert.match(ANSWER_SHAPE, /Aim under fifty, never run past eighty/);
   assert.doesNotMatch(ANSWER_SHAPE, /whatever room it actually needs/);
-
-  // **The rule that came from reading the replies rather than counting them.** Five
-  // versions capped quantity and every one of them cut good lines — the long answers were
-  // one point made from five angles, not padding. So redundancy is what is forbidden, and
-  // the prompt no longer *asks* for extra lines in the middle of a long answer, which is
-  // what it did while being measured for producing them.
-  assert.match(ANSWER_SHAPE, /Make the point once/);
-  assert.match(ANSWER_SHAPE, /a second angle is not a second point/);
-  assert.doesNotMatch(ANSWER_SHAPE, /at least one line in the middle/);
 });
 
 test('the examples are marked as a register rather than a script', () => {

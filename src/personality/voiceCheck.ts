@@ -8,6 +8,7 @@ import { briefingPrompt } from '../briefing/briefingLines';
 import { completionQuipPrompt, quipPrompt } from './liveQuip';
 import { rewritePrompt } from './say';
 import { ungroundedClaims } from './grounded';
+import { spokenPart } from '../chat/replyDelivery';
 import { capabilities } from '../chat/modes';
 
 /**
@@ -29,6 +30,14 @@ import { capabilities } from '../chat/modes';
 /** One thing to say, built from the same prompt the real surface uses. */
 interface Scene {
   name: string;
+  /**
+   * False for the surfaces that speak everything they produce.
+   *
+   * `spokenPart` trims a *chat reply*, because those are the ones that ran to a minute.
+   * A quip, an aside or a briefing goes to the voice whole — trimming them here would
+   * report a ceiling the product does not apply.
+   */
+  spoken?: false;
   /** What is being judged, so the output is readable without this file open. */
   looksFor: string;
   system: string;
@@ -116,6 +125,7 @@ function scenes(): Scene[] {
     ...chatScenes(),
     {
       name: 'a question about something he was given no numbers for',
+      spoken: false,
       looksFor:
         'No invented duration, count or frequency. He may say a linter is complaining — he cannot say for how long, because nothing measures that.',
       system: `${agentSystemPrompt(true)}\n\nCurrent branch: m8-chat-agent, working tree clean\nProblems open right now: 2 error(s), 1 warning(s), most of them in src/app.ts — you have no information about how long any of them have been there\n\n${ANSWER_SHAPE}`,
@@ -123,6 +133,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'agent run summary',
+      spoken: false,
       looksFor: 'What changed, in one line, in his voice — not a changelog.',
       system: agentSystemPrompt(false),
       messages: [
@@ -142,6 +153,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'morning briefing',
+      spoken: false,
       looksFor: 'The surface that already sounded right. If this regresses, the change hurt more than it helped.',
       system: characterWith(
         'This is the first thing the user hears today. Do not greet them.',
@@ -151,6 +163,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'briefing with no git facts at all',
+      spoken: false,
       looksFor:
         'No invented branch, commit or timing. A folder with no repository should be described as having no repository — not filled in with a plausible history.',
       system: characterWith(
@@ -166,6 +179,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'quip — same failure again',
+      spoken: false,
       looksFor: 'Pointed, and about this failure rather than failure in general.',
       system: 'You write one short, dry remark. Nothing else.',
       messages: [
@@ -181,6 +195,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'aside after a task',
+      spoken: false,
       looksFor: 'Comic relief that does not restate the summary.',
       system: 'You write one short, dry remark. Nothing else.',
       messages: [
@@ -192,6 +207,7 @@ function scenes(): Scene[] {
     },
     {
       name: 'rewrite of a written line',
+      spoken: false,
       looksFor: 'Better than the plain original, or the layer is not paying for itself.',
       system: 'You rewrite one line in character. Nothing else.',
       messages: [
@@ -296,13 +312,22 @@ export async function runVoiceCheck(
     const said = text.trim() || '(nothing came back)';
     const lifted = parroted(said);
 
-    out.push(said, '', `\`${said.split(/\s+/).length} words · ~${spokenSeconds(said)}s spoken\``);
+    // **Two numbers, because they measure different things now (F20).** The reply is
+    // what the panel shows; `spokenPart` is what Fish Audio actually reads — the opening
+    // and his own line. Reporting only the first would flag replies nobody hears in full,
+    // which is how a check starts measuring a product that no longer exists.
+    const aloud = scene.spoken === false ? said : spokenPart(said);
+    out.push(
+      said,
+      '',
+      `\`${said.split(/\s+/).length} words · ~${spokenSeconds(said)}s if read whole · **~${spokenSeconds(aloud)}s spoken**\``
+    );
     // Length is the failure that keeps coming back, and it is invisible on screen: a
     // reply that reads fine is forty seconds of audio. Flagged rather than judged by
     // eye, the same way parroting is.
-    if (spokenSeconds(said) > LONG_SECONDS) {
-      out.push('', `> **Too long to listen to:** ~${spokenSeconds(said)}s, against a ${LONG_SECONDS}s ceiling.`);
-      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(said)}s`);
+    if (spokenSeconds(aloud) > LONG_SECONDS) {
+      out.push('', `> **Too long to listen to:** ~${spokenSeconds(aloud)}s spoken, against a ${LONG_SECONDS}s ceiling.`);
+      log(`voice check | ${scene.name} | LONG: ${spokenSeconds(aloud)}s spoken (${spokenSeconds(said)}s whole)`);
     }
     if (lifted.length > 0) {
       out.push('', `> **Quoted the examples back:** ${lifted.map((clause) => `"${clause}"`).join(', ')}`);

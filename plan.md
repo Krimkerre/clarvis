@@ -4575,6 +4575,26 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       rests on: the ceiling is now **four sentences at most, including the line that is
       yours**, in the unit the obeyed rule already used, with the word counts removed
       rather than kept beside them.
+      **Settled 20 Aug by moving the ceiling into code, after five prompt versions failed
+      to.** The scene this finding exists for read **70s, 72s, 69s, 71s** across four
+      different versions of the rule, and two runs of an *unchanged* prompt varied by up to
+      **32%** — so most of the movement attributed to those versions was noise. The fifth
+      version (three sentences plus a clause about clauses) made a previously-passing scene
+      *longer* and read flat; the user's word was "bland", which is §2.1's documented cost
+      of tightening this prompt and the same trap as F18. Reverted to four sentences.
+      **The constraint was never "his answers must be short".** It is that twenty seconds
+      is all anyone wants read aloud, and those are different things. `spokenPart` in
+      `replyDelivery.ts` bounds the audio and nothing else: the panel keeps every word, and
+      the voice gets **the first sentence and his own closing line** — the substance and the
+      character, which are the two parts that must survive. Applied against the real logged
+      replies from the last run: 51s → 13s, 71s → **14s**, 28s → 3s, and the two that were
+      already short are untouched. `voiceCheck` now reports both numbers, because a check
+      that measures what the product no longer speaks is measuring a product that does not
+      exist.
+      **Still `[~]`, and the closing condition is now one listen rather than one run.** The
+      length is deterministic and tested; what nobody has heard yet is whether dropping the
+      middle sounds abrupt out loud.
+
       **Third run, 21:26 — the first that ever tested a fix, and it moved.** Four sentences
       took three of the four chat scenes from 65s/50s/22s to **38s/30s/17s**, and the
       ceiling was roughly obeyed at four and five sentences. **The fourth scene gamed it:**

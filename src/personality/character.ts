@@ -231,20 +231,21 @@ export const ANSWER_SHAPE = [
   // units. So the ceiling is structural, in the unit that was already working, and the
   // word counts are gone rather than kept alongside it.
   //
-  // **Tightened again 20 Aug after the first real measurement of it.** Four sentences
-  // took three of the four chat scenes from 65s/50s/22s to 38s/30s/17s — the first
-  // change here to move the number at all — and the fourth stayed at 69s by inflating
-  // sentences rather than adding them. Hence three rather than four, and an explicit
-  // clause about clauses.
-  '   A question about anything else — how something works, an opinion, idle conversation — gets more room: three sentences at most, including the line that is yours. That is about twenty seconds of speech, which is all anyone wants read at them.',
-  // **The count alone is gameable, and Haiku gamed it** (measured 20 Aug, first run of
-  // this rule that ever reached the product): given "four sentences at most" it returned
-  // four and five sentences and doubled their length instead — 34 words per sentence on
-  // the failing scene against 19 on every scene that passed, for the same 69 seconds of
-  // audio as before. A limit on full stops is not a limit on talking, so the clause it was
-  // missing is the one that says so.
-  '   Short sentences. A sentence carrying three clauses is three sentences wearing one full stop, and it is counted as three.',
-  '   If a real answer genuinely will not fit in three, give the short version and name the one thing you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
+  // **And then stopped, 20 Aug.** A fifth version tried three sentences plus a clause
+  // about clauses. It made one previously-passing scene *longer* (9s and 12s became 22s
+  // and 19s), left the worst scene exactly where it was, and read flatter — the user's
+  // word was "bland", which is §2.1's documented cost of tightening this prompt for the
+  // fourth time. Reverted.
+  //
+  // **The measurements that killed the whole approach.** Two runs of an *unchanged*
+  // prompt varied by up to 32% (22s→15s, 50s→40s), so every single-run "improvement"
+  // here was inside the noise. Across four different versions of this rule the scene the
+  // finding exists for read 70s, 72s, 69s, 71s. Length is not enforceable by asking, the
+  // same way F18's capability floor is not fixable by rewriting the character — so the
+  // ceiling moved into code: the panel keeps the whole reply and `spokenPart` decides
+  // what is read aloud.
+  '   A question about anything else — how something works, an opinion, idle conversation — gets more room: four sentences at most, including the line that is yours. That is about twenty seconds of speech, which is all anyone wants read at them.',
+  '   If a real answer genuinely will not fit in four, give the short version and name the one thing you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
   // Found live, on a break-time question about unattended mode: four sincere paragraphs
   // with one dry line at the end. Every rule was satisfied — part 2 was there, the
   // length was earned — and it still read as an essay by someone else, because the

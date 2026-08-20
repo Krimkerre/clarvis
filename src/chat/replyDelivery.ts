@@ -90,5 +90,34 @@ export function spokenPart(text: string): string {
 
   // A single sentence over the ceiling has no line to fall back to, and cutting one in
   // half is worse than reading it. He gets to finish it.
-  return sentences.length > 1 ? sentences[sentences.length - 1] : said;
+  if (sentences.length <= 1) return said;
+
+  const last = sentences[sentences.length - 1];
+
+  // **A line that points backwards needs the thing it points at.** `ANSWER_SHAPE` now
+  // requires part 2 to stand on its own, and this is the belt to that braces: heard
+  // alone, "Everything else is logistics." answers nothing, and the user's verdict on
+  // hearing exactly that was that it sounds stupid without the screen. When the closing
+  // line leans, the opening sentence comes with it — still no middle, still no cut
+  // mid-thought, and only when the two together stay inside the ceiling.
+  const withOpening = `${sentences[0]} ${last}`;
+  return leansBackwards(last) && spokenSeconds(withOpening) <= SPOKEN_CEILING_SECONDS
+    ? withOpening
+    : last;
+}
+
+/**
+ * Whether a line depends on the sentence before it to mean anything.
+ *
+ * Deliberately narrow and openly incomplete: it catches the shapes actually observed
+ * rather than attempting to judge coherence, which is not a thing a regex does. A false
+ * negative reads one line aloud; a false positive reads two. Neither is a defect worth
+ * a cleverer test.
+ */
+function leansBackwards(line: string): boolean {
+  const opener = line.trim().toLowerCase();
+  return (
+    /^(everything else|the rest|that|this|those|these|it|they|either|neither|same|which|otherwise|still|then|and|but|so)\b/.test(opener) ||
+    opener.split(/\s+/).length < 4
+  );
 }

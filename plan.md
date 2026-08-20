@@ -4623,10 +4623,22 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       **`voiceCheck` reports both numbers** from one shared threshold — what he wrote, and
       what is actually heard — because the check owning its own copy of the ceiling is the
       drift this file keeps warning about.
-      **Still `[~]`: one listen from ticking.** The length is deterministic and tested; what
-      nobody has heard is whether a two-second answer after a long written one lands as dry
-      or as curt. The weakest case is a closing line that does not stand alone — *"Everything
-      else is logistics."* answers nothing by itself.
+      **Heard, and the weak case was the real one.** *"Everything else is logistics."* read
+      aloud with no screen is an answer to nothing — the user's verdict was that it sounds
+      stupid. The requirement nobody had stated: **part 2 has to survive being the only
+      thing heard.** `ANSWER_SHAPE` now says so — *"assume it is the only thing they hear —
+      someone across the room, not reading the screen"* — with the observed failures named
+      as the shape to avoid. The calibration examples were already right about this
+      (*"A commit. The repository was starting to worry."*); only the instruction was silent.
+      **And a belt to that braces, since a prompt is a hypothesis:** when the closing line
+      points backwards — an opener like *everything else*, *that*, *and*, or fewer than four
+      words — the opening sentence is spoken with it, if the two together still fit the
+      ceiling. Still no middle, still nothing cut mid-thought. On the logged replies that
+      turns *"Everything else is logistics."* into *"No. Everything else is logistics."*,
+      and leaves *"I would not leave it alone."* alone.
+      **Still `[~]`.** The trim is deterministic and tested; the *quality* of the closing
+      lines is a prompt change, and prompt changes here have been refuted six times by
+      output. It needs a run.
 
       **The sixth attempt, in full, so it is not tried again:**
       Sentence by sentence, the 70-second answers contain **no padding**: five lines, each

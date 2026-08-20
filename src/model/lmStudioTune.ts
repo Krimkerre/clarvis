@@ -18,10 +18,17 @@ import { join } from 'path';
  *   changing something nobody asked him to change (§9.9), and would interrupt
  *   whatever else is using it.
  * - **Never writes LM Studio's `settings.json`.** That file belongs to another
- *   application and sits outside the workspace; the three settings that would help
- *   most (`unloadPreviousJITModelOnLoad`, the JIT TTL, the load guardrails) are the
- *   user's to change, and the manual explains them. See F28.
+ *   application and sits outside the workspace; settings there are the user's to
+ *   change, and the manual explains the ones worth touching. See F28.
+ *
  * - **Never unloads anything.**
+ *
+ * **Why warm at startup rather than on first use:** a cold just-in-time load was
+ * measured at **5.3s**, against `Voice.open`'s 5s deadline — so the first thing said
+ * in a session falls back to a written line for no better reason than the model not
+ * being resident yet. That is a warm-up problem. (It is *not* an eviction problem:
+ * LM Studio holds several models at once, tested directly — an earlier version of
+ * this comment claimed otherwise on the strength of a setting's name.)
  *
  * **Only `--parallel`, and only because it was verified.** `--context-length` is
  * silently ignored on MLX models (`autoFit` appears to win) and speculative decoding

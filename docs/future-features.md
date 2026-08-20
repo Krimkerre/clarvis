@@ -220,10 +220,16 @@ the existing interface, never a replacement for `supportsTools()`.
 ## Deferred: notice when the local server's own settings are fighting us (F28)
 
 **What:** LM Studio ships `unloadPreviousJITModelOnLoad: true`, a 1-hour JIT TTL, and `high`
-loading guardrails. The first **evicts the chat model when the coding model loads, and the
-reverse** — so the separate-models setup Clarvis itself recommends reloads a model from disk
-on every switch. A cold JIT load measured **5.3s** against a 5s deadline, which means that
-one setting makes **F14 fire permanently, by configuration**.
+loading guardrails.
+
+**Corrected 20 Aug:** this originally claimed the first setting evicts one model when the
+other loads, making F14 fire permanently by configuration. **Inferred from the setting's
+name, never tested, and false as observed** — three models stayed resident at once, two of
+them auto-loaded, with it on. Withdrawn; see F28.
+
+**What is real** is the cold-load stall: the first request to a model that is not resident
+takes ~**5.3s**, past the 5s opening deadline. A warm-up problem rather than an eviction
+one — and the reason `lmStudioTune.ts` warms models at startup instead of waiting.
 
 **What Clarvis must not do:** write those settings. They live in another application's
 config file outside the workspace; changing them silently breaks §9.9 — *never once finds

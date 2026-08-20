@@ -318,12 +318,11 @@ memory and the larger model is generally the better one.
 
 **Two models or one.** You can point chat and coding at different models, and on LM Studio
 you should: a small quick model answers questions without keeping you waiting, while a
-larger one writes the code. Both stay loaded at once, so nothing is swapped in and out —
-**provided you turn off the setting that evicts them**, which is the first item in *Making
-LM Studio quick* below. Leave that setting alone and every switch between answering and
-working reloads a model from disk, which is the slowest thing that can happen here.
+larger one writes the code. **LM Studio hosts several at once** — measured on a 24 GB
+machine, holding two cost a few hundred milliseconds on the first reply and nothing else.
 
-If memory is tight, one capable model for both is still a perfectly good trade.
+If memory is tight, one capable model for both is still a perfectly good trade — and on a
+smaller machine it is the better one.
 
 ### Making LM Studio quick
 
@@ -336,7 +335,7 @@ do, most of what follows is hidden.
 
 | Setting | Default | Set it to | Why |
 |---|---|---|---|
-| **Unload previous JIT model on load** | on | **off** | The big one. Loading your coding model throws out your chat model, and the reverse — so every switch between answering and working reloads a model from disk. Off, both stay put. |
+| **Unload previous JIT model on load** | on | leave it | **Tested 20 Aug: it does not do what its name suggests.** Three models were held resident at once — two of them loaded automatically — with this on. LM Studio hosts several models happily; nothing was evicted. Left in this table only because an earlier version of this manual told you to change it. |
 | **JIT model TTL** | on, 1 hour | **off** | Unloads a model that has been idle. The next thing Clarvis says then waits for it to load again. |
 | **Model loading guardrails** | high | one or two notches lower | A safety limit on how much of your memory a model may take. Set high, it refuses larger models outright — and it is why a model that fits may still refuse to load. |
 | **Context length** | 8192 | leave it, or 4096 for the chat model | Reserved memory for the conversation. Chat needs far less than coding does. |

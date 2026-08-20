@@ -11,6 +11,7 @@ import { ReplyStateReader, STATE_TAG_INSTRUCTION } from './replyState';
 import { Transcript } from './Transcript';
 import { Turn } from './thread';
 import { Busy } from './Busy';
+import { afterReply } from './replyDelivery';
 
 /**
  * Answering: the two paths a question can take once a model is involved.
@@ -131,11 +132,27 @@ export class Replier {
     }
 
     // Spoken only once complete — speaking fragment by fragment would produce a
-    // stutter, and the queue exists to serialise utterances, not syllables.
-    if (text) {
-      this.transcript.note(text);
-      this.voice.say(text, 'chatReply');
-    }
+    // stutter, and the queue exists to serialise utterances, not syllables. **And not
+    // at all once stopped** (F24): the comment two blocks up has always said the user
+    // asks for silence and gets it, and this is where that finally became true.
+    await this.deliver(text, controller.signal.aborted);
+  }
+
+  /**
+   * The end of a reply, for both paths (F24).
+   *
+   * A method rather than four lines twice: the duplicated ending is precisely how one
+   * path came to speak a reply the user had just cancelled while the other did the
+   * same thing a few lines further down. The decision itself lives in `afterReply`,
+   * which is pure and tested.
+   */
+  private async deliver(text: string, aborted: boolean): Promise<void> {
+    const delivery = afterReply(text, aborted);
+    if (delivery.logLine) this.log(delivery.logLine);
+    if (!delivery.speak) return;
+
+    this.transcript.note(text);
+    this.voice.say(text, 'chatReply');
   }
 
   /**
@@ -212,10 +229,7 @@ export class Replier {
       await this.transcript.persist();
     }
 
-    if (spoken.trim()) {
-      this.transcript.note(spoken);
-      this.voice.say(spoken, 'chatReply');
-    }
+    await this.deliver(spoken, controller.signal.aborted);
   }
 
   /**

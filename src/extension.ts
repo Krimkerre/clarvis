@@ -316,7 +316,7 @@ function startPatternMemory(
     // line, so variety never costs a fact.
     (line) =>
       announcer.announceWith(
-        () => opening(line.situation, line.fallback, false, line.keep),
+        () => opening(line.situation, line.fallback, 'states', line.keep),
         line.fallback,
         'judging',
         'patternHit',

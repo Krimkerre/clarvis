@@ -1,6 +1,6 @@
 import { ModelService } from '../model/ModelService';
 import { acceptRewrite, Line, Purpose, rewritePrompt, worthRewriting } from './say';
-import { acceptOpening, openingPrompt } from './originalLine';
+import { acceptOpening, openingPrompt, OpeningKind } from './originalLine';
 import { withDeadline } from '../model/deadline';
 import { collect } from '../model/collect';
 
@@ -93,18 +93,18 @@ export class Voice {
    * A longer deadline than `say()`: nothing is waiting on this the way a modal is,
    * and it is worth a moment to not sound the same twice.
    */
-  async open(situation: string, fallback: string, mustAsk = true, keep: readonly string[] = []): Promise<string> {
+  async open(situation: string, fallback: string, kind: OpeningKind = 'asks', keep: readonly string[] = []): Promise<string> {
     try {
       if (!(await this.models.isReady('chat'))) return fallback;
 
       const raw = await withDeadline(
         OPENING_DEADLINE_MS,
-        (signal) => this.collect(openingPrompt(situation, mustAsk, keep), signal),
+        (signal) => this.collect(openingPrompt(situation, kind, keep), signal),
         () => '',
         () => this.tooSlow('opening')
       );
 
-      const line = acceptOpening(raw, mustAsk, keep);
+      const line = acceptOpening(raw, kind, keep);
       // **The rejected text, verbatim.** "Rejected" on its own says a rule fired and
       // not which one — and every guess about which costs a rebuild and a live run.
       this.log(
@@ -185,9 +185,9 @@ export async function phrase(purpose: Purpose, fallback: string, keep?: string[]
 export async function opening(
   situation: string,
   fallback: string,
-  mustAsk = true,
+  kind: OpeningKind = 'asks',
   keep: readonly string[] = []
 ): Promise<string> {
   if (!writer) return fallback;
-  return writer.open(situation, fallback, mustAsk, keep);
+  return writer.open(situation, fallback, kind, keep);
 }

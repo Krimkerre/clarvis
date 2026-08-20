@@ -24,6 +24,19 @@ import { character, ONLY_WHAT_YOU_WERE_GIVEN } from './character';
 export const MAX_OPENING_LENGTH = 320;
 
 /**
+ * Whether an opening line ends by asking something or by saying something.
+ *
+ * **Named rather than a boolean, and that is the whole change.** It was `mustAsk:
+ * boolean`, which §0 forbids and which read at the call site as
+ * `opening(situation, fallback, false)` in five places — false what? Splitting into two
+ * functions is what §0 asks for next, and here it would have meant four pairs
+ * (`openingPrompt`, `acceptOpening`, `Voice.open`, `opening`) whose bodies differ by one
+ * line each: eight near-identical functions to avoid one word. A closed set of two names
+ * fixes the unreadable call site, which was the actual complaint, without the copies.
+ */
+export type OpeningKind = 'asks' | 'states';
+
+/**
  * How a question opens, when it forgot to close with a mark.
  *
  * Anchored to the *start* of the last sentence, past up to two leading fillers and
@@ -48,7 +61,7 @@ const INTERROGATIVE =
  * because this runs where nothing else about the project is known, which is the exact
  * condition under which he invents a branch name and a failing test to be funny about.
  */
-export function openingPrompt(situation: string, mustAsk: boolean, keep: readonly string[] = []): string {
+export function openingPrompt(situation: string, kind: OpeningKind, keep: readonly string[] = []): string {
   return [
     character(),
     '',
@@ -56,7 +69,7 @@ export function openingPrompt(situation: string, mustAsk: boolean, keep: readonl
     '',
     'Write ONE opening line for that. Rules:',
     '- One or two short sentences, and no more. Under 200 characters.',
-    mustAsk
+    kind === 'asks'
       ? '- It must end by asking them, in your own words, whether they want to — a question they can answer yes or no, ending in a question mark.'
       : '- Not a question.',
     '- Dry, understated, faintly put-upon. Have a view about it — a line that could have come from any tool is a failed line.',
@@ -92,7 +105,7 @@ export function openingPrompt(situation: string, mustAsk: boolean, keep: readonl
  */
 export function acceptOpening(
   raw: string | undefined,
-  mustAsk: boolean,
+  kind: OpeningKind,
   keep: readonly string[] = []
 ): string | undefined {
   if (!raw) return undefined;
@@ -117,7 +130,7 @@ export function acceptOpening(
 
   if (!text) return undefined;
   if (text.length > MAX_OPENING_LENGTH) return undefined;
-  if (mustAsk) {
+  if (kind === 'asks') {
     const asked = ensureQuestion(text);
     if (!asked) return undefined;
     text = asked;

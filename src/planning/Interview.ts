@@ -393,7 +393,7 @@ async function seedHint(): Promise<string> {
   const example = await opening(
     'Give ONE example of a small project someone might describe in a sentence — the sort of thing that goes under a question as a hint. A concrete thing that does something, under twelve words. No joke, no second sentence, no preamble: just the example itself.',
     written,
-    false
+    'states'
   );
 
   // **Length enforced here, not asked for there.** Told "under twelve words" it
@@ -559,7 +559,7 @@ async function remarkOnName(
   const line = await opening(
     `They have just named their project "${name}". It is: ${seed}. Say the name back to them and make one dry remark about it — about the name itself, or about what it says about the project.`,
     `${name}, then.`,
-    false
+    'states'
   );
   log(`planning: name — remarked: ${line}`);
   await io.say(line);
@@ -699,7 +699,7 @@ async function remarkOnLanguage(
       .filter(Boolean)
       .join(' '),
     `${language} it is.`,
-    false
+    'states'
   );
   // A choice made *for* the user has to be said out loud, not alluded to — see
   // `ensureNamesChoice`. One they made themselves needs no announcing.

@@ -10,6 +10,11 @@ when it happens.*
 it, does not act against what you decided, and does not leak its own internals into your
 face. Everything that makes it *better* rather than *correct* lives here.
 
+**Split 20 Aug into two sections**, because the file had been mixing two different kinds of
+"not now": genuinely new capability nobody has built, and defects already observed in
+current behaviour that just don't clear the release-bar bar. They get triaged the same way
+(below) but they are not the same kind of debt — a feature is scope, a bug is quality.
+
 ---
 
 ## Triaging the next one
@@ -41,9 +46,19 @@ a written record of confidently-wrong fixes that passed review and failed live; 
 without an observation is the same mistake wearing different clothes.
 
 **Where each one goes.** A blocker becomes a checkbox in `plan.md` §7's M11 release bar. A
-deferral becomes a section in this file, naming the milestone that will specify it. Either
-way, the observation itself — what happened, the log evidence, why it matters — goes in
-`clarvis-firstrun/FINDINGS.md` first, while it is fresh, and is triaged from there.
+deferral becomes a section in this file — under **Future features** if nothing is broken,
+under **Known bugs** if something is — naming the milestone that will specify it or the
+finding that observed it. Either way, the observation itself — what happened, the log
+evidence, why it matters — goes in `clarvis-firstrun/FINDINGS.md` first, while it is fresh,
+and is triaged from there.
+
+---
+
+# Future features
+
+*New capability nobody has built yet, or a deliberate scope decision. Nothing here is a
+defect in current behaviour — Clarvis does what the spec says; the spec just says less than
+it eventually will.*
 
 ## Deferred: the interview redesign (M9h parts 1–3)
 
@@ -66,20 +81,6 @@ machines get discarded quickly"*, and §9's success criteria include keeping Cla
 for a week without muting him. For a personality-led product the first session **is** the
 product. Part 4 is the bet that most of the damage is the frequency, not the design. If a
 week of real use after v1 says otherwise, M9h parts 1–3 stop being deferred.
-
-## ~~Deferred: `NO-PLAN-NEEDED` reaching a throwaway project (F4)~~ — CLOSED 19 Aug
-
-Deferred on a bet: that the analysis suppressed the verdict because the *interview*
-manufactured findings for it to trip over, and that M9h part 4 would remove them. The bet
-was to re-walk before touching `analysisPrompt.ts`.
-
-**It paid.** Two independent walks after part 4 landed, two correct verdicts, and
-`analysisPrompt.ts` was never opened. The analysis had never been broken.
-
-Kept here rather than deleted, because the reasoning is the reusable part: **when a symptom
-has a plausible upstream cause, fix the cause and re-measure before touching the thing that
-reported it.** Two fixes aimed at one cause is how this branch got into that state to begin
-with.
 
 ## Deferred: the character reaching into artifacts (M9h parts 1–3)
 
@@ -155,6 +156,65 @@ having to be right about intent.
 deployment script from a compliment printer? `what-it-does` and `scope` are answered before
 anything is built, so it may — which would make this another customer for M9h's
 infer-and-state work rather than a mechanism of its own.
+
+## Deferred: provider-side reasoning control (M8i part 2)
+
+**What:** `thinking` / `reasoning_effort` per provider. `plan.md` §7, M8i.
+
+**Why deferred:** explicitly not approved at sign-off. One toggle cannot mean the same
+thing across five providers — Qwen3's is `/no_think` in the prompt, not an API — and a
+switch that silently does nothing on some models is worse than no switch. **M8i part 1
+(stripping reasoning out of the transcript and the spoken output) is a v1 blocker and is
+not deferred.**
+
+## Deferred: model-family recognition (M8j)
+
+**What:** a regex table over model ids seeding per-family defaults. `plan.md` §7, M8j.
+
+**Why deferred:** signed off as *design constraints settled, build deferred* — a family
+table with no caller is speculative configuration.
+
+**It now has a second caller, and a nearer one (F14, 20 Aug).** A 27B model via LM Studio
+missed both personality deadlines, so the opening line and the briefing fell back to the
+written bank. The deadlines are tuned for API latency; a local model is slower by nature and
+nothing is waiting on a briefing the way a modal is. "Local provider → longer deadlines" is
+exactly the *default seeded by family, never a capability asserted* that M8j was scoped for,
+and it is a smaller ask than M9h's `shouldAsk`. The half of F14 that ships in v1 is telling
+the user it happened; this is the half that stops it happening.
+
+## Deferred: the milestones already marked stretch
+
+Unchanged by this decision, listed so the v1 boundary is in one place:
+
+- **M9g** — project notes the user writes, read from `AGENTS.md` / `CLAUDE.md`.
+- **M10** — voice input. Designed, not built.
+- **M12** — Tutor Mode. Depends on everything above it.
+- **M8h's guard, if it is built at all** — see the release bar in M11; v1 requires the
+  *spec* to stop promising controls that do not exist, not that the controls exist.
+
+---
+
+# Known bugs still needing fixing
+
+*Observed defects in current behaviour — Clarvis does something wrong, not merely less than
+it could. Each is triaged off the release bar deliberately: nothing here loses what the
+user said, acts against a decision, or leaks internals, which is what keeps it off
+`plan.md` §7's blocking checklist. If one of these turns out to cross that line on
+re-reading, it moves to the bar, not here.*
+
+## ~~Deferred: `NO-PLAN-NEEDED` reaching a throwaway project (F4)~~ — CLOSED 19 Aug
+
+Deferred on a bet: that the analysis suppressed the verdict because the *interview*
+manufactured findings for it to trip over, and that M9h part 4 would remove them. The bet
+was to re-walk before touching `analysisPrompt.ts`.
+
+**It paid.** Two independent walks after part 4 landed, two correct verdicts, and
+`analysisPrompt.ts` was never opened. The analysis had never been broken.
+
+Kept here rather than deleted, because the reasoning is the reusable part: **when a symptom
+has a plausible upstream cause, fix the cause and re-measure before touching the thing that
+reported it.** Two fixes aimed at one cause is how this branch got into that state to begin
+with.
 
 ## Deferred: plan vocabulary on a path that has no plan
 
@@ -253,41 +313,6 @@ occurrence before deciding whether this is **M8j's fourth caller** (a weak model
 steps *and* a nudge to try a second tool, not just fewer steps) or a prompt-level fix (tell
 the model plainly when one tool wasn't enough to answer).
 
-## Deferred: provider-side reasoning control (M8i part 2)
-
-**What:** `thinking` / `reasoning_effort` per provider. `plan.md` §7, M8i.
-
-**Why deferred:** explicitly not approved at sign-off. One toggle cannot mean the same
-thing across five providers — Qwen3's is `/no_think` in the prompt, not an API — and a
-switch that silently does nothing on some models is worse than no switch. **M8i part 1
-(stripping reasoning out of the transcript and the spoken output) is a v1 blocker and is
-not deferred.**
-
-## Deferred: model-family recognition (M8j)
-
-**What:** a regex table over model ids seeding per-family defaults. `plan.md` §7, M8j.
-
-**Why deferred:** signed off as *design constraints settled, build deferred* — a family
-table with no caller is speculative configuration.
-
-**It now has a second caller, and a nearer one (F14, 20 Aug).** A 27B model via LM Studio
-missed both personality deadlines, so the opening line and the briefing fell back to the
-written bank. The deadlines are tuned for API latency; a local model is slower by nature and
-nothing is waiting on a briefing the way a modal is. "Local provider → longer deadlines" is
-exactly the *default seeded by family, never a capability asserted* that M8j was scoped for,
-and it is a smaller ask than M9h's `shouldAsk`. The half of F14 that ships in v1 is telling
-the user it happened; this is the half that stops it happening.
-
-## Deferred: the milestones already marked stretch
-
-Unchanged by this decision, listed so the v1 boundary is in one place:
-
-- **M9g** — project notes the user writes, read from `AGENTS.md` / `CLAUDE.md`.
-- **M10** — voice input. Designed, not built.
-- **M12** — Tutor Mode. Depends on everything above it.
-- **M8h's guard, if it is built at all** — see the release bar in M11; v1 requires the
-  *spec* to stop promising controls that do not exist, not that the controls exist.
-
 ---
 
 ## Not deferred — where the blockers actually live
@@ -301,4 +326,4 @@ been found. That is the same failure this file's own preamble warns about, commi
 file that warns about it.
 
 Every finding is cross-checked against both documents by `check-findings.mjs` in the
-runbook repository, which fails if one knows about a finding the other does not.
+`clarvis-firstrun` repository — run it before trusting either list.

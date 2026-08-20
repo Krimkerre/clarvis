@@ -4,6 +4,7 @@ import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResu
 import { Milestone, milestonePrompt, parseMilestones } from './milestonePrompt';
 import { FindingVerdict } from './verdictSummary';
 import { withDeadline } from '../model/deadline';
+import { collect } from '../model/collect';
 
 /**
  * Runs one analysis pass over a finished interview (M9b — §4.9).
@@ -35,23 +36,11 @@ export async function runAnalysis(
   }
 
   try {
-    let text = '';
-    await withDeadline(
+    const text = await withDeadline(
       ANALYSIS_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            { system: analysisSystemPrompt(), messages: [{ role: 'user', content: analysisPrompt(state) }], signal },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > MAX_RESPONSE_CHARS) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
+      (signal) =>
+        collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: analysisPrompt(state) }], signal }, MAX_RESPONSE_CHARS),
+      () => ''
     );
 
     const result = parseAnalysisResult(text);
@@ -92,27 +81,11 @@ export async function planMilestone(
   }
 
   try {
-    let text = '';
-    await withDeadline(
+    const text = await withDeadline(
       ANALYSIS_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            {
-              system: analysisSystemPrompt(),
-              messages: [{ role: 'user', content: milestonePrompt(state, accepted, rejected) }],
-              signal,
-            },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > MAX_RESPONSE_CHARS) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
+      (signal) =>
+        collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state, accepted, rejected) }], signal }, MAX_RESPONSE_CHARS),
+      () => ''
     );
 
     const milestones = parseMilestones(text);

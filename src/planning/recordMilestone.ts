@@ -6,6 +6,7 @@ import { Finding } from './analysisPrompt';
 import { findingSteps } from './reviewFollowUp';
 import { MAX_RESPONSE_CHARS, parseStepResults, recordMilestonePrompt, TIMEOUT_MS } from './milestoneReport';
 import { withDeadline } from '../model/deadline';
+import { collect } from '../model/collect';
 
 /**
  * Writing what a run actually did back into the project's `plan.md`.
@@ -53,27 +54,11 @@ export async function recordMilestone(
   }
 
   try {
-    let text = '';
-    await withDeadline(
+    const text = await withDeadline(
       TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            {
-              system: analysisSystemPrompt(),
-              messages: [{ role: 'user', content: recordMilestonePrompt(existing, summary) }],
-              signal,
-            },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > MAX_RESPONSE_CHARS) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
+      (signal) =>
+        collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: recordMilestonePrompt(existing, summary) }], signal }, MAX_RESPONSE_CHARS),
+      () => ''
     );
 
     const results = parseStepResults(text);

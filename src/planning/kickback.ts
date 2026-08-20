@@ -5,6 +5,7 @@ import { addSteps, appendMilestone } from './planUpdate';
 import { pendingBuild } from './pendingBuild';
 import { parseScopeChange, ScopeVerdict, scopeChangePrompt } from './scopeChange';
 import { withDeadline } from '../model/deadline';
+import { collect } from '../model/collect';
 
 /**
  * Kicking a scope change back to Plan Mode, mid-build (§0).
@@ -46,27 +47,11 @@ export async function judgeScope(
   if (!planText) return { kind: 'correction' };
 
   try {
-    let text = '';
-    await withDeadline(
+    const text = await withDeadline(
       TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            {
-              system: analysisSystemPrompt(),
-              messages: [{ role: 'user', content: scopeChangePrompt(planText, pending.milestone.title, said) }],
-              signal,
-            },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > MAX_RESPONSE_CHARS) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
+      (signal) =>
+        collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: scopeChangePrompt(planText, pending.milestone.title, said) }], signal }, MAX_RESPONSE_CHARS),
+      () => ''
     );
 
     const verdict = parseScopeChange(text);

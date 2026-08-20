@@ -193,3 +193,50 @@ test('every answer is saved as it lands, not once at the end', async () => {
     'each save should hold at least as much as the one before it'
   );
 });
+
+/**
+ * A model that streams whatever it is told to, one fragment at a time.
+ *
+ * `isReady` is true here, which is what puts `promptModel` — the collector the eight
+ * hand-written ones collapsed into — on the path at all. The tests above deliberately
+ * run without a model and never reach it.
+ */
+function streamingModel(fragments: Iterable<string>): ModelService {
+  return {
+    isReady: async () => true,
+    stream: async function* () {
+      for (const fragment of fragments) yield fragment;
+    },
+  } as unknown as ModelService;
+}
+
+test('a question the model phrases is the one that gets asked', async () => {
+  // The written fallback is what appears when anything goes wrong, so a test that only
+  // ever sees the fallback cannot tell a working phrasing call from a broken one.
+  const { io, asked } = sitting([undefined]);
+  const models = streamingModel(['So. ', 'What does this thing ', 'actually do?']);
+
+  await runInterview(models, io, () => {}, {
+    resume: { state: { answers: [] }, seed: 'renames photos' },
+  });
+
+  assert.deepEqual(asked.slice(0, 1), ['So. What does this thing actually do?']);
+});
+
+test('a model that will not stop talking is cut off at the cap', async () => {
+  // The cap is the reason `collect` takes a limit at all. If it stops working this test
+  // does not fail with a wrong answer — it never finishes, which is the honest failure
+  // for "reads the stream forever".
+  function* forever(): Generator<string> {
+    for (;;) yield 'and another thing ';
+  }
+
+  const { io, asked } = sitting([undefined]);
+  await runInterview(streamingModel(forever()), io, () => {}, {
+    resume: { state: { answers: [] }, seed: 'renames photos' },
+  });
+
+  assert.ok(asked[0].length > 0);
+  // 400 for every topic but language, plus whatever fragment tipped it over.
+  assert.ok(asked[0].length < 500, `expected the reply capped near 400, got ${asked[0].length}`);
+});

@@ -9,6 +9,7 @@ import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
 import { synthesizeAnswerPrompt, cleanSynthesizedAnswer, discardsOriginalAnswer } from './synthesizePrompt';
 import { withDeadline } from '../model/deadline';
+import { collect } from '../model/collect';
 import { describeWorkspaceSignals, WorkspaceSignals } from './workspaceSignals';
 
 /**
@@ -31,6 +32,27 @@ import { describeWorkspaceSignals, WorkspaceSignals } from './workspaceSignals';
 const PHRASE_TIMEOUT_MS = 6000;
 
 /** Same "I don't know"-family answers the rest of the interview recognises. */
+/**
+ * One reply from the model, in the interview's voice, against the phrasing deadline.
+ *
+ * **Eight call sites in this file wrote this out by hand**, nineteen lines each, and
+ * the only things that differed were the prompt and the character cap. The caps had
+ * drifted to 400, 500, 800 and `topic === 'language' ? 2000 : 400` with no way to see
+ * them side by side; passing one is now the whole of the difference between the eight.
+ *
+ * Partial text survives a timeout, exactly as it did before: `collect` swallows its own
+ * abort and returns what arrived, so `withDeadline` resolves rather than firing
+ * `onAbort`. Every caller here already treats an empty or unparseable reply as "use the
+ * written fallback", which is why none of them needs to know which happened.
+ */
+function promptModel(models: ModelService, prompt: string, limit: number): Promise<string> {
+  return withDeadline(
+    PHRASE_TIMEOUT_MS,
+    (signal) => collect(models, { system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }], signal }, limit),
+    () => ''
+  );
+}
+
 const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
 
 /**
@@ -230,24 +252,7 @@ async function challengeAnswer(
   if (!(await models.isReady('chat'))) return answer;
 
   try {
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: challengePrompt(topic, answer.text!, state) }], signal },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > 400) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
-    );
+    const text = await promptModel(models, challengePrompt(topic, answer.text!, state), 400);
 
     const result = parseChallengeResult(text);
     if (result.fine) {
@@ -294,23 +299,10 @@ async function synthesizeAnswer(
   if (!(await models.isReady('chat'))) return fallback;
 
   try {
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: synthesizeAnswerPrompt(topic, original, followUpQuestion, followUpAnswer) }], signal },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > 500) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
+    const text = await promptModel(
+      models,
+      synthesizeAnswerPrompt(topic, original, followUpQuestion, followUpAnswer),
+      500
     );
 
     const cleaned = cleanSynthesizedAnswer(text);
@@ -350,24 +342,7 @@ async function answerQuestionBack(
   if (!(await models.isReady('chat'))) return undefined;
 
   try {
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: answerBackPrompt(topic, question, state) }], signal },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > 500) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
-    );
+    const text = await promptModel(models, answerBackPrompt(topic, question, state), 500);
     return text.trim() || undefined;
   } catch (error) {
     log(`planning: "${topic}" — answering a question back failed (${String(error)})`);
@@ -447,24 +422,7 @@ async function offerIdeas(
   }
 
   try {
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: ideaPrompt() }], signal },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > 800) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
-    );
+    const text = await promptModel(models, ideaPrompt(), 800);
 
     const ideas = parseIdeaResult(text);
     if (ideas.length === 0) {
@@ -520,30 +478,9 @@ async function resolveProjectName(
   }
 
   try {
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            {
-              system: interviewSystemPrompt(),
-              // A working title is not an answer: asked to detect a name, the model
-              // finds the one it just invented and the question answers itself.
-              messages: [{ role: 'user', content: namePrompt(seed, workingTitle !== undefined) }],
-              signal,
-            },
-            'chat'
-          )) {
-            text += fragment;
-            if (text.length > 400) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
-    );
+    // A working title is not an answer: asked to detect a name, the model finds the one
+    // it just invented and the question answers itself.
+    const text = await promptModel(models, namePrompt(seed, workingTitle !== undefined), 400);
 
     const result = parseNameResult(text);
     if ('named' in result && !workingTitle) {
@@ -810,21 +747,7 @@ async function pickLanguageForUser(
       'Output exactly one line, nothing else: Name | one-sentence reason',
     ].join('\n');
 
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream({ system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }], signal }, 'chat')) {
-            text += fragment;
-            if (text.length > 400) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
-    );
+    const text = await promptModel(models, prompt, 400);
 
     const [name, ...rest] = text.trim().split('|').map((part) => part.trim());
     const chosen = options.find((option) => option.name.toLowerCase() === name?.toLowerCase());
@@ -863,27 +786,10 @@ async function phraseQuestion(
   }
 
   try {
-    let text = '';
-    await withDeadline(
-      PHRASE_TIMEOUT_MS,
-      async (signal) => {
-        try {
-          for await (const fragment of models.stream(
-            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: interviewQuestionPrompt(topic, state) }], signal },
-            'chat'
-          )) {
-            text += fragment;
-            // Every topic but language is one sentence; language is a 2-4 option shortlist
-            // and this cap was cutting it off mid-option before it reached "you pick" — the
-            // exact truncation seen live. Give it real headroom instead of none.
-            if (text.length > (topic === 'language' ? 2000 : 400)) break;
-          }
-        } catch (error) {
-          if (!signal.aborted) throw error;
-        }
-      },
-      () => undefined
-    );
+    // Every topic but language is one sentence; language is a 2-4 option shortlist and
+    // this cap was cutting it off mid-option before it reached "you pick" — the exact
+    // truncation seen live. Give it real headroom instead of none.
+    const text = await promptModel(models, interviewQuestionPrompt(topic, state), topic === 'language' ? 2000 : 400);
 
     // Every topic but language is genuinely one sentence, and truncating to the first
     // line has caught a stray blank line from the model harmlessly. Language is not:

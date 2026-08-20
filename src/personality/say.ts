@@ -1,3 +1,4 @@
+import { ungroundedClaims } from './grounded';
 import { character, ONLY_WHAT_YOU_WERE_GIVEN } from './character';
 
 /**
@@ -145,6 +146,20 @@ export function acceptRewrite(line: Line, raw: string | undefined): string | und
 
   // A statement that became a question has changed what the user is expected to do.
   if (!line.fallback.trim().endsWith('?') && text.endsWith('?')) return undefined;
+
+  // **A number that was not in the written line is a number nobody supplied.** The rules
+  // forbid this in prose — `ONLY_WHAT_YOU_WERE_GIVEN` says every count and timing must come
+  // from what was actually given — and on a capable model the rules hold. On a small one
+  // they do not: told "40 minutes ago", one answered "failed for the 40th time", and told
+  // "2 error(s)" it produced "the past two commits". Neither invented a *value*; each
+  // re-filed one it had been handed under a different noun, which is why the check compares
+  // the pairing rather than the digits (see `grounded.ts`).
+  //
+  // The facts here are the written line and whatever had to be preserved — between them,
+  // everything this rewrite was entitled to say.
+  if (ungroundedClaims(text, `${line.fallback} ${line.situation ?? ''} ${(line.keep ?? []).join(' ')}`).length > 0) {
+    return undefined;
+  }
 
   return text;
 }

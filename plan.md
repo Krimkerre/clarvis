@@ -4450,6 +4450,18 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       `AgentRunner` now, so both paths share one stripper. 4 tests, including that prose
       containing `[[a link]]` is left alone. **Worth reading the other `[x]` lines with
       this in mind: "verified" has meant *on the path someone walked*.**
+- [x] **F19 (part) — a rewrite may no longer introduce a number nobody supplied.** Fixed
+      20 Aug. `ONLY_WHAT_YOU_WERE_GIVEN` forbids invented counts and timings, and holds on
+      a capable model; a small one told *"40 minutes ago"* answered *"failed for the 40th
+      time"*, and told *"2 error(s)"* produced *"the past two commits"*. **Neither invented
+      a value** — each re-filed one it had been handed under a different noun, so checking
+      digits against the facts passes both. `grounded.ts` compares the *pairing*, per
+      occurrence, against a two-word window either side, and `acceptRewrite` now rejects a
+      rewrite whose numbers the written line and its `keep` facts cannot account for —
+      falling back to the written line, the same trade `discardsOriginalAnswer` makes.
+      17 tests, built against the verbatim strings from both models. **Covers rewritten
+      lines only**; a free-form chat reply has no written fallback to fall back *to*, and
+      that half stays open.
 - [ ] **F20 — replies run three to four times over the spoken ceiling, worst on the best
       model.** `voiceCheck` flags anything past **20 seconds spoken**. An A/B on 20 Aug put
       Llama 3.1 8B at 22s and 42s on two chat scenes, and **Haiku 4.5 at 73s and 77s** on
@@ -4766,7 +4778,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**907 tests**, against Node's built-in runner with no test framework — possible only
+**924 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

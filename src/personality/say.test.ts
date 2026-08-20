@@ -145,3 +145,83 @@ test('a line that carries its own occasion needs no situation', () => {
   const prompt = rewritePrompt({ purpose: 'report', fallback: 'You are on main.' });
   assert.doesNotMatch(prompt, /What is happening/);
 });
+
+// ------------- a rewrite may not introduce a number nobody supplied
+
+test('a rewrite that invents a count is rejected', () => {
+  // The written line says the build failed. It does not say how often. A model that
+  // supplies "the third time" has supplied it from nowhere, and the number is the part a
+  // reader will believe.
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'That build failed again.' },
+      'That build has failed for the third time.'
+    ),
+    undefined
+  );
+});
+
+test('a rewrite may repeat a number it was given', () => {
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'The build has failed 4 times this week.' },
+      'The build has failed 4 times this week, which is a habit now.'
+    ),
+    'The build has failed 4 times this week, which is a habit now.'
+  );
+});
+
+test('a rewrite may spell out a number it was given', () => {
+  // "Forty minutes" and "40 minutes" are the same fact, and rejecting the rewrite for
+  // spelling it out would leave the layer paying for nothing.
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'It has been failing for 40 minutes.' },
+      'It has been failing for forty minutes.'
+    ),
+    'It has been failing for forty minutes.'
+  );
+});
+
+test('a rewrite may not re-file a number under a different noun', () => {
+  // The observed failure, in miniature: forty minutes became a fortieth occurrence.
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'It has been failing for 40 minutes.' },
+      'That is the 40th time it has failed.'
+    ),
+    undefined
+  );
+});
+
+test('facts that had to be kept count as given', () => {
+  // `keep` is exactly the set of things the rewrite was obliged to carry, so a number
+  // among them is one it was entitled to say — even though the written line never
+  // mentioned it.
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'The tests are unhappy.', keep: ['3 failures'] },
+      '3 failures, and the tests are unhappy.'
+    ),
+    '3 failures, and the tests are unhappy.'
+  );
+});
+
+test('a kept fact must still be carried verbatim', () => {
+  // Unchanged, and worth pinning next to the test above so the two rules are not confused:
+  // grounding says a number may be *used*, `keep` says a fact must survive *as written*.
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'The tests are unhappy.', keep: ['3 failures'] },
+      'Three failures, and the tests are unhappy.'
+    ),
+    undefined
+  );
+});
+
+test('a line with no numbers is unaffected', () => {
+  assert.equal(
+    acceptRewrite({ purpose: 'report', fallback: 'You are on main.' }, 'You are on main, still.'),
+    'You are on main, still.'
+  );
+});

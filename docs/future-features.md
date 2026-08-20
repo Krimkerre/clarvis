@@ -177,6 +177,10 @@ The prompt produces the character on a capable model and a helpdesk on a small o
 `conversation, not a task` scene reproduced, nearly word for word, the live failure its own
 `looksFor` was written to catch — sincere paragraphs with a jab stapled on.
 
+**F19 is now partly enforced in code rather than asked for in a prompt** — see
+`grounded.ts` and the note in `plan.md` §7. What follows is the finding as observed, and
+the part that remains open.
+
 Worse, and the reason this is not merely cosmetic: the small model **invented figures the
 prompt forbids it to invent.** Given only *"probe-build-fail (exit 1), 40 minutes ago"* it
 produced *"failed for the 40th time"*, turning a duration into a tally.

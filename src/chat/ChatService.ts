@@ -1211,7 +1211,12 @@ export class ChatService {
       // **Without this the rewrite invents an occasion.** "A second opinion on my own
       // intelligence. Bracing." was rewritten into a reply to a compliment nobody had
       // paid, because the model was given the line and nothing about the moment.
-      'the user has just opened the picker where the model running Clarvis is chosen, and is about to change it'
+      // **First person, not "Clarvis" in the third person (F18).** A weak model asked
+      // to speak as Clarvis while also reading a sentence that refers to "the model
+      // running Clarvis" conflated the two — the reply addressed the user *as*
+      // Clarvis. Saying "you" throughout leaves only one entity in the sentence for a
+      // shaky reader to be confused about.
+      'the user has just opened the picker where they choose which model you run on, and is about to change it'
     );
 
     // Logged like every other line he says. It was not, briefly, and that made a remark

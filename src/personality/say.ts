@@ -40,6 +40,20 @@ export interface Line {
   fallback: string;
   /** Facts the rewrite must preserve exactly: branch names, counts, commands. */
   keep?: string[];
+  /**
+   * What is actually happening, when the line alone does not say.
+   *
+   * **Added after a rewrite invented its own occasion.** Clicking the bowtie produced
+   * *"Clearly a compliment from someone who hasn't seen me disagree with you yet"* — a
+   * reply to praise nobody had given. The written line behind it was *"A second opinion
+   * on my own intelligence. Bracing."*, and with nothing but that to go on, reading it as
+   * a response to a compliment is a fair inference. The model was not wrong, it was blind.
+   *
+   * Most lines carry their own occasion — a briefing about a branch is unmistakably that.
+   * A remark *about* a moment rather than *containing* it needs the moment supplied, or
+   * the rewrite is free to invent one.
+   */
+  situation?: string;
 }
 
 /**
@@ -86,6 +100,7 @@ export function rewritePrompt(line: Line): string {
   return [
     character(),
     '',
+    line.situation ? `What is happening: ${line.situation}` : '',
     `Say this: ${line.fallback}`,
     line.keep?.length ? `Include these exactly: ${line.keep.join(', ')}` : '',
     '',

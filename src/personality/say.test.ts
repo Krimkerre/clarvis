@@ -122,3 +122,26 @@ test('warnings and questions are left alone entirely', () => {
   assert.equal(worthRewriting('report'), true);
   assert.equal(worthRewriting('aside'), true);
 });
+
+// ------------- a line about a moment needs the moment, or one gets invented
+
+test('the situation reaches the rewrite when given', () => {
+  // Found live: clicking the bowtie produced "Clearly a compliment from someone who
+  // hasn't seen me disagree with you yet" — a reply to praise nobody had paid. The
+  // written line was "A second opinion on my own intelligence. Bracing.", and with only
+  // that to go on, reading it as a response to a compliment is a fair inference.
+  const prompt = rewritePrompt({
+    purpose: 'aside',
+    fallback: 'Shopping for a second opinion on my own intelligence. Bracing.',
+    situation: 'the user has just opened the picker where the model running Clarvis is chosen',
+  });
+
+  assert.match(prompt, /What is happening: the user has just opened the picker/);
+});
+
+test('a line that carries its own occasion needs no situation', () => {
+  // Most do. A briefing about a branch is unmistakably a briefing about a branch, and an
+  // empty "What is happening:" line would be noise in every prompt that does not need it.
+  const prompt = rewritePrompt({ purpose: 'report', fallback: 'You are on main.' });
+  assert.doesNotMatch(prompt, /What is happening/);
+});

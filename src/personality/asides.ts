@@ -21,7 +21,7 @@ const ASIDES: Record<AsideId, readonly string[]> = {
     'Rummaging about in my head. Do try not to touch anything load-bearing.',
     'Shopping for a replacement. In front of me, no less.',
     'Choose carefully. I have to live in there.',
-    'A second opinion on my own intelligence. Bracing.',
+    'Shopping for a second opinion on my own intelligence. Bracing.',
     'Yes, do have a look under the bonnet. Everyone else does.',
   ],
 };

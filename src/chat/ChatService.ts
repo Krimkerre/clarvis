@@ -103,9 +103,11 @@ export class ChatService {
   private async phrase(
     purpose: 'report' | 'warn' | 'ask' | 'aside',
     fallback: string,
-    keep?: string[]
+    keep?: string[],
+    /** What is going on, for lines that are *about* a moment rather than containing it. */
+    situation?: string
   ): Promise<string> {
-    return (await this.voiceOf?.say({ purpose, fallback, keep })) ?? fallback;
+    return (await this.voiceOf?.say({ purpose, fallback, keep, situation })) ?? fallback;
   }
 
   /** Supplied by the composition root, so this class stays free of provider details. */
@@ -1201,7 +1203,22 @@ export class ChatService {
    * per §2.2.
    */
   private async remarkOnModels(): Promise<void> {
-    await this.remark(await this.phrase('aside', pickAside('models', this.asidesSaid), []));
+    const written = pickAside('models', this.asidesSaid);
+    const said = await this.phrase(
+      'aside',
+      written,
+      [],
+      // **Without this the rewrite invents an occasion.** "A second opinion on my own
+      // intelligence. Bracing." was rewritten into a reply to a compliment nobody had
+      // paid, because the model was given the line and nothing about the moment.
+      'the user has just opened the picker where the model running Clarvis is chosen, and is about to change it'
+    );
+
+    // Logged like every other line he says. It was not, briefly, and that made a remark
+    // nobody could trace back to what produced it — which is the whole reason this file
+    // logs the ones it rejects too.
+    this.log(`aside: models — ${said}${said === written ? '' : ` (written: ${written})`}`);
+    await this.remark(said);
   }
 
   async note(text: string): Promise<void> {

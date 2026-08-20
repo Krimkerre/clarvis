@@ -65,21 +65,27 @@ export const SPOKEN_CEILING_SECONDS = 20;
  * What is read aloud when a reply runs past the ceiling (F20).
  *
  * **Under the ceiling, nothing changes** — he says the whole thing, which is the case
- * that was never broken. Past it, the voice gets **his own line and nothing else**: the
- * answer stays in the panel to be read, and what is heard is the part that is him.
+ * that was never broken. Past it, the voice gets the **opening sentence and his closing
+ * line**: the answer and the character, with the elaboration between them left on screen.
  *
- * **Why this rather than a shorter prompt.** Six versions of `ANSWER_SHAPE` tried to cap
- * length by asking, and the honest result was that the effect is smaller than the noise:
- * one scene returned 36s, 44s and 84s on three takes of the *same* prompt. Every version
- * that appeared to work was judged on a single take. Worse, tightening cost the character
- * — the long replies contain no padding, they are good lines making one point from
- * several angles — so trimming quantity trims the thing worth keeping. This bounds the
- * audio instead, and leaves the writing alone.
+ * **Why the pair rather than the line alone.** The first version spoke only part 2, and
+ * two things were wrong with it. A coda heard cold answers nothing — *"Everything else is
+ * logistics."* — and a four-word fragment gives a speech renderer nothing to build a
+ * contour from, so the delivery goes flat. Same voice, same settings, a quarter of the
+ * material. Two sentences carry both the sense and the intonation, and still come in
+ * around ten seconds.
  *
- * **Why the closing line specifically.** `ANSWER_SHAPE` requires part 2 to be his own —
- * an opinion, a jab, something he noticed — and puts it last. So the final sentence is
- * the character by construction, and it is the one part of a long reply that stands on
- * its own: an aside does not depend on the paragraph before it the way a conclusion does.
+ * **Why the first and last specifically.** `ANSWER_SHAPE` puts the answer first and
+ * requires part 2 to be his own — an opinion, a jab, something he noticed — and puts it
+ * last. So those two positions are the substance and the voice by construction, and the
+ * middle is where a point gets made a second and third time.
+ *
+ * **Why this is code and not a shorter prompt.** Six versions of `ANSWER_SHAPE` tried to
+ * cap length by asking, and the effect proved smaller than the noise: one scene returned
+ * 36s, 44s and 84s on three takes of the *same* prompt. Tightening also cost the
+ * character, because the long replies contain no padding — they are good lines making one
+ * point from several angles — so trimming quantity trims the thing worth keeping. This
+ * bounds the audio and leaves the writing alone.
  */
 export function spokenPart(text: string): string {
   const said = text.trim();
@@ -93,31 +99,9 @@ export function spokenPart(text: string): string {
   if (sentences.length <= 1) return said;
 
   const last = sentences[sentences.length - 1];
+  const pair = `${sentences[0]} ${last}`;
 
-  // **A line that points backwards needs the thing it points at.** `ANSWER_SHAPE` now
-  // requires part 2 to stand on its own, and this is the belt to that braces: heard
-  // alone, "Everything else is logistics." answers nothing, and the user's verdict on
-  // hearing exactly that was that it sounds stupid without the screen. When the closing
-  // line leans, the opening sentence comes with it — still no middle, still no cut
-  // mid-thought, and only when the two together stay inside the ceiling.
-  const withOpening = `${sentences[0]} ${last}`;
-  return leansBackwards(last) && spokenSeconds(withOpening) <= SPOKEN_CEILING_SECONDS
-    ? withOpening
-    : last;
-}
-
-/**
- * Whether a line depends on the sentence before it to mean anything.
- *
- * Deliberately narrow and openly incomplete: it catches the shapes actually observed
- * rather than attempting to judge coherence, which is not a thing a regex does. A false
- * negative reads one line aloud; a false positive reads two. Neither is a defect worth
- * a cleverer test.
- */
-function leansBackwards(line: string): boolean {
-  const opener = line.trim().toLowerCase();
-  return (
-    /^(everything else|the rest|that|this|those|these|it|they|either|neither|same|which|otherwise|still|then|and|but|so)\b/.test(opener) ||
-    opener.split(/\s+/).length < 4
-  );
+  // The pair when it fits, his line alone when it does not — never a third sentence, and
+  // never half of one.
+  return spokenSeconds(pair) <= SPOKEN_CEILING_SECONDS ? pair : last;
 }

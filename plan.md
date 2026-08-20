@@ -4630,12 +4630,19 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       someone across the room, not reading the screen"* — with the observed failures named
       as the shape to avoid. The calibration examples were already right about this
       (*"A commit. The repository was starting to worry."*); only the instruction was silent.
-      **And a belt to that braces, since a prompt is a hypothesis:** when the closing line
-      points backwards — an opener like *everything else*, *that*, *and*, or fewer than four
-      words — the opening sentence is spoken with it, if the two together still fit the
-      ceiling. Still no middle, still nothing cut mid-thought. On the logged replies that
-      turns *"Everything else is logistics."* into *"No. Everything else is logistics."*,
-      and leaves *"I would not leave it alone."* alone.
+      **The trim is the opening sentence and the closing line, always.** It spoke part 2
+      alone for one iteration, and the user heard two faults in it: a coda answers nothing
+      cold, and — the one no test would have caught — **a four-word fragment gives a speech
+      renderer no contour, so the delivery goes flat**. Same voice, same Fish Audio
+      settings, a quarter of the material to shape. Two sentences carry the sense and the
+      intonation and still land around ten seconds. The back-reference heuristic that
+      preceded this is deleted rather than kept beside it: the general rule covers the
+      cases it was catching. On the logged replies: *"Depends what you mean by trust. I
+      would not leave it alone."* and *"No. Everything else is logistics."*
+      **Known weak case:** an opening sentence that is one word (*"No."*) spends almost
+      none of the budget, so those replies still come in at two seconds. Filling the
+      remaining seconds with the sentences that follow would fix it and would also let a
+      third and fourth sentence back in, which is the thing this exists to stop.
       **Still `[~]`.** The trim is deterministic and tested; the *quality* of the closing
       lines is a prompt change, and prompt changes here have been refuted six times by
       output. It needs a run.

@@ -45,20 +45,20 @@ test('a reply under the ceiling is spoken whole', () => {
   assert.ok(spokenSeconds(reply) <= SPOKEN_CEILING_SECONDS);
 });
 
-test('a reply past the ceiling is spoken as his closing line alone', () => {
+test('a reply past the ceiling is spoken as its opening and his closing line', () => {
   // ~70 seconds written, which is the shape that survived six versions of the prompt.
-  const body = Array.from({ length: 8 }, (_, i) =>
+  const middle = Array.from({ length: 8 }, (_, i) =>
     `Unattended mode is what you build when you cannot see what went wrong, and that is the ${i + 1}st reason to distrust it.`
   ).join(' ');
-  const reply = `${body} I would not leave it alone.`;
+  const reply = `No, and not for a moment. ${middle} I would not leave it alone.`;
 
-  assert.equal(spokenPart(reply), 'I would not leave it alone.');
+  assert.equal(spokenPart(reply), 'No, and not for a moment. I would not leave it alone.');
   assert.ok(spokenSeconds(spokenPart(reply)) <= SPOKEN_CEILING_SECONDS);
 });
 
-test('a closing line that points backwards is given its opening sentence', () => {
+test('a coda that leans on the answer arrives with the answer', () => {
   // The line the user heard and called stupid without the screen: fine on the page, an
-  // answer to nothing on its own. Belt to `ANSWER_SHAPE`'s braces.
+  // answer to nothing on its own — and four words give a renderer no contour to speak.
   const middle = Array.from({ length: 6 }, () =>
     'You could let me write files here and I would start fixing things that are not broken yet.'
   ).join(' ');
@@ -67,15 +67,13 @@ test('a closing line that points backwards is given its opening sentence', () =>
   assert.equal(spokenPart(reply), 'No, the setup you have is clean. Everything else is logistics.');
 });
 
-test('a closing line opening with a connective leans too', () => {
-  // "And I say that as the one who would be tidying up afterwards" is one of the
-  // calibration examples, and it only works after the line it follows.
-  const middle = Array.from({ length: 6 }, () =>
-    'Unattended mode works just often enough that you convince yourself to leave it running.'
-  ).join(' ');
-  const reply = `No. ${middle} And I would be the one tidying up afterwards.`;
+test('when the pair will not fit, his line goes alone', () => {
+  // A long opening sentence cannot come along without breaking the thing it is here for.
+  const opening = `${Array.from({ length: 70 }, () => 'words').join(' ')}.`;
+  const middle = Array.from({ length: 4 }, () => 'Filler sentence that pads the reply out past the ceiling.').join(' ');
+  const reply = `${opening} ${middle} I would not leave it alone.`;
 
-  assert.equal(spokenPart(reply), 'No. And I would be the one tidying up afterwards.');
+  assert.equal(spokenPart(reply), 'I would not leave it alone.');
 });
 
 test('one long sentence is finished rather than cut in half', () => {

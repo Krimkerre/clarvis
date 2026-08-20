@@ -4422,6 +4422,20 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       `parseChallengeResult` treated anything that was not literally `FINE` as a question to
       ask — so *"Fine, that's specific enough"* became a pushback. It now fails toward
       silence: only an actual question is asked. 5 tests; 849 → 854.
+- [ ] **F13 — a local provider that isn't running says nothing at all.** Switching to
+      Ollama with its server down logs `fetch failed` twice and shows the user an empty
+      picker with no explanation. `modelPickers.ts` returns the cached list and says
+      nothing. `gitOffer.ts` is the pattern to copy — diagnose the cause, give the fix
+      specific to it, and no button where a button could only fail. A refused connection to
+      a known local port has one likely cause and a one-line fix.
+- [ ] **F14 — the character silently falls back to canned lines on a local model.** A 27B
+      via LM Studio missed both personality deadlines (`OPENING_DEADLINE_MS` 5s, briefing
+      12s), so the opening and the briefing came from the written bank. The degradation is
+      graceful and correct; **the silence is not.** Choosing a local model quietly turns the
+      product's central claim into a static bank and the only evidence is in the log. **v1
+      needs the telling, once** — a fact the user can act on. **Scaling the deadlines by
+      provider is M8j** and stays deferred; F14 is the first thing that actually needs it.
+      Not to be fixed by shortening the character (§2.1).
 - [ ] **F10 — a reload strands you on the agent's branch, with the offer gone.** When a run
       finishes with work committed, the offer to fold it back and return you home is held
       in memory in the extension host. Reload before answering and it is gone; you are left

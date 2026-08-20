@@ -184,9 +184,16 @@ not deferred.**
 
 **What:** a regex table over model ids seeding per-family defaults. `plan.md` §7, M8j.
 
-**Why deferred:** signed off as *design constraints settled, build deferred* — its only real
-customer is M9h's `shouldAsk`, and a family table with no caller is speculative
-configuration. It follows M9h parts 1–3 here.
+**Why deferred:** signed off as *design constraints settled, build deferred* — a family
+table with no caller is speculative configuration.
+
+**It now has a second caller, and a nearer one (F14, 20 Aug).** A 27B model via LM Studio
+missed both personality deadlines, so the opening line and the briefing fell back to the
+written bank. The deadlines are tuned for API latency; a local model is slower by nature and
+nothing is waiting on a briefing the way a modal is. "Local provider → longer deadlines" is
+exactly the *default seeded by family, never a capability asserted* that M8j was scoped for,
+and it is a smaller ask than M9h's `shouldAsk`. The half of F14 that ships in v1 is telling
+the user it happened; this is the half that stops it happening.
 
 ## Deferred: the milestones already marked stretch
 

@@ -32,11 +32,22 @@ const WORDS: Record<string, number> = {
   ninth: 9, tenth: 10, twentieth: 20, thirtieth: 30, fortieth: 40,
 };
 
-/** `40`, `40th`, `forty`, `fortieth` — all the same forty. */
+/**
+ * `40`, `40th`, `forty`, `fortieth` — all the same forty.
+ *
+ * **`one` and `a` are excluded from the word list**, and deliberately not spelled the same
+ * way as the rest. "One of settings.json, plan.md or app.js" is not a count of anything —
+ * it is the ordinary English sense of "a single [thing]", and reading it as `1` produced a
+ * spurious flag on `settings.json` in the 20 Aug run (see `grounded.test.ts`). Genuine uses
+ * of "one" as a number ("failed one time") are rarer here than this false-positive shape,
+ * and this check costs less by staying quiet than by crying wolf.
+ */
 function valueOf(token: string): number | undefined {
   const digits = /^(\d+)(?:st|nd|rd|th)?$/i.exec(token);
   if (digits) return Number(digits[1]);
-  return WORDS[token.toLowerCase()];
+  const word = token.toLowerCase();
+  if (word === 'one' || word === 'first') return undefined;
+  return WORDS[word];
 }
 
 /**
@@ -56,6 +67,7 @@ function valueOf(token: string): number | undefined {
  */
 const FILLER = new Set([
   'ago', 'old', 'and', 'or', 'of', 'in', 'on', 'at', 'the', 'a', 'an', 'more', 'less', 'other', 'same',
+  'not', 'sure', 'which', 'edited', 'now', 'for', 'to', 'is', 'was', 'not', 'know', 'idea',
   'i', 'you', 'he', 'she', 'it', 'we', 'they', 'them', 'us', 'me', 'him', 'her', 'this', 'that', 'these', 'those',
   'is', 'are', 'was', 'were', 'be', 'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did',
   'will', 'would', 'can', 'could', 'should', 'may', 'might', 'must',

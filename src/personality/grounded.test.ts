@@ -70,3 +70,23 @@ test('a line with no numbers is always grounded', () => {
 test('an invented figure with no precedent at all is caught', () => {
   assert.deepEqual(ungroundedClaims('That is the third time this week.', BUILD_FACTS), ['3:time']);
 });
+
+// ----------------------------------------- the false positive from the 20 Aug run
+
+test('"one of" is not a count', () => {
+  // "The last file you edited was one of settings.json, plan.md or app.js" flagged
+  // 1:settingsjson — the ordinary sense of "a single thing", not a number claim.
+  assert.deepEqual(
+    ungroundedClaims(
+      'The last file you edited was one of settings.json, plan.md or app.js.',
+      'Recently changed: settings.json, plan.md, app.js'
+    ),
+    []
+  );
+});
+
+test('a genuine count using the word "one" still needs grounding', () => {
+  // Excluding "one" from the value table trades a rare true positive for a common false
+  // one — recorded so the trade is visible rather than silently total.
+  assert.deepEqual(numberClaims('It has failed one time this week.'), new Set());
+});

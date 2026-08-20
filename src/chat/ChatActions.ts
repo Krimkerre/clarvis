@@ -202,11 +202,10 @@ export class ChatActions {
     if (action === 'forgetFailure') return this.forgetFailure(question);
 
     if (action === 'toggleMute') {
-      const muted = !this.voice.isMuted;
-      this.voice.setMuted(muted);
+      this.voice.toggleMute();
       // Noted rather than said: muting and then hearing about it is absurd, and
       // unmuting announces itself by the next thing he says.
-      return this.note(muted ? 'Silenced. I remain, in spirit.' : 'Speaking again.');
+      return this.note(this.voice.isMuted ? 'Silenced. I remain, in spirit.' : 'Speaking again.');
     }
 
     return undefined;

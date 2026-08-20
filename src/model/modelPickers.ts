@@ -90,7 +90,7 @@ export async function chooseModel(
 ): Promise<void> {
   const spec = models.spec(role);
   const current = models.model(role);
-  let catalog = await cachedModels(context, models, log, false, role);
+  let catalog = await cachedModels(context, models, log, role);
 
   for (;;) {
     const items: (vscode.QuickPickItem & { id: string })[] = [
@@ -127,7 +127,7 @@ export async function chooseModel(
     if (!picked) return;
 
     if (picked.id === '\0refresh') {
-      catalog = await cachedModels(context, models, log, true, role);
+      catalog = await refreshedModels(context, models, log, role);
       continue;
     }
 
@@ -149,20 +149,34 @@ export async function chooseModel(
  * one, and a provider being briefly unreachable should not stop someone changing
  * models. Cached per provider, so switching back and forth doesn't refetch.
  */
-async function cachedModels(
+/** What is already stored for a provider, and whether it is still worth trusting. */
+function storedCatalogue(
   context: vscode.ExtensionContext,
-  models: ModelService,
-  log: (m: string) => void,
-  force: boolean,
-  role: ModelRole = 'chat'
-): Promise<ModelChoice[]> {
-  const provider = models.spec(role).id;
+  provider: ProviderId
+): { cached: ModelChoice[]; fresh: boolean } {
   const store = context.globalState.get<CatalogStore>(CATALOG_KEY) ?? {};
   const fetched = context.globalState.get<FetchedStore>(CATALOG_FETCHED_KEY) ?? {};
 
-  const cached = store[provider] ?? [];
-  const fresh = Date.now() - (fetched[provider] ?? 0) < CATALOG_TTL_MS;
-  if (!force && fresh && cached.length > 0) return cached;
+  return {
+    cached: store[provider] ?? [],
+    fresh: Date.now() - (fetched[provider] ?? 0) < CATALOG_TTL_MS,
+  };
+}
+
+/**
+ * Asks the provider and stores what came back.
+ *
+ * `undefined` rather than an empty array when nothing usable arrived, so the two
+ * callers can each fall back to the cache — a stale list beats an empty one, and a
+ * provider being briefly unreachable should not stop someone changing models.
+ */
+async function fetchCatalogue(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void,
+  role: ModelRole
+): Promise<ModelChoice[] | undefined> {
+  const provider = models.spec(role).id;
 
   try {
     const listed = await vscode.window.withProgress(
@@ -173,23 +187,56 @@ async function cachedModels(
     if (listed.length === 0) {
       log(`model: ${provider} listed no usable models`);
       await diagnoseEmptyLocalCatalog(models, role, log);
-      return cached;
+      return undefined;
     }
 
+    const store = context.globalState.get<CatalogStore>(CATALOG_KEY) ?? {};
+    const fetched = context.globalState.get<FetchedStore>(CATALOG_FETCHED_KEY) ?? {};
     await context.globalState.update(CATALOG_KEY, { ...store, [provider]: listed });
     await context.globalState.update(CATALOG_FETCHED_KEY, { ...fetched, [provider]: Date.now() });
     log(`model: ${provider} catalogue refreshed, ${listed.length} usable models`);
-
-    if (force) {
-      void vscode.window.showInformationMessage(
-        `Clarvis: ${listed.length} usable ${models.spec(role).label} models.`
-      );
-    }
     return listed;
   } catch (error) {
     log(`model: ${provider} catalogue fetch failed (${String(error)})`);
-    return cached;
+    return undefined;
   }
+}
+
+/**
+ * The model list, from cache when it is fresh and from the provider when it is not.
+ *
+ * **Was `cachedModels(…, force: boolean, …)`**, five arguments with a flag in the
+ * middle that decided two separate things: whether to consult the cache at all, and
+ * whether to tell the user how many models turned up. Opening a picker and deliberately
+ * refreshing one are different acts, and they are two functions now. Cached per
+ * provider, so switching back and forth doesn't refetch.
+ */
+async function cachedModels(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void,
+  role: ModelRole = 'chat'
+): Promise<ModelChoice[]> {
+  const { cached, fresh } = storedCatalogue(context, models.spec(role).id);
+  if (fresh && cached.length > 0) return cached;
+
+  return (await fetchCatalogue(context, models, log, role)) ?? cached;
+}
+
+/** The list, asked for again on purpose — and said out loud, since someone asked. */
+async function refreshedModels(
+  context: vscode.ExtensionContext,
+  models: ModelService,
+  log: (m: string) => void,
+  role: ModelRole = 'chat'
+): Promise<ModelChoice[]> {
+  const listed = await fetchCatalogue(context, models, log, role);
+  if (!listed) return storedCatalogue(context, models.spec(role).id).cached;
+
+  void vscode.window.showInformationMessage(
+    `Clarvis: ${listed.length} usable ${models.spec(role).label} models.`
+  );
+  return listed;
 }
 
 /**
@@ -222,7 +269,7 @@ export async function refreshModelCatalog(
   models: ModelService,
   log: (m: string) => void
 ): Promise<void> {
-  const listed = await cachedModels(context, models, log, true);
+  const listed = await refreshedModels(context, models, log);
   if (listed.length === 0) {
     void vscode.window.showWarningMessage(
       `Clarvis: couldn't get a model list from ${models.spec().label} just now.`

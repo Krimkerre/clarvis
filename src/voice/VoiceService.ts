@@ -55,14 +55,20 @@ export class VoiceService {
   /**
    * Silences, or un-silences.
    *
+   * **A toggle, not `setMuted(muted: boolean)`.** §0 forbids the flag argument, and
+   * splitting into `mute()`/`unmute()` would have left both of them with no callers:
+   * the two call sites were `setMuted(!this.voice.isMuted)` and `const muted =
+   * !this.voice.isMuted; setMuted(muted)`. Nobody ever wanted to set a state — they
+   * wanted to flip one, and the boolean was hiding that. Deletion beats extraction.
+   *
    * Muting stops the utterance already playing *and* abandons everything queued behind
    * it. Dropping the queue is the part that is easy to miss: a paused backlog would
    * come flooding out on unmute, narrating builds that finished ten minutes ago.
    */
-  setMuted(muted: boolean): void {
-    this.muted = muted;
+  toggleMute(): void {
+    this.muted = !this.muted;
 
-    if (muted) {
+    if (this.muted) {
       const stopped = stopPlayback();
       // The system voice lives in the webview and has its own stop channel.
       this.stopSystemVoice();
@@ -75,7 +81,7 @@ export class VoiceService {
       this.log('voice: unmuted');
     }
 
-    for (const listener of this.muteListeners) listener(muted);
+    for (const listener of this.muteListeners) listener(this.muted);
   }
 
   /** How the webview's speechSynthesis is silenced; set by the composition root. */

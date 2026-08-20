@@ -850,7 +850,7 @@ export class ChatService {
     );
 
     this.panel.onDidAsk((question) => void this.ask(question));
-    this.panel.onDidToggleMute(() => this.voice.setMuted(!this.voice.isMuted));
+    this.panel.onDidToggleMute(() => this.voice.toggleMute());
     this.panel.onDidRequestClear(() => void this.confirmAndClear());
     this.panel.onDidRequestHistory(() => void this.showHistory());
     // **Reveal, not a new view.** Every command and tool call already goes to the

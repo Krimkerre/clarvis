@@ -275,8 +275,11 @@ and a model small enough to fit is a model less able to hold a tool loop togethe
 
 **LM Studio** — recommended if you have no preference. Download it, use its search to get
 a model, load it, then open the **Developer** tab and start the server. In Clarvis pick
-**LM Studio (local)**. Nothing else to configure; it listens on port 1234 and Clarvis
-already knows that.
+**LM Studio (local)**. It listens on port 1234 and Clarvis already knows that.
+
+That is enough to work. **Four of its defaults are wrong for the way Clarvis uses it**,
+though, and they cost you speed rather than causing errors — see *Making LM Studio quick*
+below.
 
 **Ollama** — pick this if you already run it. Models are pulled from a terminal
 (`ollama pull qwen2.5-coder:7b`), and the server runs on port 11434, which Clarvis also
@@ -313,9 +316,62 @@ rather than a shopping list.
 **Prefer 4-bit at a larger size over 8-bit at a smaller one.** They cost about the same
 memory and the larger model is generally the better one.
 
-**Two models or one.** You can point chat and coding at different models, but if both run
-through the same local server it will swap them in and out and everything gets slower.
-On one machine, pointing both at a single capable model is usually the better trade.
+**Two models or one.** You can point chat and coding at different models, and on LM Studio
+you should: a small quick model answers questions without keeping you waiting, while a
+larger one writes the code. Both stay loaded at once, so nothing is swapped in and out —
+**provided you turn off the setting that evicts them**, which is the first item in *Making
+LM Studio quick* below. Leave that setting alone and every switch between answering and
+working reloads a model from disk, which is the slowest thing that can happen here.
+
+If memory is tight, one capable model for both is still a perfectly good trade.
+
+### Making LM Studio quick
+
+Its defaults suit someone chatting in the app itself, not a tool driving it. None of these
+cause errors — they cost you speed, and one of them costs a great deal.
+
+**You have to make the controls visible first.** In **Settings → General**, raise **user
+interface complexity** to its higher setting, then switch on **Developer mode**. Until you
+do, most of what follows is hidden.
+
+| Setting | Default | Set it to | Why |
+|---|---|---|---|
+| **Unload previous JIT model on load** | on | **off** | The big one. Loading your coding model throws out your chat model, and the reverse — so every switch between answering and working reloads a model from disk. Off, both stay put. |
+| **JIT model TTL** | on, 1 hour | **off** | Unloads a model that has been idle. The next thing Clarvis says then waits for it to load again. |
+| **Model loading guardrails** | high | one or two notches lower | A safety limit on how much of your memory a model may take. Set high, it refuses larger models outright — and it is why a model that fits may still refuse to load. |
+| **Context length** | 8192 | leave it, or 4096 for the chat model | Reserved memory for the conversation. Chat needs far less than coding does. |
+
+**Two more, set per model rather than globally.** Turn on **Settings → General →
+"Configure load parameters before loading"**, and LM Studio shows a panel each time you
+load a model:
+
+- **Parallel Sessions** → **1**. It reserves room for several answers at once by default;
+  Clarvis asks for one at a time, and the rest is memory you are not using.
+- **Context Length** → 4096 is plenty for the chat model; leave the coding model higher,
+  since it actually reads your files.
+
+Save those as the model's **config preset** and loads from then on inherit them, including
+the automatic ones. If you prefer a terminal, the same thing:
+
+```bash
+lms load <your-chat-model>   --parallel 1 --context-length 4096
+lms load <your-coding-model> --parallel 1 --context-length 8192
+lms ps
+```
+
+`lms ps` should then list both models with an empty TTL column. If only one is listed after
+you have used both, the first setting in the table above did not take.
+
+**If a model nearly fits but not quite**, look for **KV cache quantization** in the load
+panel. It compresses the memory the conversation itself takes, which is often the
+difference between a larger model loading and not. On Apple Silicon (MLX) that is the
+memory lever worth reaching for.
+
+**A note on speculative decoding**, which you will see in the load options and which is
+genuinely fast where it applies: it pairs a large model with a tiny one that guesses ahead.
+**It appears to apply to GGUF models rather than Apple Silicon's MLX ones** — the option is
+accepted on an MLX model without complaint and there is no sign it does anything. Worth a
+try if your models are GGUF; do not spend an evening on it if they are MLX.
 
 **A slow model has one visible cost.** Clarvis writes his own lines — the greeting, the
 briefing, the remarks — and gives that a few seconds before falling back to written ones.

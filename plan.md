@@ -4526,8 +4526,8 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       17 tests, built against the verbatim strings from both models. **Covers rewritten
       lines only**; a free-form chat reply has no written fallback to fall back *to*, and
       that half stays open.
-- [ ] **F20 — replies run three to four times over the spoken ceiling, worst on the best
-      model.** `voiceCheck` flags anything past **20 seconds spoken**. An A/B on 20 Aug put
+- [~] **F20 — replies run three to four times over the spoken ceiling, worst on the best
+      model. Prompt tightened 20 Aug; NOT yet verified against the model that showed it.** `voiceCheck` flags anything past **20 seconds spoken**. An A/B on 20 Aug put
       Llama 3.1 8B at 22s and 42s on two chat scenes, and **Haiku 4.5 at 73s and 77s** on
       the same ones. The long answers are good — dry, specific, in character — and §2.1
       names length creep as *the most likely failure* of this prompt, to be answered by
@@ -4536,6 +4536,23 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       the parrot check once, on Haiku only, quoting a calibration example back verbatim —
       one occurrence, but capable models are the ones able to notice and reuse the
       examples.
+      **Cause, found 20 Aug: the prompt granted the length.** `ANSWER_SHAPE` enforces two
+      sentences for project questions *because the reply is read aloud* — and the next
+      line then exempted every other question from that same reasoning, granting
+      "whatever room it actually needs" and telling it not to "amputate a real answer to
+      hit a length". Haiku's 73s and 77s were on exactly that branch. It was obeying.
+      **Fix:** the ceiling is now a number the model can count against and is tied to the
+      reason it exists — *"fifty words is the twenty seconds it takes to say. Aim under
+      fifty, never run past eighty."* The anti-amputation rule is kept as an escape hatch
+      (give the short version, name what you left out) rather than as a licence. §2.1's
+      tightening, not more adjectives.
+      **Why this stays open rather than ticked.** §2.1: a prompt is a hypothesis until the
+      output is read. A/B on `meta-llama-3.1-8b`, three runs each, same scene that produced
+      42s on it before: median **40w → 35w**, worst case **66w → 39w**. Right direction and
+      a tighter spread — but that model stayed inside the ceiling in *both* arms this time,
+      so **the failure condition was not reproduced**. The evidence for F20 was Haiku 4.5 at
+      73–77s, and this fix has never been run against it. Ticking it needs one `voiceCheck`
+      pass on Anthropic.
 - [x] **F22 — a run's own leaked narration poisoned every later chat question. Fixed 20 Aug.**
       A weak local model's closing summary quoted its raw `STEP:` instructions and tool
       output verbatim instead of summarising, spoke all 836KB of it aloud, and — because

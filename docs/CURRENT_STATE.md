@@ -27,6 +27,7 @@ before this file.
 | `plan.md` | Current spec — concept, personality rules, every feature (§4), milestones and their exit checklists (§7), success criteria (§9). The normative document. |
 | `docs/risks.md` | The risk register — what could go wrong, and what is already done about it. Was `plan.md` §8. |
 | `docs/future-features.md` | The v1 boundary — what is deferred past the first release and why. Pairs with `plan.md` §7 M11, which holds the release bar itself. |
+| `docs/benchmarks.md` | Measured comparison of local models against Clarvis's two roles — timings against the real deadlines, tool-call reliability, and the pre-download screen. Harness lives in `clarvis-firstrun`. |
 | `docs/verification.md` | The checks still to be run by hand, needing a real editor, provider or OS. Was `plan.md` §10. |
 | `docs/build-log.md` | Chronological history — every defect found by using the product, and why each fix looks the way it does. Not shipped in the `.vsix` (see `.vscodeignore`). Read when you need to know *why* a decision was made, not *what* the product currently does. |
 | `README.md` | The user-facing pitch and feature list, and the index of every document here — the front door. |

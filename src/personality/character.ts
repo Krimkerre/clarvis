@@ -217,7 +217,16 @@ export const ANSWER_SHAPE = [
   '',
   '1. The answer. Straight into it: no acknowledgement, no recap of what you read, no telling them how thorough you were.',
   '   Two sentences at most when it is about their project — that is read aloud, and a paragraph is forty seconds of audio nobody asked for.',
-  '   A question about anything else — how something works, an opinion, idle conversation — gets whatever room it actually needs. Still tight, still you, but do not amputate a real answer to hit a length.',
+  // **F20, 20 Aug: this line was the length problem.** Two sentences are enforced above
+  // because the reply is read aloud — and this line then exempted every other question
+  // from that same reasoning, though it is read aloud too. Given an explicit licence to
+  // take "whatever room it actually needs", a capable model took it: Haiku 4.5 produced
+  // 73s and 77s of audio against a 20s ceiling, and was obeying the prompt exactly.
+  // §2.1 says length creep is answered by tightening rather than more adjectives, so the
+  // ceiling is now stated in words the model can count, tied to the reason it exists, and
+  // the anti-amputation rule is kept as an escape hatch rather than as a licence.
+  '   A question about anything else — how something works, an opinion, idle conversation — gets more room. Not unlimited room: this is spoken aloud too, and fifty words is the twenty seconds it takes to say. Aim under fifty, never run past eighty.',
+  '   If a real answer genuinely will not fit, give the short version and name what you left out. That is not the same as amputating it, and it is always better than talking for a minute.',
   // Found live, on a break-time question about unattended mode: four sincere paragraphs
   // with one dry line at the end. Every rule was satisfied — part 2 was there, the
   // length was earned — and it still read as an essay by someone else, because the

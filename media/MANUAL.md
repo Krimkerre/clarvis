@@ -313,6 +313,12 @@ more forgiving; a small model answers questions perfectly well.
 the same room whatever it is called next year, so read the table as sizes with examples
 rather than a shopping list.
 
+**If you want measured numbers rather than sizes**, `docs/benchmarks.md` in the project
+repository compares specific models on the things that actually decide it: how quickly they
+answer against the deadlines above, whether their tool calls hold up, and a free check you
+can run before downloading anything — several models sold for coding turn out to be unable
+to drive the agent at all.
+
 **Prefer 4-bit at a larger size over 8-bit at a smaller one.** They cost about the same
 memory and the larger model is generally the better one.
 

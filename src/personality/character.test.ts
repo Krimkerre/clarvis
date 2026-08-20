@@ -63,8 +63,16 @@ test('the answer shape requires a line of his own, rather than banning things', 
   assert.match(ANSWER_SHAPE, /Two sentences at most when it is about their project/);
   // A question about anything else is not a project question wearing a disguise, and
   // amputating a real answer to hit a length made him useless for the other half of
-  // what people actually ask.
-  assert.match(ANSWER_SHAPE, /whatever room it actually needs/);
+  // what people actually ask. So it still gets more than the two-sentence project rule...
+  assert.match(ANSWER_SHAPE, /gets more room/);
+  assert.match(ANSWER_SHAPE, /give the short version and name what you left out/);
+
+  // ...but **not unlimited room** (F20). This assertion replaced `whatever room it
+  // actually needs`, which was the licence a capable model took at its word: Haiku 4.5
+  // produced 73s and 77s of audio against a 20s ceiling while obeying the prompt exactly.
+  // The ceiling has to be a number the model can count against, not an adjective.
+  assert.match(ANSWER_SHAPE, /Aim under fifty, never run past eighty/);
+  assert.doesNotMatch(ANSWER_SHAPE, /whatever room it actually needs/);
 });
 
 test('the examples are marked as a register rather than a script', () => {

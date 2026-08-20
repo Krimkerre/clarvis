@@ -1188,13 +1188,20 @@ export class ChatService {
   /**
    * A word about being tinkered with, when the model picker is opened.
    *
-   * Recorded, not spoken. The picker is about to take the screen and a spoken line would
-   * be talking over it — and unlike a briefing, nothing here is worth waiting for. It
-   * still goes through `phrase('aside')`, so the written line is a fallback rather than
-   * the script.
+   * **Spoken as well as written**, via `remark()` rather than `note()`. It shipped silent
+   * for a few minutes on the reasoning that a spoken line would talk over the picker
+   * opening; `speechScope.ts` had already settled that argument and settled it the other
+   * way — *"silencing it only in audio meant the voice carried the dull half of his
+   * character and the text carried the funny half."* Which is exactly what a mute joke is.
+   *
+   * Nothing waits on it either way: the line and the picker are dispatched together, so
+   * the speech arrives while the list is already on screen.
+   *
+   * The written line is a fallback, not the script — it leaves through `phrase('aside')`,
+   * per §2.2.
    */
   private async remarkOnModels(): Promise<void> {
-    await this.note(await this.phrase('aside', pickAside('models', this.asidesSaid), []));
+    await this.remark(await this.phrase('aside', pickAside('models', this.asidesSaid), []));
   }
 
   async note(text: string): Promise<void> {

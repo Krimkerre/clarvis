@@ -267,6 +267,39 @@ not wrong without it.
 all four settings — and correcting a claim that two models "will swap them in and out and
 everything gets slower", which described a **setting** as if it were a limitation.
 
+## Deferred: the model that works is a *build*, not a model (F30, F31, F32)
+
+**What happened.** `granite-4.0-h-tiny` — IBM's 3.9 GB MoE, the fastest model measured here
+and the only small mixture-of-experts with a tool path and no reasoning — passed the
+benchmark 3/3 on tools and then lost the filename on **8 of 8** ordinary requests. The model
+was blameless: it emitted a correct call whose `arguments` were a JSON string, and **LM
+Studio's MLX parser discarded it** (F30). The same weights in the GGUF build, on llama.cpp,
+get 8 of 8 and recover from a bad path — at roughly twice `qwen2.5-coder-7b`'s rate.
+
+**Nothing here is fixable in Clarvis**, which is why this is a register entry rather than a
+blocker. The call is destroyed inside the server before it is streamed; the extension sees a
+`readFile` with no `path` and cannot tell that from a model that fumbled. Reporting it
+upstream is the only repair, and LM Studio's tracker already carries this class of bug for
+three other model families.
+
+**What it changes here is the method, and that part is done:**
+
+- **The harness measured a mode the product never uses** (F31). Both tool tests sent
+  `stream: false`; Clarvis streams everything. Fixed — they stream and reassemble deltas as
+  `absorbToolDeltas` does, run eight phrasings instead of one, and score a call whose
+  arguments never arrive as its own outcome rather than as a pass or as silence.
+- **`screen.py` was rewritten** to *render* a chat template rather than grep it (F32), with
+  a `--validate` mode checked against models whose behaviour was established by running
+  them. Six defects in the new version were caught that way before it was trusted.
+- **A repack can ship a different template than its upstream model** (F32):
+  `LFM2-24B-A2B` renders a tool call upstream and cannot in its LM Studio build. Screen the
+  repository you will actually download.
+
+**What stays deferred.** Nothing in the product. `docs/benchmarks.md` carries the numbers and
+the method; if a benchmark command is ever built (next section), the streamed tool test and
+the several phrasings are the part worth keeping, because the single-phrase unstreamed check
+is what passed a broken build.
+
 ## Deferred: a benchmark command, because `voiceCheck` is most of one already
 
 **What:** `Clarvis: Debug — Benchmark Model`, beside `Clarvis: Debug — Voice Check`. Run

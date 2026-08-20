@@ -134,6 +134,15 @@ implementations and rewritten:
 
 ## Screening: two checks worth doing before downloading anything
 
+> **Rewritten 20 Aug (late), and the results below predate it.** `screen.py` matched marker
+> strings in a chat template; it now *renders* the template with Jinja and reads the output,
+> and validates itself against models whose behaviour was established by running them (F32).
+> Two consequences for the table that follows. **A verdict belongs to a build, not a model** —
+> `LFM2-24B-A2B` renders a tool call upstream and cannot in its LM Studio repack, so the
+> rejection below is right about the build and wrong in its stated reason. And **a tool path
+> is not proof of working tools**: `granite-4.0-h-tiny` renders a perfect one and is still
+> unusable on the MLX runtime (F30).
+
 Both learned the expensive way, both free — and **the screen itself was wrong twice before
 it was right**, which is recorded below because a screening table nobody has tested is the
 most dangerous kind of confident artifact.
@@ -191,6 +200,12 @@ away exactly the speed MoE is bought for.)*
 **A pattern worth knowing before hunting:** among non-Qwen MoE models in this size range,
 **every one with a tool-call path is a reasoning model**, and the two that are not have no
 tool path. That is a fact about what has been published, not a preference.
+
+***Withdrawn 20 Aug (late).*** `granite-4.0-h-tiny` — IBM, 3.9 GB, `granitemoehybrid`, 64
+experts with 6 active — has a tool path, no reasoning, and is the fastest model in this
+document. It was missed because nothing had screened IBM's line. `LFM2.5-8B-A1B` (4.8 GB)
+is a second counter-example. The sentence was true of the models that had been looked at,
+which is not the same thing.
 
 ### The screen was wrong twice — both bugs are instructive
 
@@ -359,6 +374,48 @@ original verdict.
 
 ---
 
+## Late on 20 Aug: granite, and what it cost to find out
+
+Run after everything above, with `qwen2.5-coder-7b-instruct` re-measured the same evening as
+a control — the machine is fanless and a table measured on another day flatters or punishes
+for reasons that are not the model. The control reproduced itself (29.5 → 28.5 tok/s), so
+these rows are comparable.
+
+| build | GB | tok/s | TTFT | tools (8 phrasings, streamed) | recovery |
+|---|---:|---:|---:|:---:|---|
+| `granite-4.0-h-tiny` · **GGUF**, llama.cpp | 4.2 | **55.2** | **0.06** | **8/8** | used-result |
+| `granite-4.0-h-tiny` · MLX | 3.9 | **94.5** | 0.13 | **1/8**, 7 arguments lost | never reached |
+| `qwen2.5-coder-7b-instruct` (control) | 4.3 | 28.5 | 0.24 | 8/8 | used-result |
+
+**The same model, two packagings, opposite outcomes** — the MLX runtime's parser discards
+its tool calls (F30). On GGUF it is usable and roughly twice the control's rate; on MLX it is
+fast and cannot ask for a file.
+
+**Co-resident, granite (MLX) + `qwen2.5-coder-7b`, 8.2 GB:** neither degraded. Granite reached
+a full 300-character spoken line in **0.65s** against the control's **2.43s**, and the
+control kept its `used-result` recovery — which `ministral-8b` did not, when it shared memory.
+Even with its tools broken, granite is a candidate for the *talking* role, which never calls
+a tool.
+
+**Screened, not downloaded** (with the rewritten screen, against the exact builds):
+
+| build | GB | MoE | tools | thinking |
+|---|---:|---|:---:|---|
+| `LFM2.5-8B-A1B-MLX-4bit` | 4.8 | 4/tok | yes | none in template |
+| `Ministral-3-8B-Instruct-2512-4bit` | 5.6 | — | yes | none |
+| `gemma-4-E4B-it-MLX-4bit` | 6.9 | — | yes | optional |
+| `Qwen3.8-27B-MLX-4bit` | 16.1 | — | yes | over budget |
+| `Qwen3.6-35B-A3B-4bit` | 20.4 | 3/tok | yes | over budget |
+
+**Two corrections to earlier rejections.** `gemma-4` has a tool path where `gemma-3` had
+none, so that family is worth revisiting. And **Qwen3.8 has no small MoE** — the generation
+shipped a 27B dense model and a 2.4T-A95B one, nothing between.
+
+**One trap, recorded because it produced a clean-looking wrong answer.** With two builds of
+one model installed, the bare identifier `granite-4.0-h-tiny` is ambiguous and LM Studio
+resolved it to the other build — two identical score rows that were the same model measured
+twice. Compare builds by full `author/model` identifier.
+
 ## Recommendation
 
 **One model, both roles: `qwen2.5-coder-7b-instruct` — 4.3 GB.**
@@ -372,6 +429,13 @@ it leaves roughly 19 GB of a 24 GB machine alone and needs no second model.
 time-to-first-token (0.22s vs 0.62s) and score identically on accuracy — but that measures
 how fast each *starts*, and the 14B generates at 9.6 tok/s against the 7B's 29.5. On a
 long answer that is the difference between four seconds and twelve.
+
+**Open, as of late 20 Aug: `granite-4.0-h-tiny` (GGUF) may beat this.** It is twice the
+rate, starts faster, gets 8/8 streamed tool calls and recovers correctly — on a sample of
+eight requests and three recovery runs, against the full suite behind the recommendation
+above. It has not been run through the whole benchmark, and the recommendation does not move
+until it has. **Take the GGUF build; the MLX build of the same model cannot ask for a file
+(F30).**
 
 **If you want two:** add `meta-llama-3.1-8b-instruct` (4.5 GB) on chat, which produced the
 closest thing to the character in this whole run — *"Your build has once again failed,

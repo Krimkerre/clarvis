@@ -167,6 +167,35 @@ switch that silently does nothing on some models is worse than no switch. **M8i 
 (stripping reasoning out of the transcript and the spoken output) is a v1 blocker and is
 not deferred.**
 
+**What the hosted half actually looks like, checked 20 Aug.** On the Anthropic API this is
+`output_config: { effort: "low" | "medium" | "high" | "xhigh" | "max" }` — nested inside
+`output_config` rather than top-level, GA with no beta header, defaulting to `high`. It
+governs thinking depth and total token spend together, so lower effort is faster and
+cheaper in one dial. `AnthropicProvider.ts` sends nothing of the kind today: `model`,
+`max_tokens: 4096`, `stream`, `system`, `messages`, and tools.
+
+**And it is exactly the failure this register warns about.** `effort` is accepted on Opus
+5, Sonnet 5, Opus 4.8/4.7/4.6 and Sonnet 4.6 — and **rejected with a 400 on Haiku 4.5**,
+which is the model this project has been running its voice checks against. Sending it
+unconditionally would break the default setup; sending it silently-ignored on the
+OpenAI-compatible path would be the switch-that-does-nothing this entry was written about.
+So the original reasoning stands, with a concrete example attached rather than a principle.
+
+**Why it is worth building anyway, when it is built.** The chat role has 2-5 second
+deadlines and F14 exists because missing them turns the character into a static bank of
+written lines. Effort is the only dial on the hosted path that trades depth for speed:
+`low` on a capable model may clear a 2s deadline that `high` never will, and the agent role
+— which has no deadline and wants correctness — wants the opposite setting. That argues for
+**two settings rather than one**, `clarvis.chat.effort` and `clarvis.agent.effort`, both
+unset by default so the API's own default applies.
+
+**What it needs before it ships:** a capability gate with the shape `supportsTools` already
+has — probed or table-driven, never assumed — because the failure mode is a 400 on the
+user's default model rather than a quiet no-op. The OpenAI-compatible path stays out until
+someone verifies against a live endpoint what each server does with an unknown field;
+today's record on assuming wire behaviour is F30, where a correct tool call was discarded
+by a parser and nobody could see it.
+
 ## Deferred: model-family recognition (M8j)
 
 **What:** a regex table over model ids seeding per-family defaults. `plan.md` §7, M8j.

@@ -14,6 +14,17 @@ import { SseParser, decodeStream } from './sse';
 const API_VERSION = '2023-06-01';
 
 /**
+ * What one request is allowed to spend, and what it may call.
+ *
+ * One argument rather than two positional ones because the two co-vary: the tool loop
+ * gets tools and the larger budget, a plain reply gets neither.
+ */
+interface RequestBudget {
+  maxTokens: number;
+  tools?: unknown[];
+}
+
+/**
  * The Anthropic Messages API.
  *
  * Its own adapter rather than a special case of the OpenAI one: the system prompt is a
@@ -146,7 +157,7 @@ export class AnthropicProvider implements ModelProvider {
    * truncated object that looks plausible, which is worse than failing.
    */
   async *streamWithTools(request: CompletionRequest): AsyncIterable<StreamEvent> {
-    const response = await this.post(request, anthropicTools(request.tools));
+    const response = await this.post(request, { maxTokens: 4096, tools: anthropicTools(request.tools) });
     const parser = new SseParser();
 
     // Assembled per content block, keyed by the index Anthropic assigns.
@@ -215,8 +226,17 @@ export class AnthropicProvider implements ModelProvider {
     }
   }
 
-  /** Shared request setup, so the two streams cannot drift apart. */
-  private async post(request: CompletionRequest, tools?: unknown[]): Promise<Response> {
+  /**
+   * Shared request setup, so the two streams cannot drift apart.
+   *
+   * They had. `stream()` used to build its own `fetch` rather than call this, and the
+   * two copies were extended separately — leaving Anthropic with two undocumented
+   * token budgets, 4096 here and 2048 there, and nothing recording that the difference
+   * was meant. It is meant: a plain reply is one answer and a tool loop is many turns.
+   * Passing it in is what makes that a decision at the call site rather than a
+   * discrepancy between two blocks nobody reads together.
+   */
+  private async post(request: CompletionRequest, budget: RequestBudget): Promise<Response> {
     const key = await this.getKey();
     if (!key) {
       throw new ModelError('No Anthropic key set. `/key` sorts that out.', 'no api key stored');
@@ -232,11 +252,12 @@ export class AnthropicProvider implements ModelProvider {
       },
       body: JSON.stringify({
         model: request.model,
-        max_tokens: 4096,
+        max_tokens: budget.maxTokens,
         stream: true,
+        // Top-level, not a message — the shape difference this adapter exists for.
         system: request.system,
         messages: request.messages.map(toAnthropicMessage),
-        ...(tools ? { tools } : {}),
+        ...(budget.tools ? { tools: budget.tools } : {}),
       }),
     });
 
@@ -250,40 +271,19 @@ export class AnthropicProvider implements ModelProvider {
     return response;
   }
 
+  /**
+   * The plain reply stream — no tools offered, and a smaller budget for that reason.
+   *
+   * `messages` now goes through `toAnthropicMessage` like the tool path's does. That is
+   * not a behaviour change: only `AgentRunner` ever attaches tool calls or results to a
+   * message, and `AgentRunner` uses `streamWithTools`. For every message that reaches
+   * here the mapping returns `{ role, content }` — the object it was handed.
+   */
   async *stream(request: CompletionRequest): AsyncIterable<string> {
-    const key = await this.getKey();
-    if (!key) {
-      throw new ModelError('No Anthropic key set. `/key` sorts that out.', 'no api key stored');
-    }
-
-    const response = await fetch(`${this.baseUrl}/v1/messages`, {
-      method: 'POST',
-      signal: request.signal,
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': API_VERSION,
-      },
-      body: JSON.stringify({
-        model: request.model,
-        max_tokens: 2048,
-        stream: true,
-        // Top-level, not a message — the shape difference this adapter exists for.
-        system: request.system,
-        messages: request.messages,
-      }),
-    });
-
-    if (!response.ok) {
-      throw describeHttpFailure(response.status, await response.text(), this.spec.label);
-    }
-    if (!response.body) {
-      throw new ModelError('Anthropic sent nothing back.', 'empty response body');
-    }
-
+    const response = await this.post(request, { maxTokens: 2048 });
     const parser = new SseParser();
 
-    for await (const chunk of decodeStream(response.body)) {
+    for await (const chunk of decodeStream(response.body!)) {
       for (const payload of parser.push(chunk)) {
         try {
           const event = JSON.parse(payload) as {

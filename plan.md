@@ -4410,6 +4410,37 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       above and wins over anything it contradicts, including an earlier interview
       answer** — because a rejection reason is frequently not a reason but an
       instruction. 5 tests; 877 → 882.
+- [x] **F24 — "Stop" stops the model and then speaks the reply anyway. Fixed 20 Aug.** Observed 20 Aug on
+      Qwen 3.5 2B: the user typed a stop, got `Stopped.`, and then got **nineteen seconds**
+      of the cancelled reply read aloud — including the model's reasoning about the work it
+      was about to do. **Cause:** both reply paths end with an unconditional
+      `if (spoken.trim()) { note(); voice.say(); }`. The abort ends the stream, the loop
+      exits, and the accumulated partial reply is committed and spoken regardless.
+      `withModel` even logs `stream aborted by the user` immediately before doing it. Rule 2
+      — it acts against the one decision the user most needs honoured. Same family as F23:
+      a stop that cancels the model without stopping the mouth. **Fix:** `afterReply()` in a
+      new pure `replyDelivery.ts` decides what happens to a finished stream, and a shared
+      `Replier.deliver()` applies it — because the ending was *duplicated* rather than
+      shared, which is how one path came to speak a cancelled reply while the other did the
+      same thing forty lines away. The partial text is **kept** (it was streamed to the
+      panel as it arrived, so deleting it would be a second surprise) and simply never
+      spoken; the log says plainly that it was stopped, so nothing later mistakes a partial
+      reply for a finished thought. 5 tests; 956 → 961.
+- [x] **F25 — `listFiles` and `search` leak a raw ENOENT, absolute path and all. Fixed 20 Aug.** Observed
+      20 Aug in the chat transcript, not merely the log: non-`text` tool events are posted
+      straight into the chat stream by `Replier.withTools`, so `ENOENT: no such file or
+      directory, scandir '/Users/…/src/main.go'` was shown to someone asking about a
+      parrot. Rule 3. **The fix is already written one function away:** `readFile` catches
+      exactly this and explains what to do instead, and its comment predicts the
+      consequence of not doing so — *"the error that arrives after a path mistake is itself
+      an argument for repeating it"*. The same log then shows the model repeating the bad
+      path four more times. `listFiles` called `fs.readdir` with no catch; `search` inherits
+      it. **Fix:** the sentence is now composed once (`missingPath()`, §2.2) and `listFiles`
+      guards its entry point exactly as `readFile` always did — naming the path the caller
+      asked for, never the resolved absolute one. Verified against the literal failing call
+      from the log. Separately, and marked as the judgement it is rather than an observed
+      defect: a subdirectory that cannot be read now loses that subdirectory rather than the
+      whole listing. 2 tests; 961 → 963.
 - [ ] **M8i part 1 — reasoning blocks stripped** from the transcript and the spoken output.
       Predicted, not yet observed: verify against a real MLX model in runbook session 4
       first, then fix. Leaking `<think>` into the chat and reading it aloud is the clearest

@@ -266,6 +266,18 @@ this, that a prompt tuned against a weak model's output sounds like a prompt on 
 **third caller**, alongside F14's deadlines and F16's step budgets. Three independent
 findings all wanting the same mechanism is the argument for building it.
 
+**F26 (20 Aug) is the sharpest evidence yet, and it answers "what does the floor cost?"**
+Told about a YouTube video, a 2B model invented a career for the band in it — *"a well-known
+duo… featured on shows like 'Can You Feel My Heart'… performed at major festivals"* — with
+the song title re-described as a television show. `grounded.ts` cannot catch it: every claim
+is non-numeric, there are no given facts to check it against because the subject is the
+world rather than the project, and it ran on `AgentRunner`'s narration, which the guard does
+not cover. **So the cost of the capability floor is the user being told a confident
+falsehood about the real world, in his voice.** In the same session, insulted by the user,
+the same model dropped the character entirely for *"I am an AI assistant designed to be
+helpful and harmless"* and refused a request nobody had made — the opposite failure, and
+the same cause.
+
 **The nearer half, and it is nearly free:** the manual now actively helps someone choose an
 8B, and says nothing about what they lose. One honest paragraph — a small model answers
 questions perfectly well and will sound less like him, and may state a number it invented —

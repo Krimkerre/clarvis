@@ -9,6 +9,7 @@ import { ideaPrompt, parseIdeaResult } from './ideaPrompt';
 import { challengePrompt, parseChallengeResult } from './challengePrompt';
 import { synthesizeAnswerPrompt, cleanSynthesizedAnswer, discardsOriginalAnswer } from './synthesizePrompt';
 import { researchWorkspace } from './workspaceResearch';
+import { withDeadline } from '../model/deadline';
 import { describeWorkspaceSignals } from './workspaceSignals';
 
 /**
@@ -204,16 +205,23 @@ async function challengeAnswer(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: challengePrompt(topic, answer.text!, state) }] },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > 400) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: challengePrompt(topic, answer.text!, state) }], signal },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > 400) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const result = parseChallengeResult(text);
     if (result.fine) {
@@ -261,16 +269,23 @@ async function synthesizeAnswer(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: synthesizeAnswerPrompt(topic, original, followUpQuestion, followUpAnswer) }] },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > 500) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: synthesizeAnswerPrompt(topic, original, followUpQuestion, followUpAnswer) }], signal },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > 500) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const cleaned = cleanSynthesizedAnswer(text);
     if (!cleaned) {
@@ -310,16 +325,23 @@ async function answerQuestionBack(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: answerBackPrompt(topic, question, state) }] },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > 500) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: answerBackPrompt(topic, question, state) }], signal },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > 500) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
     return text.trim() || undefined;
   } catch (error) {
     log(`planning: "${topic}" — answering a question back failed (${String(error)})`);
@@ -400,16 +422,23 @@ async function offerIdeas(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: ideaPrompt() }] },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > 800) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: ideaPrompt() }], signal },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > 800) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const ideas = parseIdeaResult(text);
     if (ideas.length === 0) {
@@ -466,21 +495,29 @@ async function resolveProjectName(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        {
-          system: interviewSystemPrompt(),
-          // A working title is not an answer: asked to detect a name, the model
-          // finds the one it just invented and the question answers itself.
-          messages: [{ role: 'user', content: namePrompt(seed, workingTitle !== undefined) }],
-        },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > 400) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            {
+              system: interviewSystemPrompt(),
+              // A working title is not an answer: asked to detect a name, the model
+              // finds the one it just invented and the question answers itself.
+              messages: [{ role: 'user', content: namePrompt(seed, workingTitle !== undefined) }],
+              signal,
+            },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > 400) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const result = parseNameResult(text);
     if ('named' in result && !workingTitle) {
@@ -748,13 +785,20 @@ async function pickLanguageForUser(
     ].join('\n');
 
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream({ system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }] }, 'chat')) {
-        text += fragment;
-        if (text.length > 400) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream({ system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }], signal }, 'chat')) {
+            text += fragment;
+            if (text.length > 400) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const [name, ...rest] = text.trim().split('|').map((part) => part.trim());
     const chosen = options.find((option) => option.name.toLowerCase() === name?.toLowerCase());
@@ -794,20 +838,26 @@ async function phraseQuestion(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: interviewSystemPrompt(), messages: [{ role: 'user', content: interviewQuestionPrompt(topic, state) }] },
-        'chat'
-      )) {
-        text += fragment;
-        // Every topic but language is one sentence; language is a 2-4 option shortlist
-        // and this cap was cutting it off mid-option before it reached "you pick" — the
-        // exact truncation seen live. Give it real headroom instead of none.
-        if (text.length > (topic === 'language' ? 2000 : 400)) break;
-      }
-    })();
-
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, PHRASE_TIMEOUT_MS))]);
+    await withDeadline(
+      PHRASE_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            { system: interviewSystemPrompt(), messages: [{ role: 'user', content: interviewQuestionPrompt(topic, state) }], signal },
+            'chat'
+          )) {
+            text += fragment;
+            // Every topic but language is one sentence; language is a 2-4 option shortlist
+            // and this cap was cutting it off mid-option before it reached "you pick" — the
+            // exact truncation seen live. Give it real headroom instead of none.
+            if (text.length > (topic === 'language' ? 2000 : 400)) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     // Every topic but language is genuinely one sentence, and truncating to the first
     // line has caught a stray blank line from the model harmlessly. Language is not:

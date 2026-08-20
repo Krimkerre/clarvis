@@ -4495,12 +4495,42 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       future version of this bug, however it starts, cannot poison a session forever. 8
       tests (`thread.test.ts` — no test file existed for this module before, despite being
       written and documented as pure and testable). 936 → 942.
-- [ ] **F13 — a local provider that isn't running says nothing at all.** Switching to
-      Ollama with its server down logs `fetch failed` twice and shows the user an empty
-      picker with no explanation. `modelPickers.ts` returns the cached list and says
-      nothing. `gitOffer.ts` is the pattern to copy — diagnose the cause, give the fix
-      specific to it, and no button where a button could only fail. A refused connection to
-      a known local port has one likely cause and a one-line fix.
+- [x] **F13 — a local provider that isn't running says nothing at all. Fixed 20 Aug.**
+      Switching to Ollama with its server down logged `fetch failed` twice and showed the
+      user an empty picker with no explanation — `modelPickers.ts` returned the cached list
+      and said nothing to the user, only the log. **Fix:** `cachedModels()` now diagnoses an
+      empty result for any provider that needs no key, using `ModelService.isReady()`
+      (already built, previously only used to gate chat) to tell "not running" from
+      "running with nothing loaded" — two different sentences, `providerNotRespondingLine`/
+      `providerListedNothingLine` in the already-pure `providers.ts`, because they have
+      different fixes and the wrong one sends someone looking for a problem they don't
+      have. Also fixed in passing: `Replier.sayThereIsNoModel()`'s equivalent chat-path
+      message was quoting the provider's *default* base URL rather than the resolved one —
+      wrong the moment someone had an override set — via a new `ModelService.baseUrl()`
+      both call sites now share, so the sentence is written once (§2.2) rather than
+      composed twice and drifting. 2 new tests; 942 → 944.
+- [x] **F23 — every phrasing deadline abandoned its request instead of cancelling it. Fixed 20 Aug.**
+      Reported live: LM Studio's token counter climbing steadily with Clarvis apparently
+      idle, `lms ps` showing `GENERATING` for **five minutes** with nothing in the log —
+      and it never stopped on its own. The user closed VS Code because **the laptop was
+      heating up**; killing the extension host is what ended it.
+      **Cause:** every timed model call in the codebase — 16 call sites across 8 files —
+      used `Promise.race([collect(), setTimeout(...)])`. Losing that race only stopped the
+      *caller* waiting; the `for await` loop underneath kept running, because nothing ever
+      constructed an `AbortController` or passed a `signal` to `models.stream()`. The
+      request stayed open and the model kept generating until it finished on its own, long
+      after Clarvis had fallen back to a written line and moved on. On a local model that
+      is a pegged GPU; on a paid provider it is tokens billed for output nobody will ever
+      read — which is precisely the spend **M8h** just decided not to guard, on the
+      reasoning that the provider's console is the meter. It is not a meter anyone would
+      think to check for work the product told them it had given up on. **Fix:**
+      `withDeadline()` in a new, pure `src/model/deadline.ts` — builds an `AbortController`,
+      fires it when the deadline passes, and passes the signal into the stream request that
+      `CompletionRequest.signal` already supported and no phrasing path had ever used. Every
+      collector swallows its own abort so partial text is still kept, preserving the
+      existing behaviour: a timeout means "use the written line", never "throw away what
+      arrived". 4 tests, including one asserting the signal actually fires rather than the
+      caller merely walking away. 944 → 948.
 - [ ] **F14 — the character silently falls back to canned lines on a local model.** A 27B
       via LM Studio missed both personality deadlines (`OPENING_DEADLINE_MS` 5s, briefing
       12s), so the opening and the briefing came from the written bank. The degradation is

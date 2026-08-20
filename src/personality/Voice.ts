@@ -1,6 +1,7 @@
 import { ModelService } from '../model/ModelService';
 import { acceptRewrite, Line, Purpose, rewritePrompt, worthRewriting } from './say';
 import { acceptOpening, openingPrompt } from './originalLine';
+import { withDeadline } from '../model/deadline';
 
 /**
  * Puts a line in Clarvis's voice, when there is a model to do it.
@@ -46,10 +47,7 @@ export class Voice {
     try {
       if (!(await this.models.isReady('chat'))) return line.fallback;
 
-      const raw = await Promise.race([
-        this.collect(rewritePrompt(line)),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
-      ]);
+      const raw = await withDeadline(DEADLINE_MS, (signal) => this.collect(rewritePrompt(line), signal), () => '');
 
       const rewritten = acceptRewrite(line, raw);
 
@@ -85,10 +83,11 @@ export class Voice {
     try {
       if (!(await this.models.isReady('chat'))) return fallback;
 
-      const raw = await Promise.race([
-        this.collect(openingPrompt(situation, mustAsk, keep)),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), OPENING_DEADLINE_MS)),
-      ]);
+      const raw = await withDeadline(
+        OPENING_DEADLINE_MS,
+        (signal) => this.collect(openingPrompt(situation, mustAsk, keep), signal),
+        () => ''
+      );
 
       const line = acceptOpening(raw, mustAsk, keep);
       // **The rejected text, verbatim.** "Rejected" on its own says a rule fired and
@@ -105,18 +104,31 @@ export class Voice {
     }
   }
 
-  private async collect(prompt: string): Promise<string> {
+  /**
+   * Reads the stream up to a length cap, or until `signal` fires.
+   *
+   * **Swallows its own abort rather than throwing it.** `withDeadline`'s job is to
+   * cancel the request; whatever fragments arrived before the cut are still worth
+   * keeping (F23) — a timeout has always meant "use the written line", never "throw
+   * away what the model had already said".
+   */
+  private async collect(prompt: string, signal: AbortSignal): Promise<string> {
     let text = '';
 
-    for await (const fragment of this.models.stream(
-      {
-        system: 'You rewrite one line in character. Nothing else.',
-        messages: [{ role: 'user', content: prompt }],
-      },
-      'chat'
-    )) {
-      text += fragment;
-      if (text.length > 300) break;
+    try {
+      for await (const fragment of this.models.stream(
+        {
+          system: 'You rewrite one line in character. Nothing else.',
+          messages: [{ role: 'user', content: prompt }],
+          signal,
+        },
+        'chat'
+      )) {
+        text += fragment;
+        if (text.length > 300) break;
+      }
+    } catch (error) {
+      if (!signal.aborted) throw error;
     }
 
     return text;

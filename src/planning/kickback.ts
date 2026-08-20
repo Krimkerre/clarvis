@@ -4,6 +4,7 @@ import { analysisSystemPrompt } from './analysisPrompt';
 import { addSteps, appendMilestone } from './planUpdate';
 import { pendingBuild } from './pendingBuild';
 import { parseScopeChange, ScopeVerdict, scopeChangePrompt } from './scopeChange';
+import { withDeadline } from '../model/deadline';
 
 /**
  * Kicking a scope change back to Plan Mode, mid-build (§0).
@@ -46,19 +47,27 @@ export async function judgeScope(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        {
-          system: analysisSystemPrompt(),
-          messages: [{ role: 'user', content: scopeChangePrompt(planText, pending.milestone.title, said) }],
-        },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > MAX_RESPONSE_CHARS) break;
-      }
-    })();
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, TIMEOUT_MS))]);
+    await withDeadline(
+      TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            {
+              system: analysisSystemPrompt(),
+              messages: [{ role: 'user', content: scopeChangePrompt(planText, pending.milestone.title, said) }],
+              signal,
+            },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > MAX_RESPONSE_CHARS) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const verdict = parseScopeChange(text);
     log(

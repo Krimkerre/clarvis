@@ -1,4 +1,5 @@
 import { ModelService } from '../model/ModelService';
+import { withDeadline } from '../model/deadline';
 import { QuipTrigger } from './quipBank';
 import {
   acknowledgementPrompt,
@@ -40,10 +41,7 @@ export class LiveQuips {
     const context: QuipContext = { trigger, sharp, detail };
 
     try {
-      const text = await Promise.race([
-        this.collect(quipPrompt(context)),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
-      ]);
+      const text = await withDeadline(DEADLINE_MS, (signal) => this.collect(quipPrompt(context), signal), () => '');
 
       const quip = sanitiseQuip(text);
       this.log(quip ? `quip: written for ${trigger}` : `quip: model line rejected for ${trigger}`);
@@ -65,10 +63,11 @@ export class LiveQuips {
     if (!(await this.models.isReady('chat'))) return undefined;
 
     try {
-      const text = await Promise.race([
-        this.collect(acknowledgementPrompt(task)),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
-      ]);
+      const text = await withDeadline(
+        DEADLINE_MS,
+        (signal) => this.collect(acknowledgementPrompt(task), signal),
+        () => ''
+      );
 
       return sanitiseQuip(text);
     } catch (error) {
@@ -82,10 +81,11 @@ export class LiveQuips {
     if (!(await this.models.isReady('chat'))) return undefined;
 
     try {
-      const text = await Promise.race([
-        this.collect(completionQuipPrompt(task, summary)),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
-      ]);
+      const text = await withDeadline(
+        DEADLINE_MS,
+        (signal) => this.collect(completionQuipPrompt(task, summary), signal),
+        () => ''
+      );
 
       return sanitiseQuip(text);
     } catch (error) {
@@ -94,21 +94,26 @@ export class LiveQuips {
     }
   }
 
-  private async collect(prompt: string): Promise<string> {
+  private async collect(prompt: string, signal: AbortSignal): Promise<string> {
     let text = '';
 
-    for await (const fragment of this.models.stream(
-      {
-        // Kept out of the chat transcript deliberately: this is Clarvis thinking of
-        // something to say, not a conversation the user is part of.
-        system: 'You write one short, dry remark. Nothing else.',
-        messages: [{ role: 'user', content: prompt }],
-      },
-      'chat'
-    )) {
-      text += fragment;
-      // No point streaming past the length limit — the answer is already too long.
-      if (text.length > 400) break;
+    try {
+      for await (const fragment of this.models.stream(
+        {
+          // Kept out of the chat transcript deliberately: this is Clarvis thinking of
+          // something to say, not a conversation the user is part of.
+          system: 'You write one short, dry remark. Nothing else.',
+          messages: [{ role: 'user', content: prompt }],
+          signal,
+        },
+        'chat'
+      )) {
+        text += fragment;
+        // No point streaming past the length limit — the answer is already too long.
+        if (text.length > 400) break;
+      }
+    } catch (error) {
+      if (!signal.aborted) throw error;
     }
 
     return text;

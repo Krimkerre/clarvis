@@ -3,6 +3,7 @@ import { InterviewState } from './interviewTopics';
 import { AnalysisResult, analysisPrompt, analysisSystemPrompt, parseAnalysisResult } from './analysisPrompt';
 import { Milestone, milestonePrompt, parseMilestones } from './milestonePrompt';
 import { FindingVerdict } from './verdictSummary';
+import { withDeadline } from '../model/deadline';
 
 /**
  * Runs one analysis pass over a finished interview (M9b — §4.9).
@@ -35,17 +36,23 @@ export async function runAnalysis(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: analysisPrompt(state) }] },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > MAX_RESPONSE_CHARS) break;
-      }
-    })();
-
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, ANALYSIS_TIMEOUT_MS))]);
+    await withDeadline(
+      ANALYSIS_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            { system: analysisSystemPrompt(), messages: [{ role: 'user', content: analysisPrompt(state) }], signal },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > MAX_RESPONSE_CHARS) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const result = parseAnalysisResult(text);
     if (result.noPlanNeeded) {
@@ -86,17 +93,27 @@ export async function planMilestone(
 
   try {
     let text = '';
-    const collect = (async () => {
-      for await (const fragment of models.stream(
-        { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state, accepted, rejected) }] },
-        'chat'
-      )) {
-        text += fragment;
-        if (text.length > MAX_RESPONSE_CHARS) break;
-      }
-    })();
-
-    await Promise.race([collect, new Promise((resolve) => setTimeout(resolve, ANALYSIS_TIMEOUT_MS))]);
+    await withDeadline(
+      ANALYSIS_TIMEOUT_MS,
+      async (signal) => {
+        try {
+          for await (const fragment of models.stream(
+            {
+              system: analysisSystemPrompt(),
+              messages: [{ role: 'user', content: milestonePrompt(state, accepted, rejected) }],
+              signal,
+            },
+            'chat'
+          )) {
+            text += fragment;
+            if (text.length > MAX_RESPONSE_CHARS) break;
+          }
+        } catch (error) {
+          if (!signal.aborted) throw error;
+        }
+      },
+      () => undefined
+    );
 
     const milestones = parseMilestones(text);
     log(`planning: ${milestones.length} milestone(s) planned`);

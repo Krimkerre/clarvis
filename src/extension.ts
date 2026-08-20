@@ -307,12 +307,13 @@ function startBriefing(
   // The model phrases the briefing when one is configured; the written lines are the
   // fallback. Same division as chat: local state knows the facts, the model says them
   // in a way that doesn't sound like a form letter.
-  briefing.setPhraser(async (prompt) => {
+  briefing.setPhraser(async (prompt, signal) => {
     if (!(await models.isReady('chat'))) return undefined;
 
     let text = '';
     for await (const fragment of models.stream(
       {
+        signal,
         // **Found live, in a folder with no git at all.** The briefing's system prompt
         // never carried this rule — only the rewrite and quip prompts did — and with
         // `facts.git` genuinely absent, the model invented one: "last commit was on

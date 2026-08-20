@@ -4,6 +4,7 @@ import { Finding, parseAnalysisResult } from '../planning/analysisPrompt';
 import { milestoneSteps, nextMilestone, readMilestones } from '../planning/planUpdate';
 import { gitDiff } from './tools/commandTools';
 import { NOTHING_TO_REPORT, reviewPrompt, reviewSystemPrompt } from './milestoneReview';
+import { withDeadline } from '../model/deadline';
 
 /**
  * The glue for reading a milestone back: gather what it needs, ask, parse.
@@ -56,10 +57,7 @@ export async function reviewMilestone(
   });
 
   try {
-    const text = await Promise.race([
-      collect(models, prompt),
-      new Promise<string>((resolve) => setTimeout(() => resolve(''), TIMEOUT_MS)),
-    ]);
+    const text = await withDeadline(TIMEOUT_MS, (signal) => collect(models, prompt, signal), () => '');
 
     if (!text.trim() || text.includes(NOTHING_TO_REPORT)) {
       log('review: read the diff back and found nothing');
@@ -80,11 +78,15 @@ export async function reviewMilestone(
   }
 }
 
-async function collect(models: ModelService, prompt: string): Promise<string> {
+async function collect(models: ModelService, prompt: string, signal: AbortSignal): Promise<string> {
   let text = '';
-  const request = { system: reviewSystemPrompt(), messages: [{ role: 'user' as const, content: prompt }] };
-  for await (const chunk of models.stream(request)) {
-    text += chunk;
+  const request = { system: reviewSystemPrompt(), messages: [{ role: 'user' as const, content: prompt }], signal };
+  try {
+    for await (const chunk of models.stream(request)) {
+      text += chunk;
+    }
+  } catch (error) {
+    if (!signal.aborted) throw error;
   }
   return text;
 }

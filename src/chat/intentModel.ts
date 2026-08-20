@@ -2,6 +2,7 @@ import { ModelService } from '../model/ModelService';
 import { intentPrompt, parseIntent, Route } from './routing';
 import { actionPrompt, parseAction } from './actionIntent';
 import { ChatAction } from './chatCommands';
+import { withDeadline } from '../model/deadline';
 
 /**
  * Asking the model whether a message is a job or a question.
@@ -29,10 +30,7 @@ export async function classifyIntent(
   if (!(await models.isReady('chat'))) return undefined;
 
   try {
-    const raw = await Promise.race([
-      collect(models, intentPrompt(text)),
-      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
-    ]);
+    const raw = await withDeadline(DEADLINE_MS, (signal) => collect(models, intentPrompt(text), signal), () => '');
 
     const route = parseIntent(raw);
     log(`intent: model said ${route ?? 'nothing usable'} for "${text.slice(0, 50)}"`);
@@ -58,10 +56,7 @@ export async function classifyAction(
   if (!(await models.isReady('chat'))) return undefined;
 
   try {
-    const raw = await Promise.race([
-      collect(models, actionPrompt(text)),
-      new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), DEADLINE_MS)),
-    ]);
+    const raw = await withDeadline(DEADLINE_MS, (signal) => collect(models, actionPrompt(text), signal), () => '');
 
     const action = parseAction(raw);
     log(`action intent: model said ${action ?? 'none'} for "${text.slice(0, 50)}"`);
@@ -72,16 +67,20 @@ export async function classifyAction(
   }
 }
 
-async function collect(models: ModelService, prompt: string): Promise<string> {
+async function collect(models: ModelService, prompt: string, signal: AbortSignal): Promise<string> {
   let text = '';
 
-  for await (const fragment of models.stream(
-    { system: 'You answer with exactly one word.', messages: [{ role: 'user', content: prompt }] },
-    'chat'
-  )) {
-    text += fragment;
-    // One word is expected; anything past this is a reply that will be rejected anyway.
-    if (text.length > 40) break;
+  try {
+    for await (const fragment of models.stream(
+      { system: 'You answer with exactly one word.', messages: [{ role: 'user', content: prompt }], signal },
+      'chat'
+    )) {
+      text += fragment;
+      // One word is expected; anything past this is a reply that will be rejected anyway.
+      if (text.length > 40) break;
+    }
+  } catch (error) {
+    if (!signal.aborted) throw error;
   }
 
   return text;

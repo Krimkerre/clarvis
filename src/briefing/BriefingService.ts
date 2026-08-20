@@ -6,6 +6,7 @@ import { BriefingFacts, briefingPrompt, buildBriefingLines } from './briefingLin
 import { readGitSummary } from './gitSummary';
 import { activeFailure, foldOutcome, parseRecord, FailureRecord, FAILURE_KEY } from './lastFailure';
 import { isAgentBranch } from '../agent/branchNames';
+import { withDeadline } from '../model/deadline';
 
 /** Key under which the last failing job is persisted for the next session. */
 
@@ -49,7 +50,7 @@ export class BriefingService {
    * Injected rather than imported so this class keeps knowing nothing about providers,
    * and so the canned path stays testable on its own.
    */
-  private phraser: ((prompt: string) => Promise<string | undefined>) | undefined;
+  private phraser: ((prompt: string, signal: AbortSignal) => Promise<string | undefined>) | undefined;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -78,7 +79,7 @@ export class BriefingService {
   }
 
   /** Lets the composition root supply a model to do the phrasing. */
-  setPhraser(phraser: (prompt: string) => Promise<string | undefined>): void {
+  setPhraser(phraser: (prompt: string, signal: AbortSignal) => Promise<string | undefined>): void {
     this.phraser = phraser;
   }
 
@@ -167,10 +168,12 @@ export class BriefingService {
 
     try {
       const started = Date.now();
-      const text = await Promise.race([
-        this.phraser(prompt),
-        new Promise<typeof TIMED_OUT>((resolve) => setTimeout(() => resolve(TIMED_OUT), PHRASE_TIMEOUT_MS)),
-      ]);
+      const phraser = this.phraser;
+      const text = await withDeadline<string | undefined | typeof TIMED_OUT>(
+        PHRASE_TIMEOUT_MS,
+        (signal) => phraser(prompt, signal),
+        () => TIMED_OUT
+      );
 
       if (text === TIMED_OUT) {
         this.log(`briefing: model did not answer within ${PHRASE_TIMEOUT_MS}ms — using the written lines`);

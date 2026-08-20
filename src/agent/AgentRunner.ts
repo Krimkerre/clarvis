@@ -29,7 +29,7 @@ import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
 import { ANSWER_SHAPE } from '../personality/character';
-import { STATE_TAG_INSTRUCTION } from '../chat/replyState';
+import { STATE_TAG_INSTRUCTION, stripTags } from '../chat/replyState';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -473,6 +473,14 @@ export class AgentRunner {
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
+        // **The expression marker is for the face, never for the reader.** This prompt
+        // asks for a `[[state]]` tag and the streaming reply path consumes one — but the
+        // closing narration leaves through a `done` event, which that path forwards
+        // untouched on the rule that tool lines are ours rather than the model's. This
+        // one is the model's, so it arrived on screen with `[[talking]]` still on the
+        // front of it. Found live, 20 Aug, and it makes a liar of §7's checklist item
+        // saying the tag never appears in reply text — true of one path, not both.
+        narration = stripTags(narration).trimStart();
         // **Why it stopped, in the log.** A run that ended after two reads with an
         // empty summary left nothing to diagnose from — found live, and the closing
         // line then invented a conclusion to fill the silence. Narration is what the

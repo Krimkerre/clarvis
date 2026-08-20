@@ -4441,6 +4441,15 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       `parseChallengeResult` treated anything that was not literally `FINE` as a question to
       ask — so *"Fine, that's specific enough"* became a pushback. It now fails toward
       silence: only an actual question is asked. 5 tests; 849 → 854.
+- [x] **F15 — the avatar state tag reached the transcript on the agent path. Fixed 20 Aug.**
+      `[[talking]] I'm a butler in a code editor…` appeared verbatim in chat.
+      `replyState.ts` strips the tag on the streaming reply path, and the checklist above
+      records that as **settled** — true of one path. The agent's closing narration leaves
+      through a `done` event, which the reply path forwards untouched on the stated rule
+      that *tool lines are ours, not the model's*; that one is the model's. Stripped in
+      `AgentRunner` now, so both paths share one stripper. 4 tests, including that prose
+      containing `[[a link]]` is left alone. **Worth reading the other `[x]` lines with
+      this in mind: "verified" has meant *on the path someone walked*.**
 - [ ] **F13 — a local provider that isn't running says nothing at all.** Switching to
       Ollama with its server down logs `fetch failed` twice and shows the user an empty
       picker with no explanation. `modelPickers.ts` returns the cached list and says
@@ -4747,7 +4756,7 @@ still the clearest case at 32 files and two classes, which is exactly why M9 cou
 tested as heavily as it was: almost all of it is pure, and pure code needs no extension
 host to run against. Alongside those, 84 interfaces and 39 type aliases.
 
-**903 tests**, against Node's built-in runner with no test framework — possible only
+**907 tests**, against Node's built-in runner with no test framework — possible only
 because the logic worth testing lives in files that import nothing from `vscode`. A
 further **4 run in a real extension host** (`npm run test:host`, `@vscode/test-electron`),
 which is where activation, command registration and the workspace boundary are checked

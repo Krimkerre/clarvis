@@ -74,3 +74,33 @@ test('leading space is still removed at the very start', () => {
 
   assert.equal(text, 'Done.');
 });
+
+// --------- the other path: a closing narration is the model's line too
+
+test('a state tag is stripped wherever it appears, not only at the head', () => {
+  // The agent path never runs its closing line through ReplyStateReader — that arrives
+  // as a `done` event, which the reply path forwards untouched on the rule that tool
+  // lines are ours rather than the model's. The closing narration is the model's, and it
+  // reached the transcript on 20 Aug reading "[[talking]] I'm a butler in a code
+  // editor...". stripTags is what both paths now share.
+  assert.equal(
+    stripTags("[[talking]] I'm a butler in a code editor.").trimStart(),
+    "I'm a butler in a code editor."
+  );
+});
+
+test('an invented state is stripped as readily as a real one', () => {
+  // The tag is noise to the reader whether or not it names a face we know.
+  assert.equal(stripTags('[[smug]] Done.').trimStart(), 'Done.');
+});
+
+test('text with no tag survives untouched', () => {
+  assert.equal(stripTags('Ran the tests. They pass.'), 'Ran the tests. They pass.');
+});
+
+test('double brackets in ordinary prose are left alone', () => {
+  // The pattern is deliberately narrow — letters only, both brackets — so a sentence
+  // about markdown links or wiki syntax is not quietly edited.
+  const prose = 'Use [[a link]] or [[Some Page]] in the docs.';
+  assert.equal(stripTags(prose), prose);
+});

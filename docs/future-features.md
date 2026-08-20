@@ -170,6 +170,40 @@ is the narrowed challenge working exactly as written — the answer is *usable*,
 not answer the question. Whether an answer that does not answer should still be accepted is
 an inference question, not a challenge one.
 
+## Deferred: every question gets a tool loop, whenever the model can (F16, F17)
+
+**What:** `Replier.withModel()` sends a question to the read-only agent loop on one
+condition — `supportsTools('chat')`. Capability, never need. Chat mode means *answer and
+read only*, which is about writes rather than tools, so a tool-capable model gets a loop
+for every question including "how are you?".
+
+**Observed 20 Aug**, on a local model: a greeting produced an invented `src/main.go` in an
+empty folder and two `listFiles` calls malformed the same way, the second after being told
+what was wrong with the first. Fifty-seven seconds for a pleasantry.
+
+**Why deferred:** nothing is lost, nothing is done against the user's wishes, and no
+internals leak. A frontier model simply answers without opening a tool — the comment in the
+code explains the intent and it is sound for *"why is this test failing?"*. This is a cost
+and latency problem that appears only on weaker models, which makes it **F14's family:
+local reality differs and nothing in the product knows it.**
+
+**Three shapes, in increasing cost:**
+
+- **Let `localAnswer.ts` have first refusal.** It already answers some questions with no
+  model at all; a greeting is not in its intent list and arguably could be. Cheapest, and it
+  makes the answer instant rather than merely toolless.
+- **A smaller step budget when the question carries no project noun** — bounds the damage
+  without having to classify correctly.
+- **Let M8j carry it**: a weak model gets fewer steps for a question, the same way it gets
+  longer deadlines.
+
+**F17 is not a defect and is filed here as evidence, not work.** The tool layer refused both
+malformed calls, named the actual problem in plain words, and wrote nothing — the failure
+was contained exactly as designed. It was simply not *learned from*, and a model that
+repeats a rejected call verbatim will do so until the step cap. It is the material session 4
+exists to gather, and it argues that *"is the local agent path good enough to offer?"*
+depends on which model in a way the product currently says nothing about.
+
 ## Deferred: provider-side reasoning control (M8i part 2)
 
 **What:** `thinking` / `reasoning_effort` per provider. `plan.md` §7, M8i.

@@ -1,6 +1,6 @@
-import * as vscode from 'vscode';
 import { isAgentBranch } from './branchNames';
 import { explainState } from './gitPlain';
+import { firstGitRepository } from './gitExtension';
 
 /**
  * "Where am I, and is anything at risk?" — answered without git's vocabulary.
@@ -10,7 +10,7 @@ import { explainState } from './gitPlain';
  * verifiable and this stays trivial.
  */
 export async function describeGitPlainly(): Promise<string[]> {
-  const repository = await gitRepository();
+  const repository = await firstGitRepository<GitRepository>();
   if (!repository) {
     return [
       "There's no git repository here, so nothing is being tracked — every edit is just a file on your disk. " +
@@ -32,18 +32,6 @@ export async function describeGitPlainly(): Promise<string[]> {
     onAgentBranch: Boolean(branch && isAgentBranch(branch)),
     hasRemote: (repository.state.remotes?.length ?? 0) > 0,
   });
-}
-
-async function gitRepository(): Promise<GitRepository | undefined> {
-  const extension = vscode.extensions.getExtension<GitExports>('vscode.git');
-  if (!extension) return undefined;
-
-  const exports = extension.isActive ? extension.exports : await extension.activate();
-  return exports?.getAPI?.(1)?.repositories?.[0];
-}
-
-interface GitExports {
-  getAPI(version: 1): { repositories: GitRepository[] };
 }
 
 interface GitRepository {

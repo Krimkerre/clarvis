@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { isAgentBranch } from './branchNames';
 import { explainSwitchFailure, planSwitch } from './gitPlain';
+import { firstGitRepository } from './gitExtension';
 import { phrase } from '../personality/Voice';
 
 /**
@@ -17,7 +18,7 @@ export async function switchBranch(
   requested: string | undefined,
   log: (message: string) => void
 ): Promise<string | undefined> {
-  const repository = await gitRepository();
+  const repository = await firstGitRepository<GitRepository>();
   if (!repository) {
     return phrase('report', "There's no git repository here, so there's nothing to switch to.");
   }
@@ -117,18 +118,6 @@ async function pickBranch(branches: string[], current?: string): Promise<string 
   );
 
   return picked?.name;
-}
-
-async function gitRepository(): Promise<GitRepository | undefined> {
-  const extension = vscode.extensions.getExtension<GitExports>('vscode.git');
-  if (!extension) return undefined;
-
-  const exports = extension.isActive ? extension.exports : await extension.activate();
-  return exports?.getAPI?.(1)?.repositories?.[0];
-}
-
-interface GitExports {
-  getAPI(version: 1): { repositories: GitRepository[] };
 }
 
 interface GitRepository {

@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelService } from './ModelService';
 import { ModelChoice } from './ModelProvider';
-import { PROVIDERS, ProviderId, providerSpec, acceptableOverride } from './providers';
+import { PROVIDERS, ProviderId, providerSpec, acceptableOverride, providerNotRespondingLine, providerListedNothingLine } from './providers';
 import { ModelRole } from './roles';
 import { phrase } from '../personality/Voice';
 
@@ -172,6 +172,7 @@ async function cachedModels(
 
     if (listed.length === 0) {
       log(`model: ${provider} listed no usable models`);
+      await diagnoseEmptyLocalCatalog(models, role, log);
       return cached;
     }
 
@@ -189,6 +190,30 @@ async function cachedModels(
     log(`model: ${provider} catalogue fetch failed (${String(error)})`);
     return cached;
   }
+}
+
+/**
+ * Tells the user why a local provider's picker just opened empty (F13).
+ *
+ * **Only for providers with no key.** A keyed provider listing nothing is already
+ * covered by `chooseProvider`'s own key prompt — this is specifically the case that
+ * had no explanation at all: a refused connection to a known local port, logged and
+ * shown to nobody. "Not running" and "running with nothing loaded" get different
+ * sentences, because they have different fixes and a wrong one sends someone looking
+ * for a problem they don't have.
+ */
+async function diagnoseEmptyLocalCatalog(models: ModelService, role: ModelRole, log: (m: string) => void): Promise<void> {
+  const spec = models.spec(role);
+  if (spec.needsKey) return;
+
+  const baseUrl = models.baseUrl(role);
+  const reachable = await models.isReady(role);
+  const line = reachable
+    ? providerListedNothingLine(spec.label, baseUrl)
+    : providerNotRespondingLine(spec.label, baseUrl);
+
+  log(`model: ${spec.id} — ${line}`);
+  void vscode.window.showWarningMessage(`Clarvis: ${line}`);
 }
 
 /** Refreshes the current provider's list from the command palette. */

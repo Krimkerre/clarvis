@@ -128,6 +128,30 @@ export function resolveBaseUrl(spec: ProviderSpec, override?: string): string {
 }
 
 /**
+ * What to say when a local endpoint refused the connection outright (F13).
+ *
+ * A refused connection to a known local port has one overwhelmingly likely cause,
+ * so this names it directly rather than the generic "no models found" a keyed
+ * provider's failure would get. One sentence, written once, so a chat reply and a
+ * model picker never say it two different ways.
+ */
+export function providerNotRespondingLine(label: string, baseUrl: string): string {
+  return `${label} isn't answering on \`${baseUrl}\`. Is it running?`;
+}
+
+/**
+ * What to say when a local endpoint answered but listed nothing (F13's second edge).
+ *
+ * Deliberately a different sentence from `providerNotRespondingLine` — "not running"
+ * and "running with nothing loaded" have different fixes, and telling someone to
+ * start a server that is already running sends them looking for a problem they
+ * don't have.
+ */
+export function providerListedNothingLine(label: string, baseUrl: string): string {
+  return `${label} answered on \`${baseUrl}\` but isn't listing any models — has one been loaded yet?`;
+}
+
+/**
  * Whether a base-URL override is safe to use, given whether a key travels with it.
  *
  * **The rule follows the credential, not the protocol.** Every request to a

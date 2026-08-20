@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { acceptableOverride, providerSpec, resolveBaseUrl } from './providers';
+import { acceptableOverride, providerSpec, resolveBaseUrl, providerNotRespondingLine, providerListedNothingLine } from './providers';
 
 /**
  * Raised in a security review: a workspace could set this and the API key would
@@ -52,4 +52,20 @@ test('a rejected override falls back to the real provider, silently', () => {
 
 test('a legitimate override still wins', () => {
   assert.equal(resolveBaseUrl(providerSpec('ollama')!, 'http://localhost:11434'), 'http://localhost:11434');
+});
+
+// F13 -- a local provider that isn't running used to say nothing at all.
+
+test('a refused connection gets a specific, actionable sentence', () => {
+  const line = providerNotRespondingLine('Ollama', 'http://localhost:11434');
+  assert.match(line, /Ollama/);
+  assert.match(line, /http:\/\/localhost:11434/);
+  assert.match(line, /Is it running\?/);
+});
+
+test('an unreachable provider and a reachable-but-empty one get different sentences', () => {
+  const notRunning = providerNotRespondingLine('LM Studio', 'http://localhost:1234');
+  const nothingLoaded = providerListedNothingLine('LM Studio', 'http://localhost:1234');
+  assert.notEqual(notRunning, nothingLoaded);
+  assert.match(nothingLoaded, /has one been loaded yet\?/);
 });

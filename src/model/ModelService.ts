@@ -8,7 +8,7 @@ import {
   ModelProvider,
   StreamEvent,
 } from './ModelProvider';
-import { PROVIDERS, ProviderId, ProviderSpec, providerSpec } from './providers';
+import { PROVIDERS, ProviderId, ProviderSpec, providerSpec, resolveBaseUrl } from './providers';
 import { ModelRole, RoleSettings, resolveRole } from './roles';
 
 /** Secret-storage key per provider. Namespaced so one provider's key can't shadow another's. */
@@ -66,6 +66,13 @@ export class ModelService {
   /** Whether a question can be sent right now. */
   async isReady(role: ModelRole = 'chat'): Promise<boolean> {
     return this.provider(role).isAvailable();
+  }
+
+  /** The endpoint actually in use — the spec's default, or the user's override. */
+  baseUrl(role: ModelRole = 'chat'): string {
+    const spec = this.spec(role);
+    const override = vscode.workspace.getConfiguration('clarvis').get<string>(`chat.baseUrl.${spec.id}`, '');
+    return resolveBaseUrl(spec, override);
   }
 
   /**

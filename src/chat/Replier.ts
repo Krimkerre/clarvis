@@ -3,6 +3,7 @@ import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { AvatarController } from '../AvatarController';
 import { VoiceService } from '../voice/VoiceService';
 import { ModelService, explain } from '../model/ModelService';
+import { providerNotRespondingLine } from '../model/providers';
 import { AgentRunner } from '../agent/AgentRunner';
 import { AgentTerminal } from '../agent/tools/commandTools';
 import { ANSWER_SHAPE, characterWith } from '../personality/character';
@@ -53,7 +54,7 @@ export class Replier {
     await this.say(
       spec.needsKey
         ? `That one's beyond what I've watched happen here — I'd need a model for it, and ${spec.label} has no key yet. \`/key\` sorts it, or \`/model\` picks a different provider.`
-        : `That's beyond what I've watched here, and ${spec.label} isn't answering on ${'`'}${spec.baseUrl}${'`'}. Is it running?`,
+        : `That's beyond what I've watched here, and ${providerNotRespondingLine(spec.label, this.models.baseUrl('chat'))}`,
       'neutral'
     );
   }

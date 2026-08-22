@@ -403,6 +403,60 @@ fixes (F15, F22) to logic that lived where no test could reach it, and gained te
 by hand, in session C. This would answer it repeatably, for any model, in a command — which
 is better but is not what stands between here and v1.
 
+## Deferred: knowing which host he is running in (ecosystem)
+
+*Opened 22 Aug, from building the NERVIS dashboard template. Recorded here so the shape is
+not re-derived later; none of it is v1, and none of it changes standalone behaviour.*
+
+The ecosystem plan puts Clarvis inside a browser IDE that NERVIS frames, alongside SIRVIS
+and RAVIS. That raises one question the extension cannot currently answer: **am I embedded
+in the dashboard, or am I a normal editor window?** Everything below hangs off that answer,
+and all of it is inert without it.
+
+**It is answerable, and cheaply.** Three signals, in priority order:
+
+1. `process.env.NERVIS_EMBED`, set by whatever launched code-server. The extension host is a
+   Node process, so this is readable at activation — synchronous, and unforgeable by page
+   content.
+2. A `clarvis.host` setting (`auto` | `standalone` | `embedded`), because code-server may be
+   user-managed, in which case nothing set that variable.
+3. `vscode.env.uiKind` as a coarse fallback. It distinguishes web from desktop, not framed
+   from unframed, but it is enough to pick a default.
+
+**Not** by having the webview inspect `window.parent`. The webview sits in its own sandboxed
+frame inside code-server inside the dashboard's frame — two origin boundaries VS Code
+isolates on purpose — and it inverts the trust direction, letting page content tell the
+extension what it is.
+
+**What the answer would buy, in the embedded case only:**
+
+- **One butler per screen.** The panel keeps its chat and drops its avatar; the dashboard's
+  header carries him instead, in the same slot the other three apps use. `buildHtml` already
+  assembles that page by string replacement, so this is one more replacement, not a redesign.
+- **State over the Bridge, as lifecycle rather than expression.** The Bridge would publish
+  `idle` / `chatting` / `agent_running` / `waiting_for_approval` / `failed`, and the consumer
+  maps those to the six expressions. Publishing "judging" over a wire would ship the
+  character into a protocol and oblige every other consumer to know what it means.
+- **The dashboard's rail standing in for the activity bar**, so an embedded editor shows one
+  navigation column rather than two. That needs a **new, narrow capability** — a closed enum
+  of view ids, `clarvis.view.focus@1`, plus a `clarvis.view.changed` event so the rail
+  follows the editor rather than lying about it. It must never widen into executing an
+  arbitrary command: that would hand anything able to reach the loopback port the ability to
+  drive the editor, which is the confused-deputy hole the Bridge design exists to close.
+  Focusing a view is presentation, not privilege — it reads no file, runs no task, and
+  resolves no approval gate.
+
+**Why none of it is v1.** It depends on the Bridge, which is not built; on the code-server
+compatibility matrix, which is not run; and on a dashboard that does not exist yet. Against
+the triage above it loses nothing the user said, acts against no decision the user made, and
+leaks no internals — it is *better*, not *correct*, so it ships later.
+
+**The invariant that survives all of it.** Standalone VS Code behaves exactly as it does
+today: its own avatar, its own panel, no Bridge, no host detection consequences. If any of
+this changes what an unframed editor does, it is wrong.
+
+---
+
 ## Deferred: the milestones already marked stretch
 
 Unchanged by this decision, listed so the v1 boundary is in one place:

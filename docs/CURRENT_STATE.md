@@ -15,7 +15,7 @@ Ships as a `.vsix`. Bound to one workspace folder; dies when the window closes.
 
 ## Continuing a session in progress?
 
-**`clarvis-firstrun/NEXT.md`** is the handoff from the last working session: what is in
+**`clarvis-firstrun/docs/NEXT.md`** is the handoff from the last working session: what is in
 flight, what was decided and should not be relitigated, and — usefully — a list of claims
 that turned out to be wrong, so a stale quotation of one does not get trusted. Read it
 before this file if you are picking up rather than starting cold.
@@ -134,7 +134,7 @@ guide, with the README carrying a table of all of them. `plan.md` holds the plan
 
 The runbook's first scripted session was finally walked, twice, on a real fixture
 project — and every defect below was found by using the product, not by reading it.
-Full detail: `clarvis-firstrun/FINDINGS.md` (20 findings, F1–F20) and its session index
+Full detail: `clarvis-firstrun/docs/FINDINGS.md` (20 findings, F1–F20) and its session index
 at the end of that file. This is the shipped subset.
 
 **The interview stopped nagging.** `challengeAnswer()` had been generalised on 13 Aug
@@ -365,14 +365,14 @@ opening sentence and his closing line, the panel keeps every word, and
 `clarvis.voice.trimLongReplies` turns it off. Check it, not this paragraph, for the current
 count — it has changed six times in two days.
 
-**The verification runbook** — `clarvis-firstrun/RUNBOOK.md`, a *separate repository*
+**The verification runbook** — `clarvis-firstrun/docs/RUNBOOK.md`, a *separate repository*
 from this one — was **rescoped on 20 Aug from seven ~90-minute sessions to four of ~50**
 (A safety, B loop seams, C local models, D fixtures), because the seven were not being
 walked and a runbook nobody finishes verifies nothing. Session 1's content is largely
 covered and walked; **A–C have not run.** The cut is recorded with its reasoning in the
 runbook's own *Cut, and why* table, including one dogfood track dropped entirely. Its findings
-land in `clarvis-firstrun/FINDINGS.md`, cross-checked against this repo's release bar
-and `docs/future-features.md` by `check-findings.mjs` — a finding that exists in only
+land in `clarvis-firstrun/docs/FINDINGS.md`, cross-checked against this repo's release bar
+and `docs/future-features.md` by `tools/check-findings.mjs` — a finding that exists in only
 one place is a bug in the bookkeeping, and that script fails on it.
 
 **The M6 dogfood pass** — does the character hold up over days of ordinary use — is

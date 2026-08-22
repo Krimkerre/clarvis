@@ -4066,7 +4066,7 @@ front of it. Both misses are the prompt's boundaries working rather than failing
 ### M9h — Infer, present, ask only on genuine unknowns *(opened and signed off 19 Aug)*
 
 **Where this came from.** The first runbook session walked `3-compliment` four times and
-produced six findings (`clarvis-firstrun/FINDINGS.md`). Five are defects. This one is not:
+produced six findings (`clarvis-firstrun/docs/FINDINGS.md`). Five are defects. This one is not:
 it is the user's verdict on how the interview *behaves*, given in his own words —
 
 > Clarvis should be able to figure stuff out himself, assume the most logical option, and
@@ -4782,7 +4782,7 @@ blocker below is one of those three, or a §9 success criterion it would otherwi
       (3 new, `branchNames.test.ts` — no test file existed for this module before);
       933 → 936.
 - [ ] **Runbook sessions A–C walked**, findings written down —
-      `clarvis-firstrun/RUNBOOK.md`. **Rescoped 20 Aug from "sessions 1–5" (seven sessions,
+      `clarvis-firstrun/docs/RUNBOOK.md`. **Rescoped 20 Aug from "sessions 1–5" (seven sessions,
       ~10 hours) to four sessions of ~50 minutes**, because the seven were not being walked
       and a runbook nobody finishes verifies nothing. The cut is evidence-led rather than
       arbitrary: 20 Aug produced eight findings and *not one* came from ticking a box —

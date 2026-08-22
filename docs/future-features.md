@@ -49,7 +49,7 @@ without an observation is the same mistake wearing different clothes.
 deferral becomes a section in this file — under **Future features** if nothing is broken,
 under **Known bugs** if something is — naming the milestone that will specify it or the
 finding that observed it. Either way, the observation itself — what happened, the log
-evidence, why it matters — goes in `clarvis-firstrun/FINDINGS.md` first, while it is fresh,
+evidence, why it matters — goes in `clarvis-firstrun/docs/FINDINGS.md` first, while it is fresh,
 and is triaged from there.
 
 ---
@@ -559,5 +559,5 @@ within a day: it still named a blocker that was fixed and did not know about one
 been found. That is the same failure this file's own preamble warns about, committed in the
 file that warns about it.
 
-Every finding is cross-checked against both documents by `check-findings.mjs` in the
+Every finding is cross-checked against both documents by `tools/check-findings.mjs` in the
 `clarvis-firstrun` repository — run it before trusting either list.

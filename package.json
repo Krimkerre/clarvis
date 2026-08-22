@@ -315,7 +315,9 @@
         "clarvis.chat.baseUrl.custom": {
           "type": "string",
           "default": "",
-          "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here."
+          "scope": "machine",
+          "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here.",
+          "markdownDescription": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here. **Machine-scoped on purpose:** a project you open cannot set this. There is no API key on this provider, but every prompt, and every file the agent has read, travels to whatever address it names."
         },
         "clarvis.voice.trimLongReplies": {
           "type": "boolean",
@@ -361,7 +363,10 @@
         "clarvis.chat.baseUrl.openai",
         "clarvis.chat.baseUrl.openrouter",
         "clarvis.chat.baseUrl.ollama",
-        "clarvis.chat.baseUrl.lmstudio"
+        "clarvis.chat.baseUrl.lmstudio",
+        "clarvis.chat.baseUrl.custom",
+        "clarvis.chat.provider",
+        "clarvis.agent.provider"
       ]
     }
   }

@@ -223,6 +223,37 @@
   .quip { color: var(--muted); font-size: 13px; min-height: 1.5em; text-align: center;
           font-style: italic; max-width: 34ch; transition: opacity .25s; }
 
+
+  /* ——— chrome ———
+     The shared ecosystem frame: reticle, ticking ring, crosshairs, corner brackets.
+     Sits OUTSIDE #float so it never inherits the bob — the butler drifts, the
+     instrument around him holds still. Purely additive: no existing rule changes,
+     and the viewBox is unchanged, so he renders at exactly the size he did before;
+     the chrome only fills margin that was already empty. */
+  #reticle  { fill: none; stroke: var(--cyan); stroke-opacity: .3; stroke-width: 1.2;
+              transition: stroke .4s; }
+  #tickring { fill: none; stroke: var(--cyan); stroke-opacity: .42; stroke-width: 3;
+              stroke-dasharray: 2.4 20.6; transform-origin: 100px 100px;
+              animation: chromeSpin 32s linear infinite; transition: stroke .4s; }
+  .cardinal { stroke: var(--cyan); stroke-opacity: .6; stroke-width: 1.8;
+              stroke-linecap: round; transition: stroke .4s; }
+  .cbracket { fill: none; stroke: var(--cyan); stroke-opacity: .36; stroke-width: 1.6;
+              stroke-linecap: round; transition: stroke .4s; }
+  @keyframes chromeSpin { to { transform: rotate(360deg); } }
+
+  /* The chrome reacts only where he already does — no new vocabulary, and the ring
+     speed reads as effort rather than as a second thing to interpret. */
+  .state-thinking  #tickring { animation-duration: 11s; }
+  .state-talking   #tickring { animation-duration: 22s; }
+  .state-surprised #tickring { animation-duration: 5s; }
+  .state-surprised #reticle, .state-surprised #tickring,
+  .state-surprised .cardinal, .state-surprised .cbracket { stroke: var(--amber); }
+  .state-impressed #reticle { animation: chromeFlare 1.1s ease-out 2; }
+  @keyframes chromeFlare {
+    0%, 100% { stroke-opacity: .3; }
+    35%      { stroke-opacity: .95; filter: drop-shadow(0 0 10px rgba(52,230,242,.8)); }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     * { animation: none !important; }
   }
@@ -251,6 +282,20 @@
       <clipPath id="eyeL"><rect x="60" y="72" width="28" height="22" rx="11"/></clipPath>
       <clipPath id="eyeR"><rect x="112" y="72" width="28" height="22" rx="11"/></clipPath>
     </defs>
+
+    <!-- chrome: static frame + slow ticking ring, behind the butler and outside #float -->
+    <g class="chrome">
+      <circle id="reticle"  cx="100" cy="100" r="92"/>
+      <circle id="tickring" cx="100" cy="100" r="88"/>
+      <g class="cardinal">
+        <path d="M100 4 v8"/><path d="M100 188 v8"/>
+        <path d="M4 100 h8"/><path d="M188 100 h8"/>
+      </g>
+      <g class="cbracket">
+        <path d="M12 32 V12 H32"/><path d="M168 12 H188 V32"/>
+        <path d="M188 168 V188 H168"/><path d="M32 188 H12 V168"/>
+      </g>
+    </g>
 
     <g id="float">
       <!-- head shell -->

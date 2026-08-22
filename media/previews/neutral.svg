@@ -19,7 +19,19 @@
   </defs>
 
   <rect width="200" height="200" fill="#0b0e13"/>
-  <ellipse cx="100" cy="176" rx="65" ry="9" fill="rgba(0,0,0,.45)"/>
+
+  <!-- chrome: the shared ecosystem frame -->
+  <circle cx="100" cy="100" r="92" fill="none" stroke="#34e6f2" stroke-opacity=".3" stroke-width="1.2"/>
+  <circle cx="100" cy="100" r="88" fill="none" stroke="#34e6f2" stroke-opacity=".42" stroke-width="3"
+          stroke-dasharray="2.4 20.6" transform="rotate(0 100 100)"/>
+  <g stroke="#34e6f2" stroke-opacity=".6" stroke-width="1.8" stroke-linecap="round">
+    <path d="M100 4 v8"/><path d="M100 188 v8"/><path d="M4 100 h8"/><path d="M188 100 h8"/>
+  </g>
+  <g fill="none" stroke="#34e6f2" stroke-opacity=".36" stroke-width="1.6" stroke-linecap="round">
+    <path d="M12 32 V12 H32"/><path d="M168 12 H188 V32"/>
+    <path d="M188 168 V188 H168"/><path d="M32 188 H12 V168"/>
+  </g>
+
 
   <!-- head shell -->
   <rect x="36" y="36" width="128" height="106" rx="34" fill="url(#shell)"/>

@@ -30,6 +30,30 @@ function isAboutAccess(status: number): boolean {
   return status === 401 || status === 403 || status === 429;
 }
 
+/**
+ * Whether a failed tool probe actually answered the question it asked.
+ *
+ * A 4xx is the server understanding the request and rejecting it — and the only
+ * unusual thing about a tool probe is its `tools` parameter, so that rejection is an
+ * answer: no. Anything else is the server failing to answer at all. A 502 from a
+ * gateway, a 503 from a model still loading, a 500 from a bug: none of them say
+ * anything about tools.
+ *
+ * Access statuses are the exception inside 4xx. 401, 403 and 429 are about the key or
+ * the quota, never about the request body.
+ *
+ * **A rule rather than a list, and that distinction is the whole fix.** The first
+ * version enumerated the three access codes, having been burned once by a bad
+ * credential caching `tool support = false` for the session. Enumerating meant every
+ * status nobody had thought of — every 5xx, every gateway error — was still recorded
+ * as a definitive "this model cannot call tools" and remembered until the window was
+ * reloaded. Only a conclusive answer is worth remembering; everything else means ask
+ * again later.
+ */
+export function probeAnswered(status: number): boolean {
+  return status >= 400 && status < 500 && !isAboutAccess(status);
+}
+
 /** The shape of a streamed chunk, as far as this file cares about it. */
 interface OpenAiChunk {
   choices?: {
@@ -189,7 +213,12 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       // observed live: a bad upstream credential produced `tool support = false`, which
       // is cached for the session, so the agent path would have stayed disabled for a
       // model that supports tools perfectly well even after the key was fixed.
-      if (isAboutAccess(response.status)) {
+      //
+      // The same is true of everything the server says when it is not answering: a
+      // gateway's 502, a runtime's 503 while a model loads. `probeAnswered` is where
+      // that line is drawn, as a rule rather than as a list of the statuses that have
+      // caught us out so far.
+      if (!response.ok && !probeAnswered(response.status)) {
         this.log(`model: tool probe for ${this.id}/${model} hit ${response.status} — asking again later`);
         throw new ModelError(
           `${this.spec.label} would not answer a tool probe.`,
@@ -205,8 +234,16 @@ export class OpenAiCompatibleProvider implements ModelProvider {
       return true;
     } catch (error) {
       if (error instanceof ModelError) throw error;
+      // A timeout or a refused connection is not the model declining tools — it is the
+      // probe never arriving. This returned `false`, so the first time the runtime was
+      // closed the agent path was disabled for the whole session, including after it
+      // came back.
       this.log(`model: tool probe failed for ${this.id}/${model} (${String(error)})`);
-      return false;
+      throw new ModelError(
+        `${this.spec.label} would not answer a tool probe.`,
+        `tool probe: ${String(error)}`,
+        true
+      );
     }
   }
 

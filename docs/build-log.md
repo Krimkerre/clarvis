@@ -1016,3 +1016,44 @@ And splitting `AgentRunner.completed` put a ternary in `loop` and took it from 1
 leaving no headroom in a function `CURRENT_STATE.md` names as one that keeps needing to
 change. Measured against `main` rather than assumed, and paid back in the same pass by
 collapsing `loop`'s two mode ternaries into one.
+
+---
+
+#### The tool probe's third answer had nowhere to live
+
+Found from the other side of the wire. RAVIS — the routing gateway Clarvis talks to as
+an OpenAI-compatible provider — was changed so that a request no model could serve
+answers `502` instead of a misleading `200`. That is correct on its side, and it broke
+tool support here: `supportsTools` read any non-ok status that was not 401, 403 or 429
+as *the model saying no*, and `ModelService` remembers the answer for the session
+(§4.6). A model that calls tools perfectly was recorded as unable to, until the window
+was reloaded.
+
+The probe asks a three-valued question — yes, no, or could not tell — and only the
+first two had anywhere to go. `toolSupport` is a `Map<string, boolean>` and
+`supportsTools` returns `Promise<boolean>`; "could not tell" was expressible only by
+throwing, and the throw was gated on a list of three status codes.
+
+**This is the second time.** The first was a bad credential: a 401 cached
+`tool support = false` and left the agent path disabled after the key was fixed. The
+fix then was to special-case 401, 403 and 429 — the instance, not the rule. Every
+status nobody had thought of still landed in the same trap, which is what a gateway's
+502 then demonstrated.
+
+The rule, replacing the list: **a 4xx is the server understanding the request and
+rejecting it**, and the only unusual thing in a tool probe is its `tools` parameter, so
+that is an answer. **Anything else is the server failing to answer at all** — a
+gateway's 502, a runtime's 503 while a model loads, a timeout, a refused connection.
+Access statuses stay the exception inside 4xx, because 401, 403 and 429 are about the
+key or the quota rather than the request body. `probeAnswered` is that sentence, and
+its tests are written against what a status *means* rather than against the four codes
+that have burned us so far.
+
+The `catch` arm had the same defect and was fixed with it: a probe that never arrived
+returned `false`, so the first time the local runtime was closed the agent path went
+away for the rest of the session, including after it came back.
+
+RAVIS made the matching change on its side rather than leaving this to be absorbed
+here: a pool whose candidates are all in breaker cooldown now answers `503` rather than
+`422`, because the pool works again when the cooldown expires and a 4xx would tell
+Clarvis it does not.

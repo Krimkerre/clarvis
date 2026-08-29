@@ -345,7 +345,15 @@
           "description": "Path to NERVIS's enrollment secret — the file beside its database, named like it with a .enrollment suffix. Reading it is how Clarvis proves it is you; the file’s own permissions are the check. Empty means the Bridge binds but never registers, and every read of it is refused."
         }
       }
-    }
+    },
+    "themes": [
+      {
+        "id": "clarvis-nervis",
+        "label": "Clarvis — NERVIS",
+        "uiTheme": "vs-dark",
+        "path": "./themes/clarvis-nervis-color-theme.json"
+      }
+    ]
   },
   "scripts": {
     "vscode:prepublish": "node esbuild.js",

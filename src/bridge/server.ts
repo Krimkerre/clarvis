@@ -22,6 +22,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import type { ActivitySnapshot } from './activity';
+import { settingIds, type ConfigSummary } from './config';
 import type { Identity } from './identity';
 import { EventStream, frame } from './events';
 import {
@@ -54,6 +55,8 @@ export interface BridgeConfig {
   readonly token: () => string | undefined;
   readonly identity: () => Identity;
   readonly status: () => ActivitySnapshot;
+  /** The published settings (§6.2's `clarvis.config.summary@1`), if the host reads any. */
+  readonly summary?: () => ConfigSummary;
   readonly events: EventStream;
   /** The declared set, resolved for this host — see `Bridge.capabilities`. */
   readonly capabilities?: () => Readonly<Record<string, Capability>>;
@@ -220,6 +223,18 @@ export class BridgeServer {
         return versionBody(this.config.buildVersion);
       case '/v1/status':
         return statusBody(this.config.status(), timestamp(this.now()));
+      case '/v1/config':
+        // Absent rather than empty when the host did not supply a reader: an
+        // empty summary would say "nothing is configured", which is a claim.
+        return this.config.summary
+          ? {
+              config: this.config.summary(),
+              // Where each field lives, so a reader can say how to change it
+              // without NERVIS being able to (§6.7).
+              settings: settingIds(),
+              read_at: timestamp(this.now()),
+            }
+          : undefined;
       default:
         return undefined;
     }

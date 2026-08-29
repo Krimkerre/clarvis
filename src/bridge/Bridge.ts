@@ -19,6 +19,7 @@ import { API_VERSION, CAPABILITIES, PROTOCOL_VERSION, voiceCapability, wireIdent
   type Capability } from './protocol';
 import { deregister, heartbeat, heartbeatInterval, register, type Claim } from './registration';
 import { BridgeServer } from './server';
+import type { ConfigSummary } from './config';
 import type { ActivityChange, ActivitySnapshot } from './activity';
 import { publishActivity } from './publish';
 
@@ -29,6 +30,15 @@ export interface BridgeOptions {
   readonly enrollmentSecret: string;
   readonly storage: Storage;
   readonly facts: HostFacts;
+  /**
+   * The allowlisted settings, if the host can read any (§6.2's
+   * `clarvis.config.summary@1`).
+   *
+   * Optional because a Bridge driven from a test has no settings to read, and an
+   * absent reader publishes no route rather than an empty document — "nothing is
+   * configured" is a claim, and it would be a false one.
+   */
+  readonly settings?: () => ConfigSummary;
   /**
    * What Clarvis is doing — the store itself, because the Bridge needs both
    * halves of it: `snapshot()` answers `/v1/status`, and `observe()` is the only
@@ -124,6 +134,7 @@ export class Bridge {
       token: () => this.token,
       identity: () => this.identity as Identity,
       status: () => this.options.activity.snapshot(),
+      summary: this.options.settings,
       events: this.events,
       capabilities: () => this.capabilities(),
       buildVersion: this.options.facts.buildVersion,

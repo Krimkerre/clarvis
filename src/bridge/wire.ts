@@ -16,6 +16,7 @@
 import * as vscode from 'vscode';
 import { promises as fs } from 'fs';
 import { Bridge } from './Bridge';
+import { summarise } from './config';
 import type { Activity } from './activity';
 
 declare const __CLARVIS_BUILD__: string;
@@ -62,6 +63,13 @@ export async function startBridge(
       protocolVersion: '1.0.0',
     },
     activity,
+    // **Read per request, not captured at startup.** A person changes a setting
+    // and expects the answer to change; a snapshot taken when the window opened
+    // would report the configuration Clarvis started with, which is the same
+    // class of stale claim §6.3 spends its length on. `getConfiguration` with no
+    // section reads the merged value — user, workspace and folder — which is
+    // what is actually in force.
+    settings: () => summarise((id) => vscode.workspace.getConfiguration().get(id)),
     // Both halves of the voice answer live in `vscode`, so they are resolved
     // here — the one file in `src/bridge/` that is allowed to know.
     voice: {

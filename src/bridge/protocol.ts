@@ -73,6 +73,19 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
       'the stream is served and conformant, but nothing subscribes to it yet — ' +
       'no consumer has exercised reconnect, replay or the event families end to end',
   },
+  /**
+   * **The read that exists so a write does not have to.** §6.7 forbids NERVIS
+   * changing a setting, and the Bridge has no write path to extend — so the
+   * useful half of "can NERVIS manage Clarvis" is answered by publishing the
+   * configuration instead of accepting one. An allowlist, in `config.ts`,
+   * carrying model names, providers, modes and booleans; never a path, never a
+   * URL somebody typed, never anything from SecretStorage.
+   */
+  'clarvis.config.summary@1': {
+    version: '1.0.0',
+    state: 'available',
+    reason: '',
+  },
   'clarvis.diagnostics.summary@1': {
     version: '1.0.0',
     state: 'unavailable',

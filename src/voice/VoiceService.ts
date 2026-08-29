@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { VoiceProvider, Utterance } from './VoiceProvider';
 import { SpeechOccasion, mayBeSpoken } from './speechScope';
+import { fallbackLogLine, fallbackNotice } from './fallbackNotice';
 import { resolveVoiceId } from './curatedVoices';
 import { stopPlayback } from './nativePlayer';
 import { speakable } from './speakable';
@@ -161,9 +162,15 @@ export class VoiceService {
         this.avatar.setState('neutral', 'chat');
         return;
       }
+      // **Unavailable is a reason, not a non-event.** This branch used to be
+      // empty: the good voice reporting itself unavailable dropped to the system
+      // voice with no log line and no message, so a missing key was indebuggable
+      // from the product — you heard the wrong voice and were told nothing.
+      // Only a *thrown* failure warned, which is the rarer of the two.
+      await this.explainUnavailable();
     } catch (error) {
       this.log(`voice: ${this.primary.id} failed (${String(error)}), falling back`);
-      this.warnOnce();
+      this.warnOnce('');
     }
 
     try {
@@ -176,12 +183,32 @@ export class VoiceService {
     }
   }
 
-  /** At most one non-modal warning per session (§4.4). Never a modal, never a retry storm. */
-  private warnOnce(): void {
+  /**
+   * Says why the good voice is not being used, when the provider knows why.
+   *
+   * Always logged, warned at most once. The log is the part that matters for a
+   * cause that does not change while the session runs — a missing key produces
+   * one line per utterance in the log, which is where somebody debugging looks,
+   * and one toast, which is all §4.4 allows.
+   */
+  private async explainUnavailable(): Promise<void> {
+    const reason = (await this.primary.unavailableReason?.()) ?? '';
+    this.log(fallbackLogLine(this.primary.id, reason));
+    this.warnOnce(reason);
+  }
+
+  /**
+   * At most one non-modal warning per session (§4.4). Never a modal, never a
+   * retry storm.
+   *
+   * Takes the reason rather than stating one: "the preferred voice is
+   * unavailable" told somebody nothing they had not already worked out from
+   * hearing the wrong voice, and the two real causes — no key stored, daily cap
+   * spent — want opposite responses.
+   */
+  private warnOnce(reason: string): void {
     if (this.warnedThisSession) return;
     this.warnedThisSession = true;
-    void vscode.window.showWarningMessage(
-      'Clarvis: the preferred voice is unavailable, using the system voice for now.'
-    );
+    void vscode.window.showWarningMessage(fallbackNotice(reason, this.primary.id));
   }
 }

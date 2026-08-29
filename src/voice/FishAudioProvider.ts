@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Utterance, VoiceProvider } from './VoiceProvider';
 import { cacheKey, selectForEviction, CacheEntry } from './voiceCache';
+import { fishUnavailableReason } from './fallbackNotice';
 import { capKeyFor, withinCap } from './dailyCap';
 import { playFile } from './nativePlayer';
 import { renderTimeout } from './renderTimeout';
@@ -55,6 +56,17 @@ export class FishAudioProvider implements VoiceProvider {
   async isAvailable(): Promise<boolean> {
     const key = await this.context.secrets.get(FISH_KEY_SECRET);
     return Boolean(key) && this.withinDailyCap();
+  }
+
+  /**
+   * Which of the two reasons applies, named rather than merged.
+   *
+   * They call for opposite responses — one wants a key entered, the other wants
+   * the user to wait or raise the cap — so a single "unavailable" would send
+   * half the people who see it looking in the wrong place.
+   */
+  async unavailableReason(): Promise<string> {
+    return fishUnavailableReason(await this.hasKey(), this.withinDailyCap());
   }
 
   async speak(utterance: Utterance): Promise<void> {

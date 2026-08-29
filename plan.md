@@ -4993,6 +4993,100 @@ cleanest milestone to cut.
 - [ ] Scope: the first milestone of a beginner's project produces something that runs
       in one session. If it cannot, §4.9's gap analysis cut too little.
 
+### M14 — The NERVIS Bridge *(proposed 29 Aug — NOT signed off, no code written)*
+
+External driver: `ECOSYSTEM_RUNBOOK.md` §6.2 Stage 8, contract in `CLARVIS.md` §6. An
+optional, extension-host-scoped read-only Bridge exposing MEP health/identity/
+capabilities/version/events plus `GET /v1/status`, so NERVIS can *observe* a running
+Clarvis window. Off by default. **Stage 8's exit:** two windows have distinct instance
+and workspace IDs with isolated state; closing one removes only its registration;
+disabling the Bridge restores exact standalone behaviour; no safety gate is bypassable
+and no secret is emitted.
+
+A read-only survey of both repositories was done before writing this. It found four
+things that have to be settled before any of it is buildable, and they are the reason
+this section exists rather than a branch.
+
+**H1 — The two specifications contradict each other, and a human must choose.**
+`CLARVIS.md` §6.1 says the Bridge generates a token, "is handed to NERVIS at
+registration", and "requires it on every request including `/ecosystem/events`". NERVIS's
+already-shipped receiving half refuses exactly that: `CLAIMABLE`
+(`nervis/src/nervis/instances.py:48-51`) has no field for it, and the comment above it
+states the rationale outright — *"any token belonging to the registrant … NERVIS never
+needs to call back into a Bridge with the Bridge's own credential."* A test defends it.
+Taken together the Bridge would register successfully and then be unreadable by the only
+service meant to read it. Worse, NERVIS has **no outbound authentication path at all**:
+`probes.py:_read` and `peers/reader.py` send a request id and a traceparent and nothing
+else. Three ways out, and this is the sign-off question:
+
+  (a) NERVIS accepts and holds the Bridge token in memory — reverses a documented
+      decision, and gives NERVIS a credential it deliberately refused.
+  (b) The Bridge authenticates with the token NERVIS *already* returns at registration,
+      inverting who issues it — smaller change, but `CLARVIS.md` §6.1 must be amended,
+      and the port-impersonation argument at §6.1's end needs re-checking under it.
+  (c) Bridge reads are unauthenticated on loopback — cheapest, and rejected here: §6.1's
+      own reasoning is that any local process can bind the port a Bridge would have used
+      and feed fabricated `clarvis.gate.requested` events to the operator's dashboard.
+
+**H2 — `waiting_for_approval` cannot be derived today, and it is the state that matters
+most.** §6.7 permits NERVIS to display "the fact that a gate awaits the user" — that is
+the whole reason the state exists. `AgentRunner.askGate` (`src/agent/AgentRunner.ts:652-679`)
+awaits a modal `showWarningMessage` with nothing recorded before or during the await: no
+flag, no field, no event. Same for the sensitive-read gate and the sandbox-escape consent.
+Making a pending gate observable is prerequisite work inside the agent, not Bridge work,
+and it touches the safety path — which this repo's own history says is where confidently
+wrong fixes ship.
+
+**H3 — Two of the run signals are broken, so `agent_running` would lie.** `Busy.start('run')`
+is never called: all three call sites pass `'reply'` (`src/chat/Replier.ts:77`, `:192`,
+`src/chat/RunSession.ts:229`), so `Busy.isRunning` is dead code. And `clarvis.runTask`
+(`src/extension.ts:901-937`) constructs its own `AgentRunner` outside `RunSession` and
+outside `Busy` entirely — a run started from the command palette would report `idle`
+while files are being written. §6.3 says *"unknown values stay unknown"*; shipping a
+status that says `idle` during an agent run is worse than shipping no status.
+
+**H4 — There is no read-only state to expose, and the objects that hold the state also
+hold the secrets.** Every "what is Clarvis doing" source is a live controller with acting
+methods (`Busy`, `BusyTracker`, `AvatarController`, `ChatActions`), and
+`vscode.ExtensionContext` — whose `.secrets` is the credential store — is a field on
+`AgentRunner`, `ModelService`, `FishAudioProvider`, `RunSession` and `Checkpoint`. A
+status payload built by reaching into those objects is one property access away from a
+leak, and §6.7 forbids the Bridge reaching a gate or a tool at all. This wants a
+purpose-built read-only snapshot type that the Bridge is given, rather than the Bridge
+being given the controllers — structural, so it stays true later.
+
+**Also noted, not blocking.** Clarvis has zero runtime dependencies and node's `http`
+survives esbuild's bundling, so the Bridge needs no new dependency. None of §6.1's
+identity fields exist yet (`service_id`, `machine_id`, `instance_id`, `workspace_id`,
+`host_kind`) — `globalState` is the right home and is already used for installation-scoped
+values. `deactivate()` returns `void` and the host often kills the process before its
+write flushes, so deregistration must be best-effort and expiry must lean on NERVIS's
+45-second lease; the listening socket, by contrast, belongs on `context.subscriptions`
+rather than `logTailing.ts`'s module-scope mutables, which survive a reload that misses
+`deactivate`. `ClarvisLog` deliberately records full command strings, sensitive paths and
+tool arguments — so `clarvis.logs.reference@1` must publish a *reference*, exactly as its
+name says, and never content. And the 91-test fast suite never imports `vscode`, so the
+Bridge's logic has to be `vscode`-free to be testable there.
+
+**Proposed order, if signed off:** settle H1 → make a gate observable and fix the run
+signals (H2, H3) → the read-only snapshot type (H4) → identity in `globalState` → the
+HTTP surface, off by default → registration and heartbeat → events. Each with its own
+exit check; the two-window isolation test and the "disabled restores standalone
+behaviour" test are the ones Stage 8 is actually graded on.
+
+**Exit checklist:** *(none ticked — nothing is built)*
+- [ ] H1 resolved by an explicit decision, and whichever document was wrong is amended.
+- [ ] A pending gate is observable without changing whether or how the gate is asked.
+- [ ] `Busy.start('run')` reaches the run path, and a palette-started run is visible.
+- [ ] A read-only snapshot type exists that cannot reach a controller, a gate or
+      `ExtensionContext`.
+- [ ] Two windows register separately; neither overwrites the other; closing one expires
+      only its own registration.
+- [ ] With the setting off: no socket, no registration, no timer, no listener — proven by
+      test, not by checking the port.
+- [ ] No event or status field carries a command string, a path, prompt or response text,
+      or a secret — proven by a payload test over hostile fixtures.
+
 ---
 
 ## 8. Risks

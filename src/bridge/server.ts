@@ -22,7 +22,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
 import type { ActivitySnapshot } from './activity';
-import { settingIds, type ConfigSummary } from './config';
+import { GUIDANCE, settingIds, type ConfigSummary } from './config';
 import type { Identity } from './identity';
 import { EventStream, frame } from './events';
 import {
@@ -232,6 +232,10 @@ export class BridgeServer {
               // Where each field lives, so a reader can say how to change it
               // without NERVIS being able to (§6.7).
               settings: settingIds(),
+              // How to change each one in this editor. The Bridge cannot be
+              // asked to change anything (§6.7), so this is the most useful
+              // thing it can say about a setting.
+              guidance: GUIDANCE,
               read_at: timestamp(this.now()),
             }
           : undefined;

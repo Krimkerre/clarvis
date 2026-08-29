@@ -107,6 +107,61 @@ export function settingIds(): Record<string, string> {
   return ids;
 }
 
+/**
+ * How a person changes each published setting, in this editor.
+ *
+ * **Because "search for `clarvis.chat.model` in Settings" is the worst true
+ * answer.** Almost none of these are meant to be typed into a settings file:
+ * the model has a picker behind the bowtie, the mode is a button above the
+ * prompt, and the theme belongs to VS Code's own switcher. A control plane that
+ * may not change a setting (§6.7) is most useful when it can say precisely
+ * where the control is.
+ *
+ * Authored here, beside the affordances it describes, because Clarvis is the
+ * only thing that knows what its own panel looks like — and it lives next to
+ * `PUBLISHED` so a field added without a route is visible as an omission rather
+ * than silently answered with the settings-file fallback.
+ *
+ * Every command title below is a real entry in `package.json`'s `contributes`,
+ * and a test asserts it: an instruction naming a command that does not exist is
+ * worse than no instruction, because it is followed.
+ */
+export const GUIDANCE: Readonly<Record<string, string>> = {
+  'chat.provider':
+    'Click the bowtie to the left of the prompt in the Clarvis panel, then Choose Model ' +
+    'Provider — or run "Clarvis: Choose Model Provider" from the command palette.',
+  'chat.model':
+    'Click the bowtie to the left of the prompt in the Clarvis panel to open the models ' +
+    'menu, then pick a chat model — or run "Clarvis: Choose Model".',
+  'chat.mode':
+    'The mode button above the prompt (labelled Ask, Auto or Unattended) — it is what ' +
+    'Clarvis is allowed to do without asking.',
+  'chat.endpoint':
+    'Set with the provider: choose the provider behind the bowtie and Clarvis asks for the ' +
+    'address of your server. It is validated before it is stored.',
+  'agent.provider':
+    'The same models menu behind the bowtie: the agent role has its own provider, so a ' +
+    'small local model can answer chat while a capable one runs tools.',
+  'agent.model':
+    'Behind the bowtie, under the agent role — or "Clarvis: Choose Model" and pick the ' +
+    'agent when asked. A tool-capable build is required; Clarvis probes rather than guesses.',
+  'voice.enabled':
+    'Settings: `clarvis.voice.enabled`. The Mute button above the prompt silences him for ' +
+    'this window only and resets on reload, which is a different thing from turning voice off.',
+  'voice.selected':
+    'Settings: `clarvis.voice.selectedVoice`. "Clarvis: Test Voice" plays the current one.',
+  'bridge.enabled':
+    'Settings: `clarvis.bridge.enabled`. Off means nothing is bound at all — no socket, no ' +
+    'registration — so NERVIS stops seeing this window entirely.',
+  'bridge.nervis': 'Settings: `clarvis.bridge.nervisUrl`.',
+  'bridge.enrolment_configured':
+    'Settings: `clarvis.bridge.enrollmentSecretPath`, pointing at the 0600 file beside ' +
+    "NERVIS's database. Without it the Bridge binds but never registers.",
+  theme:
+    'VS Code\'s own theme switcher: Preferences: Color Theme (⌘K ⌘T), or Settings: ' +
+    '`workbench.colorTheme`. "Clarvis — NERVIS" is the one that matches the dashboard.',
+};
+
 /** How long a published string may be. A model id is short; a mistake is not. */
 export const MAX_VALUE_CHARS = 120;
 

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_VALUE_CHARS, PUBLISHED, locality, summarise } from './config';
+import { GUIDANCE, MAX_VALUE_CHARS, PUBLISHED, locality, summarise } from './config';
 
 /**
  * The read that exists so a write does not have to (§6.2, §6.7). Every test
@@ -107,5 +107,34 @@ test('every published field names a setting that starts with a known prefix', ()
       setting.startsWith('clarvis.') || setting === 'workbench.colorTheme',
       `${setting} is not Clarvis's to publish`
     );
+  }
+});
+
+test('every instruction names a command this extension actually contributes', () => {
+  // An instruction naming a command that does not exist is worse than none,
+  // because it is followed. The manifest is the authority; this reads it.
+  const manifest = require('../../package.json') as {
+    contributes: { commands: { title: string }[] };
+  };
+  const titles = new Set(manifest.contributes.commands.map((entry) => entry.title));
+
+  for (const [field, text] of Object.entries(GUIDANCE)) {
+    for (const quoted of text.match(/"Clarvis: [^"]+"/g) ?? []) {
+      assert.ok(titles.has(quoted.slice(1, -1)), `${field} names ${quoted}, which does not exist`);
+    }
+  }
+});
+
+test('every published field has a route, and every route a field', () => {
+  // A field added without a route would be answered with the settings-file
+  // fallback, which is the answer this whole table exists to replace.
+  const fields = PUBLISHED.map((entry) => entry.field).sort();
+
+  assert.deepEqual(Object.keys(GUIDANCE).sort(), fields);
+});
+
+test('an instruction is a sentence, not a document', () => {
+  for (const [field, text] of Object.entries(GUIDANCE)) {
+    assert.ok(text.length <= 260, `${field} is ${text.length} characters`);
   }
 });

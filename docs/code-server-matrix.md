@@ -7,9 +7,12 @@ would settle it — the runbook's rule is that unsupported combinations are neve
 supported, and a cell graded from reading rather than running is exactly how that happens.
 
 **The combination tested.** code-server 4.135.0 ("with Code 1.135.0"), standalone install,
-macOS arm64, Clarvis 0.0.1, served over plain HTTP on loopback, **direct** — never through
-the NERVIS proxy, which is why every proxied cell below is `NOT_TESTED`. Browser axis:
-Firefox only, and only for the webview question.
+macOS arm64, Clarvis 0.0.1, served over plain HTTP on loopback — **direct**, and since 30 August
+also through a **spike reverse proxy** at a `/code/` base path. The spike is not NERVIS's proxy:
+it forwards bytes and does none of §13.3's security work, so what it grades is Clarvis and
+code-server *under a proxy*, never NERVIS's own route. Everything behind code-server's login
+remains ungraded, because the password is the operator's to type. Browser axis: Firefox only,
+and only for the webview question.
 
 **This is not a support statement.** Stage 9's exit asks that install, activate, chat,
 agent, stream, stop, tool, gate, workspace boundary, SecretStorage, persistence and
@@ -20,10 +23,10 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 18 |
-| PASS_WITH_LIMITATION | 8 |
+| PASS | 20 |
+| PASS_WITH_LIMITATION | 10 |
 | FAIL | 3 |
-| NOT_TESTED | 18 |
+| NOT_TESTED | 16 |
 
 **How to read the confidence.** 7 cells were
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -262,29 +265,81 @@ Never exercised: settings.json selects provider `custom` (RAVIS) for both chat a
 
 **To settle.** Set clarvis.chat.provider=lmstudio in code-server's settings, reload the window, open the model picker, and confirm a `GET /v1/models` reaches LM Studio's server log and the picker lists a model.
 
-### `NOT_TESTED` — NERVIS reverse proxy in front of code-server / embedded Code tab
+### `PASS_WITH_LIMITATION` · observed — a reverse proxy in front of code-server
 
-The component does not exist, so there was nothing to test. NERVIS's app (/Users/mathias/Documents/coding/NERVIS-ecosystem/nervis/src/nervis/app.py:73-81) mounts eight routers — ecosystem, api, chat, events, diagnostics, traces, instances, voice — plus the dashboard; none is a proxy, and `grep -rn 'absproxy|/proxy/' nervis/` finds only a test asserting that allowed_endpoint REFUSES such a path (nervis/tests/test_m2_registry.py:734). The Code tab is a mock, not an iframe: nervis/index.html:8770 renders `<div class="full code-server" id="clarvis-frame">` filled with hand-written title bar, file list, EDITOR_PREVIEW code and a Clarvis panel, and the file says so twice — line 14 ('replace the mock workspace with a code-server iframe'), line 3180 ('In the real build the Code tab is an <iframe> at this origin behind the NERVIS reverse proxy') and line 8741 ('When the Code tab becomes a real iframe this constant is deleted outright'). The only <iframe> elements in the dashboard are srcdoc avatar frames (index.html:1021,1032).
+**Measured through a spike proxy, not through NERVIS's own route, which still does not exist.**
+The spike (`proxy_spike.py`, ~150 lines of Starlette + httpx + websockets) forwards HTTP and
+WebSockets to `127.0.0.1:8080` under a base path, and does none of §13.3's security work — no
+auth, no CSRF, no redaction, no timeouts. It exists to answer the questions this matrix asks
+about *Clarvis under a proxy*, and those are answered by forwarding bytes faithfully.
 
-**To settle.** Build the NERVIS route that serves code-server (the mock's placeholder is `base_path:'/code/'`, index.html:3185), point #clarvis-frame at it, and load the dashboard in a browser.
+What it establishes: the workbench's static surface serves correctly under a prefix, large
+streams survive, and the WebSocket upgrade proxies. What it cannot establish is anything behind
+the login, which is the operator's password to type.
 
-### `NOT_TESTED` — WebSockets through the NERVIS proxy
+**Limitation.** A NERVIS-side statement about NERVIS's proxy still requires NERVIS's proxy. The
+Code tab embeds code-server *directly* at `127.0.0.1:8080` today, so nothing in production is
+proxied and none of this is load-bearing yet.
 
-Untestable today for the reason above: no NERVIS proxy exists. What the host requires is readable: code-server's workbench WebSocket route is guarded by `ensureOrigin, ensureAuthenticated, ensureVSCodeLoaded` (~/.local/lib/code-server-4.135.0/out/node/routes/vscode.js:225), so a proxy must forward the upgrade AND satisfy the origin rule below. Clarvis itself adds no WebSocket: its own Bridge surface is plain HTTP with SSE over node's `http` (src/bridge/server.ts) and its webview opens no socket (no WebSocket/EventSource in media/).
+### `PASS` · observed — base path other than `/`
 
-**To settle.** Once a NERVIS /code route exists, load it in a browser and confirm the workbench connects — no 403 on the upgrade in code-server's log and the editor renders rather than hanging on 'Connecting'.
+Served at `/code/` through the spike and it needs no rewriting at all: code-server emits relative
+URLs. The login page carries `"base": "."` and `csStaticBase: "./_static"`, every asset href is
+`./_static/...`, and the one redirect observed is `location: ./login` — relative, so a prefix
+cannot break it. Assets resolve: `/code/_static/src/browser/pages/login.css` → 200, 1,097 bytes,
+`text/css`, identical to the direct fetch.
+
+**And Clarvis adds no base-path dependency**, which was previously an argument and is now
+measured alongside it: the webview addresses resources only through `webview.cspSource` and
+`localResourceRoots`, and there is no `asExternalUri` anywhere in the extension.
+
+### `PASS` · observed — large streams through a proxy
+
+`workbench.web.main.internal.js` — 18,538,728 bytes — fetched directly and through the proxy.
+`cmp` reports the two files byte-identical. A workbench that loads its main bundle through a hop
+is the case worth checking, because a proxy that truncates at a buffer boundary produces a blank
+editor rather than an error.
+
+### `PASS_WITH_LIMITATION` · observed — WebSocket upgrade through a proxy
+
+The upgrade proxies, and finding out cost two defects in the spike that are worth recording
+because both are the ordinary way to write it:
+
+- **Accepting before dialling upstream.** The first version accepted the client socket and then
+  connected to code-server, so an upstream `401` became a socket that opened and closed
+  immediately. A browser reports that as a dropped connection: "you are logged out" arrives
+  looking like "the server fell over". Connecting first and accepting only on success makes the
+  proxy relay the refusal instead of inventing a connection.
+- **Forwarding every path.** Mounted at `/code`, it still answered `/healthz` — a proxy that
+  answers outside its own prefix is an open proxy to its upstream on every path, which is
+  §13.3's "no arbitrary upstream proxying" in one line. And `/code/../healthz` walked out of the
+  prefix because uvicorn does not collapse `..` before routing, so the prefix test has to
+  normalise first. Both fixed; `/healthz` → 404, `/code/../healthz` → 404, `/code/healthz` → 200.
+
+**Limitation.** With the fix, an unauthenticated upgrade is refused — but as `403`, not the
+upstream's `401`, because a pre-accept close at the ASGI layer cannot choose the status. The
+difference matters to a browser: `401` says re-authenticate, `403` says stop asking. A
+production proxy has to handle the handshake lower down to relay it faithfully.
+
+### `NOT_TESTED` — the authenticated workbench through a proxy
+
+Everything above is the unauthenticated surface. code-server runs with `auth: password`, the
+password is the operator's, and entering it is theirs to do — so the workbench, the Clarvis
+panel, the terminal and an agent run through a proxy remain ungraded.
+
+**To settle.** Open `http://127.0.0.1:8795/code/` in a browser, log in, and confirm: the
+workbench renders, the Clarvis panel appears and streams a reply, and the terminal opens (which
+is the WebSocket carrying real traffic rather than merely upgrading).
 
 ### `NOT_TESTED` — Origins (proxied)
 
-No proxy to test against. The rule that will decide it is in ~/.local/lib/code-server-4.135.0/out/node/http.js:322-352: `authenticateOrigin` rejects the request unless the Origin header's host equals the Host header (honouring Forwarded / X-Forwarded-Host) or matches `--trusted-origins`. So a NERVIS proxy that rewrites Host to 127.0.0.1:8741 while the browser's Origin stays NERVIS's own will get 403 Forbidden on the workbench WebSocket and code-server will never load; forwarding Host unchanged, or listing NERVIS's origin in --trusted-origins, is the fix. On the Clarvis side there is nothing origin-dependent: the webview ships `default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-...'; media-src data:` (src/panels/ButlerViewProvider.ts:208) with localResourceRoots limited to media/ (line 51), so it cannot make a cross-origin request at all.
-
-**To settle.** Stand up the NERVIS /code route, then check code-server's log for `host "..." does not match origin "..."` / 'Forbidden' on the WebSocket upgrade, and whether adding --trusted-origins clears it.
-
-### `NOT_TESTED` — Auth and base path (proxied)
-
-Nothing was verified behind the auth gate. code-server runs with password auth (~/.config/code-server/config.yaml: `bind-addr: 127.0.0.1:8080`, `auth: password`) and the gate demonstrably fires — .run/code-server.log ends with two 'Failed login attempt' entries from 127.0.0.1 — but no authenticated session was driven, so no Clarvis feature was exercised through it. Base path is likewise unexercised: code-server is served at `/` and no proxy prefixes it. Clarvis contributes no base-path dependency of its own (no `asExternalUri`, no absolute URL into the code-server origin; the webview addresses resources only through `webview.cspSource` and localResourceRoots, src/panels/ButlerViewProvider.ts:48-51,208) — but that is an argument, not a measurement, and code-server's own behaviour under a prefix is the untested half.
-
-**To settle.** Log in to http://127.0.0.1:8080 with the configured password, confirm the Clarvis panel renders and streams; then serve code-server under a prefix (e.g. /code/ via a proxy that forwards Host) and confirm the workbench and the Clarvis webview both load without 404s on _static.
+Needs the authenticated session above, because `authenticateOrigin` runs on the workbench
+WebSocket after `ensureAuthenticated`. The rule is unchanged and now has a concrete prediction
+attached: the spike strips `Host` and lets httpx set it to the upstream, so a browser at
+`127.0.0.1:8795` sends `Origin: http://127.0.0.1:8795` against `Host: 127.0.0.1:8080` — the
+mismatch `authenticateOrigin` refuses. Forwarding the original Host, or listing the proxy's
+origin in `--trusted-origins`, is the fix, and which one is needed is exactly what the
+authenticated pass will show.
 
 ### `PASS` · observed — localhost RAVIS
 
@@ -331,9 +386,14 @@ and not code-server's — code-server only made them easy to hit.
 
 ## What this spike did not do
 
-- **No proxied testing at all.** Every cell above is direct-to-code-server. The NERVIS
-  reverse proxy, WebSockets through it, origins and base path are the second half of §7.1's
-  axis and none of it has run.
+- **No *NERVIS* proxy.** The proxied cells above were measured through a spike — Starlette,
+  httpx and websockets, forwarding bytes under a `/code/` prefix — which answers what Clarvis and
+  code-server do behind a proxy and says nothing about NERVIS's own route, which does not exist.
+  §13.3's security work (auth, CSRF, origin validation, redaction, timeouts, a published browser
+  matrix) is entirely unbuilt.
+- **Nothing behind the login.** The workbench, the Clarvis panel, the terminal and an agent run
+  through a proxy are ungraded: code-server runs with password auth and the password is the
+  operator's to type.
 - **One browser.** Firefox, and only for whether the webview renders.
 - **Trust was never granted**, so the trusted-folder path is inferred from VS Code's own
   dialog rather than observed.

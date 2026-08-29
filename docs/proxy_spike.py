@@ -60,6 +60,16 @@ def upstream_path(path: str) -> str | None:
     return None
 
 
+def forwarded_for(host: str) -> str:
+    """RFC 7239's header, which is how code-server is told the browser's host.
+
+    `getHost` honours `Forwarded` before the Host header, so this is the
+    supported way to keep the origin check running rather than fighting the
+    HTTP client over which Host it sets.
+    """
+    return f"host={host};proto=http" if host else "proto=http"
+
+
 async def forward(request: Request) -> Response:
     client: httpx.AsyncClient = request.app.state.client
     inside = upstream_path(request.url.path)
@@ -67,6 +77,14 @@ async def forward(request: Request) -> Response:
         return Response("not proxied", status_code=404)
     target = UPSTREAM + inside
     headers = {k: v for k, v in request.headers.items() if k.lower() not in HOP}
+    # **The proxy has to say who the browser thinks it is talking to.**
+    # code-server's `authenticateOrigin` compares the Origin header against the
+    # Host — and reads `Forwarded` first when there is one. Without this the
+    # upstream sees Host 127.0.0.1:8080 against Origin 127.0.0.1:8795 and
+    # refuses; with the Origin *dropped* it skips the check entirely, which is
+    # worse. Saying it plainly is the only version that keeps the check running
+    # and passing.
+    headers["forwarded"] = forwarded_for(request.headers.get("host", ""))
     body = await request.body()
     answered = await client.request(
         request.method, target, params=request.url.query, headers=headers,
@@ -99,10 +117,19 @@ async def bridge(socket: WebSocket) -> None:
     target = "ws://127.0.0.1:8080" + inside
     if socket.url.query:
         target += "?" + socket.url.query
-    cookie = socket.headers.get("cookie", "")
+    # Origin travels, because the alternative is silently disabling the
+    # upstream's own CSRF defence: code-server's `authenticateOrigin` opens with
+    # "A missing origin probably means the source is non-browser … let it
+    # through". A proxy that strips Origin turns that into a hole, and the
+    # workbench connects *because* the check never ran.
+    passed = {
+        name: value for name, value in socket.headers.items()
+        if name.lower() in ("cookie", "origin", "sec-websocket-protocol")
+    }
+    passed["Forwarded"] = forwarded_for(socket.headers.get("host", ""))
     try:
         upstream = await websockets.connect(
-            target, additional_headers={"Cookie": cookie} if cookie else None,
+            target, additional_headers=passed,
             max_size=None, open_timeout=10,
         )
     except Exception as failure:  # noqa: BLE001 - a refusal is an ordinary answer

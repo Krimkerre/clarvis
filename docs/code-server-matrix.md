@@ -23,9 +23,9 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 20 |
-| PASS_WITH_LIMITATION | 10 |
-| FAIL | 3 |
+| PASS | 21 |
+| PASS_WITH_LIMITATION | 11 |
+| FAIL | 4 |
 | NOT_TESTED | 16 |
 
 **How to read the confidence.** 7 cells were
@@ -321,25 +321,64 @@ upstream's `401`, because a pre-accept close at the ASGI layer cannot choose the
 difference matters to a browser: `401` says re-authenticate, `403` says stop asking. A
 production proxy has to handle the handshake lower down to relay it faithfully.
 
-### `NOT_TESTED` — the authenticated workbench through a proxy
+### `PASS` · observed — the authenticated workbench, the Clarvis panel and the terminal through a proxy
 
-Everything above is the unauthenticated surface. code-server runs with `auth: password`, the
-password is the operator's, and entering it is theirs to do — so the workbench, the Clarvis
-panel, the terminal and an agent run through a proxy remain ungraded.
+Driven by the operator, who holds the password. Through the spike at
+`http://127.0.0.1:8795/code/`: the workbench rendered, the Clarvis panel appeared and answered,
+and a terminal opened — which is the WebSocket carrying real traffic rather than merely
+upgrading. That is the three things the proxied axis exists to ask.
 
-**To settle.** Open `http://127.0.0.1:8795/code/` in a browser, log in, and confirm: the
-workbench renders, the Clarvis panel appears and streams a reply, and the terminal opens (which
-is the WebSocket carrying real traffic rather than merely upgrading).
+### `FAIL` — origin validation was not being performed, and that is why it worked
 
-### `NOT_TESTED` — Origins (proxied)
+**The terminal connected partly because the spike had disabled code-server's CSRF defence.** The
+proxy forwarded `Cookie` on the WebSocket hop and nothing else, so the upstream saw no `Origin`
+header at all — and code-server's own words for that case are in
+`~/.local/lib/code-server-4.135.0/out/node/http.js:323`:
 
-Needs the authenticated session above, because `authenticateOrigin` runs on the workbench
-WebSocket after `ensureAuthenticated`. The rule is unchanged and now has a concrete prediction
-attached: the spike strips `Host` and lets httpx set it to the upstream, so a browser at
-`127.0.0.1:8795` sends `Origin: http://127.0.0.1:8795` against `Host: 127.0.0.1:8080` — the
-mismatch `authenticateOrigin` refuses. Forwarding the original Host, or listing the proxy's
-origin in `--trusted-origins`, is the fix, and which one is needed is exactly what the
-authenticated pass will show.
+```js
+// A missing origin probably means the source is non-browser.  Not sure we
+// have a use case for this but let it through.
+const originRaw = getFirstHeader(req, "origin");
+if (!originRaw) { return; }
+```
+
+So the check did not fail; it did not run. A proxy that strips `Origin` silently removes the
+protection §13.3 requires it to *perform* — and the symptom of getting it right is a `403` that
+the naive version never sees.
+
+**Fixed in the spike, and the fix is the shape a real proxy needs.** `Origin` now travels, and
+the browser's host travels as RFC 7239 `Forwarded: host=…;proto=http`, which `getHost` reads
+before the `Host` header. That keeps the comparison running *and* passing, rather than passing by
+absence.
+
+**To settle.** Re-run the authenticated pass with the fixed spike: the workbench and terminal
+should behave identically, and code-server's log should carry no `host "…" does not match origin
+"…"`. A failure there is the real answer to whether NERVIS can proxy at all.
+
+### `PASS_WITH_LIMITATION` — SecretStorage is scoped to the origin, so reaching code-server a different way loses every key
+
+**Observed the moment the proxy was used: none of the operator's API keys were there.** Nothing
+was deleted. Under code-server `context.secrets` is backed by the browser's own storage —
+`secret://<key>` through the workbench storage service — and browser storage is partitioned by
+origin. `http://127.0.0.1:8080` and `http://127.0.0.1:8795` are different origins, so a key
+stored while using one is invisible from the other and remains readable at the first.
+
+**Limitation, and it is a migration hazard rather than a bug.** Any change to *how* code-server
+is reached — a proxy prefix, a different port, a hostname instead of `127.0.0.1` — presents an
+empty keychain. Today the Code tab embeds `127.0.0.1:8080` directly, so moving it behind a NERVIS
+route would empty every user's keys on upgrade while the old ones linger in the old origin's
+storage.
+
+**What blunts it.** RAVIS holding provider credentials is the mitigation this matrix already
+names, and this is the sharpest argument for it: a Clarvis pointed at `ravis/*` stores no
+provider key in the browser at all, so an origin change costs nothing.
+
+### `NOT_TESTED` — Origins (proxied)### `NOT_TESTED` — origin validation actually passing (as opposed to being skipped)
+
+The cell above records why the first authenticated pass proved less than it looked like it did.
+With `Origin` and `Forwarded` now travelling, the check runs — and whether it *passes* is one
+authenticated reload away. Unauthenticated probes cannot settle it: `ensureAuthenticated` refuses
+first, so both a good and a bad origin come back `403` for the same unrelated reason.
 
 ### `PASS` · observed — localhost RAVIS
 

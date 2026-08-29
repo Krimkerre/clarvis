@@ -42,7 +42,13 @@ export async function startBridge(
 
   const secret = await readSecret(settings.get<string>('enrollmentSecretPath', ''), log);
   const bridge = new Bridge({
-    nervisUrl: (settings.get<string>('nervisUrl', '') || 'http://127.0.0.1:8711').replace(/\/+$/, ''),
+    // **8790, and it must match `package.json`'s default.** The first draft took
+    // 8711 from the runbook's port table, which is stale: NERVIS's own
+    // `DEFAULT_PORT` is 8790 and its launcher assigns the same, with a comment
+    // saying a launcher and a service disagreeing about a port produces a
+    // dashboard reporting everything as down. A Bridge pointed at 8711 would
+    // have failed to register on every real install, quietly and for ever.
+    nervisUrl: (settings.get<string>('nervisUrl', '') || 'http://127.0.0.1:8790').replace(/\/+$/, ''),
     enrollmentSecret: secret,
     // `globalState`, not `workspaceState`: §6.1 calls the service and machine IDs
     // installation-scoped, and putting them per-workspace would make every folder

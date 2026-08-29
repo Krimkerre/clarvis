@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import * as fs from 'fs';
+import * as path from 'path';
 import {
   IDENTITY_KEY,
   hostKind,
@@ -245,3 +247,38 @@ test('two windows on different workspaces differ only where they should', () => 
   assert.notEqual(one.instance_id, two.instance_id);
   assert.equal(one.machine_id, two.machine_id);
 });
+
+// ── The one address that has to be right ────────────────────────────────────
+
+test('the default NERVIS address matches the one the manifest offers', () => {
+  // Two copies of a port, in a `.ts` fallback and a `.json` default, is exactly
+  // the pair that drifts — and the failure is silent: a Bridge pointed at the
+  // wrong port simply never registers, and the dashboard reports Clarvis as
+  // offline for a reason three files away from what it shows. The first draft
+  // had 8711 here, taken from the runbook's port table, which is stale relative
+  // to NERVIS's own DEFAULT_PORT of 8790.
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(findRepoRoot(__dirname), 'package.json'), 'utf8')
+  );
+  const declared = manifest.contributes.configuration.properties['clarvis.bridge.nervisUrl'].default;
+  const source = fs.readFileSync(
+    path.join(findRepoRoot(__dirname), 'src', 'bridge', 'wire.ts'), 'utf8'
+  );
+
+  assert.equal(declared, 'http://127.0.0.1:8790');
+  assert.ok(
+    source.includes(`|| '${declared}'`),
+    `wire.ts's fallback disagrees with the manifest default ${declared}`
+  );
+});
+
+/** The repository root, found by walking up to the `package.json`. */
+function findRepoRoot(start: string): string {
+  let current = start;
+  for (;;) {
+    if (fs.existsSync(path.join(current, 'package.json'))) return current;
+    const parent = path.dirname(current);
+    if (parent === current) throw new Error('no package.json above ' + start);
+    current = parent;
+  }
+}

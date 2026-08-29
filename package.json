@@ -336,8 +336,8 @@
         },
         "clarvis.bridge.nervisUrl": {
           "type": "string",
-          "default": "http://127.0.0.1:8711",
-          "description": "Where NERVIS is listening. The ecosystem's documented default; change it if you run NERVIS on another port."
+          "default": "http://127.0.0.1:8790",
+          "description": "Where NERVIS is listening. 8790 is NERVIS's own default and the port its launcher assigns; change it only if you run NERVIS somewhere else."
         },
         "clarvis.bridge.enrollmentSecretPath": {
           "type": "string",

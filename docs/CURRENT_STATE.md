@@ -351,10 +351,13 @@ actual thing.
 
 ## What is still open
 
-**M14, the NERVIS Bridge, is built and unproven live (29 Aug).** Every code exit item in
-`plan.md` §7 M14 is ticked; the two that are not are the ones a test cannot close — two
-real editor windows against a real NERVIS, and "disabling it restores exact standalone
-behaviour". Those are what Stage 8 is graded on, and neither has been run.
+**M14, the NERVIS Bridge, is built and driven end to end — but never inside an extension
+host (29 Aug).** Every code exit item in `plan.md` §7 M14 is ticked, and two real Bridges
+were run against a real NERVIS from node: both registered, NERVIS read each one's
+`/v1/status` with the token it issued, and its dashboard drew what each window was doing.
+What has *not* happened is any of it running inside VS Code. That is the same code and not
+the same environment, and this repository's own history says that distinction is where
+confidently-verified fixes turn out not to work.
 
 The part worth knowing before touching it: `src/bridge/activity.ts` is the only source of
 "what is Clarvis doing", there is exactly one per extension host (it hangs off `RunState`,

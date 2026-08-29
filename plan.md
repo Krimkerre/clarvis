@@ -5121,9 +5121,18 @@ extend; and a Bridge with no token refuses everything including `/ecosystem/vers
 because the token arrives in the registration response and the window between binding and
 registering is real.
 
-**Still to verify live, not by test:** two real editor windows against a real NERVIS, and
-the "disabled restores exact standalone behaviour" check. Those are what Stage 8 is
-actually graded on and neither has been run.
+**Driven end to end on 29 Aug, from node against the compiled output.** Two real Bridges
+against a real NERVIS — not two mocks, not one mock and one real. Both registered on
+distinct OS-assigned ports, took distinct instance and workspace IDs and a shared service
+ID, and NERVIS read each one's `/v1/status` with the token it had issued that window; its
+dashboard drew *waiting for you · sensitive_read* for the one holding a gate and
+*answering* for the one in chat. Closing the first removed only its registration. An
+unauthenticated read came back `401`; a `POST` came back `405`.
+
+**Still to verify inside a real extension host:** two VS Code windows with the setting on,
+and the "disabled restores exact standalone behaviour" check. Everything they would
+exercise is verified above, but from node — the same code, and not the same environment,
+which is a distinction this project has been caught by before.
 
 ---
 

@@ -23,10 +23,10 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 24 |
+| PASS | 25 |
 | PASS_WITH_LIMITATION | 11 |
 | FAIL | 4 |
-| NOT_TESTED | 12 |
+| NOT_TESTED | 11 |
 
 **How to read the confidence.** 7 cells were
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -82,11 +82,24 @@ No command has ever been run by Clarvis under this code-server. AgentRunner.ts:8
 
 **To settle.** Open a real folder in the code-server window at 127.0.0.1:8741 (not an empty window), ask the agent to run something trivial that writes, e.g. `pwd && touch inside.txt && touch "$HOME/escape.txt"`, then read ~/.local/share/code-server/logs/<latest>/exthost*/Krimkerre.clarvis/clarvis.log for `sandbox: using sandbox-exec on darwin` and `sandbox: confined by sandbox-exec`, confirm `<globalStorage>/krimkerre.clarvis/sandbox/commands.sb` was created, and confirm $HOME/escape.txt does not exist. Repeat once with a network-gated command (dependency install) to exercise `network: 'allowed'`.
 
-### `NOT_TESTED` — terminal shell execution — Clarvis's AgentTerminal (its own output terminal)
+### `PASS` · observed — a terminal runs a real shell under code-server
 
-AgentTerminal (commandTools.ts:139) is a UI API: `vscode.window.createTerminal({name:'Clarvis', pty:{...}})` at commandTools.ts:153, i.e. an extension-owned Pseudoterminal whose rendering lives in the browser workbench. It was never instantiated in any code-server session — the only caller of `announce()` is AgentRunner.ts:808 in the command path, and no command ran (see the child_process cell). Source facts that bound the blast radius: command output reaches the model from `child_process.spawn` pipes (commandTools.ts:89-94), not from the terminal, so a terminal that renders badly cannot corrupt the agent's view of a command; the pty is display-only with `handleInput: () => undefined`, so nothing is typed back into a shell; and code-server's extension host does implement the API (`grep -c 'ExtHostPseudoterminal|createExtensionTerminal|onDidWrite' out/vs/workbench/api/node/extensionHostProcess.js` → 3). The real coupling is ordering: AgentRunner.ts:808 calls `this.terminal.announce(command)` BEFORE AgentRunner.ts:822 calls runCommand, so if createTerminal/show throws in the browser-hosted workbench the command never runs at all.
+Driven in an isolated instance (`--auth none`, its own `--user-data-dir`, a scratch workspace),
+so no password and none of the operator's settings were involved. Terminal ▸ New Terminal opened
+a panel and a shell executed: the visible output includes zsh's own
+`_p9k_deschedule_redraw:2: No handler installed for fd 17`, which is powerlevel10k complaining
+inside a real process rather than anything the editor drew.
 
-**To settle.** With a folder open in the code-server tab, run one agent command and watch whether a terminal named 'Clarvis' appears in the browser panel, whether the banner 'Clarvis — command output. Nothing typed here runs.' renders, whether streamed output appears with correct CRLF line endings, and whether `show(true)` reveals the panel without stealing focus from the webview. Then reload the browser tab mid-run to see whether the pty survives a workbench reconnect.
+**One behaviour worth naming.** Creating the first terminal raised Workspace Trust — *"Creating a
+terminal process requires executing code"* — and the terminal was created and usable after
+**Cancel**. The prompt gates the folder's trust, not the terminal, so a "no" leaves a working
+shell in a Restricted Mode window. Clarvis's own gates are unaffected: `trust.ts` throws
+`UntrustedWorkspaceError` before any command it would run, which is a separate and stricter
+check.
+
+**Limitation.** This is the *editor's* terminal. Clarvis's `AgentTerminal` — the one an agent run
+writes into — was not exercised, because an agent run needs the panel and the panel needs a
+browser with working service workers.
 
 ### `NOT_TESTED` — terminal shell execution — shell-integration events (onDidStartTerminalShellExecution)
 
@@ -419,7 +432,14 @@ Source is the evidence: the API is not used, so it cannot fail. `grep -rn 'asExt
 
 code-server opens a folder in Restricted Mode by default. VS Code's own Workspace Trust dialog states extensions are activated only "In a Trusted Folder", and `vscode.git` is absent from the extension host's activation log entirely while `vscode.git-base` is present — so `getExtension('vscode.git')` returns undefined and every branch, worktree, checkpoint and undo flow silently does not run. git 2.55.0 is on PATH and `vscode.git` ships in the install; neither is the cause.
 
-**Limitation.** Works once the folder is trusted. Trust was not granted during this spike — it is a security consent belonging to the operator — so the trusted path is inferred from VS Code's own dialog rather than observed.
+**Now observed rather than inferred, and the message is right.** A fresh instance's Clarvis log
+carries: `branch flow: this folder is not trusted, so the Git extension is switched off — trust
+it to get branch, checkpoint and undo back`. That is the message this spike caused to be written:
+the previous one said "no Git extension" and sent people to install one they already had.
+
+**Limitation.** Works once the folder is trusted. Trust was not granted during this spike — it is
+a security consent belonging to the operator — so the trusted path is inferred from VS Code's own
+dialog rather than observed.
 
 ### `PASS` · observed — Workspace containment and the safety gates under an untrusted folder
 
@@ -453,7 +473,11 @@ and not code-server's — code-server only made them easy to hit.
 - **Nothing behind the login.** The workbench, the Clarvis panel, the terminal and an agent run
   through a proxy are ungraded: code-server runs with password auth and the password is the
   operator's to type.
-- **One browser.** Firefox, and only for whether the webview renders.
+- **Two browsers now, and only one of them can show a webview.** The workbench itself renders in
+  a Chromium-based browser as well as Firefox — the isolated probe above was driven in one. But
+  every ServiceWorker registration fails there, and that gate is what the Clarvis panel needs, so
+  the webview cells rest on Firefox alone. Chrome proper, Safari and a browser with service
+  workers disabled are still ungraded.
 - **Trust was never granted**, so the trusted-folder path is inferred from VS Code's own
   dialog rather than observed.
 - **No fork was proposed**, and none is justified: the runbook permits one only after a

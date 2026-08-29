@@ -18,6 +18,7 @@ import {
   mayEscapeConfinement,
 } from './Gate';
 import { classifyPath } from './sensitivePath';
+import { whileAwaiting, type Activity } from '../bridge/activity';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
@@ -116,8 +117,22 @@ export class AgentRunner {
      * Absent for read-only calls in every mode: approving a file *read* six times
      * teaches people to click yes without reading, which is worse than not asking.
      */
-    private readonly approveStep?: (step: StepExplanation) => Promise<boolean>
+    private readonly approveStep?: (step: StepExplanation) => Promise<boolean>,
+    /**
+     * Where a pending gate is recorded, when the caller has somewhere to record it
+     * (M14).
+     *
+     * **Only the fact, never the question.** `CLARVIS.md` §6.7 lets NERVIS show
+     * *that* an approval is outstanding and forbids it resolving one; §6.4 keeps
+     * the command, the path and the prompt text on this machine. So what goes in
+     * is a category, and there is nowhere here to put anything else.
+     *
+     * Optional because a runner that answers to nobody is a real case — the
+     * palette route had no shared state at all until this milestone.
+     */
+    private readonly activity?: Activity
   ) {}
+
 
   /**
    * Things said while the run is going, waiting to be handed to the model.
@@ -399,7 +414,13 @@ export class AgentRunner {
         // log line, and being asked to approve one means already knowing the answer.
         const step = explainStep(call.name, args);
         const description = step.title;
-        const approved = await this.approveStep(step);
+        // **Marked even in the modes that answer instantly.** `approveStep` returns
+        // straight away when the mode says not to ask, so Auto and Unattended
+        // produce a `waiting_for_approval` that lasts less than a millisecond. Only
+        // wrong if someone reads the state inside that window, and the alternative
+        // — guessing here whether the callback will actually ask — is a copy of the
+        // mode rules in a second place, which is how the two stop agreeing.
+        const approved = await whileAwaiting(this.activity, 'step', () => this.approveStep!(step));
         if (!approved) {
           this.log(`agent [declined] ${description}`);
           const declined = 'The user declined that step. Do not retry it — find another way, or stop and say what you would have done.';
@@ -659,10 +680,12 @@ export class AgentRunner {
     // one to step out of.
     const escape = confined && mayEscapeConfinement(verdict) ? ESCAPE_LABEL : undefined;
 
-    const approved = await vscode.window.showWarningMessage(
-      explainGate(command, verdict, Boolean(escape)),
-      { modal: true },
-      ...(escape ? [label, escape] : [label])
+    const approved = await whileAwaiting(this.activity, 'command', () =>
+      vscode.window.showWarningMessage(
+        explainGate(command, verdict, Boolean(escape)),
+        { modal: true },
+        ...(escape ? [label, escape] : [label])
+      )
     );
 
     if (approved !== label && approved !== escape) {
@@ -721,15 +744,17 @@ export class AgentRunner {
     if (!verdict) return;
 
     const strong = verdict.category === 'key';
-    const approved = await vscode.window.showWarningMessage(
-      strong
-        ? `${requestedPath} looks like ${verdict.what}. Reading it hands the actual key to the model.`
-        : `${requestedPath} looks like ${verdict.what}. Reading it may hand a live credential to the model.`,
-      {
-        modal: true,
-        detail: `Worst case: ${verdict.worstCase}.${strong ? ' Only approve this if you are certain.' : ''}`,
-      },
-      strong ? 'Read it anyway' : 'Read it'
+    const approved = await whileAwaiting(this.activity, 'sensitive_read', () =>
+      vscode.window.showWarningMessage(
+        strong
+          ? `${requestedPath} looks like ${verdict.what}. Reading it hands the actual key to the model.`
+          : `${requestedPath} looks like ${verdict.what}. Reading it may hand a live credential to the model.`,
+        {
+          modal: true,
+          detail: `Worst case: ${verdict.worstCase}.${strong ? ' Only approve this if you are certain.' : ''}`,
+        },
+        strong ? 'Read it anyway' : 'Read it'
+      )
     );
 
     if (approved === undefined) {

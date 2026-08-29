@@ -10,6 +10,8 @@ import { BriefingService } from './briefing/BriefingService';
 import { PatternStore } from './memory/PatternStore';
 import { PatternMemory } from './memory/PatternMemory';
 import { ChatService } from './chat/ChatService';
+import type { RunState } from './chat/Busy';
+import { Activity } from './bridge/activity';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
@@ -143,7 +145,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // committed. Quips stay out of the way during one (§4.6 personality under load), the
   // watcher holds its completion toasts (M8e2), and neither celebrates its commits.
   // Declared before the watcher, which reads it.
-  const agentBusy: { running: boolean; noteCommit?: (hash: string) => void } = { running: false };
+  const agentBusy: RunState = { running: false, activity: new Activity() };
 
   // **F14: said once, when the character has demonstrably gone quiet.** A missed
   // deadline falls back to the written bank and always has — correct, and until now
@@ -179,7 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // because it reads the state those three own.
   startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
-  const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken);
+  const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken, agentBusy);
   registerPlanningCommand(context, models, logger, liveLines);
   registerRecordMilestone(context, models, logger, () => chat);
 
@@ -464,7 +466,7 @@ function startChat(
   voice: VoiceService,
   models: ModelService,
   terminal: AgentTerminal,
-  agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
+  agentBusy: RunState,
   log: ClarvisLog
 ): ChatService {
   // Mute has to silence the OS voice too, and that one lives inside the webview.
@@ -878,11 +880,99 @@ async function showLastRun(context: vscode.ExtensionContext): Promise<void> {
   await vscode.window.showTextDocument(document, { preview: false });
 }
 
+/**
+ * The palette route into the agent: ask for a task, run it, report it.
+ *
+ * Lifted out of `registerAgentCommands` when M14 gave it a `finally` and it grew
+ * past the line limit — but it wanted its own function anyway. It is the second
+ * of the two places that start an agent run, and having it inline in a
+ * registration block is most of why it was the one nobody remembered to wire.
+ */
+async function runTaskFromPalette(
+  context: vscode.ExtensionContext,
+  logger: ClarvisLog,
+  models: ModelService,
+  agentTerminal: AgentTerminal,
+  runState: RunState
+): Promise<void> {
+  const task = await vscode.window.showInputBox({
+    prompt: 'What should I do?',
+    placeHolder: 'e.g. fix the failing test in src/watch',
+    ignoreFocusOut: true,
+  });
+  if (!task?.trim()) return;
+
+  const controller = new AbortController();
+  runState.running = true;
+  runState.activity.startRun();
+  const runner = new AgentRunner(
+    context,
+    vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
+    models,
+    agentTerminal,
+    (message) => logger.write(message),
+    // The palette route has never asked before a step — its whole shape is
+    // fire-and-watch-the-notification — but its gates are the same gates.
+    undefined,
+    runState.activity
+  );
+
+  // Set last, read in the `finally` — the loop leaves by three routes and from in
+  // there they look the same. Same shape as `RunSession`, for the same reason.
+  let ended: 'ok' | 'failed' = 'failed';
+  try {
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
+      async (progress, token) => {
+        // Cancel must reach the run itself, not merely close the notification.
+        token.onCancellationRequested(() => {
+          controller.abort();
+          // So the cancelled run is not then reported as one that crashed.
+          runState.activity.stopping();
+        });
+
+        for await (const event of runner.run(task.trim(), controller.signal)) {
+          // No logging here: AgentRunner records every event itself, so both callers
+          // produce the same trail rather than each rolling their own.
+          if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
+
+          if (event.kind === 'done' || event.kind === 'error') {
+            const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
+            // The closing event no longer repeats the narration, so it can be empty.
+            const text = event.text.trim() || 'Finished.';
+            void vscode.window.showInformationMessage(await phrase('report', `${text}${files}`));
+          }
+        }
+      }
+    );
+    ended = 'ok';
+  } finally {
+    // **Cleared on every route out.** A run flag left true after a crash silences the
+    // quips and the watcher for the rest of the session, with nothing to suggest why
+    // — the failure mode that makes an un-cleared flag worse than never setting one.
+    runState.running = false;
+    if (ended === 'failed') runState.activity.fail();
+    else runState.activity.finish();
+  }
+}
+
 function registerAgentCommands(
   context: vscode.ExtensionContext,
   logger: ClarvisLog,
   models: ModelService,
-  toTranscriptSpoken: (message: string) => void
+  toTranscriptSpoken: (message: string) => void,
+  /**
+   * **The palette run is a run too, and until M14 nothing was told.** It builds its
+   * own `AgentRunner` and its own `AbortController` and never touches `Busy`, so
+   * `running` stayed false for its whole duration: quips talked over it (§4.6 says
+   * they should not), the watcher announced builds it had caused, and the Bridge
+   * would have reported `idle` during a live agent run — a lie about precisely the
+   * state it exists to report.
+   *
+   * Marked rather than rerouted. Sending this through `ChatService` is the right
+   * end state and is a bigger change than saying the truth about it.
+   */
+  runState: RunState
 ): AgentTerminal {
   // M8c's tools, driveable by hand until M8e lets a model call them. The terminal is
   // shared so a probe run reads as one transcript rather than one window per command.
@@ -898,44 +988,9 @@ function registerAgentCommands(
       await vscode.window.showTextDocument(document);
     }),
     // The agent (M8e). A command for now; M8f routes chat requests into it.
-    vscode.commands.registerCommand('clarvis.runTask', async () => {
-      const task = await vscode.window.showInputBox({
-        prompt: 'What should I do?',
-        placeHolder: 'e.g. fix the failing test in src/watch',
-        ignoreFocusOut: true,
-      });
-      if (!task?.trim()) return;
-
-      const controller = new AbortController();
-      const runner = new AgentRunner(
-        context,
-        vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
-        models,
-        agentTerminal,
-        (message) => logger.write(message)
-      );
-
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Clarvis', cancellable: true },
-        async (progress, token) => {
-          // Cancel must reach the run itself, not merely close the notification.
-          token.onCancellationRequested(() => controller.abort());
-
-          for await (const event of runner.run(task.trim(), controller.signal)) {
-            // No logging here: AgentRunner records every event itself, so both callers
-            // produce the same trail rather than each rolling their own.
-            if (event.kind === 'tool') progress.report({ message: `${event.step}. ${event.text}` });
-
-            if (event.kind === 'done' || event.kind === 'error') {
-              const files = event.files?.length ? ` (${event.files.length} file(s))` : '';
-              // The closing event no longer repeats the narration, so it can be empty.
-              const text = event.text.trim() || 'Finished.';
-              void vscode.window.showInformationMessage(await phrase('report', `${text}${files}`));
-            }
-          }
-        }
-      );
-    }),
+    vscode.commands.registerCommand('clarvis.runTask', () =>
+      runTaskFromPalette(context, logger, models, agentTerminal, runState)
+    ),
 
     // Available any time, not only after a run — the question "what is this branch and
     // what do I do with it" outlives the run that created it.

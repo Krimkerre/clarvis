@@ -4993,7 +4993,7 @@ cleanest milestone to cut.
 - [ ] Scope: the first milestone of a beginner's project produces something that runs
       in one session. If it cannot, §4.9's gap analysis cut too little.
 
-### M14 — The NERVIS Bridge *(proposed 29 Aug — NOT signed off, no code written)*
+### M14 — The NERVIS Bridge *(signed off 29 Aug — H1–H4 done, Bridge itself not built)*
 
 External driver: `ECOSYSTEM_RUNBOOK.md` §6.2 Stage 8, contract in `CLARVIS.md` §6. An
 optional, extension-host-scoped read-only Bridge exposing MEP health/identity/
@@ -5074,11 +5074,25 @@ HTTP surface, off by default → registration and heartbeat → events. Each wit
 exit check; the two-window isolation test and the "disabled restores standalone
 behaviour" test are the ones Stage 8 is actually graded on.
 
-**Exit checklist:** *(none ticked — nothing is built)*
-- [ ] H1 resolved by an explicit decision, and whichever document was wrong is amended.
-- [ ] A pending gate is observable without changing whether or how the gate is asked.
-- [ ] `Busy.start('run')` reaches the run path, and a palette-started run is visible.
-- [ ] A read-only snapshot type exists that cannot reach a controller, a gate or
+**Where H1–H4 landed (29 Aug).** H1 went to (b): the Bridge authenticates with the
+token NERVIS returns at registration, and `CLARVIS.md` §6.1 is amended, with the original
+direction kept because its reasoning still applies. H2–H4 turned out to be one piece of
+work, not three: `src/bridge/activity.ts` is a `vscode`-free store whose `snapshot()` is
+flat primitives with nothing to call, it hangs off the per-host `RunState` so there is
+exactly one, `Busy` drives it, and `whileAwaiting` marks the three modal gates. H3 was two
+bugs — `RunSession` passed `'reply'` (so `isRunning` was dead and two suppressions were
+silently off), and `clarvis.runTask` ran outside `Busy` entirely, meaning quips talked
+over palette runs and the watcher announced builds those runs had caused. Both fixed. The
+lasting change is that `Busy` is now tested at all: its `ButlerViewProvider` import is
+type-only, so the compiled module requires nothing and the fast suite could always have
+reached it — nobody had looked, which is how `start('run')` stayed dead. A source-level
+guard now fails if every call site goes back to `'reply'`.
+
+**Exit checklist:**
+- [x] H1 resolved by an explicit decision, and whichever document was wrong is amended.
+- [x] A pending gate is observable without changing whether or how the gate is asked.
+- [x] `Busy.start('run')` reaches the run path, and a palette-started run is visible.
+- [x] A read-only snapshot type exists that cannot reach a controller, a gate or
       `ExtensionContext`.
 - [ ] Two windows register separately; neither overwrites the other; closing one expires
       only its own registration.

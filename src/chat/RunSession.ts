@@ -226,7 +226,13 @@ export class RunSession {
     await this.note(opening);
     this.avatar.setState('thinking', 'chat');
 
-    const controller = this.busy.start('reply');
+    // **`'run'`, not `'reply'` — this is the run.** Every one of `Busy.start`'s three
+    // call sites passed `'reply'`, so `shared.running` was never set and `isRunning`
+    // was dead code. Two suppressions that read it were therefore both off:
+    // `WatchPresenter` announced a build outcome during a run that was already
+    // reporting it, and a typed "stop" said "Stopped." on top of the run's own ending
+    // — the exact double lines the comments at both sites say they exist to prevent.
+    const controller = this.busy.start('run');
 
     const runner = new AgentRunner(
       this.context,
@@ -238,7 +244,10 @@ export class RunSession {
       // that started in Unattended would freeze that choice for the whole run, which
       // is the bug this replaced — `askStep` answers immediately when the mode says
       // not to ask, so the decision is made at the step rather than at the start.
-      (step) => this.askStep(step)
+      (step) => this.askStep(step),
+      // So a modal sitting open mid-run reads as `waiting_for_approval` rather than
+      // as a run that has silently stopped making progress.
+      this.busy.reported
     );
     // Held for the length of the run, so anything typed while it works has somewhere
     // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
@@ -271,6 +280,11 @@ export class RunSession {
     const ledgerEvents: LedgerEvent[] = [];
     const startedAt = Date.now();
 
+    // **Set last, read in the `finally`.** The loop below leaves by three routes —
+    // finishing, throwing, and being aborted — and from inside a `finally` they are
+    // indistinguishable. This is the one bit of state that tells them apart, and it
+    // exists so the reported activity state does not call every ended run a success.
+    let ended: 'ok' | 'failed' = 'failed';
     try {
       for await (const event of runner.run(task, controller.signal)) {
         if (!event.text) continue;
@@ -305,8 +319,9 @@ export class RunSession {
         // non-repo folder produced no message and no offer at all.
         if (event.toChat) await this.note(event.text);
       }
+      ended = 'ok';
     } finally {
-      this.busy.finish();
+      this.busy.finish(ended);
       this.running = undefined;
       this.avatar.setState('neutral', 'agent');
       holdingFace();

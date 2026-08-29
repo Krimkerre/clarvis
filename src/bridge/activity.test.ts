@@ -1,0 +1,249 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { Activity, whileAwaiting } from './activity';
+
+/**
+ * M14's read-only seam. These tests exist in the fast suite precisely because
+ * nothing else that knows Clarvis's state does: `Busy` reaches `vscode` through
+ * `ButlerViewProvider`, and no test here imports `vscode`. That gap is how
+ * `Busy.start('run')` stayed dead code — every call site passed `'reply'`, so
+ * two suppressions that read the flag were silently off.
+ */
+
+const held = (start = 1_000) => {
+  let now = start;
+  return { clock: () => now, advance: (ms: number) => (now += ms) };
+};
+
+test('a fresh Activity is idle and claims nothing else', () => {
+  const snapshot = new Activity(held().clock).snapshot();
+
+  assert.equal(snapshot.state, 'idle');
+  assert.equal(snapshot.activity_id, undefined);
+  assert.equal(snapshot.steps_taken, undefined, 'no run has taken a step');
+  assert.equal(snapshot.awaiting, undefined);
+});
+
+test('a chat turn and an agent run are different states', () => {
+  // §6.3 lists them separately because one edits files and the other does not.
+  const chat = new Activity(held().clock);
+  chat.startChat('t1');
+  const run = new Activity(held().clock);
+  run.startRun('r1');
+
+  assert.equal(chat.snapshot().state, 'chatting');
+  assert.equal(run.snapshot().state, 'agent_running');
+});
+
+test('steps are counted, and only during a run', () => {
+  const activity = new Activity(held().clock);
+
+  activity.noteStep();
+  assert.equal(activity.snapshot().steps_taken, undefined, 'no run is in flight');
+
+  activity.startRun('r1');
+  activity.noteStep();
+  activity.noteStep();
+
+  assert.equal(activity.snapshot().steps_taken, 2);
+});
+
+test('there is no total to invent', () => {
+  // §6.3: "Never invent a duration, step total, branch, task or model route."
+  // The absence of the field is the guarantee — a `steps_total` would be filled
+  // with a guess by the first person who wanted a progress bar.
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  assert.ok(!('steps_total' in activity.snapshot()));
+});
+
+test('elapsed time is measured from the clock, not estimated', () => {
+  const time = held();
+  const activity = new Activity(time.clock);
+  activity.startRun('r1');
+
+  time.advance(2_500);
+
+  assert.equal(activity.snapshot().elapsed_ms, 2_500);
+});
+
+test('elapsed time restarts with the state, not with the process', () => {
+  const time = held();
+  const activity = new Activity(time.clock);
+  activity.startRun('r1');
+  time.advance(5_000);
+
+  activity.finish();
+  time.advance(100);
+
+  assert.equal(activity.snapshot().elapsed_ms, 100, 'idle began 100ms ago, not 5.1s');
+});
+
+// ── The gate: the one state §6.7 exists to permit ───────────────────────────
+
+test('a gate is reported as a category and never as its question', () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  activity.awaitApproval('command');
+  const snapshot = activity.snapshot();
+
+  assert.equal(snapshot.state, 'waiting_for_approval');
+  assert.equal(snapshot.awaiting, 'command');
+  // Nothing on the snapshot can carry the command string: the type has no field
+  // for it, which is the point.
+  assert.deepEqual(
+    Object.keys(snapshot).sort(),
+    ['activity_id', 'awaiting', 'elapsed_ms', 'state', 'steps_taken'].sort()
+  );
+});
+
+test('resolving a gate returns to the run it interrupted', () => {
+  // Reporting `idle` after a gate inside a run would say the run had ended.
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+  activity.awaitApproval('sensitive_read');
+
+  activity.resolveApproval();
+
+  assert.equal(activity.snapshot().state, 'agent_running');
+});
+
+test('resolving a gate raised outside a run returns to idle', () => {
+  const activity = new Activity(held().clock);
+  activity.awaitApproval('other');
+
+  activity.resolveApproval();
+
+  assert.equal(activity.snapshot().state, 'idle');
+});
+
+test('a second gate does not lose the state to return to', () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+  activity.awaitApproval('command');
+  activity.awaitApproval('step');
+
+  activity.resolveApproval();
+
+  assert.equal(activity.snapshot().state, 'agent_running', 'the run was forgotten');
+});
+
+test('resolving when nothing was pending changes nothing', () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  activity.resolveApproval();
+
+  assert.equal(activity.snapshot().state, 'agent_running');
+});
+
+// ── Ending ──────────────────────────────────────────────────────────────────
+
+test('stopping is its own state, distinct from idle', () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  activity.stopping();
+
+  assert.equal(activity.snapshot().state, 'stopping');
+});
+
+test('finishing clears the run it was describing', () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+  activity.noteStep();
+
+  activity.finish();
+  const snapshot = activity.snapshot();
+
+  assert.equal(snapshot.state, 'idle');
+  assert.equal(snapshot.activity_id, undefined);
+  assert.equal(snapshot.steps_taken, undefined);
+});
+
+test('a failure carries no reason', () => {
+  // A failure reason is composed from a command, a path or a model response, and
+  // §6.4 forbids every one of those leaving the machine.
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  activity.fail();
+  const snapshot = activity.snapshot();
+
+  assert.equal(snapshot.state, 'failed');
+  assert.ok(!('reason' in snapshot));
+  assert.ok(!('error' in snapshot));
+});
+
+test('a snapshot is a copy, so a reader cannot write back through it', () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  const first = activity.snapshot();
+  activity.noteStep();
+
+  assert.equal(first.steps_taken, 0, 'the earlier snapshot moved');
+  assert.equal(activity.snapshot().steps_taken, 1);
+});
+
+test('a snapshot holds only primitives', () => {
+  // The boundary that keeps a live controller — or an ExtensionContext, whose
+  // .secrets is the credential store — out of a status payload.
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+  activity.awaitApproval('command');
+
+  for (const [key, value] of Object.entries(activity.snapshot())) {
+    assert.ok(
+      value === undefined || ['string', 'number', 'boolean'].includes(typeof value),
+      `${key} is a ${typeof value}, so something structured got through`
+    );
+  }
+});
+
+// ── whileAwaiting ────────────────────────────────────────────────────────────
+
+test('a gate shows as waiting only for as long as it is open', async () => {
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+  let seen: string | undefined;
+
+  await whileAwaiting(activity, 'command', () => {
+    seen = activity.snapshot().state;
+  });
+
+  assert.equal(seen, 'waiting_for_approval');
+  assert.equal(activity.snapshot().state, 'agent_running');
+});
+
+test('a gate that throws still clears the wait', () => {
+  // The whole reason this wrapper exists. A modal that rejects — a disposed window,
+  // a cancelled host — would otherwise leave the run reading `waiting_for_approval`
+  // forever, which is a run that looks stuck on a question nobody was asked.
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  return assert.rejects(
+    () => whileAwaiting(activity, 'command', () => Promise.reject(new Error('window went away'))),
+    /window went away/
+  ).then(() => {
+    assert.equal(activity.snapshot().state, 'agent_running');
+  });
+});
+
+test('a gate with nowhere to report still runs and still returns', async () => {
+  // A runner that answers to nobody is a real case, so `undefined` is a supported
+  // argument rather than an accident to guard against at each call site.
+  assert.equal(await whileAwaiting(undefined, 'command', () => 'approved'), 'approved');
+});
+
+test('a synchronous answer is passed straight through', async () => {
+  // `approveStep` returns immediately in Auto and Unattended.
+  const activity = new Activity(held().clock);
+  activity.startRun('r1');
+
+  assert.equal(await whileAwaiting(activity, 'step', () => true), true);
+  assert.equal(activity.snapshot().state, 'agent_running');
+});

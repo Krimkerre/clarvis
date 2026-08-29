@@ -63,10 +63,11 @@ break Clarvis planning against its own repo.
 | `src/briefing/` | ~1,052 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~679 | Task/build watching — the walk-away feature. |
 | `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
+| `src/bridge/` | ~464 | What Clarvis is doing, as a value (M14). `activity.ts` imports nothing at all — not even `vscode` — so the fast suite can reach it, and its `snapshot()` is flat primitives with nothing to call. That is the structural half of `CLARVIS.md` §6.7: the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
 | `src/test/` | ~57 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
-**37,429 lines of TypeScript across 263 files** — 27,518 source, 9,911 test. `plan.md`
+**38,472 lines of TypeScript across 267 files** — 27,950 source, 10,522 test. `plan.md`
 §11 breaks that down and is re-counted rather than nudged.
 
 ## What's built vs designed
@@ -321,7 +322,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1015 tests currently
+npm test               # node's built-in test runner, no framework — 1057 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below
@@ -349,6 +350,25 @@ shipped confidently-wrong fixes to code review before and caught them by running
 actual thing.
 
 ## What is still open
+
+**M14, the NERVIS Bridge, is under way (29 Aug).** Signed off after a gap analysis that
+found four blockers; all four are now closed and none of the Bridge itself is built. The
+part worth knowing before touching it: `src/bridge/activity.ts` is the only source of
+"what is Clarvis doing", there is exactly one per extension host (it hangs off
+`RunState`, alongside the `running` flag the quips and the watcher already read), and
+`Busy` plus `whileAwaiting` are the only things that write to it. What remains is
+identity in `globalState`, the HTTP surface (off by default), registration and heartbeat,
+and events — see `plan.md` §7 M14 for the order and the exit checklist.
+
+Two live bugs were found and fixed getting there, both of which had been shipping: every
+`Busy.start` call site passed `'reply'`, so `isRunning` was dead code and the two
+suppressions reading it were silently off; and `clarvis.runTask` ran an agent entirely
+outside `Busy`, so quips talked over palette runs and the watcher announced builds those
+runs had caused. The reason neither was caught is now the more useful finding — `Busy`'s
+`ButlerViewProvider` import is **type-only**, so the compiled module requires nothing and
+`node --test` could always have reached it. "It takes a `vscode` type, so it must need the
+host suite" was wrong, and is probably wrong elsewhere in this codebase too. Check the
+compiled `require`s before assuming a file is untestable.
 
 Three live trackers, not this file — this section only says which one to open.
 

@@ -196,7 +196,12 @@ export class Replier {
       vscode.workspace.workspaceFolders?.[0]?.uri.fsPath,
       this.models,
       this.terminal,
-      this.log
+      this.log,
+      // No step approval: this is a question being answered, not a job being done.
+      undefined,
+      // A tool-using answer still hits the command and sensitive-read gates, and a
+      // chat turn stuck on a modal looks exactly like one stuck on a slow model.
+      this.busy.reported
     );
 
     this.avatar.setState('thinking', 'chat');

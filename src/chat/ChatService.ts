@@ -5,7 +5,8 @@ import { BusyTracker } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
 import { VoiceService } from '../voice/VoiceService';
 import { Transcript } from './Transcript';
-import { Busy } from './Busy';
+import { Busy, type RunState } from './Busy';
+import type { ActivitySnapshot } from '../bridge/activity';
 import { pickAside } from '../personality/asides';
 import { Replier } from './Replier';
 import { RunSession } from './RunSession';
@@ -787,6 +788,18 @@ export class ChatService {
     this.panel.post({ type: 'choices', items: [{ label: 'Yes' }, { label: 'No' }] });
   }
 
+  /**
+   * A copy of the current activity, for the Bridge.
+   *
+   * A snapshot rather than the `Activity` — and certainly rather than `Busy`,
+   * which has `stop()` on it. `CLARVIS.md` §6.7 says NERVIS may not act, and this
+   * is where that stops being a rule somebody has to remember: what comes back is
+   * a flat object of primitives with nothing to call.
+   */
+  get activitySnapshot(): ActivitySnapshot {
+    return this.agentBusy.activity.snapshot();
+  }
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,
@@ -806,7 +819,7 @@ export class ChatService {
      * Shared run state: whether a run is happening, and what it committed. Quips keep
      * out of the way during one, and never celebrate its commits afterwards.
      */
-    private readonly agentBusy: { running: boolean; noteCommit?: (hash: string) => void },
+    private readonly agentBusy: RunState,
     private readonly log: (message: string) => void
   ) {
     this.workspace = new WorkspaceFactsReader(context, tracker, recentFiles, patterns);

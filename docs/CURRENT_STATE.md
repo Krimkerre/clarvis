@@ -63,11 +63,11 @@ break Clarvis planning against its own repo.
 | `src/briefing/` | ~1,052 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~679 | Task/build watching — the walk-away feature. |
 | `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
-| `src/bridge/` | ~464 | What Clarvis is doing, as a value (M14). `activity.ts` imports nothing at all — not even `vscode` — so the fast suite can reach it, and its `snapshot()` is flat primitives with nothing to call. That is the structural half of `CLARVIS.md` §6.7: the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
+| `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
 | `src/test/` | ~57 | Host-level smoke tests (`npm run test:host`), not the main suite. |
 
-**38,472 lines of TypeScript across 267 files** — 27,950 source, 10,522 test. `plan.md`
+**41,940 lines of TypeScript across 281 files** — 29,580 source, 12,360 test. `plan.md`
 §11 breaks that down and is re-counted rather than nudged.
 
 ## What's built vs designed
@@ -322,7 +322,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1057 tests currently
+npm test               # node's built-in test runner, no framework — 1182 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below
@@ -351,14 +351,16 @@ actual thing.
 
 ## What is still open
 
-**M14, the NERVIS Bridge, is under way (29 Aug).** Signed off after a gap analysis that
-found four blockers; all four are now closed and none of the Bridge itself is built. The
-part worth knowing before touching it: `src/bridge/activity.ts` is the only source of
-"what is Clarvis doing", there is exactly one per extension host (it hangs off
-`RunState`, alongside the `running` flag the quips and the watcher already read), and
-`Busy` plus `whileAwaiting` are the only things that write to it. What remains is
-identity in `globalState`, the HTTP surface (off by default), registration and heartbeat,
-and events — see `plan.md` §7 M14 for the order and the exit checklist.
+**M14, the NERVIS Bridge, is built and unproven live (29 Aug).** Every code exit item in
+`plan.md` §7 M14 is ticked; the two that are not are the ones a test cannot close — two
+real editor windows against a real NERVIS, and "disabling it restores exact standalone
+behaviour". Those are what Stage 8 is graded on, and neither has been run.
+
+The part worth knowing before touching it: `src/bridge/activity.ts` is the only source of
+"what is Clarvis doing", there is exactly one per extension host (it hangs off `RunState`,
+alongside the `running` flag the quips and the watcher already read), and `Busy` plus
+`whileAwaiting` are the only things that write to it. `clarvis.bridge.enabled` is false by
+default, and off means nothing is bound rather than a socket that refuses.
 
 Two live bugs were found and fixed getting there, both of which had been shipping: every
 `Busy.start` call site passed `'reply'`, so `isRunning` was dead code and the two

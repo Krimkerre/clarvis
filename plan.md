@@ -4993,7 +4993,7 @@ cleanest milestone to cut.
 - [ ] Scope: the first milestone of a beginner's project produces something that runs
       in one session. If it cannot, §4.9's gap analysis cut too little.
 
-### M14 — The NERVIS Bridge *(signed off 29 Aug — H1–H4 done, Bridge itself not built)*
+### M14 — The NERVIS Bridge *(signed off 29 Aug — built; two exit items need a live run)*
 
 External driver: `ECOSYSTEM_RUNBOOK.md` §6.2 Stage 8, contract in `CLARVIS.md` §6. An
 optional, extension-host-scoped read-only Bridge exposing MEP health/identity/
@@ -5094,12 +5094,36 @@ guard now fails if every call site goes back to `'reply'`.
 - [x] `Busy.start('run')` reaches the run path, and a palette-started run is visible.
 - [x] A read-only snapshot type exists that cannot reach a controller, a gate or
       `ExtensionContext`.
-- [ ] Two windows register separately; neither overwrites the other; closing one expires
-      only its own registration.
-- [ ] With the setting off: no socket, no registration, no timer, no listener — proven by
-      test, not by checking the port.
-- [ ] No event or status field carries a command string, a path, prompt or response text,
-      or a secret — proven by a payload test over hostile fixtures.
+- [x] Two windows register separately; neither overwrites the other; closing one expires
+      only its own registration. Four tests against a fake NERVIS that keeps a registry, so
+      "neither overwrites" is a property of the registry rather than of what the test asked.
+- [x] With the setting off: no socket, no registration, no timer, no listener — proven by
+      test, not by checking the port. Half of it: constructing a `Bridge` is proven to bind
+      nothing, register nothing, schedule nothing and collect nothing. The other half is
+      `wire.ts` returning before the constructor, which is one line of `vscode`-importing
+      code and is read rather than tested.
+- [x] No event or status field carries a command string, a path, prompt or response text,
+      or a secret — proven by a payload test over hostile fixtures. The structural half
+      matters more: `activity_id` is minted inside `Activity` and cannot be supplied, so the
+      one free-form string a caller could have filled with a task description is gone.
+
+**What is built (29 Aug).** Eight modules under `src/bridge/`, seven of which import
+nothing from `vscode` — so the fast suite starts real servers on real ports and makes real
+requests. `identity.ts` (§6.1's fields), `protocol.ts` (the MEP bodies), `events.ts` (a
+bounded stream), `server.ts` (node `http`, loopback, OS-assigned port), `registration.ts`
+(the two credentials), `Bridge.ts` (bind → register → renew → let go), `publish.ts`
+(transitions → §6.4 names), and `wire.ts`, which is the only one that knows what `vscode`
+is and is deliberately about eighty lines.
+
+Two properties are structural rather than remembered. Every non-GET is refused before the
+path is looked at, so §6.7's "NERVIS may not act" holds because there is no write path to
+extend; and a Bridge with no token refuses everything including `/ecosystem/version`,
+because the token arrives in the registration response and the window between binding and
+registering is real.
+
+**Still to verify live, not by test:** two real editor windows against a real NERVIS, and
+the "disabled restores exact standalone behaviour" check. Those are what Stage 8 is
+actually graded on and neither has been run.
 
 ---
 

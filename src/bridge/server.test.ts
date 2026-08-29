@@ -283,7 +283,7 @@ test('status reports the live activity, not a copy taken at startup', async () =
   try {
     assert.equal((await it.get('/v1/status')).body.state, 'idle');
 
-    it.activity.startRun('r1');
+    it.activity.startRun();
     it.activity.noteStep();
 
     const { body } = await it.get('/v1/status');
@@ -310,7 +310,7 @@ test('an unknown value is absent from the status rather than null', async () => 
 test('a pending gate is visible as a category with no question attached', async () => {
   const it = await bridge();
   try {
-    it.activity.startRun('r1');
+    it.activity.startRun();
     it.activity.awaitApproval('command');
 
     const { body } = await it.get('/v1/status');

@@ -12,6 +12,7 @@ import { PatternMemory } from './memory/PatternMemory';
 import { ChatService } from './chat/ChatService';
 import type { RunState } from './chat/Busy';
 import { Activity } from './bridge/activity';
+import { startBridge, type BridgeHandle } from './bridge/wire';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
@@ -54,6 +55,14 @@ import { startTailing, stopTailing } from './logtailing/logTailing';
 // from activate() — VS Code calls the two independently. Everything else lives
 // inside activate()'s scope and is torn down via context.subscriptions.
 let log: ClarvisLog | undefined;
+
+/**
+ * Here for the same reason as `log`, and with the same caveat: `deactivate` gets
+ * one chance to tell NERVIS this window is going, and it is the only place that
+ * knows the window is going at all. The socket itself is disposed through
+ * `context.subscriptions`, which survives a reload that skips `deactivate`.
+ */
+let bridge: BridgeHandle | undefined;
 
 /**
  * Called once by VS Code when the extension activates (onStartupFinished).
@@ -214,6 +223,23 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.stopLogTailing', () => stopTailing(logger))
   );
+
+  // **Last, and only if asked.** `clarvis.bridge.enabled` is false by default, and
+  // `startBridge` returns undefined without binding anything when it is — no
+  // socket, no registration, no timer. Started after everything it observes
+  // exists, so its first status read is of a Clarvis that is actually assembled.
+  //
+  // Not awaited: registration talks to another process, and an editor's activation
+  // must not wait on whether a dashboard happens to be running.
+  void startBridge(context, agentBusy.activity, (message) => logger.write(message))
+    .then((started) => {
+      bridge = started;
+    })
+    .catch((failure: unknown) => {
+      // Caught rather than allowed to become an unhandled rejection: a Bridge that
+      // could not start must not take activation's error handling with it.
+      logger.write(`bridge: could not start (${failure instanceof Error ? failure.message : failure})`);
+    });
 }
 
 /**
@@ -704,6 +730,12 @@ export function deactivate(): void {
   if (log) {
     stopTailing(log);
   }
+  // **Started, not awaited, and that is honest rather than sloppy.** `deactivate`
+  // returns void, so there is nothing to wait on it with, and the host often kills
+  // the process before an in-flight request completes. This is the fast path on
+  // top of NERVIS's 45-second lease, never the mechanism — a window that crashes
+  // has to disappear on its own anyway.
+  void bridge?.stop();
   log?.write('Clarvis deactivated.');
 }
 

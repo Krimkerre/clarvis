@@ -24,6 +24,8 @@
  * optional for that reason rather than for convenience.
  */
 
+import { randomBytes } from 'crypto';
+
 /** §6.3's interpreted states, and the whole set. */
 export type ActivityState =
   | 'idle'
@@ -40,7 +42,15 @@ export type ActivityState =
  */
 export interface ActivitySnapshot {
   readonly state: ActivityState;
-  /** Opaque id of the run or turn in flight, when there is one. */
+  /**
+   * Opaque id of the run or turn in flight, when there is one.
+   *
+   * **Minted here, never supplied.** §6.3 calls it an opaque ID, and the only
+   * way that stays true is for no caller to be able to choose it: an id a caller
+   * passes is an id that can be a task description, a command, or a path, and it
+   * would then be the one free-form string in a payload that is otherwise
+   * incapable of carrying any of those.
+   */
   readonly activity_id?: string;
   /**
    * Steps taken so far, *only when genuinely counted*. §6.3 forbids inventing a
@@ -63,6 +73,37 @@ export interface ActivitySnapshot {
 export type Clock = () => number;
 
 /**
+ * A fresh id for one run or turn.
+ *
+ * Sixteen hex characters of randomness and nothing derived: enough that two
+ * activities in one window cannot collide, and carrying no information about
+ * what the activity is. Deliberately not a counter — a counter tells a reader
+ * how many runs this window has had, which is not a fact anybody asked to
+ * publish.
+ */
+const opaqueId = (): string => randomBytes(8).toString('hex');
+
+/**
+ * One transition, for whoever wants to publish it.
+ *
+ * Carries `from` as well as `to` because most of §6.4's event names are about the
+ * *edge* rather than the state: `agent_running` reached from `idle` is a run
+ * starting and reached from `waiting_for_approval` is a gate being answered, and
+ * a listener given only the destination cannot tell those apart.
+ *
+ * `kind` is here for the one thing the states cannot say. A run that is stopped
+ * passes through `stopping` and lands on `idle`, and by then nothing in the state
+ * remembers whether it was a run or a chat turn that ended — so §6.4's
+ * `clarvis.agent.cancelled` and `clarvis.chat.cancelled` would be a coin toss.
+ */
+export interface ActivityChange {
+  readonly from: ActivityState;
+  readonly to: ActivityState;
+  readonly kind: 'chat' | 'run' | undefined;
+  readonly snapshot: ActivitySnapshot;
+}
+
+/**
  * The store. One per extension host, owned by the extension and handed to the
  * Bridge as a reader.
  *
@@ -76,6 +117,9 @@ export class Activity {
   private steps?: number;
   private awaiting?: ActivitySnapshot['awaiting'];
   private since: number;
+  /** What is in flight, in the terms §6.4's event families are named in. */
+  private kind?: 'chat' | 'run';
+  private readonly observers = new Set<(change: ActivityChange) => void>();
 
   constructor(private readonly now: Clock = Date.now) {
     this.since = now();
@@ -86,14 +130,32 @@ export class Activity {
    * `agent_running` separately because one edits files and the other does not,
    * and an operator glancing at a dashboard is entitled to that distinction.
    */
-  startChat(activityId?: string): void {
-    this.enter('chatting', activityId);
+  startChat(): void {
+    this.kind = 'chat';
+    this.enter('chatting', opaqueId());
   }
 
   /** An agent run began — the one that writes files. */
-  startRun(activityId?: string): void {
-    this.enter('agent_running', activityId);
+  startRun(): void {
+    this.kind = 'run';
+    this.enter('agent_running', opaqueId());
     this.steps = 0;
+  }
+
+  /**
+   * Watch every transition.
+   *
+   * Separate from `snapshot()` because polling cannot see an edge: a gate opened
+   * and answered between two reads leaves no trace in the state, and it is
+   * exactly the thing §6.7 says NERVIS may be shown.
+   *
+   * An observer that throws is dropped rather than allowed to propagate. This is
+   * called from inside editor work, and §6.5 is unambiguous that telemetry must
+   * never delay or fail it.
+   */
+  observe(observer: (change: ActivityChange) => void): () => void {
+    this.observers.add(observer);
+    return () => this.observers.delete(observer);
   }
 
   /**
@@ -101,7 +163,12 @@ export class Activity {
    * incremented from a real step boundary.
    */
   noteStep(): void {
-    if (this.current === 'agent_running') this.steps = (this.steps ?? 0) + 1;
+    if (this.current !== 'agent_running') return;
+    this.steps = (this.steps ?? 0) + 1;
+    // Published as a transition from `agent_running` to itself: a step is an
+    // event without being a change of state, and §6.4 lists `clarvis.agent.step`
+    // separately from the states for that reason.
+    this.announce('agent_running');
   }
 
   /**
@@ -114,10 +181,12 @@ export class Activity {
    * say the run had ended.
    */
   awaitApproval(kind: NonNullable<ActivitySnapshot['awaiting']>): void {
+    const from = this.current;
     if (this.current !== 'waiting_for_approval') this.resumeTo = this.current;
     this.awaiting = kind;
     this.current = 'waiting_for_approval';
     this.since = this.now();
+    this.announce(from);
   }
 
   /** The gate was answered, either way. What the user chose is not recorded here. */
@@ -127,6 +196,7 @@ export class Activity {
     this.current = this.resumeTo ?? 'idle';
     this.resumeTo = undefined;
     this.since = this.now();
+    this.announce('waiting_for_approval');
   }
 
   /** A stop was asked for and is being honoured. */
@@ -136,9 +206,16 @@ export class Activity {
 
   /** Whatever was in flight ended without a reported failure. */
   finish(): void {
-    this.enter('idle');
+    const from = this.current;
+    this.current = 'idle';
+    this.since = this.now();
+    this.resumeTo = undefined;
     this.id = undefined;
     this.steps = undefined;
+    this.announce(from);
+    // Cleared after the announcement, not before: the listener is being told what
+    // ended, and by definition that is the kind which is on its way out.
+    this.kind = undefined;
   }
 
   /**
@@ -158,8 +235,13 @@ export class Activity {
       this.finish();
       return;
     }
-    this.enter('failed');
+    const from = this.current;
+    this.current = 'failed';
+    this.since = this.now();
+    this.resumeTo = undefined;
     this.steps = undefined;
+    this.announce(from);
+    this.kind = undefined;
   }
 
   /** What a reader sees. A fresh object each time, holding only primitives. */
@@ -179,10 +261,37 @@ export class Activity {
   private resumeTo?: ActivityState;
 
   private enter(state: ActivityState, activityId?: string): void {
+    const from = this.current;
     this.current = state;
     this.since = this.now();
     this.resumeTo = undefined;
     if (activityId !== undefined) this.id = activityId;
+    this.announce(from);
+  }
+
+  /**
+   * Tell the observers, and never let one of them reach the caller.
+   *
+   * The snapshot is taken once and shared, which is safe because it is already a
+   * fresh flat object of primitives — the property that made it publishable in
+   * the first place is the same one that makes it safe to hand to several
+   * listeners.
+   */
+  private announce(from: ActivityState): void {
+    if (this.observers.size === 0) return;
+    const change: ActivityChange = {
+      from,
+      to: this.current,
+      kind: this.kind,
+      snapshot: this.snapshot(),
+    };
+    for (const observer of [...this.observers]) {
+      try {
+        observer(change);
+      } catch {
+        this.observers.delete(observer);
+      }
+    }
   }
 }
 

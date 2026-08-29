@@ -27,9 +27,9 @@ test('a fresh Activity is idle and claims nothing else', () => {
 test('a chat turn and an agent run are different states', () => {
   // §6.3 lists them separately because one edits files and the other does not.
   const chat = new Activity(held().clock);
-  chat.startChat('t1');
+  chat.startChat();
   const run = new Activity(held().clock);
-  run.startRun('r1');
+  run.startRun();
 
   assert.equal(chat.snapshot().state, 'chatting');
   assert.equal(run.snapshot().state, 'agent_running');
@@ -41,7 +41,7 @@ test('steps are counted, and only during a run', () => {
   activity.noteStep();
   assert.equal(activity.snapshot().steps_taken, undefined, 'no run is in flight');
 
-  activity.startRun('r1');
+  activity.startRun();
   activity.noteStep();
   activity.noteStep();
 
@@ -53,7 +53,7 @@ test('there is no total to invent', () => {
   // The absence of the field is the guarantee — a `steps_total` would be filled
   // with a guess by the first person who wanted a progress bar.
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   assert.ok(!('steps_total' in activity.snapshot()));
 });
@@ -61,7 +61,7 @@ test('there is no total to invent', () => {
 test('elapsed time is measured from the clock, not estimated', () => {
   const time = held();
   const activity = new Activity(time.clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   time.advance(2_500);
 
@@ -71,7 +71,7 @@ test('elapsed time is measured from the clock, not estimated', () => {
 test('elapsed time restarts with the state, not with the process', () => {
   const time = held();
   const activity = new Activity(time.clock);
-  activity.startRun('r1');
+  activity.startRun();
   time.advance(5_000);
 
   activity.finish();
@@ -84,7 +84,7 @@ test('elapsed time restarts with the state, not with the process', () => {
 
 test('a gate is reported as a category and never as its question', () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   activity.awaitApproval('command');
   const snapshot = activity.snapshot();
@@ -102,7 +102,7 @@ test('a gate is reported as a category and never as its question', () => {
 test('resolving a gate returns to the run it interrupted', () => {
   // Reporting `idle` after a gate inside a run would say the run had ended.
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
   activity.awaitApproval('sensitive_read');
 
   activity.resolveApproval();
@@ -121,7 +121,7 @@ test('resolving a gate raised outside a run returns to idle', () => {
 
 test('a second gate does not lose the state to return to', () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
   activity.awaitApproval('command');
   activity.awaitApproval('step');
 
@@ -132,7 +132,7 @@ test('a second gate does not lose the state to return to', () => {
 
 test('resolving when nothing was pending changes nothing', () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   activity.resolveApproval();
 
@@ -143,7 +143,7 @@ test('resolving when nothing was pending changes nothing', () => {
 
 test('stopping is its own state, distinct from idle', () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   activity.stopping();
 
@@ -152,7 +152,7 @@ test('stopping is its own state, distinct from idle', () => {
 
 test('finishing clears the run it was describing', () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
   activity.noteStep();
 
   activity.finish();
@@ -167,7 +167,7 @@ test('a failure carries no reason', () => {
   // A failure reason is composed from a command, a path or a model response, and
   // §6.4 forbids every one of those leaving the machine.
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   activity.fail();
   const snapshot = activity.snapshot();
@@ -179,7 +179,7 @@ test('a failure carries no reason', () => {
 
 test('a snapshot is a copy, so a reader cannot write back through it', () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   const first = activity.snapshot();
   activity.noteStep();
@@ -192,7 +192,7 @@ test('a snapshot holds only primitives', () => {
   // The boundary that keeps a live controller — or an ExtensionContext, whose
   // .secrets is the credential store — out of a status payload.
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
   activity.awaitApproval('command');
 
   for (const [key, value] of Object.entries(activity.snapshot())) {
@@ -207,7 +207,7 @@ test('a snapshot holds only primitives', () => {
 
 test('a gate shows as waiting only for as long as it is open', async () => {
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
   let seen: string | undefined;
 
   await whileAwaiting(activity, 'command', () => {
@@ -223,7 +223,7 @@ test('a gate that throws still clears the wait', () => {
   // a cancelled host — would otherwise leave the run reading `waiting_for_approval`
   // forever, which is a run that looks stuck on a question nobody was asked.
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   return assert.rejects(
     () => whileAwaiting(activity, 'command', () => Promise.reject(new Error('window went away'))),
@@ -242,7 +242,7 @@ test('a gate with nowhere to report still runs and still returns', async () => {
 test('a synchronous answer is passed straight through', async () => {
   // `approveStep` returns immediately in Auto and Unattended.
   const activity = new Activity(held().clock);
-  activity.startRun('r1');
+  activity.startRun();
 
   assert.equal(await whileAwaiting(activity, 'step', () => true), true);
   assert.equal(activity.snapshot().state, 'agent_running');

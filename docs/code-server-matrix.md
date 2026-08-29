@@ -23,10 +23,10 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 21 |
+| PASS | 22 |
 | PASS_WITH_LIMITATION | 11 |
 | FAIL | 4 |
-| NOT_TESTED | 16 |
+| NOT_TESTED | 15 |
 
 **How to read the confidence.** 7 cells were
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -373,12 +373,26 @@ storage.
 names, and this is the sharpest argument for it: a Clarvis pointed at `ravis/*` stores no
 provider key in the browser at all, so an origin change costs nothing.
 
-### `NOT_TESTED` — Origins (proxied)### `NOT_TESTED` — origin validation actually passing (as opposed to being skipped)
+### `NOT_TESTED` — Origins (proxied)### `PASS` · observed — origin validation runs through the proxy and refuses a bad origin
 
-The cell above records why the first authenticated pass proved less than it looked like it did.
-With `Origin` and `Forwarded` now travelling, the check runs — and whether it *passes* is one
-authenticated reload away. Unauthenticated probes cannot settle it: `ensureAuthenticated` refuses
-first, so both a good and a bad origin come back `403` for the same unrelated reason.
+**Settled by falsification, because "it worked" is what made the previous pass worthless.** The
+operator reloaded the fixed spike and the workbench and terminal still worked — which on its own
+is equally consistent with the check running and with the check being skipped again. So the
+mechanism was driven directly, on a throwaway `--auth none` code-server on `127.0.0.1:8081` with
+its own proxy at `8796`, keeping the operator's password out of it entirely:
+
+| what was tried | result |
+|---|---|
+| direct, no `Origin` | connected — the "let it through" branch |
+| direct, `Origin: http://127.0.0.1:8081` | connected |
+| direct, `Origin: http://evil.example` | **refused, HTTP 403** |
+| **proxied**, `Origin: http://127.0.0.1:8796` | **connected** |
+| **proxied**, `Origin: http://evil.example` | **refused, HTTP 403** |
+
+The last two are the answer: through the proxy, a matching origin passes and a mismatched one is
+refused. The check is running rather than being skipped, and RFC 7239 `Forwarded: host=…` is what
+makes the browser's host visible to `getHost` so the comparison can succeed. Both throwaway
+processes were stopped afterwards.
 
 ### `PASS` · observed — localhost RAVIS
 

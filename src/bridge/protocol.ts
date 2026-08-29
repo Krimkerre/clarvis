@@ -55,10 +55,23 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
     state: 'available',
     reason: '',
   },
+  /**
+   * **Published, and read by nobody.** The stream works — it heartbeats, replays
+   * a backlog on reconnect, and carries the §6.4 families — but no consumer
+   * exists: NERVIS's dashboard reads `/v1/status` per instance and has no
+   * subscriber, and its event screen shows its own hub rather than this.
+   *
+   * §4.1 says do not advertise an operation unless that exact operation passes
+   * conformance, and a capability nothing has ever consumed has not been through
+   * one. Declaring it `available` claimed a working integration on the strength
+   * of one working half. Marked honestly until something reads it.
+   */
   'clarvis.events@1': {
     version: '1.0.0',
-    state: 'available',
-    reason: '',
+    state: 'degraded',
+    reason:
+      'the stream is served and conformant, but nothing subscribes to it yet — ' +
+      'no consumer has exercised reconnect, replay or the event families end to end',
   },
   'clarvis.diagnostics.summary@1': {
     version: '1.0.0',

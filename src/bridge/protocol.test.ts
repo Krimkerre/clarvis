@@ -69,3 +69,13 @@ test('there is still no capability that could approve a gate', () => {
     assert.doesNotMatch(id, /gate|approve|tool|command|exec/i, id);
   }
 });
+
+test('a capability nobody consumes is not advertised as available', () => {
+  // §4.1: do not advertise an operation unless that exact operation passes
+  // conformance. `clarvis.events@1` is served and correct, and no consumer has
+  // ever subscribed — so reconnect, replay and the event families have not been
+  // exercised end to end by anything. "Available" would claim a working
+  // integration on the strength of one working half.
+  assert.equal(CAPABILITIES['clarvis.events@1'].state, 'degraded');
+  assert.match(CAPABILITIES['clarvis.events@1'].reason, /nothing subscribes/);
+});

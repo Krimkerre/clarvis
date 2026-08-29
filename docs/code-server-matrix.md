@@ -23,10 +23,10 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 22 |
+| PASS | 24 |
 | PASS_WITH_LIMITATION | 11 |
 | FAIL | 4 |
-| NOT_TESTED | 15 |
+| NOT_TESTED | 12 |
 
 **How to read the confidence.** 7 cells were
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -173,17 +173,23 @@ Requires a real UI interaction. The only programmatic focus in the whole extensi
 
 **To settle.** In a browser at http://127.0.0.1:8741 with the extension actually loaded: click into the Clarvis textarea and confirm typing goes to it (not to the workbench), Enter sends while Shift+Enter newlines (chat.js:150-152), and after a host `prefill` message the caret sits at end-of-text in the textarea rather than focus staying in the editor.
 
-### `NOT_TESTED` — webview streaming (does streamed text actually render)
+### `PASS` · observed — webview streaming
 
-The streaming path is entirely postMessage-driven (chat.js:248-274), so it is exactly as verifiable as the messaging cell above — and that is NOT_TESTED for the same reasons (no browser; the running server's extensions folder was empty; port 8741 is now dead). Nothing about the streaming code is host-specific, but 'not host-specific' is not evidence that it renders.
+The operator's own sessions: the panel answers in the Clarvis tab and did so again through the
+spike proxy, which means text streamed from the extension host into the webview and rendered as
+it arrived. Not a claim about long streams or reconnection — a reply arriving is what was seen.
 
-**To settle.** With the extension actually loaded in code-server, ask a question that produces a streamed reply and confirm a single Clarvis turn grows in place (one row, not one row per fragment), that the transcript auto-scrolls (chat.js:267), and that Stop flips via the `busy` frame (chat.js:243-246). Watch the browser console for CSP violation reports at the same time.
+### `PASS` · observed — webview rendering under code-server (the service-worker gate)
 
-### `NOT_TESTED` — webview rendering prerequisite under code-server (service-worker gate) — gates every webview item in §7.1
+**Settled by the operator, not by me.** Every ServiceWorker registration fails in the browser I
+drive — including an unrelated script at root scope, with `isSecureContext` true and the script
+fetching 200 — so the Clarvis panel never rendered on my side and the gate could not be
+distinguished from a code-server problem. The operator opened the same code-server in Firefox and
+the panel rendered; it has since answered, streamed and been used through a proxy as well.
 
-code-server's webview host blocks ALL content rendering on service-worker registration, even for a webview that loads no resources: ~/.local/lib/code-server-4.135.0/lib/vscode/out/vs/workbench/contrib/webview/browser/pre/index.html:975 is `await workerReady;` inside the content-update handler, and workerReady (defined :246-285) rejects with 'Service Workers are not enabled. Webviews will not work.' (:251-252) or 'Could not register service worker' (:280-284). So Clarvis's zero-resource design does not exempt it. Two mitigating facts, both read from code-server itself: (1) webviews are served same-origin, not from the CDN — server-main.js sets `webviewEndpoint: v+"/out/vs/workbench/contrib/webview/browser/pre"` where v = basePath + productPath + "/static", and workbench.js prefers `options.webviewEndpoint` over product.json's `webviewContentExternalBaseUrlTemplate` (https://{{uuid}}.vscode-cdn.net/...), so no internet is needed; (2) same-origin means the parentOrigin check short-circuits at pre/index.html:335-338 ('It is safe to run if we are on the same host'), avoiding the crypto.subtle branch. But service-worker registration itself still requires a secure context, which http://127.0.0.1:8741 satisfies and a non-localhost plain-http NERVIS-proxied origin would not.
-
-**To settle.** Load the Clarvis view in a browser against code-server and confirm the panel paints the avatar at all (not a blank frame); in devtools, Application > Service Workers should show `/_static/out/.../pre/service-worker.js` activated. Then repeat through the NERVIS reverse proxy on a non-localhost origin — if that origin is plain http, expect the webview to stay blank and the console to show the service-worker registration error; that reproduction, not this reading, is what would justify a FAIL for the proxied axis.
+**Limitation on the axis, not on the verdict.** One browser. Chrome, Safari and a browser with
+service workers disabled are ungraded, and the failure mode is known to be silent: the panel
+simply does not appear.
 
 ### `PASS` — webview CSP (declaration, nonce, absence of hardcoded vscode-resource:/vscode-webview: URIs)
 
@@ -373,7 +379,7 @@ storage.
 names, and this is the sharpest argument for it: a Clarvis pointed at `ravis/*` stores no
 provider key in the browser at all, so an origin change costs nothing.
 
-### `NOT_TESTED` — Origins (proxied)### `PASS` · observed — origin validation runs through the proxy and refuses a bad origin
+### `PASS` · observed — origin validation runs through the proxy and refuses a bad origin
 
 **Settled by falsification, because "it worked" is what made the previous pass worthless.** The
 operator reloaded the fixed spike and the workbench and terminal still worked — which on its own

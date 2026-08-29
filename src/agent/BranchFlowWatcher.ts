@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { gitAbsenceReason } from './gitAbsence';
 import {
   BranchFlow,
   flowBranches,
@@ -106,7 +107,7 @@ export class BranchFlowWatcher {
   private async attach(subscriptions: vscode.Disposable[]): Promise<void> {
     const api = await gitApi();
     if (!api) {
-      this.log('branch flow: no Git extension, not watching');
+      this.log(gitAbsenceReason(vscode.workspace.isTrusted));
       return;
     }
 

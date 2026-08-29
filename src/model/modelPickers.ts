@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { secretStoreLabel } from '../secretStoreLabel';
 import { ModelService } from './ModelService';
 import { ModelChoice } from './ModelProvider';
 import { PROVIDERS, ProviderId, providerSpec, acceptableOverride, providerNotRespondingLine, providerListedNothingLine } from './providers';
@@ -364,7 +365,7 @@ export async function manageKeys(models: ModelService, log: (m: string) => void)
         detail: keyed[spec.id] ? 'Choose to replace or remove it' : 'Choose to add one',
         id: spec.id,
       })),
-      { placeHolder: 'API keys — stored in your OS keychain, one per provider' }
+      { placeHolder: `API keys — stored in ${secretStoreLabel(vscode.env.remoteName)}, one per provider` }
     );
     if (!picked) return;
 
@@ -472,7 +473,8 @@ export async function promptForKey(
   await models.setKey(provider, key);
   log(`model: key stored for ${provider}`);
   void vscode.window.showInformationMessage(
-    await phrase('report', `${spec.label} key stored in the system keychain.`, [spec.label])
+    await phrase('report',
+      `${spec.label} key stored in ${secretStoreLabel(vscode.env.remoteName)}.`, [spec.label])
   );
 }
 

@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { phrase } from '../personality/Voice';
+import { secretStoreDetail } from '../secretStoreLabel';
 
 /**
  * Whether the voice offer has already been made.
@@ -51,7 +52,12 @@ async function ask(
   }
 
   const choice = await vscode.window.showInformationMessage(
-    "Clarvis: I can say all this out loud, in a voice that suits me rather than your operating system's. It needs a Fish Audio key — free tier, yours, stored in your keychain.",
+    "Clarvis: I can say all this out loud, in a voice that suits me rather than your " +
+      "operating system's. It needs a Fish Audio key — free tier, yours, kept in " +
+      // Said accurately here above anywhere else: this is the moment somebody
+      // decides whether to hand over a key at all, and on a remote host the
+      // honest answer is weaker than the desktop one (§7.2).
+      `${secretStoreDetail(vscode.env.remoteName)}.`,
     'I have a key',
     'Where do I get one?',
     'No thanks'

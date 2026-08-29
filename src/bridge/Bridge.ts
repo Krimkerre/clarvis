@@ -15,7 +15,8 @@
 
 import { EventStream } from './events';
 import { identityFor, loadIdentity, type HostFacts, type Identity, type Storage } from './identity';
-import { API_VERSION, CAPABILITIES, PROTOCOL_VERSION, wireIdentifier } from './protocol';
+import { API_VERSION, CAPABILITIES, PROTOCOL_VERSION, voiceCapability, wireIdentifier,
+  type Capability } from './protocol';
 import { deregister, heartbeat, heartbeatInterval, register, type Claim } from './registration';
 import { BridgeServer } from './server';
 import type { ActivityChange, ActivitySnapshot } from './activity';
@@ -43,6 +44,12 @@ export interface BridgeOptions {
     observe(observer: (change: ActivityChange) => void): () => void;
   };
   readonly log: (message: string) => void;
+  /**
+   * Whether voice is on, and whether the host is remote — both live in `vscode`,
+   * so the caller resolves them. Absent means the Bridge publishes the declared
+   * placeholder, which is `unavailable`.
+   */
+  readonly voice?: { enabled: boolean; remoteName: string | undefined };
   /**
    * The timer, injected so a test can drive it.
    *
@@ -118,6 +125,7 @@ export class Bridge {
       identity: () => this.identity as Identity,
       status: () => this.options.activity.snapshot(),
       events: this.events,
+      capabilities: () => this.capabilities(),
       buildVersion: this.options.facts.buildVersion,
       startedAt: (this.options.now ?? Date.now)(),
       log: this.options.log,
@@ -239,6 +247,22 @@ export class Bridge {
    * NERVIS keeps, and the `@major` is stripped since §4.1 says it is never a
    * wire value.
    */
+  /**
+   * The declared set, with voice resolved for this host.
+   *
+   * Resolved rather than declared because the answer is not a property of the
+   * build: the same `.vsix` is `available` on a desktop and `degraded` under
+   * code-server, and §4.1 asks a capability to describe what this build can do
+   * right now.
+   */
+  capabilities(): Readonly<Record<string, Capability>> {
+    if (!this.options.voice) return CAPABILITIES;
+    return {
+      ...CAPABILITIES,
+      'clarvis.voice@1': voiceCapability(this.options.voice.enabled, this.options.voice.remoteName),
+    };
+  }
+
   private claim(): Claim {
     const identity = this.identity as Identity;
     return {
@@ -249,7 +273,7 @@ export class Bridge {
       api_version: API_VERSION,
       protocol_version: PROTOCOL_VERSION,
       capabilities: Object.fromEntries(
-        Object.entries(CAPABILITIES)
+        Object.entries(this.capabilities())
           .filter(([, capability]) => capability.state === 'available')
           .map(([id, capability]) => [wireIdentifier(id), capability.version])
       ),

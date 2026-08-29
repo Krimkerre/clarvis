@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { secretStoreLabel } from '../secretStoreLabel';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { VoiceService } from '../voice/VoiceService';
 import { ModelService } from '../model/ModelService';
@@ -304,7 +305,7 @@ const COMMANDS: Partial<Record<ChatAction, { id: string; line: string }>> = {
   chooseEngine: { id: 'clarvis.chooseEngine', line: 'Engines — quality against speed and cost.' },
   setKey: {
     id: 'clarvis.manageModelKeys',
-    line: 'Keys, one per provider, all kept. Yours go in the keychain, never a settings file.',
+    line: `Keys, one per provider, all kept. Yours go in ${secretStoreLabel(vscode.env.remoteName)}, never a settings file.`,
   },
   clearKey: { id: 'clarvis.clearFishKey', line: 'Forgetting the key.' },
   testVoice: { id: 'clarvis.testVoice', line: 'Listen.' },

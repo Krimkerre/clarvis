@@ -62,6 +62,12 @@ export async function startBridge(
       protocolVersion: '1.0.0',
     },
     activity,
+    // Both halves of the voice answer live in `vscode`, so they are resolved
+    // here — the one file in `src/bridge/` that is allowed to know.
+    voice: {
+      enabled: vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.enabled', false),
+      remoteName: vscode.env.remoteName,
+    },
     log,
   });
 

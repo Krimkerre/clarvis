@@ -32,6 +32,7 @@ import {
   statusBody,
   timestamp,
   versionBody,
+  type Capability,
   type HealthCheck,
 } from './protocol';
 
@@ -54,6 +55,8 @@ export interface BridgeConfig {
   readonly identity: () => Identity;
   readonly status: () => ActivitySnapshot;
   readonly events: EventStream;
+  /** The declared set, resolved for this host — see `Bridge.capabilities`. */
+  readonly capabilities?: () => Readonly<Record<string, Capability>>;
   readonly buildVersion: string;
   readonly startedAt: number;
   readonly log: (message: string) => void;
@@ -212,7 +215,7 @@ export class BridgeServer {
         // Revision 1 and static: the set does not change while a host lives, so
         // incrementing it would tell a consumer something changed when nothing
         // had. `clarvis.capability.changed` exists for when that stops being true.
-        return capabilitiesBody(1);
+        return capabilitiesBody(1, this.config.capabilities?.());
       case '/ecosystem/version':
         return versionBody(this.config.buildVersion);
       case '/v1/status':

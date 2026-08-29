@@ -78,7 +78,54 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
     state: 'unavailable',
     reason: 'the model layer has no RAVIS provider row; it speaks to providers directly',
   },
+  /**
+   * Not in §6.2's list, and added because Stage 9's exit clause requires it:
+   * *"voice limitations are advertised through capabilities and do not block
+   * core support"*. Nothing advertised voice at all, so that clause could not be
+   * satisfied by any amount of testing — a capability that does not exist cannot
+   * carry a limitation.
+   *
+   * It is `degraded` rather than `unavailable` on a remote host because the
+   * distinction is the whole point: speech still happens, out of the wrong
+   * machine's speakers. A peer that read `unavailable` would conclude Clarvis
+   * had gone quiet, which is a different and less alarming thing than what
+   * actually occurs.
+   */
+  'clarvis.voice@1': {
+    version: '1.0.0',
+    state: 'unavailable',
+    reason: 'set at startup from the host and the user setting; see voiceCapability()',
+  },
 };
+
+/**
+ * What to say about voice on the host this window is actually running in.
+ *
+ * Three answers, and the middle one is why this exists. Playback is a subprocess
+ * of the extension host, so on a remote host the sound comes out of the
+ * *server's* speakers — audible to whoever is sitting at the server, and not to
+ * the person in the browser. That is not a failure; it is a limitation, and
+ * §4.1's rule is that a capability which is not `available` must say why.
+ */
+export function voiceCapability(
+  enabled: boolean,
+  remoteName: string | undefined
+): Capability {
+  if (!enabled) {
+    return { version: '1.0.0', state: 'unavailable', reason: 'turned off in settings' };
+  }
+  if (remoteName) {
+    return {
+      version: '1.0.0',
+      state: 'degraded',
+      reason:
+        'speech plays on the machine running the extension host, not the one running ' +
+        'the browser, so on a remote host it is audible to whoever is sitting at the server',
+      constraints: { plays_on: 'extension_host', remote: remoteName },
+    };
+  }
+  return { version: '1.0.0', state: 'available', reason: '' };
+}
 
 /** `clarvis.events@1` → `clarvis.events`. §4.1: the `@<major>` is never a wire value. */
 export const wireIdentifier = (capabilityId: string): string => capabilityId.split('@', 1)[0];

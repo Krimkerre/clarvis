@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import { secretStoreLabel } from './secretStoreLabel';
 import { ButlerViewProvider, BUTLER_STATES, isButlerState } from './panels/ButlerViewProvider';
 import { AvatarController } from './AvatarController';
 import { StatusBarMirror } from './StatusBarMirror';
@@ -616,7 +617,8 @@ function registerVoiceCommands(
 
       await context.secrets.store(FISH_KEY_SECRET, key.trim());
       void vscode.window.showInformationMessage(
-        await phrase('report', 'Key stored, in the system keychain where it belongs.')
+        await phrase('report',
+          `Key stored, in ${secretStoreLabel(vscode.env.remoteName)} where it belongs.`)
       );
       // Setting a key is an unambiguous request for the feature it unlocks.
       await enableVoiceAfterKey(log);

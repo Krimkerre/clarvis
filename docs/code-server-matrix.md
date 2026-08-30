@@ -6,13 +6,23 @@ observed. Where nothing was observed the cell says `NOT_TESTED` and names the ac
 would settle it — the runbook's rule is that unsupported combinations are never offered as
 supported, and a cell graded from reading rather than running is exactly how that happens.
 
+**Updated 30 August 2026.** Four cells moved from `NOT_TESTED` by running them with a real
+folder open and trusted: shell-integration events (`PASS`), tasks
+(`PASS_WITH_LIMITATION` — a genuine double-count this document predicted), SecretStorage
+persistence (`PASS`) and Tier 1 audio playback (`PASS_WITH_LIMITATION`). Workspace FS lost its
+blocking premise but keeps `NOT_TESTED`, because containment is the cell and the escape attempt
+still has not been made. The two webview cells were attempted and deliberately left ungraded:
+the browser used had service workers blocked, which no webview can survive, and that is a fact
+about the browser rather than about Clarvis.
+
 **The combination tested.** code-server 4.135.0 ("with Code 1.135.0"), standalone install,
 macOS arm64, Clarvis 0.0.1, served over plain HTTP on loopback — **direct**, and since 30 August
 also through a **spike reverse proxy** at a `/code/` base path. The spike is not NERVIS's proxy:
 it forwards bytes and does none of §13.3's security work, so what it grades is Clarvis and
 code-server *under a proxy*, never NERVIS's own route. Everything behind code-server's login
-remains ungraded, because the password is the operator's to type. Browser axis: Firefox only,
-and only for the webview question.
+remains ungraded, because the password is the operator's to type. Browser axis: two points, and only for the
+webview question — Firefox, where webviews load, and a Chromium-based agent with service
+workers blocked, where no webview can load at all.
 
 **This is not a support statement.** Stage 9's exit asks that install, activate, chat,
 agent, stream, stop, tool, gate, workspace boundary, SecretStorage, persistence and
@@ -23,12 +33,12 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 25 |
-| PASS_WITH_LIMITATION | 11 |
+| PASS | 27 |
+| PASS_WITH_LIMITATION | 13 |
 | FAIL | 4 |
-| NOT_TESTED | 11 |
+| NOT_TESTED | 7 |
 
-**How to read the confidence.** 7 cells were
+**How to read the confidence.** 12 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
 own shipped source and Clarvis's, then put to a second reader told to downgrade anything
 resting on inference. That second pass downgraded nothing, and a cap left 11 of 20 optimistic
@@ -101,13 +111,69 @@ check.
 writes into — was not exercised, because an agent run needs the panel and the panel needs a
 browser with working service workers.
 
-### `NOT_TESTED` — terminal shell execution — shell-integration events (onDidStartTerminalShellExecution)
+### `PASS` — terminal shell execution — shell-integration events (onDidStartTerminalShellExecution)
+
+**Settled 30 August 2026 by running it.** An integrated terminal (zsh) opened in the
+code-server tab, with `~/Documents/coding/ai-router-main` open and trusted. Running
+`echo stage9-shell-probe && sleep 3 && echo probe-done` produced, in
+`logs/20260830T104315/exthost3/Krimkerre.clarvis/clarvis.log`:
+
+```text
+[2026-08-30T08:49:56.796Z] outcome terminal "echo stage9-shell-probe && sleep 3 && echo probe-done" exitCode=0 durationMs=3038 (threshold=30s)
+```
+
+Both events fired: `onDidStartTerminalShellExecution` supplied the command line, which is
+reported verbatim, and `onDidEndTerminalShellExecution` supplied `exitCode=0`. The measured
+3038 ms matches the `sleep 3`, so the pair bracket the real execution rather than the
+keystroke. VS Code's shell-integration script is therefore injected successfully into zsh
+under this host — the runtime property that could not be graded from source.
+
+The phantom empty-commandLine startup execution was also filtered as designed: opening the
+terminal produced no `outcome` line, and the first one appeared only when a command ran.
+
+The evidence below is what stood before that run.
+
+#Prior reasoning (was `NOT_TESTED`) — terminal shell execution — shell-integration events (onDidStartTerminalShellExecution)
 
 src/watch/wireBusyTracker.ts:95,105 subscribes to `vscode.window.onDidStartTerminalShellExecution` / `onDidEndTerminalShellExecution` to drive BusyTracker. The API exists in this host (`grep -c onDidStartTerminalShellExecution out/vs/workbench/api/node/extensionHostProcess.js` → 2) and the engine constraint is satisfied (package.json engines vscode ^1.93.0; code-server 4.135.0 'with Code 1.135.0'). code-server also ships a working darwin-arm64 pty backend (lib/vscode/node_modules/node-pty/build/Release/pty.node). But these events fire only when VS Code's shell-integration script is successfully injected into the user's shell, which is a runtime property of the browser-side terminal plus the server shell, and no integrated terminal was ever opened in these sessions. wireBusyTracker's own comment records the API is 'silently absent otherwise (no error, just no events)' — a failure here is invisible, which is exactly why it cannot be graded from source.
 
 **To settle.** In the code-server tab open an integrated terminal (zsh on this host), run `sleep 5`, and check that Clarvis reports busy then idle around it. Also confirm the phantom empty-commandLine startup execution is filtered (wireBusyTracker.ts:99-101) rather than pinning Clarvis busy for the session.
 
-### `NOT_TESTED` — tasks
+### `PASS_WITH_LIMITATION` — tasks
+
+**Settled 30 August 2026 by running one, and the limitation this cell predicted is real.**
+A temporary `.vscode/tasks.json` defining `stage9-task-probe`
+(`echo … && sleep 3 && echo …`) was added to the open folder, run from
+Terminal → Run Task, and removed afterwards. The log records:
+
+```text
+[2026-08-30T08:52:28.462Z] outcome task "stage9-task-probe" exitCode=0 durationMs=3362 (threshold=30s)
+[2026-08-30T08:52:28.465Z] outcome terminal "echo stage9-task-started && sleep 3 && echo stage9-task-finished" exitCode=0 durationMs=3369 (threshold=30s)
+```
+
+The task half works: `onDidStartTask` supplied the label, `onDidEndTaskProcess` supplied the
+exit code, and BusyTracker tracked it.
+
+**The limitation is the double-count, exactly where this cell said to look.** One task run
+produced *two* outcomes — one `task`, one `terminal` — because `isTaskExecution`
+(wireBusyTracker.ts:63-66) recognises a task's own terminal by
+`event.terminal.name === ''`, "which is how a brand-new task terminal looks before VS Code
+names it". Under code-server it does not look like that: the terminal is already named after
+the task when the execution starts, so the guard misses and the same run is counted twice.
+
+Consequences are bounded but real. BusyTracker holds two overlapping jobs for one task, and
+`WatchPresenter.handleOutcome` runs twice — for a task over the 30 s announcement threshold
+that is two notifications for one piece of work. `rememberIfTaskTerminal` learns the terminal
+at *end* time, so a second task in the same terminal is recognised correctly; it is the first
+task in each fresh terminal that doubles.
+
+Not reproduced on desktop VS Code, so whether this is a code-server ordering difference or
+true of both hosts is **untested** — the fix (recognise a task terminal by matching a running
+task name, not by an empty one) is the same either way.
+
+The evidence below is what stood before that run.
+
+#### Prior reasoning (was `NOT_TESTED`) — tasks
 
 The only task usage is wireBusyTracker.ts:81 `vscode.tasks.onDidStartTask` and :87 `onDidEndTaskProcess`, feeding BusyTracker; Clarvis never creates, resolves or executes a Task (no ShellExecution/ProcessExecution/executeTask/fetchTasks/TaskProvider anywhere in src/, and package.json `contributes` has only viewsContainers, views, commands, configuration — no taskDefinitions). The API is present in code-server's extension host (`grep -c 'onDidStartTask|onDidEndTaskProcess' out/vs/workbench/api/node/extensionHostProcess.js` → 2). Nothing was exercised: the sessions ran in an empty window (workspaceStorage = `empty-window`), so there was no tasks.json and no task could run.
 
@@ -149,11 +215,54 @@ Partly real, entirely elective. Clarvis writes exactly four secret keys today: c
 
 ### `NOT_TESTED` — §7.1 workspace FS (vscode.workspace.fs, containment)
 
-No workspace folder has ever been opened in this code-server: /Users/mathias/.local/share/code-server/User/workspaceStorage/ contains only `empty-window`, and all three activations logged `branch flow: watching (0 repository/ies at start)` and `branch flow: no plan.md, nothing to keep in step` (clarvis.log in logs/20260829T132709/exthost1|2|3). All ~30 vscode.workspace.fs.* call sites (src/planning/*, src/agent/*, src/chat/*, src/voice/FishAudioProvider.ts, src/memory/PatternStore.ts) and the isInside()/realpath containment logic therefore never ran.
+**Half of this moved on 30 August 2026, and the half that matters did not.** A real folder
+(`~/Documents/coding/ai-router-main`) is now open and trusted, so the premise below — that no
+folder had ever been opened — is void, and workspace-dependent paths ran:
+
+```text
+[2026-08-30T08:48:24.861Z] chat: filed previous session (2 turns)
+[2026-08-30T08:48:24.882Z] branch flow: watching (0 repository/ies at start)
+[2026-08-30T08:48:28.887Z] branch flow: no plan.md, nothing to keep in step
+[2026-08-30T08:48:30.806Z] chat: no plan.md here, offered to plan
+```
+
+The `plan.md` lookup is a `vscode.workspace.fs` read against the real workspace root, and it
+answered correctly (there is none). So the read path works under this host.
+
+**Containment is still ungraded, and that is the cell.** `isInside()`/realpath refusals only
+run when the *agent* is asked to touch a path, which needs the chat webview — and the webview
+could not be driven in the browser used for this pass (see the webview cells). A deliberate
+`../` and a symlink out of the root remain untried, so nothing here says the gate refuses
+them. Graded `NOT_TESTED` rather than `PASS` for that reason: the escape attempt is the test.
+
+#### Prior reasoning — workspace FS
+
+No workspace folder had been opened in this code-server: /Users/mathias/.local/share/code-server/User/workspaceStorage/ contains only `empty-window`, and all three activations logged `branch flow: watching (0 repository/ies at start)` and `branch flow: no plan.md, nothing to keep in step` (clarvis.log in logs/20260829T132709/exthost1|2|3). All ~30 vscode.workspace.fs.* call sites (src/planning/*, src/agent/*, src/chat/*, src/voice/FishAudioProvider.ts, src/memory/PatternStore.ts) and the isInside()/realpath containment logic therefore never ran.
 
 **To settle.** Open a real folder in code-server (?folder=/Users/mathias/Documents/coding/clarvis), then exercise a read, an edit and a deliberate escape attempt (../ and a symlink out of the root) and confirm the gate refuses; check clarvis.log for the containment refusals.
 
-### `NOT_TESTED` — §7.1 SecretStorage persistence
+### `PASS` — §7.1 SecretStorage persistence
+
+**Settled 30 August 2026 from the logs of two separate sessions.** A key stored on 29 August
+was read back on 30 August, in a different code-server process, and used:
+
+```text
+logs/20260829T141317/…/clarvis.log   voice: rendered … (s2.1-pro)
+logs/20260830T104315/…/clarvis.log   voice: rendered 32808 bytes in 1182ms (s2.1-pro)
+```
+
+Rendering through Fish Audio requires `context.secrets.get(FISH_KEY_SECRET)` to return a key
+(FishAudioProvider.ts:57,91). The 30 August session contains **no key-storing event** — no
+`a key was just set` line, no `Key stored` message — so the key it used was written by an
+earlier session and survived both a browser reload and a server restart.
+
+The limitation graded elsewhere still stands and is not weakened by this: the backing is the
+browser's `localStorage`, not a keychain, so persistence is per browser profile and per
+origin. A second browser sees no key, and moving code-server to a different origin empties it.
+
+The evidence below is what stood before that reading.
+
+#### Prior reasoning (was `NOT_TESTED`) — SecretStorage persistence
 
 The write path demonstrably ran: clarvis.log (logs/20260829T132709/exthost3) has `voice: enabled, since a key was just set` at 11:35:35.209Z, which src/extension.ts:617-624 reaches only after `await context.secrets.store(FISH_KEY_SECRET, ...)` resolves; and /Users/mathias/.local/share/code-server/serve-web-key-half (32 bytes) was created at 13:35 local by the POST /mint-key handler at ~/.local/lib/code-server-4.135.0/out/node/routes/vscode.js:193 — an endpoint reached only from ServerKeyedAESCrypto.getServerKeyPart(), i.e. from the seal path. But no read-back has been observed.
 
@@ -176,11 +285,49 @@ Round-trip observed rather than reasoned about. A code-server instance was resta
 
 ### `NOT_TESTED` — webview messaging
 
+**Attempted 30 August 2026 and deliberately not graded — the browser was the wrong
+instrument.** The Clarvis panel failed to load with `Could not register service worker`, and
+the temptation is to record that as a code-server or Clarvis failure. It is neither. Checked
+before concluding: the service-worker script returns **200** with `content-type:
+text/javascript` and 20 189 bytes, the page is a **secure context**, the frame is
+**top-level**, and `'serviceWorker' in navigator` is true — yet `register()` fails with
+*"An unknown error occurred when fetching the script"* for **every** script, including
+`/manifest.json`. Service workers are blocked at the browser-agent level in that pane.
+
+VS Code serves all webview content through that service worker, so a browser without one
+cannot host any webview at all — Clarvis's or anyone's. The operator confirms Firefox works.
+
+That makes this a **browser-axis** fact and not a verdict: the axis now has two known points
+(Firefox: webviews load; a service-worker-less agent: no webview can), and this cell still
+needs a run in Firefox to be graded. Recording the failure as Clarvis's would be precisely
+the "graded from reading rather than running" error this document exists to prevent.
+
+#### Prior reasoning — webview messaging
+
 No browser available, and the described environment did not actually have Clarvis loaded. /Users/mathias/Documents/coding/NERVIS-ecosystem/.run/code-server.log records the running server using extensions folder `file:///Users/mathias/Documents/coding/NERVIS-ecosystem/.run/code-server-data/code-server/extensions`; at 13:29 that folder's extensions.json read exactly `[]`, while Clarvis 0.0.1 was installed into a DIFFERENT directory, ~/.local/share/code-server/extensions/krimkerre.clarvis-0.0.1 (listed in ~/.local/share/code-server/extensions/extensions.json). The same log shows two `Failed login attempt` entries and no successful workbench load. The server data dir and code-server.yaml have since been deleted and nothing is listening on 8741. Source read: host->webview via webviewView.webview.postMessage (ButlerViewProvider.ts:156, :183), webview->host via a handler table (:75-105) against vscode.postMessage calls in chat.js.
 
 **To settle.** Start code-server with the SAME data dir used for `--install-extension` (or install with XDG_DATA_HOME set to /Users/mathias/Documents/coding/NERVIS-ecosystem/.run/code-server-data), confirm the server-side extensions.json actually lists krimkerre.clarvis, open http://127.0.0.1:8741, reveal the Clarvis view, and in browser devtools confirm (a) the `webview-ready` message reaches the outer frame and (b) a host-sent `{type:'chat-turn'}` / `{type:'state'}` arrives at chat.js's `window.addEventListener('message')` while an `{type:'ask'}` posted from the textarea reaches ButlerViewProvider.dispatch.
 
 ### `NOT_TESTED` — webview focus
+
+**Attempted 30 August 2026 and deliberately not graded — the browser was the wrong
+instrument.** The Clarvis panel failed to load with `Could not register service worker`, and
+the temptation is to record that as a code-server or Clarvis failure. It is neither. Checked
+before concluding: the service-worker script returns **200** with `content-type:
+text/javascript` and 20 189 bytes, the page is a **secure context**, the frame is
+**top-level**, and `'serviceWorker' in navigator` is true — yet `register()` fails with
+*"An unknown error occurred when fetching the script"* for **every** script, including
+`/manifest.json`. Service workers are blocked at the browser-agent level in that pane.
+
+VS Code serves all webview content through that service worker, so a browser without one
+cannot host any webview at all — Clarvis's or anyone's. The operator confirms Firefox works.
+
+That makes this a **browser-axis** fact and not a verdict: the axis now has two known points
+(Firefox: webviews load; a service-worker-less agent: no webview can), and this cell still
+needs a run in Firefox to be graded. Recording the failure as Clarvis's would be precisely
+the "graded from reading rather than running" error this document exists to prevent.
+
+#### Prior reasoning — webview focus
 
 Requires a real UI interaction. The only programmatic focus in the whole extension is inside the webview: chat.js:231-235 handles `prefill` with `input.focus(); input.setSelectionRange(...)`. The extension never calls webviewView.show() or a `clarvis.butler.focus` command (no `.show(` / focus hits in src/ other than that). Whether focus lands and keystrokes route correctly depends on VS Code's keyboard forwarding into the sandboxed content iframe (pre/index.html:1038 sandbox = allow-same-origin allow-pointer-lock allow-scripts allow-downloads; :1058-1059 installs keydown/keyup forwarders on the inner contentWindow) — browser behaviour, not readable from the extension source.
 
@@ -253,7 +400,30 @@ True for Tier 1 (FishAudioProvider.ts:74 → nativePlayer.ts:98, afplay), and th
 
 **Limitation.** `playFile` has no timeout, unlike SystemVoiceProvider's 30s guard (SystemVoiceProvider.ts:5,54-57): it settles only on the child's `exit` or `error` (nativePlayer.ts:102-119). A player process that never exits wedges the voice queue for the window's lifetime — recoverable via mute, which kills the child (VoiceService.ts:72 → nativePlayer.ts:16-21). Contained to voice; it cannot stall chat or the agent.
 
-### `NOT_TESTED` — audio playback — Tier 1 (Fish Audio) under code-server, browser on the same machine as the server
+### `PASS_WITH_LIMITATION` — audio playback — Tier 1 (Fish Audio) under code-server, browser on the same machine as the server
+
+**Settled 30 August 2026: it plays, and it plays from the server.** From
+`logs/20260830T104315/exthost1/Krimkerre.clarvis/clarvis.log`:
+
+```text
+[2026-08-30T08:44:12.894Z] voice: rendered 42839 bytes in 1194ms (s2.1-pro)
+[2026-08-30T08:44:12.922Z] voice: playing 27208a237db1557c3419fca085355e44
+[2026-08-30T08:44:12.927Z] play: spawned afplay pid=9307
+[2026-08-30T08:44:18.603Z] play: exit code=0 signal=null after 5680ms
+```
+
+The subprocess path works unchanged under code-server: `afplay` spawned from the extension
+host, ran the full clip, exited 0. Nothing about being a server-side host prevents it.
+
+**The limitation is the whole point of this cell.** The audio came out of the *server's*
+audio device. On this machine the browser and the server are the same box, so the operator
+heard it — which is why this grades PASS here and why the split-host cell remains a `FAIL`.
+The two cells describe one behaviour under two deployments, and only the coincidence of
+machines makes this one work.
+
+The evidence below is what stood before that reading.
+
+#### Prior reasoning (was `NOT_TESTED`) — Tier 1 audio
 
 /Users/mathias/Documents/coding/clarvis/src/voice/FishAudioProvider.ts:74 `await playFile(this.cachePath(key).fsPath, process.platform, this.log)` → /Users/mathias/Documents/coding/clarvis/src/voice/nativePlayer.ts:98 `spawn(candidate.command, candidate.args(file), { stdio: 'ignore' })`, candidate for darwin = `afplay` (nativePlayer.ts:38-40). `grep -o afplay dist/extension.js` = 1 hit, and 1 hit inside the shipped clarvis.vsix, so this is the code that installs. No browser was opened; no extension host was run.
 

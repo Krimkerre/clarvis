@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { GUIDANCE, MAX_VALUE_CHARS, PUBLISHED, locality, summarise } from './config';
 
@@ -113,9 +115,11 @@ test('every published field names a setting that starts with a known prefix', ()
 test('every instruction names a command this extension actually contributes', () => {
   // An instruction naming a command that does not exist is worse than none,
   // because it is followed. The manifest is the authority; this reads it.
-  const manifest = require('../../package.json') as {
-    contributes: { commands: { title: string }[] };
-  };
+  // Read rather than `require`d: the lint rule forbids require-style imports,
+  // and a JSON import would need `resolveJsonModule` turned on for one test.
+  const manifest = JSON.parse(
+    readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8')
+  ) as { contributes: { commands: { title: string }[] } };
   const titles = new Set(manifest.contributes.commands.map((entry) => entry.title));
 
   for (const [field, text] of Object.entries(GUIDANCE)) {

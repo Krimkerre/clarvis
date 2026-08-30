@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+
+import { isTaskTerminal } from './isTaskTerminal';
 import { BusyTracker } from './BusyTracker';
 
 /**
@@ -55,14 +57,11 @@ export function wireBusyTracker(tracker: BusyTracker, context: vscode.ExtensionC
    * pinning Clarvis "busy" for the rest of the session. Tasks win: they report a
    * real exit code even when cancelled, which shell integration doesn't.
    *
-   * Two ways to recognize one:
-   *  - the terminal is already known to be a task terminal, or
-   *  - a task is running and this terminal has no name yet, which is how a
-   *    brand-new task terminal looks before VS Code names it.
+   * The rule itself lives in `isTaskTerminal`, which has no `vscode` import and
+   * therefore has tests. It was wrong here for as long as it was untestable.
    */
   const isTaskExecution = (event: vscode.TerminalShellExecutionStartEvent) =>
-    taskTerminals.has(event.terminal) ||
-    (runningTaskNames.size > 0 && event.terminal.name === '');
+    isTaskTerminal(event.terminal.name, taskTerminals.has(event.terminal), runningTaskNames);
 
   /**
    * Records a terminal as task-owned once its name matches a task we've run.

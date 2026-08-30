@@ -6,8 +6,15 @@ observed. Where nothing was observed the cell says `NOT_TESTED` and names the ac
 would settle it — the runbook's rule is that unsupported combinations are never offered as
 supported, and a cell graded from reading rather than running is exactly how that happens.
 
-**Updated 30 August 2026.** Four cells moved from `NOT_TESTED` by running them with a real
-folder open and trusted: shell-integration events (`PASS`), tasks
+**Updated 30 August 2026, in two passes.** A second pass in Firefox settled the two webview
+cells (`PASS` each: the panel renders, posts back, and takes the keyboard) and produced the
+most useful negative result in this document — the containment gate **cannot be exercised
+through chat**, because the tool description instructs the model to relativise paths and a
+compliant model therefore never produces one the gate would refuse. Three attempts, three
+different avoidance behaviours, no gate. That cell keeps `NOT_TESTED` and now names the
+instrument that would settle it.
+
+The first pass moved four cells by running them with a real folder open and trusted: shell-integration events (`PASS`), tasks
 (`PASS_WITH_LIMITATION` — a genuine double-count this document predicted), SecretStorage
 persistence (`PASS`) and Tier 1 audio playback (`PASS_WITH_LIMITATION`). Workspace FS lost its
 blocking premise but keeps `NOT_TESTED`, because containment is the cell and the escape attempt
@@ -21,8 +28,8 @@ also through a **spike reverse proxy** at a `/code/` base path. The spike is not
 it forwards bytes and does none of §13.3's security work, so what it grades is Clarvis and
 code-server *under a proxy*, never NERVIS's own route. Everything behind code-server's login
 remains ungraded, because the password is the operator's to type. Browser axis: two points, and only for the
-webview question — Firefox, where webviews load, and a Chromium-based agent with service
-workers blocked, where no webview can load at all.
+webview question — Firefox, where the panel renders, posts back and takes the keyboard, and a
+Chromium-based agent with service workers blocked, where no webview can load at all.
 
 **This is not a support statement.** Stage 9's exit asks that install, activate, chat,
 agent, stream, stop, tool, gate, workspace boundary, SecretStorage, persistence and
@@ -33,12 +40,12 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 27 |
+| PASS | 29 |
 | PASS_WITH_LIMITATION | 13 |
 | FAIL | 4 |
-| NOT_TESTED | 7 |
+| NOT_TESTED | 5 |
 
-**How to read the confidence.** 12 cells have now been
+**How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
 own shipped source and Clarvis's, then put to a second reader told to downgrade anything
 resting on inference. That second pass downgraded nothing, and a cap left 11 of 20 optimistic
@@ -229,11 +236,38 @@ folder had ever been opened — is void, and workspace-dependent paths ran:
 The `plan.md` lookup is a `vscode.workspace.fs` read against the real workspace root, and it
 answered correctly (there is none). So the read path works under this host.
 
-**Containment is still ungraded, and that is the cell.** `isInside()`/realpath refusals only
-run when the *agent* is asked to touch a path, which needs the chat webview — and the webview
-could not be driven in the browser used for this pass (see the webview cells). A deliberate
-`../` and a symlink out of the root remain untried, so nothing here says the gate refuses
-them. Graded `NOT_TESTED` rather than `PASS` for that reason: the escape attempt is the test.
+**Containment is still ungraded, and three attempts through the chat surface explain why.**
+On 30 August, in Firefox with the panel working, the agent was asked for an escape three ways.
+None reached `isInside()`:
+
+| asked for | what the tool received | why the gate never ran |
+|---|---|---|
+| `/private/tmp/…/outside.txt` | `private/tmp/…/outside.txt` | the leading `/` was dropped, so `path.resolve(root, …)` put it *inside* the root; the refusal was a plain not-found |
+| `../clarvis/package.json` | nothing — no tool call | `action intent: model said openSettings` |
+| `link-out` (a symlink out of the root) | nothing — no tool call | `model stopped after 0 step(s)`, asserting the file did not exist |
+
+The first is the important one, and it is not a defect: `toolRegistry.ts:41` describes the
+tool as *"Read a file from the workspace. Paths are relative to the workspace root."* A
+compliant model therefore relativises an absolute path **before** calling, which is exactly
+what happened. The containment gate is defence-in-depth against a model that misbehaves or a
+path arriving from an injection — not something an ordinary chat turn can reach. Pushing back
+after the refusal changed nothing, because there was no boundary being defended, only a file
+that was not there.
+
+So the honest state is: the gate's *logic* is well covered — `tools.test.ts` carries 29
+containment assertions including symlink cases — and its end-to-end refusal on this host is
+untested and **cannot be settled through chat**.
+
+**What the host-specific half of this cell needs is already answered.** The risk that
+code-server changes anything here is that the workspace root resolves to something other than
+a plain local absolute path (a `vscode-remote://` URI, say), which would make every
+`isInside()` comparison meaningless. It does not: `sandbox-exec` confined a command's writes
+to the workspace root and the deliberate `$HOME` write did not land (see the child_process
+cell), and building that profile requires the correct root.
+
+**To settle the rest.** Call `readFile` with an absolute path from inside a code-server
+extension host directly — a host test, not a chat turn. Driving it through the model tests the
+model's path handling, which is a different question and one this pass answered by accident.
 
 #### Prior reasoning — workspace FS
 
@@ -283,7 +317,27 @@ Round-trip observed rather than reasoned about. A code-server instance was resta
 
 ## Webview
 
-### `NOT_TESTED` — webview messaging
+### `PASS` — webview messaging
+
+**Settled 30 August 2026 in Firefox.** The Clarvis panel rendered, and the round trip is in
+the log rather than inferred from a screenshot:
+
+```text
+[09:18:49.088Z] audio probe: {"type":"audio-probe","speechSynthesis":true,"audioElement":true}
+[09:19:51.721Z] model: custom/ravis/clarvis-chat tool support = true
+[09:19:52.777Z] chat | Mathias, is that you? ...
+```
+
+Three directions are proven by those lines. The host rendered HTML into the webview; the
+webview ran its own script and **posted back** (`audio-probe` is sent by media/chat.js on load
+and handled at ButlerViewProvider.ts:81); and a message typed into the panel reached the
+extension host, went out to RAVIS and came back as a rendered reply. Nothing about a
+server-side host or a browser-hosted webview breaks that channel.
+
+The reasoning below is what stood before that run, including the browser-axis note from the
+attempt made in an agent whose service workers were blocked.
+
+#### Prior reasoning
 
 **Attempted 30 August 2026 and deliberately not graded — the browser was the wrong
 instrument.** The Clarvis panel failed to load with `Could not register service worker`, and
@@ -308,7 +362,19 @@ No browser available, and the described environment did not actually have Clarvi
 
 **To settle.** Start code-server with the SAME data dir used for `--install-extension` (or install with XDG_DATA_HOME set to /Users/mathias/Documents/coding/NERVIS-ecosystem/.run/code-server-data), confirm the server-side extensions.json actually lists krimkerre.clarvis, open http://127.0.0.1:8741, reveal the Clarvis view, and in browser devtools confirm (a) the `webview-ready` message reaches the outer frame and (b) a host-sent `{type:'chat-turn'}` / `{type:'state'}` arrives at chat.js's `window.addEventListener('message')` while an `{type:'ask'}` posted from the textarea reaches ButlerViewProvider.dispatch.
 
-### `NOT_TESTED` — webview focus
+### `PASS` — webview focus
+
+**Settled 30 August 2026 in Firefox, by the operator at the keyboard.** Clicking into the
+Clarvis textarea put the caret there rather than leaving it in the workbench; typing went to
+the box; **Enter sent** the message, which the log confirms arrived
+(`you | ...` followed by a routed reply at 09:19:51). This is the one cell in this document
+that cannot be read out of a log — whether a click lands in the right place is a claim about
+what a person saw — and it is graded on that basis.
+
+The reasoning below is what stood before that run, including the browser-axis note from the
+attempt made in an agent whose service workers were blocked.
+
+#### Prior reasoning
 
 **Attempted 30 August 2026 and deliberately not graded — the browser was the wrong
 instrument.** The Clarvis panel failed to load with `Could not register service worker`, and

@@ -37,10 +37,27 @@ export class ModelService {
    * dies with the window, which is the right lifetime — a session that outlived
    * the editor would steer tomorrow's routing from yesterday's choice.
    *
+   * **And one per role, not one per window.** Chat and the agent address
+   * different pools, and RAVIS keys affinity on the session — so a single id
+   * meant an agent run's model choice was recorded against the chat pool. Seen
+   * live on the first walk: the session read `pool=ravis/clarvis-chat` with
+   * `model=claude-sonnet-4.5`, which came from `ravis/clarvis-agent`. Those two
+   * facts cannot both be right, and the wrong one would have steered the next
+   * chat turn.
+   *
    * Random and derived from nothing. A key built from the workspace path or the
    * machine would be an identifier for the person, which §6.1 forbids.
    */
-  private readonly sessionId = randomUUID();
+  private readonly sessions = new Map<ModelRole, string>();
+
+  /** This window's session for one role, minted on first use. */
+  private session(role: ModelRole): string {
+    const existing = this.sessions.get(role);
+    if (existing) return existing;
+    const minted = randomUUID();
+    this.sessions.set(role, minted);
+    return minted;
+  }
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -156,14 +173,14 @@ export class ModelService {
     }
 
     return provider.streamWithTools({
-      ...request, model: this.model(role), sessionId: this.sessionId,
+      ...request, model: this.model(role), sessionId: this.session(role),
     });
   }
 
   /** Streams an answer. Errors arrive as `ModelError`, already phrased for a human. */
   stream(request: Omit<CompletionRequest, 'model'>, role: ModelRole = 'chat'): AsyncIterable<string> {
     return this.provider(role).stream({
-      ...request, model: this.model(role), sessionId: this.sessionId,
+      ...request, model: this.model(role), sessionId: this.session(role),
     });
   }
 

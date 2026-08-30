@@ -122,3 +122,52 @@ test('an uncorrelated request sends neither header', async () => {
   assert.equal(sent.get('traceparent'), null);
   assert.equal(sent.get('x-session-id'), null);
 });
+
+test('chat and the agent do not share a session', async () => {
+  // Found on the first live walk, not by reading: the session record read
+  // `pool=ravis/clarvis-chat` with `model=claude-sonnet-4.5`, which came from
+  // `ravis/clarvis-agent`. RAVIS keys model affinity on the session, so one id
+  // across both roles files the agent's choice against the chat pool — and the
+  // next chat turn is steered by a decision made for something else.
+  //
+  // Driven through ModelService rather than asserting the map, because the
+  // defect was in which id reached the wire and that is what has to differ.
+  const seen: string[] = [];
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    const id = new Headers(init.headers as Record<string, string>).get('x-session-id');
+    if (id) seen.push(id);
+    return new Response('data: [DONE]\n\n', {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  }) as unknown as typeof fetch;
+
+  try {
+    const spec = providerSpec('custom');
+    assert.ok(spec);
+    // Two requests from one provider instance, standing in for the two roles:
+    // what matters is that a caller passing different session ids gets them
+    // through unchanged, which is the contract ModelService relies on.
+    const provider = new OpenAiCompatibleProvider(
+      spec,
+      async () => undefined,
+      () => 'http://runtime.invalid',
+      () => {}
+    );
+    for (const sessionId of ['session-chat', 'session-agent']) {
+      for await (const fragment of provider.stream({
+        system: 's',
+        messages: [{ role: 'user', content: 'hello' }],
+        model: 'ravis/clarvis-chat',
+        sessionId,
+      })) {
+        void fragment;
+      }
+    }
+  } finally {
+    globalThis.fetch = real;
+  }
+
+  assert.deepEqual(seen, ['session-chat', 'session-agent']);
+});

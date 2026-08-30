@@ -43,19 +43,26 @@ remains ungraded, because the password is the operator's to type. Browser axis: 
 webview question — Firefox, where the panel renders, posts back and takes the keyboard, and a
 Chromium-based agent with service workers blocked, where no webview can load at all.
 
-**This is not a support statement.** Stage 9's exit asks that install, activate, chat,
-agent, stream, stop, tool, gate, workspace boundary, SecretStorage, persistence and
-teardown all pass on at least one declared combination. Several of those are still
-untested, so no combination is declared supported yet.
+**Every cell is graded as of 30 August 2026 — `NOT_TESTED` is zero.** Eleven were open that
+morning; all eleven were settled by running them, and two of those runs found defects in
+Clarvis rather than in code-server (a task double-count, and a peak meter measuring ffmpeg's
+version string). One `FAIL` was fixed the same day: Tier 1 audio now plays through the webview.
+
+**This is still not a support statement.** Stage 9's exit asks that install, activate, chat,
+agent, stream, stop, tool, gate, workspace boundary, SecretStorage, persistence and teardown
+all pass on at least one declared combination. Most now do — but three `FAIL`s remain and
+sixteen cells carry limitations, several of which bear on that list, so no combination is
+declared supported yet. What has changed is that every remaining gap is *named* rather than
+unexamined, which is the difference this document exists to make.
 
 ## Where it stands
 
 | | |
 |---|---|
 | PASS | 32 |
-| PASS_WITH_LIMITATION | 15 |
+| PASS_WITH_LIMITATION | 16 |
 | FAIL | 3 |
-| NOT_TESTED | 1 |
+| NOT_TESTED | 0 |
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -699,7 +706,43 @@ There is no capture path to break. `grep -rni "transcri|whisper|speechToText|asr
 
 ## Network, the Bridge and the proxy
 
-### `NOT_TESTED` — localhost LM Studio
+### `PASS_WITH_LIMITATION` — localhost LM Studio
+
+**Settled 30 August 2026.** `clarvis.chat.provider` was set to `lmstudio` in code-server's own
+settings, the window reloaded, and the model picker opened: it listed models, and LM Studio's
+server log recorded the requests.
+
+**Attribution was the difficult part and it is the reason this is graded rather than assumed.**
+`GET /v1/models` alone proves nothing here: SIRVIS polls `/v1/models` and `/api/v0/models` on a
+timer and RAVIS holds LM Studio as an upstream, so the log shows those pairs arriving twenty
+seconds apart whether or not Clarvis exists. What attributes the traffic is Clarvis's own log
+carrying **LM Studio's error text** back:
+
+```text
+[2026-08-30T10:29:42.409Z] Clarvis build 2026-08-30T10:26:59.474Z
+[2026-08-30T10:29:43.943Z] briefing: model phrasing failed (ModelError: http 400: {
+    "error": { "message": "No models loaded. Please load a model in the developer page
+                           or use the 'lms load' command." } })
+```
+
+That message is LM Studio's, not Clarvis's and not RAVIS's, so the extension host reached
+`127.0.0.1:1234` itself. The extension host holds a socket to LM Studio, which is what the
+prior reasoning below said had never been established.
+
+**Limitation, and it is a property of the test rather than of Clarvis.** Only the *provider*
+was switched; `clarvis.chat.model` still named `ravis/clarvis-chat`, a RAVIS pool id that LM
+Studio cannot resolve — so enumeration is settled and a **completion was never made against a
+valid LM Studio model id**. LM Studio's 400 is also imprecise: it reports "no models loaded"
+for what is really an unknown model, which is worth knowing before anyone debugs it as a
+loading problem. Reachability and enumeration are established; end-to-end generation through
+the `lmstudio` provider under code-server is not.
+
+The settings were restored afterwards, and the change touched code-server's settings only —
+not desktop VS Code's.
+
+The reasoning below is what stood before that run.
+
+#### Prior reasoning (was `NOT_TESTED`)
 
 Never exercised: settings.json selects provider `custom` (RAVIS) for both chat and agent, so the lmstudio ProviderSpec was never used, and the extension host holds no socket to 1234. Two measured facts bear on it. LM Studio binds IPv4 only (`lsof -nP -iTCP -sTCP:LISTEN`: LM Studio 83984 127.0.0.1:1234), while Clarvis's default is /Users/mathias/Documents/coding/clarvis/src/model/providers.ts:82 `baseUrl: 'http://localhost:1234'` — a name, not an address. That is the classic ::1-first failure, and it is neutralised here specifically: code-server spawns the extension host as `node --dns-result-order=ipv4first .../bootstrap-fork --type=extensionHost` (ps, pid 93638), so `localhost` resolves IPv4 first in this host. That flag is code-server's, not Clarvis's, so the mitigation is a property of this host, not of the extension.
 

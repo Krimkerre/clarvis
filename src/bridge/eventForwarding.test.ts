@@ -3,6 +3,19 @@ import test from 'node:test';
 
 import { eventBody, forwardEvent } from './eventForwarding';
 
+/** The identity fields NERVIS attributes a span from. */
+const SOURCE = { service_id: 'clarvis-abc', instance_id: 'inst-1', machine_id: 'machine-1' };
+
+/** An event with §4.4's required fields filled, so a test can vary one thing. */
+const anEvent = (over: Partial<Parameters<typeof eventBody>[0]> = {}) => ({
+  name: 'clarvis.chat.started',
+  data: {},
+  traceId: '',
+  occurredAt: '2026-08-30T20:00:00Z',
+  eventId: 'a'.repeat(32),
+  ...over,
+});
+
 /** Captures one forwarded request without opening a socket. */
 function recorder(status = 202) {
   const sent: { url: string; init: RequestInit }[] = [];
@@ -18,11 +31,10 @@ test('the trace is a top-level field, not buried in the data', () => {
   // field the hub never reads, so the event would arrive, be stored, and still
   // leave the trace without a caller — which is the exact failure this whole
   // path exists to fix.
-  const body = eventBody({
-    name: 'clarvis.chat.started',
-    data: { workspace_id: 'abc' },
-    traceId: '0'.repeat(31) + '1',
-  });
+  const body = eventBody(
+    anEvent({ data: { workspace_id: 'abc' }, traceId: '0'.repeat(31) + '1' }),
+    SOURCE
+  );
 
   assert.equal(body.trace_id, '0'.repeat(31) + '1');
   assert.equal(body.event_type, 'clarvis.chat.started');
@@ -33,7 +45,7 @@ test('an event belonging to no operation carries no trace at all', () => {
   // A heartbeat is not part of a request. Sending an empty string would put a
   // bar in somebody's timeline under a trace id of "", joining every
   // uncorrelated event in the ecosystem into one imaginary operation.
-  const body = eventBody({ name: 'clarvis.status.read', data: {}, traceId: '' });
+  const body = eventBody(anEvent({ name: 'clarvis.status.read' }), SOURCE);
 
   assert.equal('trace_id' in body, false);
 });
@@ -44,7 +56,8 @@ test('a forwarded event is posted with the instance token', async () => {
   const landed = await forwardEvent(
     'http://nervis.invalid',
     'the-instance-token',
-    { name: 'clarvis.agent.completed', data: {}, traceId: 'abc' },
+    anEvent({ name: 'clarvis.agent.completed', traceId: 'abc' }),
+    SOURCE,
     send
   );
 
@@ -64,7 +77,8 @@ test('nothing is sent before NERVIS has issued a token', async () => {
   const landed = await forwardEvent(
     'http://nervis.invalid',
     '',
-    { name: 'clarvis.chat.started', data: {}, traceId: 'abc' },
+    anEvent({ traceId: 'abc' }),
+    SOURCE,
     send
   );
 
@@ -77,7 +91,7 @@ test('a hub that refuses is reported, never thrown', async () => {
   // record. A chat turn must not fail because a diagram lost a bar.
   const { send } = recorder(503);
   assert.equal(
-    await forwardEvent('http://nervis.invalid', 'token', { name: 'x', data: {}, traceId: '' }, send),
+    await forwardEvent('http://nervis.invalid', 'token', anEvent({ name: 'x' }), SOURCE, send),
     false
   );
 });
@@ -88,7 +102,7 @@ test('a hub that is not there is reported, never thrown', async () => {
   }) as unknown as typeof fetch;
 
   assert.equal(
-    await forwardEvent('http://nervis.invalid', 'token', { name: 'x', data: {}, traceId: '' }, exploding),
+    await forwardEvent('http://nervis.invalid', 'token', anEvent({ name: 'x' }), SOURCE, exploding),
     false
   );
 });

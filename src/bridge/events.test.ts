@@ -135,6 +135,7 @@ const anEvent = (data: BridgeEvent['data']): BridgeEvent => ({
   occurred_at: '2026-08-29T00:00:00Z',
   data,
   trace_id: '',
+  event_id: 'e'.repeat(32),
 });
 
 test('a frame carries the id, the name and one data line', () => {

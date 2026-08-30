@@ -14,6 +14,8 @@
  */
 
 /** §6.4's families. Listed rather than freeform so a typo is a compile error. */
+import { randomUUID } from 'crypto';
+
 export type EventName =
   | 'clarvis.lifecycle.ready'
   | 'clarvis.lifecycle.stopping'
@@ -56,6 +58,15 @@ export interface BridgeEvent {
    * sees it.
    */
   readonly trace_id: string;
+  /**
+   * Unique across the ecosystem, unlike `id`.
+   *
+   * `id` is this stream's cursor — it restarts at zero with the window, so two
+   * Clarvis windows produce the same ones. §4.4 wants an identifier the hub can
+   * deduplicate on, which is a different thing, and an envelope without one is
+   * quarantined.
+   */
+  readonly event_id: string;
 }
 
 /**
@@ -91,6 +102,7 @@ export class EventStream {
       name,
       occurred_at: new Date(this.now()).toISOString().replace(/\.\d{3}Z$/, 'Z'),
       data,
+      event_id: randomUUID().replace(/-/g, ''),
       // Which operation this belongs to, for §11.2's waterfall. Empty for the
       // events that belong to no single one — a heartbeat is not part of a
       // request, and giving it a trace would put a bar in somebody's timeline.

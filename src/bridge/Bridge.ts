@@ -169,6 +169,13 @@ export class Bridge {
           name: event.name,
           data: event.data as Record<string, unknown>,
           traceId: event.trace_id,
+          occurredAt: event.occurred_at,
+          eventId: event.event_id,
+        },
+        {
+          service_id: this.identity?.service_id ?? '',
+          instance_id: this.identity?.instance_id ?? '',
+          machine_id: this.identity?.machine_id ?? '',
         },
         this.options.send
       );

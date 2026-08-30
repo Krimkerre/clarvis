@@ -29,6 +29,17 @@ export interface ForwardedEvent {
   readonly data: Record<string, unknown>;
   /** The operation this belongs to, or '' when it belongs to none. */
   readonly traceId: string;
+  /** When it happened, in the ISO form §4.4 requires. */
+  readonly occurredAt: string;
+  /** Unique per event. §4.4 requires it; the hub quarantines an envelope without one. */
+  readonly eventId: string;
+}
+
+/** Who produced it, in the shape NERVIS attributes a span from. */
+export interface EventSource {
+  readonly service_id: string;
+  readonly instance_id: string;
+  readonly machine_id: string;
 }
 
 /**
@@ -38,10 +49,25 @@ export interface ForwardedEvent {
  * the hub joins on it — inside `data` it is an opaque field and the waterfall
  * never sees it.
  */
-export function eventBody(event: ForwardedEvent): Record<string, unknown> {
+export function eventBody(event: ForwardedEvent, source: EventSource): Record<string, unknown> {
   const body: Record<string, unknown> = {
+    // §4.4's three required fields. The first envelope carried only the type
+    // and every event went to NERVIS's quarantine reading `missing required
+    // field(s): event_id, occurred_at` — which is the hub doing its job, and
+    // the reason a rejected event is described rather than dropped.
+    event_id: event.eventId,
     event_type: event.name,
+    occurred_at: event.occurredAt,
     severity: 'info',
+    // Optional to the hub and load-bearing here: `traces.py` reads
+    // `source.service_type` to decide which service a span belongs to, so
+    // without this the events arrive and the waterfall still has no Clarvis.
+    source: {
+      service_type: 'clarvis',
+      service_id: source.service_id,
+      instance_id: source.instance_id,
+      machine_id: source.machine_id,
+    },
     data: event.data,
   };
   if (event.traceId) body.trace_id = event.traceId;
@@ -59,6 +85,7 @@ export async function forwardEvent(
   nervisUrl: string,
   token: string,
   event: ForwardedEvent,
+  source: EventSource,
   send: typeof fetch = fetch
 ): Promise<boolean> {
   if (!token) return false; // Not registered: there is nowhere to send it.
@@ -69,7 +96,7 @@ export async function forwardEvent(
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(eventBody(event)),
+      body: JSON.stringify(eventBody(event, source)),
       signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
     });
     return response.ok;

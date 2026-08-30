@@ -26,12 +26,14 @@ svg.butler { width: clamp(130px, 62vw, 260px); height: auto; }
 /* The middle section owns the leftover height. min-height:0 is load-bearing:
    without it a flex child refuses to shrink below its content, so the transcript
    grows the page instead of scrolling and pushes the input off the bottom. */
-/* The generous bottom padding is deliberate: VS Code's notification toasts pop
-   up over the bottom-right corner of the window, which is exactly where a
-   bottom-pinned input sits when Clarvis is docked to the right — so the moment
-   he says anything, he covers his own prompt. Sitting the input higher keeps it
-   reachable while a toast is on screen. */
-.clarvis-chat { display:flex; flex-direction:column; gap:6px; padding:4px 10px 76px;
+/* The prompt sits near the bottom edge, by request. The previous 76px of bottom
+   padding existed for a real reason — VS Code's notification toasts pop up over
+   the bottom-right corner, which is where a bottom-pinned input sits when
+   Clarvis is docked right, so he can cover his own prompt the moment he speaks.
+   That trade was made knowingly: a permanently high input costs every keystroke,
+   a toast costs a few seconds and can be dismissed. 10px keeps the box off the
+   very edge so the focus ring is not clipped. */
+.clarvis-chat { display:flex; flex-direction:column; gap:6px; padding:4px 10px 10px;
   flex: 1 1 auto; min-height: 0; width: 100%;
   font-family: var(--vscode-font-family); font-size: var(--vscode-font-size);
   color: var(--vscode-foreground); }

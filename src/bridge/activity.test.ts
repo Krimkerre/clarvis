@@ -247,3 +247,36 @@ test('a synchronous answer is passed straight through', async () => {
   assert.equal(await whileAwaiting(activity, 'step', () => true), true);
   assert.equal(activity.snapshot().state, 'agent_running');
 });
+
+test('a chat turn names one trace from start to finish', () => {
+  // Observed live: `clarvis.chat.started` arrived at NERVIS with no trace and
+  // `clarvis.chat.completed` with one, because the tool-capable path let the
+  // AgentRunner mint its own after the activity had already published. A span
+  // with only one end is not a span.
+  const activity = new Activity(() => 0);
+  const seen: { to: string; traceId: string }[] = [];
+  activity.observe((change) => seen.push({ to: change.to, traceId: change.traceId }));
+
+  activity.startChat('trace-one');
+  activity.finish();
+
+  assert.deepEqual(
+    seen.map((change) => change.traceId),
+    ['trace-one', 'trace-one']
+  );
+});
+
+test('a run named after it started still reaches the completion', () => {
+  // `noteTrace` exists because the palette route starts a run before the runner
+  // has an id. The start event legitimately carries none there — what must not
+  // happen is the completion carrying none either.
+  const activity = new Activity(() => 0);
+  const seen: string[] = [];
+  activity.observe((change) => seen.push(change.traceId));
+
+  activity.startRun();
+  activity.noteTrace('trace-two');
+  activity.finish();
+
+  assert.deepEqual(seen, ['', 'trace-two']);
+});

@@ -440,6 +440,21 @@ export class AgentRunner {
     return results;
   }
 
+  /**
+   * Run under a trace the caller already has.
+   *
+   * `withTools` starts the activity *before* constructing this runner, so a
+   * trace minted inside `loop` arrives after `clarvis.chat.started` has already
+   * been published — the start event carried no trace and the completion
+   * carried one, which is a span with only half its ends. The caller mints
+   * first and tells the runner.
+   */
+  useTrace(traceId: string): void {
+    this.givenTrace = traceId;
+  }
+
+  private givenTrace = '';
+
   private async *loop(
     task: string,
     signal: AbortSignal,
@@ -477,9 +492,10 @@ export class AgentRunner {
     // dozen model calls deciding one task — separate traces would put each step
     // in its own waterfall and lose the only thing worth seeing, which is how
     // the steps followed each other.
-    const traceId = newTraceId();
-    // The activity started before this point on both routes into a run, so the
-    // trace is named here rather than passed in from two call sites.
+    // A caller that already started the activity supplies its trace, so the
+    // `started` event and the steps name the same operation. Minted here only
+    // when nobody did — the palette route starts a run without one.
+    const traceId = this.givenTrace || newTraceId();
     this.activity?.noteTrace(traceId);
 
     while (this.steps < cap) {

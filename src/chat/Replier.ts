@@ -194,7 +194,13 @@ export class Replier {
   }
 
   async withTools(question: string, addendum = ''): Promise<void> {
-    const controller = this.busy.start('reply');
+    // Minted before the activity starts, so `clarvis.chat.started` and the
+    // runner's steps name one operation. This is the tool-capable chat turn,
+    // which is the path most conversations actually take — the trace was
+    // missing from every start event because the runner minted its own after
+    // the activity had already published.
+    const traceId = newTraceId();
+    const controller = this.busy.start('reply', traceId);
 
     const runner = new AgentRunner(
       this.context,
@@ -208,6 +214,7 @@ export class Replier {
       // chat turn stuck on a modal looks exactly like one stuck on a slow model.
       this.busy.reported
     );
+    runner.useTrace(traceId);
 
     this.avatar.setState('thinking', 'chat');
     this.panel.post({ type: 'chat-stream-start' });

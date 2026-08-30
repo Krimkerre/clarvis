@@ -6,6 +6,12 @@ observed. Where nothing was observed the cell says `NOT_TESTED` and names the ac
 would settle it — the runbook's rule is that unsupported combinations are never offered as
 supported, and a cell graded from reading rather than running is exactly how that happens.
 
+**Updated 30 August 2026, in three passes.** The third settled Tier 0 audio (`PASS`) by
+reopening code-server through the spike proxy: SecretStorage is origin-scoped browser storage,
+so a different origin is an empty key store and the fallback can be exercised without deleting
+anything. The limitation graded elsewhere in this document is what made a non-destructive test
+possible.
+
 **Updated 30 August 2026, in two passes.** A second pass in Firefox settled the two webview
 cells (`PASS` each: the panel renders, posts back, and takes the keyboard) and produced the
 most useful negative result in this document — the containment gate **cannot be exercised
@@ -40,10 +46,10 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 29 |
-| PASS_WITH_LIMITATION | 13 |
+| PASS | 30 |
+| PASS_WITH_LIMITATION | 14 |
 | FAIL | 4 |
-| NOT_TESTED | 5 |
+| NOT_TESTED | 3 |
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -220,7 +226,7 @@ Partly real, entirely elective. Clarvis writes exactly four secret keys today: c
 
 **Limitation.** Nothing in the code moves, migrates, deprecates or hides the three cloud key paths — Anthropic is still PROVIDERS[0] and the ModelService.spec() fallback, and 'Clarvis: Manage API Keys' offers all three. So the exposure reduction is a user choice, not a structural guarantee, and the voice key (clarvis.fishAudio.key) remains in code-server's browser-backed store regardless of RAVIS — exactly the residual case ECOSYSTEM_RUNBOOK §6.2 Stage 9 names.
 
-### `NOT_TESTED` — §7.1 workspace FS (vscode.workspace.fs, containment)
+### `PASS_WITH_LIMITATION` — §7.1 workspace FS (vscode.workspace.fs, containment)
 
 **Half of this moved on 30 August 2026, and the half that matters did not.** A real folder
 (`~/Documents/coding/ai-router-main`) is now open and trusted, so the premise below — that no
@@ -265,9 +271,38 @@ a plain local absolute path (a `vscode-remote://` URI, say), which would make ev
 to the workspace root and the deliberate `$HOME` write did not land (see the child_process
 cell), and building that profile requires the correct root.
 
-**To settle the rest.** Call `readFile` with an absolute path from inside a code-server
-extension host directly — a host test, not a chat turn. Driving it through the model tests the
-model's path handling, which is a different question and one this pass answered by accident.
+**Settled at the host level, 30 August 2026.** `src/test/containment.spec.ts` now exercises the
+gate inside a real extension host, with the real `workspace.workspaceFolders`, on the four
+cases chat cannot produce:
+
+```text
+✔ a path inside the opened workspace resolves
+✔ a relative path climbing out is refused as outside, not as missing
+✔ an absolute path outside the workspace is refused as outside
+✔ an absolute path *inside* the workspace still resolves
+✔ a symlink pointing out of the workspace is refused
+✔ a missing file inside the workspace resolves, because the gate is about place
+```
+
+Every refusal asserts `reason === 'outside-workspace'` rather than merely that something was
+thrown — a test that accepted any rejection would have passed against the not-found this pass
+first mistook for a gate holding. The absolute-path-*inside* case is there so the rule cannot
+be satisfied by refusing every absolute path, which would be containment by accident.
+
+The last one corrects a mistake in the first draft of this suite: it expected a rejection for
+a missing file and got none. `resolveInWorkspace` does not stat anything — it decides *where*
+a path is, and the not-found arrives later from `readFile`. That separation is precisely why
+the two failures are distinguishable, and why the chat pass, seeing only the second, cannot
+have been seeing the first.
+
+**What is still not established, and it is narrow.** These run under desktop VS Code, because
+`vscode-test` downloads desktop VS Code; they are not executed *inside code-server*. The only
+thing that could differ there is the workspace root resolving to something other than a plain
+local absolute path, which would make every `isInside()` comparison meaningless — and that is
+already answered from the other direction: `sandbox-exec` confined a command's writes to that
+root under code-server, and building the profile requires the correct root. Graded
+`PASS_WITH_LIMITATION` on that basis rather than `PASS`, because the limitation is real and
+naming it costs nothing.
 
 #### Prior reasoning — workspace FS
 
@@ -495,7 +530,39 @@ The evidence below is what stood before that reading.
 
 **To settle.** In a code-server browser session with a Fish key in SecretStorage and `clarvis.voice.enabled` true, run `Clarvis: Test Voice`, then read the Clarvis output channel for a `play: spawned afplay pid=<n>` line followed by `play: exit code=0 ... after <ms>ms`, and confirm sound at the machine running code-server.
 
-### `NOT_TESTED` — audio playback — Tier 0 (system TTS fallback) in a code-server webview
+### `PASS` — audio playback — Tier 0 (system TTS fallback) in a code-server webview
+
+**Settled 30 August 2026, and the operator had already observed it once.** During the first
+proxy-spike run they reported hearing Clarvis speak from a session where their API keys were
+absent — which *is* this cell, because a keyless session is precisely the condition Tier 0
+exists for. It was re-run rather than read off that report, which cost time it should not
+have; the record is the evidence, and asking for it twice is the mistake this document keeps
+finding in other people's reasoning.
+
+The re-run is unambiguous:
+
+```text
+[2026-08-30T09:33:30.462Z] voice: fishAudio is unavailable (no Fish Audio key is stored for
+                           this editor); using the system voice
+```
+
+and the utterance was **heard from the browser**, not the server.
+
+**No key was deleted to produce that.** SecretStorage under code-server is browser
+`localStorage`, so it is scoped to the origin; opening the same code-server through the spike
+proxy at `127.0.0.1:8795/code/` is a different origin and therefore an empty key store, while
+the real key stays where it was at `127.0.0.1:8080`. The origin-scoping graded as a limitation
+elsewhere in this document is what makes a non-destructive test of this cell possible at all.
+
+**Why this one matters beyond itself.** Tier 1 plays through a subprocess on the *server*,
+which is why the split-host audio cell is a `FAIL`. Tier 0 goes through the webview's
+`speechSynthesis` and comes out of the **browser** — so the mechanism that would fix that
+`FAIL` is demonstrated working under code-server here. The remaining work is routing Tier 1's
+audio the same way, not discovering whether the route exists.
+
+The reasoning below is what stood before that.
+
+#### Prior reasoning
 
 Tier 0 does NOT use a subprocess: SystemVoiceProvider.ts:50 posts `{ type: 'speak-system', ... }` to the webview and media/chat.js:316-333 answers it with `new SpeechSynthesisUtterance(...)` / `speechSynthesis.speak(...)`. So the audio device for this tier is the browser's, which is the correct device under code-server. Whether Chromium permits `speechSynthesis.speak()` inside code-server's cross-origin webview iframe — and whether it needs a user gesture there — cannot be determined without a browser.
 

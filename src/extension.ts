@@ -44,6 +44,7 @@ import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
 import { defaultInputDevice } from './voice/defaultInput';
+import { audioDestination, audioDestinationReason } from './voice/audioDestination';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
@@ -657,6 +658,49 @@ function registerVoiceCommands(
     vscode.commands.registerCommand('clarvis.debug.micProbe', async () => {
       const file = vscode.Uri.joinPath(context.globalStorageUri, 'mic-probe.wav');
       await vscode.workspace.fs.createDirectory(context.globalStorageUri);
+
+      // **On a browser or remote host, the host-side recorder captures the
+      // server's microphone — the mirror of the playback defect fixed the same
+      // day.** Recording it anyway would measure the wrong machine and report
+      // the result as though it were the listener's. So the probe first asks
+      // the only question that decides whether capture can be routed the way
+      // playback now is: may this webview open a microphone at all?
+      if (audioDestination(vscode.env.uiKind, vscode.env.remoteName) === 'webview') {
+        const reason = audioDestinationReason(vscode.env.uiKind, vscode.env.remoteName);
+        void vscode.window.showInformationMessage(
+          await phrase('report', 'Recording for three seconds, through the panel. Say something.')
+        );
+
+        const result = await panel.recordThroughPanel(3);
+        if (!result.ok) {
+          log(`mic probe: ${reason}, recorded through the panel and it refused — ${result.error}`);
+          void vscode.window.showInformationMessage(
+            `Clarvis mic probe: the panel could not record — ${result.error}.`
+          );
+          return;
+        }
+
+        // Written to the same file and measured by the same code as the host
+        // path. The point of routing capture through the panel is that the
+        // *microphone* changes, not the analysis — and a silence check that only
+        // ran on one of the two routes would be worth little on either.
+        const audio = Buffer.from(String(result.wavBase64 ?? ''), 'base64');
+        await vscode.workspace.fs.writeFile(file, audio);
+        const peak = peakDbfs(audio);
+        const device = result.device ? ` from ${result.device}` : '';
+        const verdict = hasAudio(audio)
+          ? `captured audio${device}, peak ${peak.toFixed(1)} dBFS`
+          : `SILENT${device} (peak ${peak.toFixed(1)} dBFS) — denied or muted`;
+
+        log(
+          `mic probe: ${reason}, so the recording came from the panel rather than ` +
+            `the extension host — ${audio.length} bytes at ${result.sampleRate} Hz, ${verdict}`
+        );
+        void vscode.window.showInformationMessage(
+          `Clarvis mic probe: ${verdict}. See the Clarvis output channel.`
+        );
+        return;
+      }
 
       void vscode.window.showInformationMessage(
         await phrase('report', 'Recording for three seconds. Say something.')

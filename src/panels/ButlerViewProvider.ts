@@ -79,6 +79,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       'speech-error': (msg) => this.speechFinished.fire({ id: msg.id, error: msg.reason }),
       'system-voices': (msg) => this.systemVoicesReported.fire(msg.voices ?? []),
       'audio-probe': (msg) => this.audioProbed.fire(msg),
+      // The answer to "may this webview open a microphone", which only an
+      // actual attempt can give — see `probeCapture`.
+      'capture-probe': (msg) => this.captureProbed.fire(msg),
+      recorded: (msg) => this.recorded.fire(msg),
       'audio-unlocked': () => {
         this.audioUnlocked = true;
         this.audioUnlockedEmitter.fire();
@@ -136,6 +140,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly speechFinished = new vscode.EventEmitter<{ id: string; error?: string }>();
   private readonly systemVoicesReported = new vscode.EventEmitter<{ name: string; lang: string }[]>();
   private readonly audioProbed = new vscode.EventEmitter<Record<string, unknown>>();
+  private readonly captureProbed = new vscode.EventEmitter<Record<string, unknown>>();
+  private readonly recorded = new vscode.EventEmitter<Record<string, unknown>>();
   private readonly audioUnlockedEmitter = new vscode.EventEmitter<void>();
 
   /**
@@ -150,6 +156,65 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidReportSystemVoices = this.systemVoicesReported.event;
   /** What the audio APIs look like inside the webview — reported once on load. */
   readonly onDidProbeAudio = this.audioProbed.event;
+  readonly onDidProbeCapture = this.captureProbed.event;
+  readonly onDidRecord = this.recorded.event;
+
+  /**
+   * Ask the webview whether it can open a microphone, and wait for the answer.
+   *
+   * **Only an attempt settles it.** A webview is a cross-origin iframe, and
+   * `getUserMedia` there is refused unless the parent document grants
+   * `allow="microphone"` on the iframe element — which belongs to the workbench,
+   * not to Clarvis. The load-time probe reports the API as present and the
+   * *policy* as `unknown`, because Firefox does not expose
+   * `document.permissionsPolicy`. Calling it is the only way to find out, and it
+   * may prompt, which is why this is reached from a command the operator ran
+   * rather than from panel load.
+   */
+  /**
+   * Record from the *listener's* microphone, through the panel.
+   *
+   * The input half of the route `speak-audio` opened for output. On a browser or
+   * remote host the extension host's own recorder captures the server's
+   * microphone, which is the wrong machine; this asks the document that is
+   * actually next to the person.
+   *
+   * Returns the clip as a WAV, built in the webview so every existing reader —
+   * `peakDbfs` above all — works on it unchanged.
+   */
+  recordThroughPanel(seconds: number, timeoutMs = 60_000): Promise<Record<string, unknown>> {
+    const id = `r${this.nextRecordingId++}`;
+    return new Promise((resolve) => {
+      const done = this.onDidRecord((result) => {
+        if (result.id !== id) return;
+        clearTimeout(timer);
+        done.dispose();
+        resolve(result);
+      });
+      const timer = setTimeout(() => {
+        done.dispose();
+        resolve({ ok: false, error: 'no answer from the panel' });
+      }, timeoutMs);
+      this.post({ type: 'record-audio', id, seconds });
+    });
+  }
+
+  private nextRecordingId = 0;
+
+  probeCapture(timeoutMs = 30_000): Promise<Record<string, unknown>> {
+    return new Promise((resolve) => {
+      const done = this.onDidProbeCapture((result) => {
+        clearTimeout(timer);
+        done.dispose();
+        resolve(result);
+      });
+      const timer = setTimeout(() => {
+        done.dispose();
+        resolve({ ok: false, error: 'no answer from the panel' });
+      }, timeoutMs);
+      this.post({ type: 'probe-capture' });
+    });
+  }
 
   /** Sends a message into the webview. No-ops if the panel has never been opened. */
   post(message: unknown): void {
@@ -163,6 +228,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.speechFinished,
       this.systemVoicesReported,
       this.audioProbed,
+      this.captureProbed,
+      this.recorded,
       this.audioUnlockedEmitter,
       this.asked,
       this.muteToggled,

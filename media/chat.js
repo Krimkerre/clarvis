@@ -25,10 +25,31 @@ window.addEventListener('keydown', unlockAudio, { once: true });
 // SpeechRecognition (input) and found it blocked, but never checked
 // speechSynthesis (output) — different API, no permission, and Tier 0 depends
 // entirely on it, so it's worth knowing rather than assuming.
+//
+// The capture half is reported for the same reason and answers a question that
+// decides whether routing recording through here is possible at all: a webview
+// is a cross-origin iframe, and `getUserMedia` in one is refused unless the
+// *parent* document grants `allow="microphone"` on the iframe element. That
+// iframe belongs to the workbench, not to Clarvis, so no amount of extension
+// code can make capture work if the policy says no. `mediaDevices` being
+// present is necessary and not sufficient; `permissionsPolicy` is the part that
+// actually decides, where the browser exposes it.
 vscode.postMessage({
   type: 'audio-probe',
   speechSynthesis: typeof window.speechSynthesis !== 'undefined',
   audioElement: typeof window.Audio !== 'undefined',
+  mediaDevices: typeof navigator.mediaDevices !== 'undefined',
+  getUserMedia: typeof navigator.mediaDevices?.getUserMedia === 'function',
+  // `document.featurePolicy` is the older name and still what some engines ship.
+  microphoneAllowed: (() => {
+    try {
+      const policy = document.permissionsPolicy ?? document.featurePolicy;
+      if (!policy || typeof policy.allowsFeature !== 'function') return 'unknown';
+      return policy.allowsFeature('microphone') ? 'yes' : 'no';
+    } catch {
+      return 'unknown';
+    }
+  })(),
 });
 
 const transcript = document.getElementById('clarvis-transcript');
@@ -313,6 +334,107 @@ window.addEventListener('message', (event) => {
 
   // Speak via the OS voice. The mouth and the sound are the same component, so
   // they can't drift apart: playback events drive the avatar, not a timer.
+  // Whether this webview may open a microphone, answered by trying.
+  //
+  // Reached only from a command the operator ran: `getUserMedia` prompts, and a
+  // panel that asked for the microphone every time it loaded would train people
+  // to dismiss the prompt. The track is stopped the instant it opens — this
+  // establishes permission, it does not record anything.
+  if (msg.type === 'probe-capture') {
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const label = stream.getAudioTracks()[0]?.label ?? '';
+        stream.getTracks().forEach((track) => track.stop());
+        vscode.postMessage({ type: 'capture-probe', ok: true, device: label });
+      } catch (err) {
+        // The name is the useful half: `NotAllowedError` from a permissions
+        // policy and from a user clicking "block" look identical here, and both
+        // differ from `NotFoundError`, which means there is no input at all.
+        vscode.postMessage({
+          type: 'capture-probe',
+          ok: false,
+          error: (err && err.name) || String(err),
+          detail: (err && err.message) || '',
+        });
+      }
+    })();
+    return;
+  }
+
+  // Record from the listener's own microphone and hand the clip to the host.
+  //
+  // **The mirror of `speak-audio`.** Capture on the extension host records the
+  // machine running the server, which on a browser or remote host is not the
+  // person at the keyboard — the same defect playback had. This is the input
+  // half of the same route.
+  //
+  // **Raw PCM into a WAV, not MediaRecorder.** MediaRecorder is far less code
+  // and produces Opus in a container, which the host's `peakDbfs` cannot read —
+  // and that check is the only thing separating "recorded audio" from "recorded
+  // silence from a denied device". Losing it to save twenty lines would give
+  // back the exact guarantee this file spent the morning repairing. So the WAV
+  // is built here, in the format the host recorder already produced.
+  if (msg.type === 'record-audio') {
+    (async () => {
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        vscode.postMessage({
+          type: 'recorded', id: msg.id, ok: false,
+          error: (err && err.name) || String(err),
+        });
+        return;
+      }
+
+      const context = new (window.AudioContext || window.webkitAudioContext)();
+      const source = context.createMediaStreamSource(stream);
+      // Deprecated, and the alternative is an AudioWorklet whose module has to
+      // be fetched from a URL — which this document's CSP (`script-src
+      // 'nonce-…'`) will not load from a blob. Deprecated and working beats
+      // modern and blocked.
+      const processor = context.createScriptProcessor(4096, 1, 1);
+      const chunks = [];
+      let frames = 0;
+
+      processor.onaudioprocess = (event) => {
+        // Copied, because the browser reuses the underlying buffer between
+        // callbacks and keeping the reference would hand the host the same few
+        // milliseconds repeated.
+        const input = event.inputBuffer.getChannelData(0);
+        chunks.push(new Float32Array(input));
+        frames += input.length;
+      };
+
+      source.connect(processor);
+      // Chromium will not run a ScriptProcessor that is not connected onward.
+      // A zero-gain node keeps it scheduled without routing the microphone to
+      // the speakers, which would be a feedback loop.
+      const mute = context.createGain();
+      mute.gain.value = 0;
+      processor.connect(mute);
+      mute.connect(context.destination);
+
+      await new Promise((done) => setTimeout(done, (msg.seconds || 3) * 1000));
+
+      processor.disconnect();
+      mute.disconnect();
+      source.disconnect();
+      stream.getTracks().forEach((track) => track.stop());
+      const rate = context.sampleRate;
+      await context.close();
+
+      vscode.postMessage({
+        type: 'recorded', id: msg.id, ok: true,
+        sampleRate: rate,
+        device: stream.getAudioTracks()[0]?.label ?? '',
+        wavBase64: wavFromFloat(chunks, frames, rate),
+      });
+    })();
+    return;
+  }
+
   if (msg.type === 'speak-system') {
     try {
       const utterance = new SpeechSynthesisUtterance(msg.text);
@@ -372,3 +494,54 @@ window.addEventListener('message', (event) => {
     vscode.postMessage({ type: 'system-voices', voices });
   }
 });
+
+
+/**
+ * A 16-bit mono WAV from captured float samples.
+ *
+ * Written here rather than on the host so the bytes crossing the boundary are
+ * already the format every existing reader expects — `peakDbfs` walks the RIFF
+ * chunks and measures int16 samples, and handing it anything else would mean
+ * either a decoder on the host or losing the silence check.
+ */
+function wavFromFloat(chunks, frames, sampleRate) {
+  const header = 44;
+  const buffer = new ArrayBuffer(header + frames * 2);
+  const view = new DataView(buffer);
+  const ascii = (offset, text) => {
+    for (let i = 0; i < text.length; i++) view.setUint8(offset + i, text.charCodeAt(i));
+  };
+
+  ascii(0, 'RIFF');
+  view.setUint32(4, 36 + frames * 2, true);
+  ascii(8, 'WAVE');
+  ascii(12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, 'data');
+  view.setUint32(40, frames * 2, true);
+
+  let offset = header;
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i++) {
+      // Clamped before scaling: a float above 1 would wrap to a large negative
+      // int16 and read as full-scale noise in a clip that merely clipped.
+      const sample = Math.max(-1, Math.min(1, chunk[i]));
+      view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+      offset += 2;
+    }
+  }
+
+  let binary = '';
+  const bytes = new Uint8Array(buffer);
+  const STEP = 0x8000; // apply() has an argument limit; chunk the conversion
+  for (let i = 0; i < bytes.length; i += STEP) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + STEP));
+  }
+  return btoa(binary);
+}

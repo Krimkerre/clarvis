@@ -59,8 +59,8 @@ unexamined, which is the difference this document exists to make.
 
 | | |
 |---|---|
-| PASS | 32 |
-| PASS_WITH_LIMITATION | 16 |
+| PASS | 33 |
+| PASS_WITH_LIMITATION | 15 |
 | FAIL | 3 |
 | NOT_TESTED | 0 |
 
@@ -651,7 +651,7 @@ Tier 0 does NOT use a subprocess: SystemVoiceProvider.ts:50 posts `{ type: 'spea
 
 **To settle.** Open the Clarvis panel in a code-server browser tab, run `Clarvis: Test Voice` with no Fish key stored, and check the `audio-probe` message the webview posts on load (media/chat.js:28-32, handled at src/panels/ButlerViewProvider.ts:81) for `speechSynthesis: true`, then listen for the utterance at the browser and watch for a `speech-error` reply rather than the 30s timeout at SystemVoiceProvider.ts:54-57.
 
-### `PASS_WITH_LIMITATION` — audio capture — the `clarvis.debug.micProbe` spike command under code-server
+### `PASS` — audio capture — the `clarvis.debug.micProbe` spike command under code-server
 
 **Settled 30 August 2026, and running it found a defect in the probe itself.** Capture works:
 ffmpeg spawned from the extension host, exited 0, wrote 83 448 bytes, and the audio is real —
@@ -685,11 +685,36 @@ The probe also names the device it recorded from, because `:default` is the righ
 record and says nothing about what it resolved to — on this machine `BlackHole 2ch` is
 installed and enumerates first, so a silent result had three explanations and now has two.
 
-**Limitation, and it is the mirror of the audio-output one.** Capture spawns ffmpeg on the
-*extension host*, so it records the machine running the server. Here that is also the
-listener's machine and the recording is theirs; on a split host it would record the wrong
-room. The fix has the same shape as the output fix — `getUserMedia` in the webview rather than
-a subprocess on the host — and is not built.
+**Fixed the same day, and the limitation is gone.** Capture spawned ffmpeg on the *extension
+host*, so it recorded the machine running the server — the mirror of the playback defect. It
+now records through the panel wherever the workbench is a browser or the host is remote:
+
+```text
+mic probe: the workbench is a browser, so the recording came from the panel rather than
+the extension host — 270380 bytes at 48000 Hz, captured audio from MacBook Air Microphone,
+peak -15.7 dBFS
+```
+
+Three independent confirmations that it took the new path, not just a new log line: the clip
+is **48 000 Hz** where the host recorder wrote 16 000, it is 270 380 bytes where that one was
+83 448, and `ffmpeg -af volumedetect` measures the same **-15.7 dB** the extension reports.
+
+**Whether it was possible at all had to be established first.** A webview is a cross-origin
+iframe and `getUserMedia` there is refused unless the parent grants `allow="microphone"` — an
+attribute on an iframe the workbench owns, not Clarvis. The load-time probe reports
+`getUserMedia: true` and `microphoneAllowed: "unknown"`, because Firefox does not expose
+`document.permissionsPolicy`; only calling it settles the question, and calling it prompts. So
+a user-triggered probe asked, the operator allowed it, and the answer — *the panel may open a
+microphone (MacBook Air Microphone)* — is what justified building the route rather than
+assuming it.
+
+**Raw PCM rather than `MediaRecorder`, deliberately.** `MediaRecorder` is far less code and
+produces Opus in a container, which `peakDbfs` cannot read — and that check is the only thing
+separating "recorded audio" from "recorded silence from a denied device". It had been broken
+until earlier the same day; giving it back to save twenty lines would have been a poor trade.
+The webview builds a 16-bit WAV, so the clip is written to the same file and measured by the
+same code as the host path. Routing capture through the panel changes which *microphone*, not
+the analysis.
 
 The reasoning below is what stood before that run.
 

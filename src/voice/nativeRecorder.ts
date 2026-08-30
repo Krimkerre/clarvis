@@ -186,14 +186,58 @@ export function hasAudio(wav: Buffer): boolean {
  * Pure, so the distinction is testable without a microphone.
  */
 export function peakDbfs(wav: Buffer): number {
-  const HEADER_BYTES = 44; // canonical PCM WAV header
-  let peak = 0;
+  const samples = dataChunk(wav);
+  if (!samples) return -Infinity;
 
-  for (let offset = HEADER_BYTES; offset + 1 < wav.length; offset += 2) {
-    const sample = Math.abs(wav.readInt16LE(offset));
+  let peak = 0;
+  for (let offset = 0; offset + 1 < samples.length; offset += 2) {
+    const sample = Math.abs(samples.readInt16LE(offset));
     if (sample > peak) peak = sample;
   }
 
   if (peak === 0) return -Infinity;
   return 20 * Math.log10(peak / 32768);
+}
+
+/**
+ * The `data` chunk's bytes, found by walking the RIFF structure.
+ *
+ * **This assumed a canonical 44-byte header and that was wrong for the recorder
+ * we actually use.** ffmpeg writes a `LIST`/`INFO` chunk holding its own version
+ * string between `fmt ` and `data`, so samples begin at byte 78 on this machine,
+ * not 44 — and the 34 bytes in between are the ASCII text `Lavf62.12.102`, which
+ * read as int16 peaks at 26230. That is **-1.9 dBFS**, comfortably above the
+ * silence floor, and identical for every file the same ffmpeg writes.
+ *
+ * So `hasAudio` answered "yes" for any clip it was handed, including one from a
+ * denied microphone — defeating the single check that exists because a denied
+ * mic exits 0 with a well-formed file. Three probe runs on this machine all
+ * reported the same -1.9 dBFS while ffmpeg measured the actual audio at -26.9,
+ * which is what exposed it.
+ *
+ * The size field is honoured too, so trailing chunks after `data` are not read
+ * as samples. Anything that is not a RIFF/WAVE file returns nothing rather than
+ * a guess.
+ */
+function dataChunk(wav: Buffer): Buffer | null {
+  const RIFF_HEADER = 12; // 'RIFF' + size + 'WAVE'
+  if (wav.length < RIFF_HEADER) return null;
+  if (wav.toString('ascii', 0, 4) !== 'RIFF') return null;
+  if (wav.toString('ascii', 8, 12) !== 'WAVE') return null;
+
+  let offset = RIFF_HEADER;
+  while (offset + 8 <= wav.length) {
+    const id = wav.toString('ascii', offset, offset + 4);
+    const size = wav.readUInt32LE(offset + 4);
+    const body = offset + 8;
+    if (id === 'data') {
+      // Clamped: a truncated recording carries a size larger than the bytes
+      // present, and reading past the end is a crash rather than a measurement.
+      return wav.subarray(body, Math.min(body + size, wav.length));
+    }
+    // Chunks are padded to an even length; an odd size is followed by one pad
+    // byte that is not part of the chunk.
+    offset = body + size + (size % 2);
+  }
+  return null;
 }

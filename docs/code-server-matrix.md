@@ -53,9 +53,9 @@ untested, so no combination is declared supported yet.
 | | |
 |---|---|
 | PASS | 32 |
-| PASS_WITH_LIMITATION | 14 |
+| PASS_WITH_LIMITATION | 15 |
 | FAIL | 3 |
-| NOT_TESTED | 2 |
+| NOT_TESTED | 1 |
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -644,7 +644,49 @@ Tier 0 does NOT use a subprocess: SystemVoiceProvider.ts:50 posts `{ type: 'spea
 
 **To settle.** Open the Clarvis panel in a code-server browser tab, run `Clarvis: Test Voice` with no Fish key stored, and check the `audio-probe` message the webview posts on load (media/chat.js:28-32, handled at src/panels/ButlerViewProvider.ts:81) for `speechSynthesis: true`, then listen for the utterance at the browser and watch for a `speech-error` reply rather than the 30s timeout at SystemVoiceProvider.ts:54-57.
 
-### `NOT_TESTED` — audio capture — the `clarvis.debug.micProbe` spike command under code-server
+### `PASS_WITH_LIMITATION` — audio capture — the `clarvis.debug.micProbe` spike command under code-server
+
+**Settled 30 August 2026, and running it found a defect in the probe itself.** Capture works:
+ffmpeg spawned from the extension host, exited 0, wrote 83 448 bytes, and the audio is real —
+independently measured by `ffmpeg -af volumedetect` at `max_volume: -26.9 dB`.
+
+```text
+[2026-08-30T10:22:23.359Z] record: exit code=0 signal=null
+[2026-08-30T10:22:23.544Z] mic probe: ffmpeg wrote 83448 bytes,
+                           captured audio from MacBook Air Microphone, peak -1.9 dBFS
+```
+
+**That `-1.9 dBFS` was wrong, and it was wrong in the one direction that matters.** Three runs
+reported the same figure to a tenth of a decibel, which speech does not do. `peakDbfs` skipped
+a fixed 44 bytes — "canonical PCM WAV header" — and ffmpeg does not write one: it puts a
+`LIST`/`INFO` chunk holding its own version string between `fmt ` and `data`, so samples begin
+at byte 78. The 34 bytes in between are the ASCII text `Lavf62.12.102`, which read as int16
+peaks at 26 230, or **-1.9 dBFS** — constant for every file that ffmpeg writes.
+
+So `hasAudio` returned `true` for any clip it was handed, **including one from a denied
+microphone**, defeating the single check that exists because a denied mic exits 0 with a
+well-formed file. The probe would have reported success for the failure it was built to
+detect. Fixed by walking the RIFF chunks to find `data` and honouring its length; the same
+file now measures -26.9 dBFS, agreeing with ffmpeg.
+
+The unit tests did not catch it because the fixture built a header from `Buffer.alloc(44)` —
+44 zero bytes, which have no chunk structure to get wrong and contribute nothing to a peak. A
+fixture easier than the real thing tests something easier than the real thing. It now builds a
+real RIFF file and a variant carrying ffmpeg's own `LIST` chunk.
+
+The probe also names the device it recorded from, because `:default` is the right thing to
+record and says nothing about what it resolved to — on this machine `BlackHole 2ch` is
+installed and enumerates first, so a silent result had three explanations and now has two.
+
+**Limitation, and it is the mirror of the audio-output one.** Capture spawns ffmpeg on the
+*extension host*, so it records the machine running the server. Here that is also the
+listener's machine and the recording is theirs; on a split host it would record the wrong
+room. The fix has the same shape as the output fix — `getUserMedia` in the webview rather than
+a subprocess on the host — and is not built.
+
+The reasoning below is what stood before that run.
+
+#### Prior reasoning (was `NOT_TESTED`)
 
 src/extension.ts:661 `await recordClip(file.fsPath, 3, process.platform, log)` → src/voice/nativeRecorder.ts:95 `spawn('ffmpeg', ['-nostdin','-f','avfoundation','-i',':default', ...])`; `grep -c avfoundation dist/extension.js` = 1, so it ships. ffmpeg is present at /opt/homebrew/bin/ffmpeg, so the binary-missing branch would not fire here. Same locality defect as playback: the mic opened is the server's, and the code has no remote-awareness (0 hits, above). macOS TCC would attribute the request to code-server's node process — untested.
 

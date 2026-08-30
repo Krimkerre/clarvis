@@ -198,11 +198,68 @@ test('mid-sentence brackets keep their words', () => {
 
 import { peakDbfs, recorderCandidates } from './nativeRecorder';
 
-/** A 16-bit mono WAV carrying the given samples, header included. */
-function wav(samples: number[]): Buffer {
+/**
+ * A real 16-bit mono WAV carrying the given samples.
+ *
+ * **This used to be `Buffer.alloc(44)` followed by the samples, and that is why
+ * a live bug went unseen for the life of the file.** A header of 44 zero bytes
+ * has no chunk structure to get wrong and contributes nothing to a peak, so a
+ * reader that skipped a fixed 44 bytes looked correct against it. The recorder
+ * we actually use writes a `LIST`/`INFO` chunk before `data`, putting samples at
+ * byte 78 — and the 34 bytes of encoder string in between measured -1.9 dBFS,
+ * which `hasAudio` read as "there is audio here" for every file it ever saw.
+ *
+ * Fixtures that are easier than the real thing test something easier than the
+ * real thing.
+ */
+function wav(samples: number[], extraChunks: Buffer = Buffer.alloc(0)): Buffer {
   const body = Buffer.alloc(samples.length * 2);
   samples.forEach((sample, i) => body.writeInt16LE(sample, i * 2));
-  return Buffer.concat([Buffer.alloc(44), body]);
+
+  const fmt = Buffer.alloc(24);
+  fmt.write('fmt ', 0, 'ascii');
+  fmt.writeUInt32LE(16, 4);
+  fmt.writeUInt16LE(1, 8); // PCM
+  fmt.writeUInt16LE(1, 10); // mono
+  fmt.writeUInt32LE(16000, 12);
+  fmt.writeUInt32LE(32000, 16);
+  fmt.writeUInt16LE(2, 20);
+  fmt.writeUInt16LE(16, 22);
+
+  const data = Buffer.alloc(8);
+  data.write('data', 0, 'ascii');
+  data.writeUInt32LE(body.length, 4);
+
+  const riff = Buffer.alloc(12);
+  riff.write('RIFF', 0, 'ascii');
+  riff.writeUInt32LE(4 + fmt.length + extraChunks.length + data.length + body.length, 4);
+  riff.write('WAVE', 8, 'ascii');
+
+  return Buffer.concat([riff, fmt, extraChunks, data, body]);
+}
+
+/**
+ * The `LIST`/`INFO` chunk ffmpeg writes, holding its own version string.
+ *
+ * Reproduced byte-for-byte in shape because its *contents* are the hazard: read
+ * as int16 they peak at -1.9 dBFS, well above the silence floor.
+ */
+function ffmpegInfoChunk(encoder = 'Lavf62.12.102'): Buffer {
+  const value = Buffer.from(`${encoder}\0`, 'ascii');
+  const isft = Buffer.concat([
+    Buffer.from('ISFT', 'ascii'),
+    (() => {
+      const size = Buffer.alloc(4);
+      size.writeUInt32LE(value.length, 0);
+      return size;
+    })(),
+    value,
+  ]);
+  const payload = Buffer.concat([Buffer.from('INFO', 'ascii'), isft]);
+  const header = Buffer.alloc(8);
+  header.write('LIST', 0, 'ascii');
+  header.writeUInt32LE(payload.length, 4);
+  return Buffer.concat([header, payload]);
 }
 
 test('a silent recording is distinguishable from a real one', () => {
@@ -214,6 +271,42 @@ test('a silent recording is distinguishable from a real one', () => {
 
 test('full-scale audio reads as 0 dBFS', () => {
   assert.ok(Math.abs(peakDbfs(wav([32767]))) < 0.01);
+});
+
+test('a silent clip from the recorder we actually use still reads as silent', () => {
+  // The regression, in the shape that produced it. ffmpeg puts a LIST/INFO chunk
+  // between `fmt ` and `data`; skipping a fixed 44 bytes lands inside that chunk
+  // and measures the encoder string. Three real probe runs each reported -1.9
+  // dBFS — the peak of the text "Lavf62.12.102" — while the audio itself was at
+  // -26.9, and `hasAudio` would therefore have called a denied microphone a
+  // success.
+  const silent = wav([0, 0, 0, 0], ffmpegInfoChunk());
+
+  assert.equal(peakDbfs(silent), -Infinity);
+  assert.equal(hasAudio(silent), false);
+});
+
+test('real audio is still found behind that chunk', () => {
+  const spoken = wav([0, 9000, -11000, 0], ffmpegInfoChunk());
+
+  assert.ok(peakDbfs(spoken) > -20);
+  assert.equal(hasAudio(spoken), true);
+});
+
+test('bytes after the data chunk are not counted as samples', () => {
+  // `data` carries its own length, and a file may hold chunks after it. Reading
+  // to the end of the buffer would measure whatever those contain.
+  const quiet = wav([0, 0], ffmpegInfoChunk());
+  const trailing = Buffer.from('LIST\x04\x00\x00\x00INFO', 'binary');
+
+  assert.equal(peakDbfs(Buffer.concat([quiet, trailing])), -Infinity);
+});
+
+test('something that is not a WAV measures nothing rather than guessing', () => {
+  // A recorder that failed and left a text error in the file should not produce
+  // a confident level from its bytes.
+  assert.equal(peakDbfs(Buffer.from('ffmpeg: Input/output error\n', 'ascii')), -Infinity);
+  assert.equal(peakDbfs(Buffer.alloc(0)), -Infinity);
 });
 
 test('every platform has at least one recorder candidate', () => {

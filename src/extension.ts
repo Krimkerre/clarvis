@@ -43,6 +43,7 @@ import { opening, phrase, setVoice } from './personality/Voice';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
+import { defaultInputDevice } from './voice/defaultInput';
 import { chooseVoice, chooseEngine, warnIfEngineUnknown } from './voice/pickers';
 import { characterWith, ONLY_WHAT_YOU_WERE_GIVEN } from './personality/character';
 import { runVoiceCheck } from './personality/voiceCheck';
@@ -666,11 +667,21 @@ function registerVoiceCommands(
         const audio = Buffer.from(await vscode.workspace.fs.readFile(file));
         const peak = peakDbfs(audio);
 
+        // **Which device, because a silent recording has three explanations and
+        // naming it removes one.** `:default` is the right thing to record and
+        // says nothing about what it resolved to; on a machine with a virtual
+        // device installed, "the wrong input" is a live possibility and looks
+        // identical to a denied mic. Empty when it cannot be told, and then the
+        // original three-way wording stands rather than a claim we cannot make.
+        const device = await defaultInputDevice(process.platform);
+        const from = device ? ` from ${device}` : '';
+
         // A denied mic can still produce a well-formed file full of silence, so the
         // exit code alone proves nothing. The level is the actual result.
         const verdict = hasAudio(audio)
-          ? `captured audio, peak ${peak.toFixed(1)} dBFS`
-          : `SILENT (peak ${peak.toFixed(1)} dBFS) — device denied, muted, or the wrong input`;
+          ? `captured audio${from}, peak ${peak.toFixed(1)} dBFS`
+          : `SILENT${from} (peak ${peak.toFixed(1)} dBFS) — ` +
+            (device ? 'denied or muted' : 'device denied, muted, or the wrong input');
         log(`mic probe: ${used} wrote ${audio.length} bytes, ${verdict}`);
         void vscode.window.showInformationMessage(`Clarvis mic probe: ${verdict}. See the Clarvis output channel.`);
       } catch (error) {

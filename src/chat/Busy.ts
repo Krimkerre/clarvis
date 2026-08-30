@@ -96,7 +96,12 @@ export class Busy {
    *
    * A fresh controller each time: Stop must abort *this* turn, not every future one.
    */
-  start(kind: 'reply' | 'run'): AbortController {
+  /**
+   * `traceId` is the operation this belongs to (§11.2). Optional because two
+   * call sites start work that is not a model request — a probe and a briefing
+   * — and inventing a trace for them would put empty spans in the waterfall.
+   */
+  start(kind: 'reply' | 'run', traceId = ''): AbortController {
     this.controller?.abort();
     this.controller = new AbortController();
 
@@ -108,8 +113,8 @@ export class Busy {
     // The one place the distinction is recorded, so a Bridge reader cannot see a
     // run and a chat turn as the same thing — and so the `'reply'`/`'run'` choice
     // at each call site is finally observable from a test.
-    if (kind === 'run') this.activity.startRun();
-    else this.activity.startChat();
+    if (kind === 'run') this.activity.startRun(traceId);
+    else this.activity.startChat(traceId);
 
     this.show(true);
     return this.controller;

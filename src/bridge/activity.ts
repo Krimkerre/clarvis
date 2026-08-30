@@ -100,6 +100,14 @@ export interface ActivityChange {
   readonly from: ActivityState;
   readonly to: ActivityState;
   readonly kind: 'chat' | 'run' | undefined;
+  /**
+   * The operation this change belongs to, or '' when none is in flight.
+   *
+   * Carried on the change rather than looked up later because §11.2 joins a
+   * waterfall on it: an event published without the trace is a bar that cannot
+   * be placed beside the RAVIS call it caused.
+   */
+  readonly traceId: string;
   readonly snapshot: ActivitySnapshot;
 }
 
@@ -119,6 +127,8 @@ export class Activity {
   private since: number;
   /** What is in flight, in the terms §6.4's event families are named in. */
   private kind?: 'chat' | 'run';
+  /** The trace the current operation belongs to; cleared when it ends. */
+  private traceId = '';
   private readonly observers = new Set<(change: ActivityChange) => void>();
 
   constructor(private readonly now: Clock = Date.now) {
@@ -130,13 +140,27 @@ export class Activity {
    * `agent_running` separately because one edits files and the other does not,
    * and an operator glancing at a dashboard is entitled to that distinction.
    */
-  startChat(): void {
+  startChat(traceId = ''): void {
+    this.traceId = traceId;
     this.kind = 'chat';
     this.enter('chatting', opaqueId());
   }
 
   /** An agent run began — the one that writes files. */
-  startRun(): void {
+  /**
+   * Name the operation already in flight.
+   *
+   * Two routes start a run — the palette and the panel — and both begin the
+   * activity before `AgentRunner` mints the trace its steps will share. Rather
+   * than thread an id through both call sites, the runner names it once it has
+   * one, and the completion event carries it either way.
+   */
+  noteTrace(traceId: string): void {
+    this.traceId = traceId;
+  }
+
+  startRun(traceId = ''): void {
+    this.traceId = traceId;
     this.kind = 'run';
     this.enter('agent_running', opaqueId());
     this.steps = 0;
@@ -283,6 +307,10 @@ export class Activity {
       from,
       to: this.current,
       kind: this.kind,
+      // Read before any transition clears it, so the *end* of an operation
+      // still names the trace it belonged to — the completion event is half
+      // the span, and a span with only a start has no duration.
+      traceId: this.traceId,
       snapshot: this.snapshot(),
     };
     for (const observer of [...this.observers]) {

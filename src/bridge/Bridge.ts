@@ -18,6 +18,7 @@ import { identityFor, loadIdentity, type HostFacts, type Identity, type Storage 
 import { API_VERSION, CAPABILITIES, PROTOCOL_VERSION, voiceCapability, wireIdentifier,
   type Capability } from './protocol';
 import { deregister, heartbeat, heartbeatInterval, register, type Claim } from './registration';
+import { forwardEvent } from './eventForwarding';
 import { BridgeServer } from './server';
 import type { ConfigSummary } from './config';
 import type { ActivityChange, ActivitySnapshot } from './activity';
@@ -26,6 +27,11 @@ import { publishActivity } from './publish';
 export interface BridgeOptions {
   /** Where NERVIS is. Configuration, never assumed — §? of the runbook is explicit. */
   readonly nervisUrl: string;
+  /**
+   * How events reach NERVIS's hub. Injectable so a test can observe what was
+   * forwarded without opening a socket — the default is the real `fetch`.
+   */
+  readonly send?: typeof fetch;
   /** The `0600` file beside NERVIS's database. Its contents, already read. */
   readonly enrollmentSecret: string;
   readonly storage: Storage;
@@ -93,6 +99,7 @@ export class Bridge {
   private server?: BridgeServer;
   private identity?: Identity;
   private token?: string;
+  private unforward?: () => void;
   private timer?: any;
   private running = false;
   /** Detaches the activity observer, so a stopped Bridge stops collecting. */
@@ -136,6 +143,36 @@ export class Bridge {
     // Attached before the socket, so an event fired during startup is buffered
     // rather than lost — the buffer is what a consumer replays on connect.
     this.unpublish = publishActivity(this.options.activity, this.events);
+
+    // **And onward to NERVIS, so a trace has a caller in it.** Clarvis emitted
+    // the right families all along into its own stream, which nothing reads —
+    // NERVIS's hub held events from three services and none from this one, so
+    // every assembled trace warned that RAVIS had no calling service.
+    //
+    // Fire-and-forget by construction: `forwardEvent` reports rather than
+    // throws, nothing awaits it, and a failure is dropped rather than retried.
+    // §11.1 makes the hub operational telemetry rather than the system of
+    // record, so a lost event costs a bar in a diagram and nothing else.
+    this.unforward = this.events.listen((event) => {
+      // **Only once NERVIS has issued a token.** Before registration there is
+      // nowhere to send it and no authority to send it with — and a test that
+      // never registers therefore makes no network call at all, which is the
+      // difference between a suite that finishes and one that waits on a
+      // timeout per event. The first version of this hung `node --test` for
+      // eighteen minutes: every event opened a socket to an address nothing
+      // answers, and each pending timer kept the loop alive.
+      if (!this.token) return;
+      void forwardEvent(
+        this.options.nervisUrl,
+        this.token,
+        {
+          name: event.name,
+          data: event.data as Record<string, unknown>,
+          traceId: event.trace_id,
+        },
+        this.options.send
+      );
+    });
 
     const server = new BridgeServer({
       token: () => this.token,
@@ -188,6 +225,7 @@ export class Bridge {
 
     // Last, so the `stopping` event above still had somewhere to go.
     this.unpublish?.();
+    this.unforward?.();
     this.unpublish = undefined;
   }
 

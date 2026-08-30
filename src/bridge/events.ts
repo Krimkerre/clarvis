@@ -48,6 +48,14 @@ export interface BridgeEvent {
   readonly name: EventName;
   readonly occurred_at: string;
   readonly data: EventData;
+  /**
+   * The operation this belongs to, or '' for the events that belong to none.
+   *
+   * Top level rather than inside `data` because that is where NERVIS's hub
+   * joins a trace: inside `data` it is an opaque field and the waterfall never
+   * sees it.
+   */
+  readonly trace_id: string;
 }
 
 /**
@@ -77,12 +85,16 @@ export class EventStream {
    * one broken consumer must not stop the others hearing, and it certainly must
    * not propagate back into the editor work that emitted this.
    */
-  emit(name: EventName, data: EventData = {}): void {
+  emit(name: EventName, data: EventData = {}, traceId = ''): void {
     const event: BridgeEvent = {
       id: this.next++,
       name,
       occurred_at: new Date(this.now()).toISOString().replace(/\.\d{3}Z$/, 'Z'),
       data,
+      // Which operation this belongs to, for §11.2's waterfall. Empty for the
+      // events that belong to no single one — a heartbeat is not part of a
+      // request, and giving it a trace would put a bar in somebody's timeline.
+      trace_id: traceId,
     };
 
     this.buffer.push(event);

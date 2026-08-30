@@ -105,6 +105,13 @@ function bridgeAgainst(url: string, time = heldTime(), logs: string[] = []) {
       protocolVersion: '1.0.0',
     },
     activity,
+    // **No event forwarding in the unit suite.** A registered Bridge posts its
+    // events to NERVIS's hub, and against the fake server here that leaves a
+    // socket in flight which `fake.stop()` then waits on — one test hung the
+    // whole run for eighteen minutes before this existed. What is forwarded is
+    // asserted in `eventForwarding.test.ts`, where it can be observed without a
+    // server at all.
+    send: (async () => new Response('', { status: 202 })) as unknown as typeof fetch,
     log: (message) => logs.push(message),
     setTimer: time.setTimer,
     clearTimer: time.clearTimer,

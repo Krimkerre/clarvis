@@ -478,6 +478,9 @@ export class AgentRunner {
     // in its own waterfall and lose the only thing worth seeing, which is how
     // the steps followed each other.
     const traceId = newTraceId();
+    // The activity started before this point on both routes into a run, so the
+    // trace is named here rather than passed in from two call sites.
+    this.activity?.noteTrace(traceId);
 
     while (this.steps < cap) {
       if (signal.aborted) {

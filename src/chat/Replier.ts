@@ -75,7 +75,10 @@ export class Replier {
     }
 
     // A fresh controller per question: Stop must abort this turn, not every future one.
-    const controller = this.busy.start('reply');
+    // One id for the turn, shared by the activity event and the model request:
+    // the point of a trace is that those two are the same operation.
+    const traceId = newTraceId();
+    const controller = this.busy.start('reply', traceId);
 
     this.avatar.setState('thinking', 'chat');
     const turn = this.transcript.begin('clarvis');
@@ -95,10 +98,7 @@ export class Replier {
         system: `${this.systemPrompt() + addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`,
         messages: this.transcript.forModel(),
         signal: controller.signal,
-        // One turn is one trace. A chat turn is a single model call today, but
-        // the tool-capable path can make several, and they belong together for
-        // the same reason an agent run's steps do.
-        traceId: newTraceId(),
+        traceId,
       })) {
         const visible = reader.push(fragment);
         if (!visible) continue; // still buffering the opening, deciding on a tag

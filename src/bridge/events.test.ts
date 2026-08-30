@@ -134,6 +134,7 @@ const anEvent = (data: BridgeEvent['data']): BridgeEvent => ({
   name: 'clarvis.gate.requested',
   occurred_at: '2026-08-29T00:00:00Z',
   data,
+  trace_id: '',
 });
 
 test('a frame carries the id, the name and one data line', () => {

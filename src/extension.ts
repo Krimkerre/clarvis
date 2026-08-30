@@ -92,7 +92,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Voice (M7). Tier 1 (Fish Audio) lands behind the same interface; until a key and
   // a curated voice exist, the system voice is the whole implementation.
-  const fish = new FishAudioProvider(context, (message) => logger.write(message));
+  // The panel is handed over so Tier 1 can play through the webview when the
+  // extension host is not the listener's machine — see `audioDestination`.
+  const fish = new FishAudioProvider(context, (message) => logger.write(message), panel);
   const voice = new VoiceService(
     avatar,
     fish,

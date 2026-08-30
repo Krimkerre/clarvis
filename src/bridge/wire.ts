@@ -14,6 +14,8 @@
  */
 
 import * as vscode from 'vscode';
+
+import { audioDestination } from '../voice/audioDestination';
 import { promises as fs } from 'fs';
 import { Bridge } from './Bridge';
 import { summarise } from './config';
@@ -75,6 +77,10 @@ export async function startBridge(
     voice: {
       enabled: vscode.workspace.getConfiguration('clarvis').get<boolean>('voice.enabled', false),
       remoteName: vscode.env.remoteName,
+      // Where speech actually comes out, which is not derivable from
+      // `remoteName` alone — a browser workbench is the case it misses.
+      playsInWebview:
+        audioDestination(vscode.env.uiKind, vscode.env.remoteName) === 'webview',
     },
     log,
   });

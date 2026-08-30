@@ -1,8 +1,6 @@
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { Utterance, VoiceProvider } from './VoiceProvider';
-
-/** Nothing should hang forever waiting on a voice that never finishes. */
-const SPEECH_TIMEOUT_MS = 30_000;
+import { WebviewSpeech } from './WebviewSpeech';
 
 /**
  * Speaks with the operating system's own voice (Tier 0, §4.4).
@@ -17,18 +15,12 @@ const SPEECH_TIMEOUT_MS = 30_000;
 export class SystemVoiceProvider implements VoiceProvider {
   readonly id = 'system' as const;
 
-  private nextId = 0;
-  private readonly pending = new Map<string, { resolve: () => void; reject: (e: Error) => void }>();
+  private readonly speech: WebviewSpeech;
 
-  constructor(private readonly panel: ButlerViewProvider) {
-    panel.onDidFinishSpeech(({ id, error }) => {
-      const waiter = this.pending.get(id);
-      if (!waiter) return;
-
-      this.pending.delete(id);
-      if (error) waiter.reject(new Error(error));
-      else waiter.resolve();
-    });
+  constructor(panel: ButlerViewProvider) {
+    // The id-and-timeout dance is shared with Tier 1's webview path; see
+    // `WebviewSpeech` for why it is one implementation and not two.
+    this.speech = new WebviewSpeech(panel);
   }
 
   /**
@@ -43,18 +35,11 @@ export class SystemVoiceProvider implements VoiceProvider {
   }
 
   speak(utterance: Utterance): Promise<void> {
-    const id = `s${this.nextId++}`;
-
-    return new Promise<void>((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.panel.post({ type: 'speak-system', id, text: utterance.text, voiceId: utterance.voiceId });
-
-      // A voice that never reports back would otherwise leave the avatar stuck
-      // mid-sentence — the same stuck-state class of bug M3 hit with cancelled tasks.
-      setTimeout(() => {
-        if (!this.pending.delete(id)) return;
-        reject(new Error('speech timed out'));
-      }, SPEECH_TIMEOUT_MS);
-    });
+    return this.speech.request((id) => ({
+      type: 'speak-system',
+      id,
+      text: utterance.text,
+      voiceId: utterance.voiceId,
+    }));
   }
 }

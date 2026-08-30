@@ -17,14 +17,46 @@ test('voice on a desktop is simply available', () => {
 });
 
 test('voice on a remote host is degraded, not unavailable', () => {
-  // The distinction is the point. Speech still happens — out of the wrong
-  // machine's speakers. A peer reading `unavailable` would conclude Clarvis had
+  // The distinction is the point. Speech still happens; it is the conditions
+  // that are narrower. A peer reading `unavailable` would conclude Clarvis had
   // gone quiet, which is a different and less alarming thing than what occurs.
   const voice = voiceCapability(true, 'code-server');
 
   assert.equal(voice.state, 'degraded');
-  assert.match(voice.reason, /machine running the extension host/);
   assert.equal(voice.constraints?.remote, 'code-server');
+});
+
+test('the degraded reason is the one that is currently true', () => {
+  // **This assertion changed with the behaviour, which is the point of having
+  // it.** It read `/machine running the extension host/` while playback was
+  // always a subprocess there. Tier 1 now sends audio to the webview on such a
+  // host, so that sentence would advertise a defect that no longer exists — and
+  // a capability describing yesterday's failure is worse than one saying
+  // nothing, because a peer acts on it.
+  const voice = voiceCapability(true, 'code-server');
+
+  assert.match(voice.reason, /panel/);
+  assert.match(voice.reason, /before the first utterance/);
+  // The exact claim that went stale, not the phrase it contained: the new
+  // reason mentions the extension host precisely to say playback is *not* there.
+  assert.doesNotMatch(voice.reason, /machine running the extension host/);
+  assert.doesNotMatch(voice.reason, /sitting at the server/);
+  assert.equal(voice.constraints?.plays_on, 'webview');
+});
+
+test('a browser workbench degrades even when remoteName says nothing', () => {
+  // The case deriving the answer from `remoteName` alone gets wrong: code-server
+  // is a browser workbench whatever it reports for the remote name, and voice
+  // there plays through the panel like any other web host.
+  const voice = voiceCapability(true, undefined, true);
+
+  assert.equal(voice.state, 'degraded');
+  assert.equal(voice.constraints?.plays_on, 'webview');
+  assert.equal(voice.constraints?.remote, undefined);
+});
+
+test('a desktop host with no remote is plainly available', () => {
+  assert.equal(voiceCapability(true, undefined).state, 'available');
 });
 
 test('voice turned off says so rather than blaming the host', () => {

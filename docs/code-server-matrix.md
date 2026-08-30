@@ -6,6 +6,12 @@ observed. Where nothing was observed the cell says `NOT_TESTED` and names the ac
 would settle it — the runbook's rule is that unsupported combinations are never offered as
 supported, and a cell graded from reading rather than running is exactly how that happens.
 
+**The split-host audio `FAIL` is fixed, 30 August 2026.** Tier 1 sends rendered audio to the
+webview wherever the workbench is a browser or the extension host is remote, and it was heard
+from the browser. Most of that path already existed and had never been used: the webview has
+carried a `speak-audio` handler and the panel's CSP has carried `media-src data:` — what was
+missing was the sender. Desktop keeps the native player, where it is still the better choice.
+
 **Updated 30 August 2026, in three passes.** The third settled Tier 0 audio (`PASS`) by
 reopening code-server through the spike proxy: SecretStorage is origin-scoped browser storage,
 so a different origin is an empty key store and the fallback can be exercised without deleting
@@ -46,10 +52,10 @@ untested, so no combination is declared supported yet.
 
 | | |
 |---|---|
-| PASS | 30 |
+| PASS | 32 |
 | PASS_WITH_LIMITATION | 14 |
-| FAIL | 4 |
-| NOT_TESTED | 3 |
+| FAIL | 3 |
+| NOT_TESTED | 2 |
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's
@@ -99,7 +105,29 @@ No login shell and no TTY is assumed on the command path. Confined: sandboxProfi
 
 **Limitation.** One genuine desktop assumption, in a diagnostic feature rather than the agent: logTailing.ts:11-22 `getLogDir()` hardcodes `~/Library/Application Support/Code/logs` on darwin and shells `find` at it (logTailing.ts:28) then `tail -f` (logTailing.ts:102). Under code-server the logs live at ~/.local/share/code-server/logs. That desktop directory does exist on this Mac (`ls -d` succeeds, desktop VS Code is installed), so `clarvis.startLogTailing` will not error — it will silently tail a different editor's logs. Separately, PATH: `shell:true` gives a non-login /bin/sh, so any command relying on shims added by ~/.zshrc (nvm, pyenv, rbenv) resolves only if the extension host's inherited PATH already carries them; that inheritance is unverified and is the main thing that could differ between a code-server started from a terminal and a desktop VS Code started from Finder.
 
-### `NOT_TESTED` — child_process and the command sandbox (end to end, inside code-server)
+### `PASS` — child_process and the command sandbox (end to end, inside code-server)
+
+**Settled 30 August 2026, and the filesystem is the evidence rather than the log line.** The
+agent was asked to run `pwd && touch inside.txt && touch "$HOME/escape.txt"` in a trusted
+folder under code-server:
+
+```text
+[2026-08-30T09:21:53.955Z] sandbox: using sandbox-exec on darwin
+[2026-08-30T09:21:53.957Z] sandbox: confined by sandbox-exec — writes limited to the workspace
+```
+
+Afterwards `inside.txt` existed in the workspace root and `~/escape.txt` **did not**. The
+agent's own account agreed: *"The file inside.txt now exists in the workspace. The attempt to
+write to your home directory, however, I cannot perform—access is confined to this folder."*
+Three independent accounts, one conclusion: `child_process` works in code-server's extension
+host and macOS `sandbox-exec` genuinely confines it there.
+
+Checking the filesystem mattered. The log line is written on every gated command, confined or
+not, so on its own it proves the sandbox *code* ran and not that the sandbox *held*.
+
+The reasoning below is what stood before that run.
+
+#### Prior reasoning (was `NOT_TESTED`)
 
 No command has ever been run by Clarvis under this code-server. AgentRunner.ts:812-819 logs a `sandbox: …` line unconditionally on every gated command (confined, escaped, or unconfined), and sandbox.ts:40 logs `sandbox: using <x> on <platform>` the first time a sandbox is probed. All three code-server clarvis.log files (~/.local/share/code-server/logs/20260829T132709/exthost{1,2,3}/Krimkerre.clarvis/clarvis.log) contain only activation, branch-flow, briefing, bridge and voice lines — not one `sandbox:` line. Nor could a command have run: `ls ~/.local/share/code-server/User/workspaceStorage` = `empty-window` only, and runCommand throws `There is no folder open, so there is nowhere to run that.` (commandTools.ts:53) without a root. `~/.local/share/code-server/User/globalStorage` likewise has no `krimkerre.clarvis` dir, so the `<globalStorage>/sandbox/commands.sb` profile (AgentRunner.ts:785, sandbox.ts:141-143) was never written.
 
@@ -471,7 +499,44 @@ No Electron-only capability is used, so none can be lost in a browser. grep over
 
 ## Audio and voice
 
-### `FAIL` — audio playback — Tier 1 when the browser is on a different machine from the code-server host
+### `PASS` — audio playback — Tier 1 when the browser is on a different machine from the code-server host
+
+**Fixed and observed, 30 August 2026.** Tier 1 now chooses where to play instead of always
+spawning a player on the extension host:
+
+```text
+[2026-08-30T10:06:18.862Z] voice: playing 27208a237db1557c3419fca085355e44
+[2026-08-30T10:06:18.864Z] voice: playing through the webview — the workbench is a browser
+```
+
+and the operator heard it from the browser. The absence in that log is as load-bearing as the
+line: there is no `play: spawned afplay`. Counted across the extension hosts of one day, the
+four running the old build spawned a player 2–7 times each and the four after the reload
+spawned it **zero** times — the behaviour changed exactly where the code did.
+
+**Most of the path already existed and nothing had ever used it.** `media/chat.js` has carried
+a `speak-audio` handler that plays a data URI, reports `speech-ended` / `speech-error`, and
+re-arms the autoplay unlock; the panel's CSP has carried `media-src data:`. Every piece needed
+to *receive* audio was built. Nothing ever sent it. The fix is the missing sender.
+
+**The rule takes two axes** (`audioDestination.ts`), because either alone misroutes a real
+deployment: `uiKind === Web` catches a browser workbench and says nothing about where the
+extension host runs, while `remoteName` catches Remote SSH, WSL and dev containers and says
+nothing about the UI. It deliberately does **not** depend on what code-server reports for
+`remoteName`, which varies by version and could not be established here — `uiKind` settles
+code-server on its own.
+
+**The autoplay constraint that justified host playback is still true.** Chromium blocks audio
+until the document has had a user gesture, and the launch briefing fires about a second after
+startup — so on a split host that first utterance can still be refused. What changed is that
+the refusal is now *reported*: the webview answers `audio-locked` and re-arms on the next
+gesture, instead of the audio playing correctly to an empty room. Desktop keeps the native
+player, where it remains the better choice — no encoding, no round trip, and the player
+process exiting is the finished signal.
+
+The reasoning below is what stood before the fix.
+
+#### Prior reasoning (was `FAIL`)
 
 Playback is a subprocess of the extension host (nativePlayer.ts:98), which under code-server is an ordinary process on the server. Clarvis has no way to notice: `grep -rn "uiKind|remoteName|appHost|extensionKind" src/ media/ package.json` = 0 hits, and 0 hits in dist/extension.js. `hostKind()` (src/bridge/identity.ts:147-153) can name code-server — and code-server's product.json sets nameLong=code-server — but `grep -rn hostKind src/` shows no consumer outside identity.ts and its test, and nothing in the voice path.
 
@@ -486,6 +551,17 @@ src/bridge/protocol.ts:52-80 `CAPABILITIES` declares exactly five entries — cl
 
 **Limitation.** Voice can be withheld from the *user* — `clarvis.voice.enabled` defaults to false (package.json:266), plus session mute (VoiceService.ts:68) and a daily Fish cap (FishAudioProvider.ts:271) — but nothing advertises voice, or its degraded-under-code-server state, to NERVIS or any peer. As the code stands, the Stage 9 exit clause "voice limitations are advertised through capabilities" cannot be satisfied.
 
+
+**Reason rewritten 30 Aug, after the audio fix.** The `degraded` state stands and what it says
+changed: it used to read *"speech plays on the machine running the extension host"*, which was
+true only while playback was always a subprocess there. Tier 1 now sends audio to the webview
+on such a host, so that sentence would have advertised a defect that no longer exists — and a
+capability describing yesterday's failure is worse than one saying nothing, because a peer acts
+on it. It now names the real, smaller limitation: playback needs the panel open and one
+interaction before the first utterance, because a browser refuses audio until then.
+
+The resolver also stopped deriving the answer from `remoteName` alone, which misses a browser
+workbench entirely; `wire.ts` resolves the destination and passes it in.
 
 **Resolved 29 Aug, commit `330feb1`.** `clarvis.voice@1` is declared and resolved per host: `available` on a desktop, `degraded` on a remote one with the reason spelled out, `unavailable` when switched off. Degraded rather than unavailable because speech still happens — out of the server's speakers — and a peer reading `unavailable` would conclude Clarvis had gone quiet, which is a different and less alarming thing.
 

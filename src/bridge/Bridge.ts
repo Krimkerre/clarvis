@@ -59,7 +59,14 @@ export interface BridgeOptions {
    * so the caller resolves them. Absent means the Bridge publishes the declared
    * placeholder, which is `unavailable`.
    */
-  readonly voice?: { enabled: boolean; remoteName: string | undefined };
+  // `playsInWebview` rather than deriving it from `remoteName` here: what a
+  // browser workbench reports for `remoteName` varies, and the answer belongs to
+  // `voice/audioDestination.ts`, which `wire.ts` resolves against `vscode`.
+  readonly voice?: {
+    enabled: boolean;
+    remoteName: string | undefined;
+    playsInWebview?: boolean;
+  };
   /**
    * The timer, injected so a test can drive it.
    *
@@ -270,7 +277,11 @@ export class Bridge {
     if (!this.options.voice) return CAPABILITIES;
     return {
       ...CAPABILITIES,
-      'clarvis.voice@1': voiceCapability(this.options.voice.enabled, this.options.voice.remoteName),
+      'clarvis.voice@1': voiceCapability(
+        this.options.voice.enabled,
+        this.options.voice.remoteName,
+        this.options.voice.playsInWebview
+      ),
     };
   }
 

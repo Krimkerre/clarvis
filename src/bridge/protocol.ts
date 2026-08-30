@@ -127,27 +127,40 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
 /**
  * What to say about voice on the host this window is actually running in.
  *
- * Three answers, and the middle one is why this exists. Playback is a subprocess
- * of the extension host, so on a remote host the sound comes out of the
- * *server's* speakers — audible to whoever is sitting at the server, and not to
- * the person in the browser. That is not a failure; it is a limitation, and
- * §4.1's rule is that a capability which is not `available` must say why.
+ * Three answers, and the middle one is why this exists — but **the reason for
+ * the middle one changed on 30 August 2026 and the wording had to change with
+ * it.** It used to say speech came out of the server's speakers, which was true
+ * while playback was always a subprocess of the extension host. Tier 1 now sends
+ * rendered audio to the webview wherever the workbench is a browser or the host
+ * is remote (`voice/audioDestination.ts`), so that sentence would be a
+ * capability advertising a defect that no longer exists.
+ *
+ * It stays `degraded` rather than becoming `available`, for a smaller and real
+ * reason: playing through the webview needs the panel to be open, and browsers
+ * refuse audio until the document has had a user gesture — so the first
+ * utterance after a reload can be declined. §4.1's rule is that a capability
+ * which is not `available` must say why, and this is the why.
  */
 export function voiceCapability(
   enabled: boolean,
-  remoteName: string | undefined
+  remoteName: string | undefined,
+  playsInWebview = Boolean(remoteName)
 ): Capability {
   if (!enabled) {
     return { version: '1.0.0', state: 'unavailable', reason: 'turned off in settings' };
   }
-  if (remoteName) {
+  if (playsInWebview) {
     return {
       version: '1.0.0',
       state: 'degraded',
       reason:
-        'speech plays on the machine running the extension host, not the one running ' +
-        'the browser, so on a remote host it is audible to whoever is sitting at the server',
-      constraints: { plays_on: 'extension_host', remote: remoteName },
+        'speech is played by the Clarvis panel rather than by the extension host, so it ' +
+        'needs the panel open and one interaction with it before the first utterance — ' +
+        'a browser will refuse audio until then',
+      constraints: {
+        plays_on: 'webview',
+        ...(remoteName ? { remote: remoteName } : {}),
+      },
     };
   }
   return { version: '1.0.0', state: 'available', reason: '' };

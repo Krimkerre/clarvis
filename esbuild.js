@@ -9,7 +9,11 @@ const watch = process.argv.includes('--watch');
 // the old bundle in memory until the window reloads — so "I installed it" and "it is
 // running" are different facts. Logging this at activation makes the difference
 // visible instead of something to remember: a stale host reports an old stamp.
-const buildStamp = new Date().toISOString();
+// The version answers "which build is this", the timestamp answers "is the host
+// running it yet" — both are needed, so the stamp carries both. NERVIS treats
+// build_version as an opaque display string, so the `+` suffix costs nothing
+// there and shows up verbatim in the situation report.
+const buildStamp = `${require('./package.json').version}+${new Date().toISOString()}`;
 
 const options = {
   entryPoints: ['src/extension.ts'],

@@ -10,6 +10,7 @@ import {
 } from './ModelProvider';
 import { PROVIDERS, ProviderId, ProviderSpec, providerSpec, resolveBaseUrl } from './providers';
 import { ModelRole, RoleSettings, resolveRole } from './roles';
+import { randomUUID } from 'crypto';
 
 /** Secret-storage key per provider. Namespaced so one provider's key can't shadow another's. */
 export function keySecretId(provider: ProviderId): string {
@@ -26,6 +27,20 @@ export function keySecretId(provider: ProviderId): string {
 export class ModelService {
   /** Tool-support probe results, keyed by `provider/model`. Cheap, but not free. */
   private readonly toolSupport = new Map<string, boolean>();
+
+  /**
+   * This window's conversation id, for RAVIS's model affinity (§12.1).
+   *
+   * One per activation rather than one per turn: affinity exists so a follow-up
+   * question can land on the model that already holds the context, and a fresh
+   * id each turn would make every question look like a new conversation. It
+   * dies with the window, which is the right lifetime — a session that outlived
+   * the editor would steer tomorrow's routing from yesterday's choice.
+   *
+   * Random and derived from nothing. A key built from the workspace path or the
+   * machine would be an identifier for the person, which §6.1 forbids.
+   */
+  private readonly sessionId = randomUUID();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -140,12 +155,16 @@ export class ModelService {
       );
     }
 
-    return provider.streamWithTools({ ...request, model: this.model(role) });
+    return provider.streamWithTools({
+      ...request, model: this.model(role), sessionId: this.sessionId,
+    });
   }
 
   /** Streams an answer. Errors arrive as `ModelError`, already phrased for a human. */
   stream(request: Omit<CompletionRequest, 'model'>, role: ModelRole = 'chat'): AsyncIterable<string> {
-    return this.provider(role).stream({ ...request, model: this.model(role) });
+    return this.provider(role).stream({
+      ...request, model: this.model(role), sessionId: this.sessionId,
+    });
   }
 
   /** Stores a provider's key in the OS keychain — never in settings, never logged. */

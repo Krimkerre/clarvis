@@ -12,6 +12,7 @@ import { Transcript } from './Transcript';
 import { Turn } from './thread';
 import { Busy } from './Busy';
 import { afterReply, spokenPart } from './replyDelivery';
+import { newTraceId } from '../model/lineage';
 
 /**
  * Answering: the two paths a question can take once a model is involved.
@@ -94,6 +95,10 @@ export class Replier {
         system: `${this.systemPrompt() + addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`,
         messages: this.transcript.forModel(),
         signal: controller.signal,
+        // One turn is one trace. A chat turn is a single model call today, but
+        // the tool-capable path can make several, and they belong together for
+        // the same reason an agent run's steps do.
+        traceId: newTraceId(),
       })) {
         const visible = reader.push(fragment);
         if (!visible) continue; // still buffering the opening, deciding on a tag

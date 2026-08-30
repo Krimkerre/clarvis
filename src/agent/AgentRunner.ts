@@ -32,6 +32,7 @@ import { explainHeldBack } from './dirtyAtStart';
 import { ANSWER_SHAPE } from '../personality/character';
 import { ReplyStateReader, STATE_TAG_INSTRUCTION, stripTags } from '../chat/replyState';
 import { absorbStreamEvent } from './streamNarration';
+import { newTraceId } from '../model/lineage';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -471,6 +472,13 @@ export class AgentRunner {
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
 
+    // **One trace for the whole run, not one per step.** §8's fourth acceptance
+    // scenario asks that an agent run preserve trace lineage, and a run is a
+    // dozen model calls deciding one task — separate traces would put each step
+    // in its own waterfall and lose the only thing worth seeing, which is how
+    // the steps followed each other.
+    const traceId = newTraceId();
+
     while (this.steps < cap) {
       if (signal.aborted) {
         yield this.record(await this.stopped(branch));
@@ -495,6 +503,7 @@ export class AgentRunner {
             messages,
             signal,
             tools: options.readOnly ? readOnlyTools() : undefined,
+            traceId,
           },
           role
         )) {

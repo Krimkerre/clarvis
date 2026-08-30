@@ -70,6 +70,15 @@ export interface CompletionRequest {
   model: string;
   /** Abort signal from the caller — `Clarvis: Stop`, or the panel closing. */
   signal?: AbortSignal;
+  /**
+   * Which operation this request belongs to, for RAVIS to join on (§8's fourth
+   * acceptance scenario). One trace spans a chat turn or a whole agent run; one
+   * session spans the conversation. Absent means absent: an empty id sends no
+   * header at all, because an empty session id is one RAVIS would store and
+   * correlate every anonymous request to.
+   */
+  traceId?: string;
+  sessionId?: string;
 }
 
 /**

@@ -12,6 +12,7 @@ import { buildOpenAiCatalog } from './openaiCatalog';
 import { ProviderSpec, resolveBaseUrl } from './providers';
 import { SseParser, decodeStream } from './sse';
 import { ReasoningWatch, reasoningFieldError, unfinishedThinkingError } from './reasoning';
+import { lineageHeaders } from './lineage';
 
 /**
  * One adapter, four providers: OpenAI, OpenRouter, Ollama and LM Studio.
@@ -320,7 +321,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   private async post(request: CompletionRequest, tools?: unknown[]): Promise<Response> {
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: await this.headers(),
+      headers: { ...(await this.headers()), ...lineageHeaders(request.traceId ?? '', request.sessionId ?? '') },
       signal: request.signal,
       body: JSON.stringify({
         model: request.model,

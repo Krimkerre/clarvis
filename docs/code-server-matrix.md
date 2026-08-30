@@ -59,9 +59,9 @@ unexamined, which is the difference this document exists to make.
 
 | | |
 |---|---|
-| PASS | 33 |
+| PASS | 36 |
 | PASS_WITH_LIMITATION | 15 |
-| FAIL | 3 |
+| FAIL | 0 |
 | NOT_TESTED | 0 |
 
 **How to read the confidence.** 14 cells have now been
@@ -234,7 +234,7 @@ The only task usage is wireBusyTracker.ts:81 `vscode.tasks.onDidStartTask` and :
 
 ## Paths, storage and SecretStorage
 
-### `FAIL` — §7.2 labelling vs desktop VS Code (must not be labelled identically unless proven equivalent)
+### `PASS` — §7.2 labelling vs desktop VS Code (must not be labelled identically unless proven equivalent)
 
 It is not equivalent (see the encryption cell: browser localStorage + a 0644 server key file, versus the macOS Keychain), yet Clarvis labels it identically in 12 places, including user-facing text: src/extension.ts:619 'Key stored, in the system keychain where it belongs.'; src/model/modelPickers.ts:475 '... key stored in the system keychain.' and :367 'API keys — stored in your OS keychain, one per provider'; src/voice/firstRun.ts:54 '... stored in your keychain'; src/chat/ChatActions.ts:307 'Yours go in the keychain, never a settings file.'; plus code comments at src/ClarvisLog.ts:22, src/extension.ts:552, src/voice/FishAudioProvider.ts:8, src/model/ModelService.ts:151, src/model/modelPickers.ts:412; and the shipped manual, media/MANUAL.md:254, :408 and :617 ('Keys live in your OS keychain').
 
@@ -552,9 +552,9 @@ Playback is a subprocess of the extension host (nativePlayer.ts:98), which under
 
 **Open.** Not fixed, and not a fork candidate: in a browser the speaker belongs to the browser, so only routing audio through the webview would fix it, which is a Clarvis change rather than a host one. `media/chat.js` already has half of that path.
 
-### `FAIL` — voice advertised as a separately withheld capability (runbook Stage 9 / §7.1 spike exit: "voice limitations are advertised through capabilities")
+### `PASS` — voice advertised as a separately withheld capability (runbook Stage 9 / §7.1 spike exit: "voice limitations are advertised through capabilities")
 
-src/bridge/protocol.ts:52-80 `CAPABILITIES` declares exactly five entries — clarvis.status.read@1, clarvis.events@1, clarvis.diagnostics.summary@1, clarvis.logs.reference@1, clarvis.ravis_provider@1 — and none concerns voice. `grep -rn voice src/bridge/` returns nothing at all. src/bridge/Bridge.ts:251-254 registers only entries whose state is `available`, from that same frozen table, and src/bridge/server.ts:211-215 serves `GET /ecosystem/capabilities` from `capabilitiesBody(1)` over it. The table is deliberately hand-written, not derived from what is wired (protocol.ts:40-46), so a voice capability will not appear by itself.
+**Originally FAIL, 28 Aug — the finding that produced the fix below.** src/bridge/protocol.ts:52-80 `CAPABILITIES` declared exactly five entries — clarvis.status.read@1, clarvis.events@1, clarvis.diagnostics.summary@1, clarvis.logs.reference@1, clarvis.ravis_provider@1 — and none concerns voice. `grep -rn voice src/bridge/` returns nothing at all. src/bridge/Bridge.ts:251-254 registers only entries whose state is `available`, from that same frozen table, and src/bridge/server.ts:211-215 serves `GET /ecosystem/capabilities` from `capabilitiesBody(1)` over it. The table is deliberately hand-written, not derived from what is wired (protocol.ts:40-46), so a voice capability will not appear by itself.
 
 **Limitation.** Voice can be withheld from the *user* — `clarvis.voice.enabled` defaults to false (package.json:266), plus session mute (VoiceService.ts:68) and a daily Fish cap (FishAudioProvider.ts:271) — but nothing advertises voice, or its degraded-under-code-server state, to NERVIS or any peer. As the code stands, the Stage 9 exit clause "voice limitations are advertised through capabilities" cannot be satisfied.
 
@@ -569,6 +569,15 @@ interaction before the first utterance, because a browser refuses audio until th
 
 The resolver also stopped deriving the answer from `remoteName` alone, which misses a browser
 workbench entirely; `wire.ts` resolves the destination and passes it in.
+
+**Verified end to end, 30 Aug.** Both wire paths carry the *resolved* set rather than the
+frozen table: `Bridge.ts:146` injects `() => this.capabilities()` into the server, which serves
+it at `/ecosystem/capabilities` (`server.ts:218`), and the NERVIS claim is built from the same
+call (`Bridge.ts:297`). One asymmetry is deliberate and worth naming: the claim filters to
+`state === 'available'`, so a *degraded* voice does not appear in the registration at all — it
+appears on the capabilities endpoint, carrying its state and reason. That is §4.1's division of
+labour rather than a gap: the claim is an allowlist of what may be called, and a peer asking
+*how well* it works reads the capability.
 
 **Resolved 29 Aug, commit `330feb1`.** `clarvis.voice@1` is declared and resolved per host: `available` on a desktop, `degraded` on a remote one with the reason spelled out, `unavailable` when switched off. Degraded rather than unavailable because speech still happens — out of the server's speakers — and a peer reading `unavailable` would conclude Clarvis had gone quiet, which is a different and less alarming thing.
 
@@ -836,7 +845,7 @@ Driven by the operator, who holds the password. Through the spike at
 and a terminal opened — which is the WebSocket carrying real traffic rather than merely
 upgrading. That is the three things the proxied axis exists to ask.
 
-### `FAIL` — origin validation was not being performed, and that is why it worked
+### `PASS` — origin validation was not being performed, and that is why it worked
 
 **The terminal connected partly because the spike had disabled code-server's CSRF defence.** The
 proxy forwarded `Cookie` on the WebSocket hop and nothing else, so the upstream saw no `Origin`
@@ -859,9 +868,12 @@ the browser's host travels as RFC 7239 `Forwarded: host=…;proto=http`, which `
 before the `Host` header. That keeps the comparison running *and* passing, rather than passing by
 absence.
 
-**To settle.** Re-run the authenticated pass with the fixed spike: the workbench and terminal
-should behave identically, and code-server's log should carry no `host "…" does not match origin
-"…"`. A failure there is the real answer to whether NERVIS can proxy at all.
+**Settled below, and not by re-running the authenticated pass.** That would have proved nothing:
+a workbench that still works is equally consistent with the check running and with it being
+skipped a second time. The mechanism was driven directly instead — see *origin validation runs
+through the proxy and refuses a bad origin*, where a mismatched origin is refused with a `403`
+through the proxy. The finding is kept at its original grade in the prose because it is the
+reason the fix exists; the cell is a `PASS` because the behaviour it asks for is now observed.
 
 ### `PASS_WITH_LIMITATION` — SecretStorage is scoped to the origin, so reaching code-server a different way loses every key
 

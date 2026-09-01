@@ -38,6 +38,8 @@ import { PendingChoice } from './PendingChoice';
 const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
 import { fixFindingsTask } from '../planning/reviewFollowUp';
 import { addFindingsToPlan } from '../planning/recordMilestone';
+import { handoffOffer } from '../planning/nervisHandoff';
+import { clearNervisTask, waitingNervisTask } from '../planning/nervisTaskFile';
 import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
@@ -341,6 +343,36 @@ export class ChatService {
             'I could not write that into plan.md, so it is agreed and unrecorded — worth adding by hand before it is forgotten.',
             ['plan.md']
           )
+    );
+    return true;
+  }
+
+  /**
+   * Offers a coding task NERVIS wrote into the workspace (E-C8).
+   *
+   * **Shown, never started.** §4.9 already requires a handoff prompt to be
+   * visible and editable before it runs, and this inherits that by being one:
+   * the task goes into the conversation with its origin at the front, and
+   * nothing happens until the person answers. `CLARVIS.md` §6.7 is untouched —
+   * NERVIS wrote a file, and a person in this editor decides what becomes of it.
+   *
+   * **The file is cleared once it has been put to them**, not once it has been
+   * accepted. Leaving it would re-offer the same task every time the window
+   * opened, which is the nagging §6 exists to prevent; and NERVIS overwrites an
+   * unread task rather than queueing, so nothing is lost by taking it down.
+   */
+  private async offerNervisTask(): Promise<boolean> {
+    const waiting = await waitingNervisTask();
+    if (!waiting) return false;
+
+    this.log(`chat: a task arrived from NERVIS${waiting.conversation ? ` (${waiting.conversation})` : ''}`);
+    await clearNervisTask();
+    await this.note(
+      await this.phrase(
+        'report',
+        handoffOffer(waiting),
+        ['clarvis-task.md']
+      )
     );
     return true;
   }
@@ -738,6 +770,13 @@ export class ChatService {
   async offerPlanningIfUnplanned(): Promise<void> {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) return;
+
+    // **A task handed over from NERVIS comes first, and is not gated by the
+    // planning decline** (E-C8). Somebody typed this into chat and pressed a
+    // button minutes ago; it is the most specific and most recent thing anybody
+    // has asked for here, and `PLAN_OFFER_DECLINED` is a decision about
+    // *planning this project*, not about a task they just handed over.
+    if (await this.offerNervisTask()) return;
 
     const planExists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
       () => true,

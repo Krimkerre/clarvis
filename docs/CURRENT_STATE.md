@@ -332,7 +332,10 @@ npm run test:host       # @vscode/test-electron, needs a display — see below
 doesn't quietly become nobody's job (from the 16 Aug review):
 - [ ] Windows: sandbox falls back correctly (no `sandbox-exec`/`bwrap` there — see
   `sandboxProfile.ts`), and the network-confinement asks-once dialog appears.
-- [ ] VSCodium, not just VS Code: the extension activates and the webview renders.
+- [x] VSCodium, not just VS Code: the extension activates — 0.12.0 installed and
+      activated with a clean exthost log, chat running, and the untrusted-folder
+      degradation observed (`docs/code-server-matrix.md`). The panel was not
+      looked at; that half needs a person, not a log.
 - [ ] A real Fish Audio key: voice actually plays, and the system-TTS fallback works
   when it's absent.
 - [ ] A real model provider call (at least one of the five) succeeds end to end

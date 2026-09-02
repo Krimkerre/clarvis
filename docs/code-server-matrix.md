@@ -55,14 +55,120 @@ sixteen cells carry limitations, several of which bear on that list, so no combi
 declared supported yet. What has changed is that every remaining gap is *named* rather than
 unexamined, which is the difference this document exists to make.
 
+## Capabilities §7.1 names that had no cell
+
+**Found by checking coverage rather than by reading the document.** §7.1 lists
+what the spike must grade, and four of its capabilities appeared nowhere in the
+51 cells below — not as `NOT_TESTED`, which is the document's rule for something
+nobody ran, but not at all. An absent cell is worse than an untested one: it is
+invisible, and the exit criterion asks for *every* capability.
+
+One of them was half-known. The tasks cell's limitation already records that
+"one server with several windows is untested", which is the multi-window
+capability admitted in another cell's prose instead of being graded as its own.
+
+### `PASS` — debug sessions and events
+
+Clarvis subscribes to `vscode.debug.onDidStartDebugSession` and
+`onDidTerminateDebugSession` in `src/watch/wireBusyTracker.ts`, so this is a
+capability it actually uses rather than one §7.1 lists in the abstract.
+
+Settled the way the other static cells were: against code-server's own bundle.
+`~/.local/lib/code-server-4.135.0/lib/vscode/out/vs/workbench/api/node/extensionHostProcess.js`
+— the **Node** host, which is where `extensionKind: ["workspace"]` puts Clarvis
+— contains both event names and the `ExtHostDebugService` that raises them.
+There is no browser-worker path to fall down, because Clarvis declares no
+`browser` entrypoint.
+
+**Limitation.** This proves the API is present and reachable, not that a debug
+session behaves identically under a remote host. Clarvis only *observes* these
+events to know the editor is busy; it starts no session and drives no adapter,
+so the surface it depends on is the two subscriptions rather than debugging
+itself.
+
+### `NOT_TESTED` — multiple windows against one server
+
+Two independent code-server *processes* sharing a data directory were exercised
+and are graded under tasks. **One server with several windows was not**, which
+is the ordinary configuration and the one `CLARVIS.md` §6.6 is about: each
+window is a separate Clarvis lifetime with its own Bridge port, and NERVIS
+correlates them by `instance_id`.
+
+**What would settle it.** Open two windows on one code-server, confirm two
+distinct `instance_id`s register with NERVIS on different ports, and confirm
+closing one leaves the other registered. NERVIS's `/api/v1/services` shows the
+registry, so the observation needs no new instrument — only two windows.
+
+### `NOT_TESTED` — Bridge teardown under code-server
+
+`Bridge.dispose()` deregisters with NERVIS and closes its server, and Stage 8
+settled that on the desktop host. Under code-server the extension host is a
+remote Node process with its own lifetime, and whether a browser tab closing
+runs `deactivate` promptly is exactly the kind of thing that differs.
+
+**What would settle it.** Close the browser tab and watch NERVIS's registry:
+a deregistered instance disappears, and one that merely stopped answering goes
+`unreachable` instead. The two are distinguishable from outside, which is what
+makes this observable rather than a matter of trust.
+
+### `NOT_TESTED` — rollback to a prior `.vsix`
+
+Install, update and reload are graded below; rolling back is not, and it is the
+half that matters when an update goes wrong. `CLARVIS.md`'s E-C7 asks that a
+rollback succeed **with workspace data and SecretStorage intact**, which is the
+part a reinstall can quietly lose.
+
+**What would settle it.** Install the previous `.vsix` over the current one,
+reopen the workspace, and confirm the conversation store and the stored provider
+key both survive. Deliberately not run here: it would overwrite the installed
+extension on the machine this document was written from, and a destructive test
+run casually is how somebody loses the key they were testing for.
+
+## VSCodium regression (NERVIS M15)
+
+M15 asks that VS Code stable and VSCodium **still pass regression** after the
+code-server work — it is the clause that stops a fix for one host quietly
+breaking another. It was unevidenced, and `docs/CURRENT_STATE.md` carried it as
+an open checkbox.
+
+### `PASS_WITH_LIMITATION` — Clarvis 0.12.0 activates under VSCodium
+
+Packaged and force-installed (`codium --install-extension --force`), listed back
+as `krimkerre.clarvis@0.12.0`, and a window opened on a scratch folder. Its own
+log records the build stamp and `Clarvis activated.`, with **zero error lines**
+in the sibling exthost log. The chat service then ran on its own — *"chat: no
+plan.md here, offered to plan (looks like a new project)"* followed by the line
+it composed — which exercises the startup path end to end rather than only
+`activate()` returning.
+
+A second thing settled itself on the way: the folder was **untrusted**, and
+Clarvis degraded rather than failing, saying which capability went and how to
+get it back — *"this folder is not trusted, so the Git extension is switched off
+— trust it to get branch, checkpoint and undo back"*. Workspace Trust was never
+granted, so this is the untrusted path observed rather than avoided.
+
+**Limitation.** Activation, the chat surface and clean logs were observed; the
+panel was not looked at. The chat line is written by `ChatService`, which proves
+the service ran and not that pixels reached the webview. Settling that needs
+somebody to look at the window, which is a person's job rather than a log's.
+
 ## Where it stands
 
 | | |
 |---|---|
-| PASS | 36 |
-| PASS_WITH_LIMITATION | 15 |
+| PASS | 37 |
+| PASS_WITH_LIMITATION | 16 |
 | FAIL | 0 |
-| NOT_TESTED | 0 |
+| NOT_TESTED | 3 |
+
+**The three `NOT_TESTED` are new, and they are a coverage fix rather than a
+regression.** This read 0 for a while, which was true of the 51 cells that
+existed and false of §7.1, whose list has four capabilities that had no cell at
+all — debug sessions, multiple windows on one server, Bridge teardown under
+code-server, and rollback. An absent cell is worse than an untested one: it is
+invisible, and the exit criterion asks for *every* capability. Debug is now
+`PASS` on the same static evidence the other reading-graded cells use; the other
+three say what would settle them.
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's

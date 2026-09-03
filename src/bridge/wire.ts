@@ -18,7 +18,8 @@ import * as vscode from 'vscode';
 import { audioDestination } from '../voice/audioDestination';
 import { promises as fs } from 'fs';
 import { Bridge } from './Bridge';
-import { summarise } from './config';
+import { locality, summarise } from './config';
+import { VERDICT_REASON, verifySecretFile } from './secretFile';
 import type { Activity } from './activity';
 
 declare const __CLARVIS_BUILD__: string;
@@ -43,15 +44,39 @@ export async function startBridge(
   const settings = vscode.workspace.getConfiguration('clarvis.bridge');
   if (!settings.get<boolean>('enabled', false)) return undefined;
 
-  const secret = await readSecret(settings.get<string>('enrollmentSecretPath', ''), log);
+  // Belt and suspenders: `clarvis.bridge.*` is machine-scoped in `package.json`,
+  // so a workspace cannot set `enabled` at all. This check is what happens if
+  // that scope enforcement is ever wrong — a hostile repository still cannot
+  // wake the Bridge by any settings path, trusted or not.
+  if (!vscode.workspace.isTrusted) {
+    log('bridge: workspace is untrusted, so the Bridge stays inert regardless of settings');
+    return undefined;
+  }
+
+  // **8790, and it must match `package.json`'s default.** The first draft took
+  // 8711 from the runbook's port table, which is stale: NERVIS's own
+  // `DEFAULT_PORT` is 8790 and its launcher assigns the same, with a comment
+  // saying a launcher and a service disagreeing about a port produces a
+  // dashboard reporting everything as down. A Bridge pointed at 8711 would
+  // have failed to register on every real install, quietly and for ever.
+  const nervisUrl = (settings.get<string>('nervisUrl', '') || 'http://127.0.0.1:8790').replace(/\/+$/, '');
+
+  // Loopback only, for now. Remote Bridge is a later, separately-proven patch
+  // (§16 item 2) — until it exists, a `nervisUrl` naming anything else is
+  // refused here, which is what keeps a bad value from ever reaching the one
+  // place that matters: the secret handed to `register()`. `locality` is the
+  // same classifier `config.ts` already uses to decide what may travel in the
+  // settings summary — reused rather than duplicated, so there is one place
+  // that knows what "loopback" means.
+  let secret = '';
+  if (locality(nervisUrl) !== 'loopback') {
+    log(`bridge: nervisUrl "${nervisUrl}" is not loopback, so the enrollment secret is never read or sent`);
+  } else {
+    secret = await readSecret(settings.get<string>('enrollmentSecretPath', ''), log);
+  }
+
   const bridge = new Bridge({
-    // **8790, and it must match `package.json`'s default.** The first draft took
-    // 8711 from the runbook's port table, which is stale: NERVIS's own
-    // `DEFAULT_PORT` is 8790 and its launcher assigns the same, with a comment
-    // saying a launcher and a service disagreeing about a port produces a
-    // dashboard reporting everything as down. A Bridge pointed at 8711 would
-    // have failed to register on every real install, quietly and for ever.
-    nervisUrl: (settings.get<string>('nervisUrl', '') || 'http://127.0.0.1:8790').replace(/\/+$/, ''),
+    nervisUrl,
     enrollmentSecret: secret,
     // `globalState`, not `workspaceState`: §6.1 calls the service and machine IDs
     // installation-scoped, and putting them per-workspace would make every folder
@@ -101,7 +126,10 @@ export async function startBridge(
  * **An unreadable secret is not an error to raise at the user.** It means the
  * Bridge binds and never registers, which is a state it is already built to sit
  * in — and the difference between "you have not configured this" and "Clarvis is
- * broken" is exactly what a modal here would erase.
+ * broken" is exactly what a modal here would erase. A symlink, a directory or a
+ * loosely-permissioned file is refused the same way, for the same reason: none
+ * of them is "you have not configured this" either, but a thrown error would
+ * make it look like Clarvis is broken rather than like the file needs fixing.
  *
  * The contents are trimmed and never logged. The path is logged, because the
  * usual cause is that it points somewhere else and that is the fact that fixes it.
@@ -112,6 +140,12 @@ async function readSecret(path: string, log: (message: string) => void): Promise
     return '';
   }
   try {
+    const stats = await fs.lstat(path);
+    const verdict = verifySecretFile(stats);
+    if (verdict !== 'ok') {
+      log(`bridge: the enrollment secret at ${path} ${VERDICT_REASON[verdict]}, refused`);
+      return '';
+    }
     return (await fs.readFile(path, 'utf8')).trim();
   } catch (failure) {
     const reason = failure instanceof Error ? failure.message : String(failure);

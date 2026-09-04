@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { returnToBranch } from './AgentBranch';
+import { scopeFor } from './checkpointScope';
 import * as path from 'path';
 import * as fs from 'fs/promises';
 
@@ -40,6 +41,19 @@ interface CheckpointRecord {
   startedOn?: string;
 }
 
+/**
+ * The record's key, now in `workspaceState`.
+ *
+ * **It was in `globalState`, which is one value for the whole installation.** Two
+ * windows shared a single checkpoint, and `begin()` clears the store at the start of
+ * every run — so starting a run in the second window destroyed the first window's undo
+ * and said nothing, because the record still existed and only the copies it pointed at
+ * were gone. `workspaceState` is keyed per workspace by VS Code itself, which is the
+ * scope an undo has always meant.
+ *
+ * The name is unchanged so a record written before this still reads back — see
+ * `stored()`, which looks in both.
+ */
 const RECORD_KEY = 'clarvis.agent.checkpoint';
 
 /**
@@ -59,9 +73,12 @@ export class Checkpoint {
     private readonly log: (message: string) => void
   ) {}
 
-  /** Where copies are kept. Outside the workspace, so a checkpoint never becomes a diff. */
+  /**
+   * Where copies are kept. Outside the workspace, so a checkpoint never becomes a diff —
+   * and inside a per-workspace directory, so one window's run never clears another's.
+   */
   private get storeDir(): string {
-    return path.join(this.context.globalStorageUri.fsPath, 'checkpoint');
+    return path.join(this.context.globalStorageUri.fsPath, 'checkpoint', scopeFor(this.root));
   }
 
   /**
@@ -73,7 +90,7 @@ export class Checkpoint {
   async begin(task: string): Promise<void> {
     await this.clearStore();
     this.record = { task, startedAt: Date.now(), entries: [] };
-    await this.context.globalState.update(RECORD_KEY, this.record);
+    await this.context.workspaceState.update(RECORD_KEY, this.record);
     this.log(`checkpoint: started for "${task}"`);
   }
 
@@ -87,7 +104,7 @@ export class Checkpoint {
   async noteBranch(name: string | undefined): Promise<void> {
     if (!this.record || !name) return;
     this.record.startedOn = name;
-    await this.context.globalState.update(RECORD_KEY, this.record);
+    await this.context.workspaceState.update(RECORD_KEY, this.record);
   }
 
   /**
@@ -136,13 +153,22 @@ export class Checkpoint {
     }
 
     this.record.entries.push(entry);
-    await this.context.globalState.update(RECORD_KEY, this.record);
+    await this.context.workspaceState.update(RECORD_KEY, this.record);
     this.log(`checkpoint: captured ${relative}${entry.created ? ' (new file)' : ''}`);
   }
 
-  /** What the last run touched, for the undo prompt. */
+  /**
+   * What the last run in *this workspace* touched, for the undo prompt.
+   *
+   * Falls back to the installation-wide key, because a run that finished under the
+   * previous version wrote its record there and its copies are still on disk. Dropping
+   * it on upgrade would strand exactly the undo somebody was about to reach for; the
+   * entries carry absolute copy paths, so a legacy record restores correctly whatever
+   * directory layout is current.
+   */
   static stored(context: vscode.ExtensionContext): CheckpointRecord | undefined {
-    return context.globalState.get<CheckpointRecord>(RECORD_KEY);
+    return context.workspaceState.get<CheckpointRecord>(RECORD_KEY)
+      ?? context.globalState.get<CheckpointRecord>(RECORD_KEY);
   }
 
   /**
@@ -202,6 +228,9 @@ export class Checkpoint {
     //
     // Kept when something failed, because then it is the only way to try the rest again.
     if (failed.length === 0) {
+      await context.workspaceState.update(RECORD_KEY, undefined);
+      // The legacy key too, so a record from before the workspace split cannot be
+      // undone a second time by the fallback in `stored()`.
       await context.globalState.update(RECORD_KEY, undefined);
       log('checkpoint: undone, and the record is spent');
     }

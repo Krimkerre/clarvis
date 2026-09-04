@@ -1183,6 +1183,14 @@ An agent that edits twelve files is only acceptable if getting back is trivial.
 
 - Every run opens with a **checkpoint** of the files it intends to touch, stored under
   `globalStorageUri`. `Clarvis: Undo Last Agent Run` restores it wholesale.
+- **Per workspace, since 0.12.4.** Both the record and the copies were installation-wide:
+  one `clarvis.agent.checkpoint` key and one `checkpoint/` directory for every window. A
+  run opens by clearing the store, so starting one in a second window destroyed the first
+  window's undo — silently, because the record survived and only the copies it pointed at
+  were gone. The record now lives in `workspaceState`, which VS Code keys per workspace,
+  and the copies in a subdirectory named by a hash of the workspace root. `stored()` still
+  reads the old key when the new one is empty, so an upgrade does not strand an undo
+  somebody was about to reach for.
 - Individual edits go through `WorkspaceEdit`, so VS Code's own per-file undo works
   normally.
 - The panel shows a **running list of files changed** during the task, each one clickable

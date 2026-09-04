@@ -5134,6 +5134,39 @@ and the "disabled restores exact standalone behaviour" check. Everything they wo
 exercise is verified above, but from node — the same code, and not the same environment,
 which is a distinction this project has been caught by before.
 
+> **Amended 4 Sep — the three settings were workspace-settable, and that was the whole
+> attack.** An external audit of the ecosystem found it, and it is recorded here because
+> the reasoning generalises past this milestone.
+>
+> `wire.ts` read `bridge.enabled`, `bridge.nervisUrl` and `bridge.enrollmentSecretPath`
+> from `getConfiguration`, which merges the workspace's own `.vscode/settings.json`. None
+> of the three was declared machine-scoped and none was validated, so a repository could
+> turn the Bridge on, name any URL as NERVIS, and name any file as the enrolment secret —
+> and `registration.ts` sends that file's contents to that URL as a bearer token. Opening
+> a folder was the entire exploit; nothing else was required of the user.
+>
+> M14's own design is the reason it was reachable rather than a defect in it. This
+> milestone's care went into what the Bridge *exposes* — every non-GET refused before the
+> path is read, no free-form string a caller can fill, a token required even for
+> `/ecosystem/version`. All of that is about NERVIS reading Clarvis. The settings are the
+> other direction, and a threat model aimed carefully at one direction is how the opposite
+> one stays unexamined.
+>
+> Fixed in 0.12.1: all three are `scope: "machine"` (`chat.baseUrl.*` already carried the
+> same declaration for the same reason), `startBridge` refuses an untrusted workspace
+> outright, `nervisUrl` must be loopback, and the enrolment secret must be a regular file
+> at `0600` — not a symlink, not a directory. `verifySecretFile` is a separate `vscode`-free
+> module so the fast suite can exercise every branch, which is this file's own rule about
+> where a testable decision belongs.
+>
+> **Verified in real editors, since VS Code's scope enforcement is the guard and no test
+> here can reach it** — the same "same code, not the same environment" caution the
+> paragraph above makes. A fixture repository asking for all three was opened untrusted
+> (Bridge inert, trust check logged) and then trusted and reloaded, which is the branch
+> that matters because trust is given routinely. Trusted, the Bridge ran on loopback with
+> the real `0600` secret and registered normally; the hostile path never reached the file
+> check, since `/etc/hosts` at `0644` would have logged a refusal and none appears.
+
 ---
 
 ## 8. Risks

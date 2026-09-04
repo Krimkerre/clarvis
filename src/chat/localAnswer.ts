@@ -1,4 +1,5 @@
 import type { Pattern } from '../memory/patterns';
+import { fenced } from './fence';
 import { nothingWrong, OpenProblems, problemLines } from './openProblems';
 import { explainStep, RunRecord } from '../agent/runLedger';
 
@@ -419,9 +420,21 @@ export function factsBlock(facts: WorkspaceFacts): string {
 
   if (lines.length === 0) return '';
 
+  // **Fenced (§16 item 8).** Every line above is either workspace text — a
+  // diagnostic, a recurring error's own words — or a previous run's narration,
+  // which a model wrote. None of it is Clarvis speaking, and an error message
+  // can contain any sentence at all, including one addressed to the model.
+  //
+  // The framing sentence stays outside: that one *is* Clarvis, and putting an
+  // instruction inside the fence would teach the model that instructions can
+  // appear there.
   return [
     '',
     'What you have observed in this project (do not invent anything beyond this):',
-    ...lines.map((line) => `- ${line}`),
+    fenced(
+      'what Clarvis has observed in this workspace',
+      lines.map((line) => `- ${line}`).join('\n'),
+      'this project'
+    ),
   ].join('\n');
 }

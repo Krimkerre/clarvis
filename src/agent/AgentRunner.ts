@@ -455,6 +455,43 @@ export class AgentRunner {
 
   private givenTrace = '';
 
+  /**
+   * Refuse the run, or set up the two things that make it undoable.
+   *
+   * **Lifted out of `loop` to bring it back under the complexity ceiling (§16
+   * item 11).** Not a split for the metric's sake: this is one question with one
+   * answer — may this run start, and if so under what protection — and `loop`
+   * below is about the step cycle rather than about getting to it.
+   *
+   * Returns `null` when the run was refused, having already yielded the reason,
+   * so the caller's check reads as "did it start" rather than as a second copy
+   * of the refusal logic.
+   */
+  private async *begin(
+    role: 'chat' | 'agent',
+    signal: AbortSignal,
+    options: { readOnly: boolean; addendum: string },
+    task: string
+  ): AsyncGenerator<AgentEvent, { checkpoint: Checkpoint; branch: AgentBranch } | null> {
+    const refusal = await this.refuseToStart(role, signal);
+    if (refusal) {
+      yield this.record(refusal);
+      return null;
+    }
+
+    // Isolation and undo are established *before* the model is asked for anything, so
+    // there is no window in which an edit could land unprotected. Neither is set up for
+    // a read-only answer: there is nothing to undo and nothing to isolate.
+    const checkpoint = new Checkpoint(this.context, this.root, this.log);
+    const branch = new AgentBranch(this.log, this.context.workspaceState);
+    // Held so the caller can ask afterwards where the work ended up — the run is over
+    // by the time "shall I fold this back in?" is worth asking.
+    this.lastBranch = branch;
+
+    if (!options.readOnly) yield* this.protect(checkpoint, branch, task);
+    return { checkpoint, branch };
+  }
+
   private async *loop(
     task: string,
     signal: AbortSignal,
@@ -468,22 +505,9 @@ export class AgentRunner {
       ? { role: 'chat' as const, cap: Math.min(this.maxSteps, 10) }
       : { role: 'agent' as const, cap: this.maxSteps };
 
-    const refusal = await this.refuseToStart(role, signal);
-    if (refusal) {
-      yield this.record(refusal);
-      return;
-    }
-
-    // Isolation and undo are established *before* the model is asked for anything, so
-    // there is no window in which an edit could land unprotected. Neither is set up for
-    // a read-only answer: there is nothing to undo and nothing to isolate.
-    const checkpoint = new Checkpoint(this.context, this.root, this.log);
-    const branch = new AgentBranch(this.log, this.context.workspaceState);
-    // Held so the caller can ask afterwards where the work ended up — the run is over
-    // by the time "shall I fold this back in?" is worth asking.
-    this.lastBranch = branch;
-
-    if (!options.readOnly) yield* this.protect(checkpoint, branch, task);
+    const started = yield* this.begin(role, signal, options, task);
+    if (!started) return;
+    const { checkpoint, branch } = started;
 
     const messages: ModelMessage[] = [{ role: 'user', content: task }];
 

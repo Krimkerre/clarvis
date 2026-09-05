@@ -337,6 +337,14 @@ export class Bridge {
       instance_id: identity.instance_id,
       machine_id: identity.machine_id,
       port: this.port,
+      // The version this Bridge already publishes about itself. §12 asks for
+      // minimum/maximum peer versions, and NERVIS could hold every peer to a
+      // window except this one: the others state a version on
+      // /ecosystem/identity and an extension host registers instead, so the
+      // claim is the only place it can arrive. Taken from `identity` rather
+      // than read again — two places stating a version is one place stating it
+      // and one going stale.
+      build_version: identity.build_version,
       api_version: API_VERSION,
       protocol_version: PROTOCOL_VERSION,
       capabilities: Object.fromEntries(

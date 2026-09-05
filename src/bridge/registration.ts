@@ -29,6 +29,15 @@ export interface Claim {
    * deny — so sending a full address here would simply be ignored.
    */
   readonly port: number;
+  /**
+   * The extension version, so NERVIS can hold this Bridge to §12's peer window.
+   *
+   * Every other peer states one on `/ecosystem/identity`; an extension host has
+   * no such surface for NERVIS to probe, so it arrives in the claim. NERVIS's
+   * allowlist accepts it as a version string and judges it — it is never used
+   * to look anything up.
+   */
+  readonly build_version: string;
   readonly api_version: string;
   readonly protocol_version: string;
   /** Flattened to `id -> version`, which is the only shape NERVIS keeps. */

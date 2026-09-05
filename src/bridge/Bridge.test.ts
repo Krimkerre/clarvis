@@ -215,6 +215,45 @@ test('the claim carries a port and NERVIS-allowlisted fields only', async () => 
   }
 });
 
+test('the claim carries the extension version NERVIS judges compatibility on', async () => {
+  // §12 asks for minimum/maximum peer versions, and NERVIS could not hold Clarvis
+  // to a window because a Bridge published no product version anywhere: every
+  // other peer states one on /ecosystem/identity, and an extension host
+  // registers instead. The Bridge already knew it — `identity.build_version`
+  // serves it on the Bridge's own surface — and simply never sent it, so NERVIS
+  // listed the one peer it could not judge.
+  const seen: any[] = [];
+  const server = http.createServer((request, response) => {
+    let text = '';
+    request.on('data', (chunk) => (text += chunk));
+    request.on('end', () => {
+      if (request.method !== 'POST') {
+        response.writeHead(204).end();
+        return;
+      }
+      seen.push(JSON.parse(text || '{}'));
+      response.writeHead(200, { 'content-type': 'application/json' });
+      response.end(JSON.stringify({ token: 't', lease_seconds: 45 }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = (server.address() as any).port;
+  const { bridge } = bridgeAgainst(`http://127.0.0.1:${port}`);
+  try {
+    await bridge.start();
+
+    assert.equal(seen.length, 1);
+    // The version the Bridge already publishes about itself, not a second copy
+    // of it: two places stating a version is one place stating it and one
+    // going stale.
+    assert.equal(seen[0].build_version, bridge.published?.build_version);
+    assert.match(String(seen[0].build_version), /^\d+\.\d+\.\d+/);
+  } finally {
+    await bridge.stop();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
 test('only capabilities that are actually available are claimed', async () => {
   // §4.1: do not advertise an operation unless that exact operation passes
   // conformance. Claiming the unavailable ones would put them in the dashboard's

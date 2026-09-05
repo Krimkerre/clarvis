@@ -53,6 +53,7 @@ const claim: Claim = {
   instance_id: 'instance-1',
   machine_id: 'machine-1',
   port: 7071,
+  build_version: '0.12.6',
   api_version: '1',
   protocol_version: '1.0.0',
   capabilities: { 'clarvis.status.read': '1.0.0' },
@@ -91,16 +92,20 @@ test('the claim carries a port and never a URL or a path', async () => {
 });
 
 test('the claim carries nothing NERVIS would drop', async () => {
-  // NERVIS's allowlist is `service, instance_id, machine_id, port, api_version,
-  // protocol_version, capabilities`. Sending more is not refused — it is logged
-  // and discarded, which means an extra field looks like it worked.
+  // NERVIS's allowlist is `service, instance_id, machine_id, port, build_version,
+  // api_version, protocol_version, capabilities`. Sending more is not refused — it
+  // is logged and discarded, which means an extra field looks like it worked.
+  //
+  // `build_version` joined the list on 5 September so NERVIS could hold this
+  // Bridge to §12's peer window; this test failed on the field the same hour,
+  // which is the point of pinning the set rather than spot-checking it.
   const fake = await nervis(accepts);
   try {
     await register(fake.url, 'secret', claim);
 
     assert.deepEqual(Object.keys(fake.seen[0].body).sort(), [
-      'api_version', 'capabilities', 'instance_id', 'machine_id',
-      'port', 'protocol_version', 'service',
+      'api_version', 'build_version', 'capabilities', 'instance_id',
+      'machine_id', 'port', 'protocol_version', 'service',
     ]);
   } finally {
     await fake.stop();

@@ -1177,6 +1177,19 @@ appearing to govern all of them. A setting that overstates what it controls is w
 than no setting. If gates prove too chatty in practice, the fix is a narrower gate list,
 not a switch that pretends to turn them off.
 
+#### The Bridge states its version (0.12.6)
+
+`ECOSYSTEM_RUNBOOK.md` §12 asks for minimum and maximum *peer* versions, and NERVIS could
+hold every peer to a window except this one. The others state a version on
+`/ecosystem/identity`; an extension host has no surface for NERVIS to probe and registers
+instead, so the claim is the only place a version can arrive — and it carried none. NERVIS
+listed Clarvis as the one peer it could not judge.
+
+The Bridge already knew: `identity.build_version` is on its own identity surface. It now
+travels in the registration claim as well, taken from that same value rather than read a
+second time, and NERVIS answers `peer_supported` beside it on every instance row. Reported,
+never refused: §12 says a peer one supported minor behind must be *tolerated*.
+
 #### The gate's effect, not only its wording (0.12.5)
 
 `Gate.ts` classifies dangerous commands and `explainGate` phrases the question; both are

@@ -2,7 +2,21 @@
 
 `ECOSYSTEM_RUNBOOK.md` §6.2 Stage 9 says **"Test, do not assume."** This is the result of
 doing that, once, on one machine, on 29 August 2026. Every cell carries what was actually
-observed. Where nothing was observed the cell says `NOT_TESTED` and names the action that
+observed.
+
+> **Read the date before the grades (noted 5 September 2026).** These cells were run against
+> **Clarvis 0.0.1**. The extension ships **0.12.4** today, and nothing here has been re-run
+> since 30 August: the agent loop, the Bridge, the approval gates and the panel have all
+> changed in between. A grade is evidence about the version it was taken on, and this document
+> is not evidence about the current one. It is kept rather than deleted because a dated
+> observation beats an absent one — §2.1 makes the same argument for hosted-model evidence —
+> and because the *questions* it enumerates are still the right ones. Re-running it is what
+> `ECOSYSTEM_RUNBOOK.md` §15's "code-server compatibility is evidenced for every supported
+> matrix cell" actually requires; until then that line stays unchecked, which is where it is.
+>
+> Six cells cite evidence under `~/.local/share/code-server/extensions/krimkerre.clarvis-0.0.1/`.
+> That directory is gone — each install replaces it — so those paths record where the evidence
+> *was* taken, not where it can be found now. Where nothing was observed the cell says `NOT_TESTED` and names the action that
 would settle it — the runbook's rule is that unsupported combinations are never offered as
 supported, and a cell graded from reading rather than running is exactly how that happens.
 
@@ -35,7 +49,7 @@ the browser used had service workers blocked, which no webview can survive, and 
 about the browser rather than about Clarvis.
 
 **The combination tested.** code-server 4.135.0 ("with Code 1.135.0"), standalone install,
-macOS arm64, Clarvis 0.0.1, served over plain HTTP on loopback — **direct**, and since 30 August
+macOS arm64, **Clarvis 0.0.1**, served over plain HTTP on loopback — **direct**, and since 30 August
 also through a **spike reverse proxy** at a `/code/` base path. The spike is not NERVIS's proxy:
 it forwards bytes and does none of §13.3's security work, so what it grades is Clarvis and
 code-server *under a proxy*, never NERVIS's own route. Everything behind code-server's login
@@ -43,16 +57,20 @@ remains ungraded, because the password is the operator's to type. Browser axis: 
 webview question — Firefox, where the panel renders, posts back and takes the keyboard, and a
 Chromium-based agent with service workers blocked, where no webview can load at all.
 
-**Every cell is graded as of 30 August 2026 — `NOT_TESTED` is zero.** Eleven were open that
+**Every cell was graded as of 30 August 2026 — `NOT_TESTED` was zero that day.** It reads 3
+below: §7.1's coverage check later added four capabilities that had no cell at all, which is
+the tally's own note, not a regression. Eleven were open that
 morning; all eleven were settled by running them, and two of those runs found defects in
 Clarvis rather than in code-server (a task double-count, and a peak meter measuring ffmpeg's
 version string). One `FAIL` was fixed the same day: Tier 1 audio now plays through the webview.
 
 **This is still not a support statement.** Stage 9's exit asks that install, activate, chat,
 agent, stream, stop, tool, gate, workspace boundary, SecretStorage, persistence and teardown
-all pass on at least one declared combination. Most now do — but three `FAIL`s remain and
-sixteen cells carry limitations, several of which bear on that list, so no combination is
-declared supported yet. What has changed is that every remaining gap is *named* rather than
+all pass on at least one declared combination. Most now do — but sixteen cells carry
+limitations and three are `NOT_TESTED`, several of which bear on that list, so no combination
+is declared supported yet. *(The `FAIL` count reached zero later on 30 August; this paragraph
+said "three `FAIL`s remain" until 5 September, while the tally below said 0 — a document
+disagreeing with its own table, which is the drift the tally exists to prevent.)* What has changed is that every remaining gap is *named* rather than
 unexamined, which is the difference this document exists to make.
 
 ## Capabilities §7.1 names that had no cell

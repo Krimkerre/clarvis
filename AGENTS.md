@@ -38,6 +38,27 @@ plan.
 - Scope discovered mid-build kicks back to Plan Mode — new gap analysis, new
   sign-off — rather than growing silently inside Code Mode.
 
+## Never invent another component's behaviour
+
+Clarvis is one of four products in the NERVIS ecosystem, and
+`ECOSYSTEM_RUNBOOK.md` §1 binds every agent working on any of them:
+
+> **No agent may invent another ecosystem component's API, schema, capability, or
+> behaviour merely to complete its own milestone.** If the required contract does not
+> yet exist, implement against the canonical contract where the runbook specifies one,
+> use an explicitly labelled test double where that is allowed, or stop at the
+> integration gate and report the missing dependency.
+
+For this repository that means RAVIS's routes, its pool names, its error shapes and
+NERVIS's Bridge protocol are read from their documents, never guessed from what would
+be convenient here. **Stop** when a path, field, capability identifier or protocol
+version you need is absent, and say what is missing, which milestone needs it, and who
+owns it. A locally convenient shape is not evidence.
+
+Observed runtime behaviour outranks the documents. When an integration behaves
+differently from the plan, record what happened, add a regression test, correct the
+contract — and never fake the expected behaviour to satisfy a checklist.
+
 ## Two different `plan.md`s — don't confuse them
 
 `plan.md` in *this* repo is the build plan for the Clarvis extension itself. Once

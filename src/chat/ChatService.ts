@@ -38,7 +38,8 @@ import { PendingChoice } from './PendingChoice';
 const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
 import { fixFindingsTask } from '../planning/reviewFollowUp';
 import { addFindingsToPlan } from '../planning/recordMilestone';
-import { handoffOffer } from '../planning/nervisHandoff';
+import { handoffOffer, NervisTask, TASK_FILE } from '../planning/nervisHandoff';
+import { clearsTheFile, decideHandoff } from './nervisOffer';
 import { clearNervisTask, waitingNervisTask } from '../planning/nervisTaskFile';
 import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
@@ -347,6 +348,9 @@ export class ChatService {
     return true;
   }
 
+  /** Set between offering a task NERVIS handed over and the person answering. */
+  private awaitingNervisTask?: NervisTask;
+
   /**
    * Offers a coding task NERVIS wrote into the workspace (E-C8).
    *
@@ -356,24 +360,75 @@ export class ChatService {
    * nothing happens until the person answers. `CLARVIS.md` §6.7 is untouched —
    * NERVIS wrote a file, and a person in this editor decides what becomes of it.
    *
-   * **The file is cleared once it has been put to them**, not once it has been
-   * accepted. Leaving it would re-offer the same task every time the window
-   * opened, which is the nagging §6 exists to prevent; and NERVIS overwrites an
-   * unread task rather than queueing, so nothing is lost by taking it down.
+   * **Offered, rather than announced.** This used to post the task into the
+   * transcript and return, arming nothing — so `OFFER_ORDER` never saw it, no
+   * buttons appeared, and the only way to act on a task somebody had just handed
+   * over was to retype it. The milestone's own exit says it *"is offered as a
+   * build"*, and a sentence with no answer attached is not an offer.
+   *
+   * **The offer is posted as written, not put through the voice.** Provenance is
+   * the one thing this milestone adds, and the safest way to keep a fact in a
+   * sentence is not to send the sentence somewhere it can be reworded. It went
+   * through `phrase('report', …)` before, pinning `clarvis-task.md` as a fact the
+   * line did not actually contain — so every rewrite was rejected, silently, after
+   * the model call had been paid for.
    */
   private async offerNervisTask(): Promise<boolean> {
     const waiting = await waitingNervisTask();
     if (!waiting) return false;
 
     this.log(`chat: a task arrived from NERVIS${waiting.conversation ? ` (${waiting.conversation})` : ''}`);
-    await clearNervisTask();
-    await this.note(
-      await this.phrase(
-        'report',
-        handoffOffer(waiting),
-        ['clarvis-task.md']
-      )
-    );
+    await this.note(handoffOffer(waiting));
+    this.awaitingNervisTask = waiting;
+    this.panel.post({ type: 'choices', items: [{ label: 'Start it' }, { label: 'Not now' }] });
+    return true;
+  }
+
+  /**
+   * Takes the reply to that offer. `true` once the message has been used up.
+   *
+   * **Read from disk again, deliberately.** The offer says the task can be edited
+   * first, and it can only be true if the thing that runs is the file as it stands
+   * now rather than the copy captured when the window opened. This is
+   * `pendingBuild`'s reasoning applied to the other document a person is invited
+   * to edit.
+   *
+   * **Approval is forced on, whatever the mode says.** A brief that arrived from
+   * another program has had no human hand on it, and §9's rule is that the file is
+   * evidence of what somebody asked for and never an instruction followed
+   * unreviewed — so every step is put to the person even in a mode that would
+   * otherwise run ahead. More scepticism than a task typed here, not less.
+   */
+  private async answeredNervisOffer(question: string): Promise<boolean> {
+    const remembered = this.awaitingNervisTask;
+    this.awaitingNervisTask = undefined;
+    this.panel.post({ type: 'choices-clear' });
+    if (!remembered) return false;
+
+    const current = await waitingNervisTask();
+    const decision = decideHandoff(offerAnswer(question, ['start it', 'run it']), current);
+    if (clearsTheFile(decision)) await clearNervisTask();
+
+    if (decision === 'withdrawn') {
+      this.log('chat: the handoff was accepted but the file had gone');
+      await this.note(
+        await this.phrase(
+          'report',
+          `That task is no longer in ${TASK_FILE} — it was removed since I asked, so there is nothing to start.`,
+          [TASK_FILE]
+        )
+      );
+      return true;
+    }
+    if (decision !== 'run') {
+      this.log(`chat: handoff ${decision === 'forget' ? 'declined' : 'left unanswered'}`);
+      return false;
+    }
+
+    this.log(`chat: starting the task NERVIS handed over — "${current!.task.slice(0, 60)}"`);
+    this.runs.setStepApproval(true, () => true);
+    this.runs.setFromPlan(false);
+    await this.runs.run(current!.task, 'Right — the task from NERVIS, and I will check each step with you.');
     return true;
   }
 
@@ -684,6 +739,7 @@ export class ChatService {
       review: { armed: this.runs.hasReviewFindings, answer: () => this.answeredReviewOffer(question) },
       resume: { armed: this.awaitingResume, answer: () => this.answeredResumeOffer(question) },
       scope: { armed: Boolean(this.awaitingScopeAnswer), answer: () => this.answeredScopeOffer(question) },
+      handoff: { armed: Boolean(this.awaitingNervisTask), answer: () => this.answeredNervisOffer(question) },
       build: { armed: Boolean(this.awaitingBuildAnswer), answer: () => this.answeredBuildOffer(question) },
       plan: { armed: this.awaitingPlanAnswer, answer: () => this.answeredPlanOffer(question) },
       interview: { armed: Boolean(this.planningIO?.isWaiting), answer: () => this.interviewTook(question) },
@@ -771,38 +827,38 @@ export class ChatService {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) return;
 
-    // **A task handed over from NERVIS comes first, and is not gated by the
-    // planning decline** (E-C8). Somebody typed this into chat and pressed a
-    // button minutes ago; it is the most specific and most recent thing anybody
-    // has asked for here, and `PLAN_OFFER_DECLINED` is a decision about
-    // *planning this project*, not about a task they just handed over.
-    if (await this.offerNervisTask()) return;
-
     const planExists = await vscode.workspace.fs.stat(vscode.Uri.joinPath(folder.uri, 'plan.md')).then(
       () => true,
       () => false
     );
 
-    // **The order lives in one pure function, because it has been wrong twice.** The
-    // resume-build offer was written to fire "before anything else" and sat *after* a
-    // guard returning when `plan.md` exists — and a build in progress always has one,
+    // **The order lives in one pure function, because it has been wrong three times.**
+    // The resume-build offer was written to fire "before anything else" and sat *after*
+    // a guard returning when `plan.md` exists — and a build in progress always has one,
     // so it never ran. Found live: milestones 1 to 3 finished, window reopened, nothing
-    // offered, build restarted by hand.
+    // offered, build restarted by hand. The NERVIS handoff was the third: a hand-placed
+    // `if` above the decline guard, where the position was the rule and the exemption it
+    // encoded was a comment. Both inputs now, both answered there, both tested.
     // **Asked once per workspace, not once per window.** Declining is a decision about
     // this project, and re-asking every time the window opens is the nagging §6 exists
     // to prevent — observed three times in one afternoon, with the same answer each time.
-    if (this.context.workspaceState.get<boolean>(PLAN_OFFER_DECLINED)) {
-      this.log('chat: planning already declined here, not offering again');
-      return;
-    }
-
     const snapshot = workspaceMemory(this.context).load();
     const offer = startupOffer({
+      nervisTaskWaiting: Boolean(await waitingNervisTask()),
       planExists,
       buildInProgress: Boolean(await interruptedBuild()),
       interviewInProgress: Boolean(snapshot && worthResuming(snapshot, Date.now())),
+      planningDeclined: Boolean(this.context.workspaceState.get<boolean>(PLAN_OFFER_DECLINED)),
     });
 
+    if (offer === 'nothing') {
+      this.log('chat: nothing to offer on opening');
+      return;
+    }
+    if (offer === 'nervis-handoff') {
+      await this.offerNervisTask();
+      return;
+    }
     if (offer === 'resume-build') {
       await this.offerToResumeBuild();
       return;
@@ -811,7 +867,6 @@ export class ChatService {
       await this.offerToResumeInterview();
       return;
     }
-    if (offer !== 'offer-planning') return;
 
     // What is actually here, so the line can react to *this* folder rather than to
     // the abstract fact of a missing file.

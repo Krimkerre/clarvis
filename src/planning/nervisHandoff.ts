@@ -76,6 +76,19 @@ export function parseNervisTask(text: string): NervisTask | undefined {
  * what changes how the rest should be read — and §4.9 already requires a handoff
  * prompt to be shown and editable before it runs, which this inherits by being
  * one.
+ *
+ * **Delivered as written, never through the voice.** This used to be handed to
+ * `phrase('report', …)` with `clarvis-task.md` as a kept fact — and the sentence
+ * never contained that filename, so `acceptRewrite` rejected every rewrite it was
+ * ever given, silently, after paying for the model call. The rewriter also caps a
+ * line at 160 characters and this is three paragraphs, so it could not have
+ * survived on length either. Both are symptoms of the same category error: a
+ * document put through something built to reword one remark. Provenance is the
+ * point of this milestone, and the way to keep it is not to send it anywhere it
+ * can be reworded.
+ *
+ * **It names the file**, because "you can edit it first" is not actionable
+ * without saying what to open.
  */
 export function handoffOffer(task: NervisTask): string {
   const when = task.askedOn ? ` on ${task.askedOn}` : '';
@@ -83,6 +96,7 @@ export function handoffOffer(task: NervisTask): string {
   return (
     `This came from NERVIS${when}${where}, not from this editor.\n\n` +
     `${task.task}\n\n` +
-    'Read it before approving. Nothing has run, and you can edit it first.'
+    `Read it before approving. Nothing has run, and you can edit ${TASK_FILE} first — ` +
+    'I will use it as it stands when you say go.'
   );
 }

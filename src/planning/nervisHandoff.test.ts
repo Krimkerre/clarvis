@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handoffOffer, MARKER, parseNervisTask } from './nervisHandoff';
+import { handoffOffer, MARKER, parseNervisTask, TASK_FILE } from './nervisHandoff';
 
 /**
  * The parsing, which is where everything about a handoff can go wrong. The
@@ -68,5 +68,25 @@ test('the offer leads with where the task came from', () => {
   const offer = handoffOffer({ task: 'do the thing', askedOn: '2026-09-02', conversation: 'cv_1' });
   assert.ok(offer.startsWith('This came from NERVIS'));
   assert.match(offer, /Nothing has run/);
-  assert.match(offer, /you can edit it first/);
+  // The invitation now names the file and says what happens on yes — it used to say
+  // "you can edit it first" while the file was being deleted at the moment of asking.
+  assert.match(offer, /you can edit clarvis-task\.md first/);
+  assert.match(offer, /as it stands when you say go/);
+});
+
+// ── Provenance, and the promise the offer makes ─────────────────────────────
+
+test('the offer names the file it is inviting you to edit', () => {
+  // "You can edit it first" is not actionable without saying what to open — and until
+  // the file stopped being deleted at the moment of asking, it was not even true.
+  const offer = handoffOffer({ task: 'Add a retry', askedOn: '' });
+  assert.ok(offer.includes(TASK_FILE), 'the offer never says which file to edit');
+  assert.ok(offer.includes('edit'));
+});
+
+test('the origin is in the offer itself, which is what ships', () => {
+  // Not routed through the voice: a three-paragraph document handed to a rewriter with
+  // a 160-character ceiling was rejected every time, after the model call was paid for,
+  // and a rewrite that survived could have dropped where the task came from.
+  assert.ok(handoffOffer({ task: 'Add a retry', askedOn: '' }).startsWith('This came from NERVIS'));
 });

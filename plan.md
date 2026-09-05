@@ -1177,6 +1177,19 @@ appearing to govern all of them. A setting that overstates what it controls is w
 than no setting. If gates prove too chatty in practice, the fix is a narrower gate list,
 not a switch that pretends to turn them off.
 
+#### The gate's effect, not only its wording (0.12.5)
+
+`Gate.ts` classifies dangerous commands and `explainGate` phrases the question; both are
+tested thoroughly. Whether saying **no** actually stops the command was not tested at
+all — that decision lived inside `AgentRunner.runGated`, a private method on a class
+importing `vscode`, so nothing in a `node --test` suite could reach it. The most
+consequential branch in the agent was the least covered.
+
+`gateDecision.ts` holds it now: three inputs, four outcomes, and `AgentRunner` calls it
+rather than repeating it. `escapes` is separate from `!confined` on purpose — a machine
+with no sandbox confines nothing either, and those two want opposite handling, since one
+was permitted at a modal and the other has permitted nothing.
+
 #### Undo — the thing that makes autonomy survivable
 
 An agent that edits twelve files is only acceptable if getting back is trivial.

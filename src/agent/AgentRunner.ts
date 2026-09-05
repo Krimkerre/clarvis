@@ -18,6 +18,7 @@ import {
   mayEscapeConfinement,
 } from './Gate';
 import { classifyPath } from './sensitivePath';
+import { gateOutcome } from './gateDecision';
 import { whileAwaiting, type Activity } from '../bridge/activity';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
@@ -841,13 +842,13 @@ export class AgentRunner {
 
     if (verdict) {
       const answer = await this.askGate(command, verdict, spawnAs.confined);
-      if (answer === 'refused') {
-        return `The user declined that command. Don't retry it — find another way, or ask.`;
-      }
-      if (answer === 'unconfined') {
-        escaped = true;
-        spawnAs = { file: command, args: [], confined: false };
-      }
+      // The decision itself lives in `gateDecision.ts`, where a test can reach it:
+      // this method is private on a class that imports `vscode`, so the branch the
+      // gate exists for was the one branch nothing could exercise.
+      const outcome = gateOutcome(verdict, answer, spawnAs.confined);
+      if (!outcome.run) return String(outcome.toldTheModel);
+      escaped = outcome.escapes;
+      if (escaped) spawnAs = { file: command, args: [], confined: false };
     }
 
     // Not asked when the user just chose this at the gate — "there's no sandbox on

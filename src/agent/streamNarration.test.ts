@@ -1,3 +1,12 @@
+/**
+ * `streamNarration` and the reply state it feeds.
+ *
+ * **Named for `AgentRunner` until 5 September, and it never imported it.** Four tests,
+ * all about `absorbStreamEvent` and `ReplyStateReader` — so a reader looking for the
+ * agent loop's coverage found a file with its name on it and stopped looking, and
+ * `AgentRunner` had none. The file is named for what it tests now; the loop's gate
+ * decision is covered by `gateDecision.test.ts`.
+ */
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { absorbStreamEvent } from './streamNarration';

@@ -70,10 +70,11 @@ all pass on at least one declared combination. Most now do — but sixteen cells
 limitations and three are `NOT_TESTED`, several of which bear on that list, so no combination
 is declared supported yet. *(The `FAIL` count reached zero later on 30 August; this paragraph
 said "three `FAIL`s remain" until 5 September, while the tally below said 0 — a document
-disagreeing with its own table, which is the drift the tally exists to prevent.)* *(One of
-the three `NOT_TESTED` — rollback to a prior `.vsix` — was itself settled on 6 September; see
-"Where it stands" below, which is current.)* What has changed is that every remaining gap is
-*named* rather than unexamined, which is the difference this document exists to make.
+disagreeing with its own table, which is the drift the tally exists to prevent.)* *(Two of
+the three `NOT_TESTED` — rollback to a prior `.vsix`, and multiple windows against one
+server — were themselves settled on 6 September; see "Where it stands" below, which is
+current.)* What has changed is that every remaining gap is *named* rather than unexamined,
+which is the difference this document exists to make.
 
 ## Capabilities §7.1 names that had no cell
 
@@ -106,18 +107,24 @@ events to know the editor is busy; it starts no session and drives no adapter,
 so the surface it depends on is the two subscriptions rather than debugging
 itself.
 
-### `NOT_TESTED` — multiple windows against one server
+### `PASS` — multiple windows against one server
 
-Two independent code-server *processes* sharing a data directory were exercised
-and are graded under tasks. **One server with several windows was not**, which
-is the ordinary configuration and the one `CLARVIS.md` §6.6 is about: each
-window is a separate Clarvis lifetime with its own Bridge port, and NERVIS
-correlates them by `instance_id`.
+Run for real on 6 September 2026: two browser tabs opened against the same
+running code-server instance, each activating its own Clarvis. NERVIS's
+`/api/v1/registry/instances` (not `/api/v1/services`, which lists services
+rather than Clarvis instances) showed exactly two live entries with distinct
+`instance_id`s on distinct ports (`52561`, `53774`), both `krimkerre.clarvis@0.12.6`
+— confirming `CLARVIS.md` §6.6: each window is a separate Bridge lifetime,
+correlated by `instance_id` rather than by anything host- or path-derived.
 
-**What would settle it.** Open two windows on one code-server, confirm two
-distinct `instance_id`s register with NERVIS on different ports, and confirm
-closing one leaves the other registered. NERVIS's `/api/v1/services` shows the
-registry, so the observation needs no new instrument — only two windows.
+Closing one tab was then observed rather than assumed: the closed instance's
+row did not vanish and did not linger as falsely live — it stayed in the
+registry marked `live: false`, while the untouched tab's row stayed
+`live: true` throughout. A third instance (a desktop VS Code window open on
+the same machine, same NERVIS) appeared in the same registry query with its
+own distinct `instance_id` and port, incidental confirmation that code-server
+and desktop instances coexist under one NERVIS with no cross-talk, consistent
+with the M8a/M9 isolation evidence elsewhere in this repository.
 
 ### `NOT_TESTED` — Bridge teardown under code-server
 
@@ -191,10 +198,10 @@ somebody to look at the window, which is a person's job rather than a log's.
 
 | | |
 |---|---|
-| PASS | 38 |
+| PASS | 39 |
 | PASS_WITH_LIMITATION | 16 |
 | FAIL | 0 |
-| NOT_TESTED | 2 |
+| NOT_TESTED | 1 |
 
 **The `NOT_TESTED` cells came from a coverage fix, not a regression.** This
 read 0 for a while, which was true of the 51 cells that existed and false of
@@ -202,9 +209,9 @@ read 0 for a while, which was true of the 51 cells that existed and false of
 multiple windows on one server, Bridge teardown under code-server, and
 rollback. An absent cell is worse than an untested one: it is invisible, and
 the exit criterion asks for *every* capability. Debug went to `PASS` on the
-same static evidence the other reading-graded cells use; rollback went to
-`PASS` by actually being run (see above); the other two say what would settle
-them.
+same static evidence the other reading-graded cells use; rollback and multiple
+windows both went to `PASS` by actually being run (see above); Bridge teardown
+under code-server is the one still saying what would settle it.
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's

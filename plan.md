@@ -118,6 +118,24 @@ this repository: §4.9 writes an adapted version of this section into every gene
 The comments question is the one part the *user* decides, because it is the one part
 that is a genuine preference rather than a settled practice — see §4.9's *Conventions*.
 
+### Never invent another component's behaviour
+
+Clarvis is one of four products in the NERVIS ecosystem, and `ECOSYSTEM_RUNBOOK.md`
+§1 binds every agent working on any of them:
+
+> **No agent may invent another ecosystem component's API, schema, capability, or
+> behaviour merely to complete its own milestone.** If the required contract does not
+> yet exist, implement against the canonical contract where the runbook specifies one,
+> use an explicitly labelled test double where that is allowed, or stop at the
+> integration gate and report the missing dependency.
+
+For this repository that means RAVIS's routes, its pool names, its error shapes and
+NERVIS's Bridge protocol are read from their documents, never guessed from what would
+be convenient here. **Stop** when a path, field, capability identifier or protocol
+version you need is absent, and say what is missing, which milestone needs it, and who
+owns it — the same rule `AGENTS.md` states for this repository, restated here because
+this file, not that one, is where the milestone work and its checklist actually live.
+
 ---
 
 ## Branch flow

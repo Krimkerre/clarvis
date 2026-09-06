@@ -70,8 +70,10 @@ all pass on at least one declared combination. Most now do — but sixteen cells
 limitations and three are `NOT_TESTED`, several of which bear on that list, so no combination
 is declared supported yet. *(The `FAIL` count reached zero later on 30 August; this paragraph
 said "three `FAIL`s remain" until 5 September, while the tally below said 0 — a document
-disagreeing with its own table, which is the drift the tally exists to prevent.)* What has changed is that every remaining gap is *named* rather than
-unexamined, which is the difference this document exists to make.
+disagreeing with its own table, which is the drift the tally exists to prevent.)* *(One of
+the three `NOT_TESTED` — rollback to a prior `.vsix` — was itself settled on 6 September; see
+"Where it stands" below, which is current.)* What has changed is that every remaining gap is
+*named* rather than unexamined, which is the difference this document exists to make.
 
 ## Capabilities §7.1 names that had no cell
 
@@ -129,18 +131,33 @@ a deregistered instance disappears, and one that merely stopped answering goes
 `unreachable` instead. The two are distinguishable from outside, which is what
 makes this observable rather than a matter of trust.
 
-### `NOT_TESTED` — rollback to a prior `.vsix`
+### `PASS` — rollback to a prior `.vsix`
 
-Install, update and reload are graded below; rolling back is not, and it is the
-half that matters when an update goes wrong. `CLARVIS.md`'s E-C7 asks that a
-rollback succeed **with workspace data and SecretStorage intact**, which is the
-part a reinstall can quietly lose.
+Run for real on 6 September 2026, against a live daily-driver VS Code workspace
+(the NERVIS-ecosystem repo, with real conversation history and real provider
+keys already in it — not seeded data). `krimkerre.clarvis@0.12.6` was
+force-downgraded with `code --install-extension clarvis-0.12.3.vsix --force`
+(no `.vsix` exists for the true previous version, 0.12.5, so this is a
+three-patch rollback, not a one-patch one), the workspace was reopened, and the
+operator confirmed the panel rendered normally with the chat history visible.
 
-**What would settle it.** Install the previous `.vsix` over the current one,
-reopen the workspace, and confirm the conversation store and the stored provider
-key both survive. Deliberately not run here: it would overwrite the installed
-extension on the machine this document was written from, and a destructive test
-run casually is how somebody loses the key they were testing for.
+Both stores were hashed and diffed, not eyeballed. `context.secrets`
+(`secret://{"extensionId":"krimkerre.clarvis","key":...}` rows in
+globalStorage's `state.vscdb`, covering `clarvis.model.key.anthropic`,
+`.openai`, `.openrouter` and `clarvis.fishAudio.key`) came back byte-for-byte
+identical before and after — the install step never touches them, and 0.12.3
+read them back successfully. `context.workspaceState`
+(`clarvis.chat.current` / `clarvis.chat.history` in the workspace's own
+`state.vscdb`) also survived: all 3 pre-existing history sessions came through
+unchanged, and the pre-test current session was correctly archived into
+history by `archiveSession()` on the fresh activation, not lost.
+
+**Limitation.** This is desktop VS Code, not code-server — the storage format
+(SQLite `state.vscdb`, OS-keychain-backed `secrets`) is identical either way,
+so this settles E-C7's "does data survive a version swap," not "does it survive
+one under a remote extension host's lifecycle." The extension was restored to
+0.12.6 afterward from a folder-level backup, confirmed byte-identical to the
+pre-test install.
 
 ## VSCodium regression (NERVIS M15)
 
@@ -174,19 +191,20 @@ somebody to look at the window, which is a person's job rather than a log's.
 
 | | |
 |---|---|
-| PASS | 37 |
+| PASS | 38 |
 | PASS_WITH_LIMITATION | 16 |
 | FAIL | 0 |
-| NOT_TESTED | 3 |
+| NOT_TESTED | 2 |
 
-**The three `NOT_TESTED` are new, and they are a coverage fix rather than a
-regression.** This read 0 for a while, which was true of the 51 cells that
-existed and false of §7.1, whose list has four capabilities that had no cell at
-all — debug sessions, multiple windows on one server, Bridge teardown under
-code-server, and rollback. An absent cell is worse than an untested one: it is
-invisible, and the exit criterion asks for *every* capability. Debug is now
-`PASS` on the same static evidence the other reading-graded cells use; the other
-three say what would settle them.
+**The `NOT_TESTED` cells came from a coverage fix, not a regression.** This
+read 0 for a while, which was true of the 51 cells that existed and false of
+§7.1, whose list had four capabilities with no cell at all — debug sessions,
+multiple windows on one server, Bridge teardown under code-server, and
+rollback. An absent cell is worse than an untested one: it is invisible, and
+the exit criterion asks for *every* capability. Debug went to `PASS` on the
+same static evidence the other reading-graded cells use; rollback went to
+`PASS` by actually being run (see above); the other two say what would settle
+them.
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's

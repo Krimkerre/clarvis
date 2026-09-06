@@ -334,8 +334,10 @@ doesn't quietly become nobody's job (from the 16 Aug review):
   `sandboxProfile.ts`), and the network-confinement asks-once dialog appears.
 - [x] VSCodium, not just VS Code: the extension activates — 0.12.0 installed and
       activated with a clean exthost log, chat running, and the untrusted-folder
-      degradation observed (`docs/code-server-matrix.md`). The panel was not
-      looked at; that half needs a person, not a log.
+      degradation observed (`docs/code-server-matrix.md`). **The panel itself
+      is now confirmed too** — the operator reports having watched it render
+      correctly under VSCodium on multiple separate occasions since (2026-09-06),
+      closing the one half a log could not prove on its own.
 - [ ] A real Fish Audio key: voice actually plays, and the system-TTS fallback works
   when it's absent.
 - [ ] A real model provider call (at least one of the five) succeeds end to end

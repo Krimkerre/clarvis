@@ -42,7 +42,6 @@ Everything written about this project, and which one you want.
 | **[AGENTS.md](./AGENTS.md)** | The working rules for any coding agent touching this repo — Plan Mode vs Code Mode, the sign-off gate, the checks to run before shipping. A short, tool-agnostic version of `plan.md` §0. | You are an agent, or you are pointing one at this repo. It stays at the root because that is where agents look for it. |
 | **[media/MANUAL.md](./media/MANUAL.md)** | The in-product manual — what a user can actually ask for, every slash command, every mode. This is what `/help` opens. | You are *using* Clarvis rather than building it. It lives in `media/` because it ships inside the extension and is read at runtime. |
 | **[docs/refactor-brief.md](./docs/refactor-brief.md)** | A cold-start prompt for a refactor pass, with the constraints that are not guessable from the code: the deliberate comment deviation, the complexity ceiling the linter already enforces, and why behaviour must not change while the release bar sits at 22 of 23. | You are about to refactor, or handing that job to someone — or something — that has not read `plan.md` §0. |
-| **[docs/TUTOR-README.md](./docs/TUTOR-README.md)** | Design notes for Tutor Mode (M12) — the same Clarvis, teaching as it builds. Not built yet. | You are interested in the teaching mode, or about to build it. |
 | **[README.md](./README.md)** | This file: the pitch, the feature list, and the milestone progress list. | You are deciding whether you care. |
 
 If two of these disagree, `plan.md` wins and the other one is stale — that has happened,
@@ -186,10 +185,6 @@ the plan is signed off — and a rule the code knows should be one the interface
   switch it on — once. If your project never chose one, he says nothing: turning up in
   someone else's codebase with opinions about style isn't a butler's job. On a new
   project he asks during planning, where it's a decision rather than a criticism.
-- **Tutor Mode** *(planned)* — the same Clarvis, explaining every step, for people
-  learning to program on a real project of their own. You choose it when you start a
-  project, you can type the code yourself or watch it be typed, and it's built to be
-  outgrown. Full guide: [**docs/TUTOR-README.md**](./docs/TUTOR-README.md).
 
 Every setting, decision and edge case is written down in [`plan.md`](./plan.md).
 
@@ -414,9 +409,6 @@ If the two disagree, believe §7 and fix this.
       answered by the OS-level command sandbox instead (see *Keeping an agent
       honest*), at a fraction of the cost.
 - [ ] **M10 — Voice Input.** Not started. *(Stretch, independent of M9.)*
-- [ ] **M12 — Tutor Mode.** *(Stretch.)* The same Clarvis, teaching as it builds, for
-      people learning to program on a real project of their own. Opt-in per project,
-      and designed to be outgrown — see **[docs/TUTOR-README.md](docs/TUTOR-README.md)**.
 - [ ] **M11 — Polish & Release.** Not started.
 
 ## Development process

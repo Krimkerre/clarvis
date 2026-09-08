@@ -883,7 +883,7 @@ that treating it as a request would misroute more than it fixed. Left out on pur
 
 #### The privacy pitch overclaimed, and a second reviewer caught it
 
-An outside review of `README.md`, `plan.md` and `TUTOR-README.md` — run through a
+An outside review of `README.md` and `plan.md` — run through a
 different model, not by using the product — flagged the elevator pitch, *"it can only
 see — and only touch — the workspace it was born in,"* as contradicting §4.6's own
 threat model two sections later. Checked before agreeing with it, since a review is a

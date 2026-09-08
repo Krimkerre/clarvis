@@ -1454,9 +1454,9 @@ to `.vscodeignore` alongside `.github/**`.
 `dist/extension.js.map` (1.29 MB) shipping despite `.vscodeignore` listing `*.map`,
 and it was right: a bare `*.map` matches only at the ignore root, never a nested
 `dist/extension.js.map`, so the pattern had been silently doing nothing since it was
-written. Now `**/*.map`, plus `eslint.config.mjs` and `TUTOR-README.md` — the latter
-safe to drop because `vsce` rewrites README's relative link to it into an absolute
-GitHub URL at package time, verified by unzipping the built `.vsix` and reading the
+written. Now `**/*.map`, plus `eslint.config.mjs` and a design note since removed —
+the latter safe to drop because `vsce` rewrites README's relative links into absolute
+GitHub URLs at package time, verified by unzipping the built `.vsix` and reading the
 rewritten link rather than assuming the behavior. Package went from 15 files / 1.28 MB
 to **9 files / 903 KB** — 10 files and 904 KB once `media/chat.css` was extracted
 from `ButlerViewProvider`. Every remaining file was checked to a runtime reference
@@ -1868,11 +1868,6 @@ Three rules on it:
   a task in milestone one like anything else, subject to the same sign-off. Planning
   mode writes `plan.md` and nothing else (§0), and a linter config is project code.
 
-In **Tutor Mode** the question carries its explanation: what a linter is, that its
-warnings are advice rather than errors that stop the program, and that it will light
-up the screen at first and that this is normal. Defaulting a beginner into it silently
-would mean their first experience of their own code is 200 warnings they cannot read.
-
 #### Choosing a language — asked once there's enough to answer it against
 
 **Timing is the whole point.** Asked at the start, "what language?" is either a
@@ -1910,25 +1905,6 @@ how a user installs it, what "done" looks like — all of these have different a
 language, and asking them beforehand produces answers that get thrown away. The choice
 is recorded in the generated `plan.md` as a decision *with its reasoning*, so a later
 session neither re-asks nor quietly drifts to something else.
-
-**In Tutor Mode the shortlist gets a lot longer in words.** Same candidates, much fuller
-explanations, aimed at someone with nothing to compare against:
-
-- **What writing it actually feels like** — how much you must learn before anything
-  runs at all, and whether its error messages tend to explain themselves or not.
-- **What the setup costs** — before the first line runs, does something have to be
-  installed and configured, and how fiddly is that on the user's own machine.
-- **What it's normally used for**, in concrete examples rather than categories, so the
-  choice connects to things they have actually seen.
-- **How easy it is to find help** — how much of what they'll find online will match what
-  they're doing, since a beginner cannot yet tell a relevant answer from a stale one.
-
-**Tutor Mode may recommend one, and say why.** This is a deliberate exception to the
-rule that Clarvis marks nothing as recommended (§4.10's mode question) — that rule
-protects against judging the *person*, and this is an expertise question where refusing
-to answer is unhelpful rather than neutral. A beginner asking "which should I pick?"
-deserves an answer, not a menu. It stays a recommendation: the reasoning is given, and
-choosing otherwise is met with "fine, here's what to watch out for" and nothing else.
 
 #### Branch flow — written down, then followed
 
@@ -2033,15 +2009,6 @@ survives review because nobody re-reads the prose next to code they just changed
 the agent updates the comments on any line it edits, in both modes, and this is a
 correctness rule rather than a style one.
 
-**Tutor Mode overrides the choice: comments are always maximal.** No question is asked,
-because the code *is* the teaching material — a beginner reading their own project back
-next week has nothing else to explain it to them, and "the code should be
-self-documenting" assumes a reader who can already read code. The comments explain
-what, why, and what would break without it. Two consequences worth stating: this is
-still real code and not a worksheet, and nothing strips those comments on graduation —
-the project stays exactly as it was written, annotations and all. If a graduate wants
-lean code, they choose it on their *next* project.
-
 #### The analysis — where Clarvis earns his keep
 
 Before writing anything, Clarvis reviews the idea and reports what he finds. This is
@@ -2096,259 +2063,6 @@ on, and rejections are recorded); a plan that drifts from the code as it's built
 (checklist ticking is part of Code Mode, and drift is a re-plan trigger); rubber-stamping
 without reading (findings are surfaced individually, not as one wall to skim); ceremony
 for projects too small to need it (Clarvis is expected to say so). Mitigations in [`docs/risks.md`](docs/risks.md).
-
-### 4.10 Tutor Mode — *learn by building* (stretch)
-
-For someone with no programming background who wants to **learn by doing** rather than
-be handed a finished thing. Same product, same agent, same gates — a different teaching
-posture. Off by default (`clarvis.mode`: `normal` | `tutor`), chosen by the user, never
-inferred from how someone types.
-
-**The bet:** the existing planning interview (§4.9) and agent loop (§4.6) are already
-the right shape for teaching. What a beginner lacks isn't a different tool, it's the
-*why* behind each question and each line. So this mode adds explanation and choice; it
-does not fork the product.
-
-**The name matters.** It is *tutor* mode, never "beginner mode" and never "noob mode",
-in the UI, the settings, the docs and the log. "Noob" is a word someone may cheerfully
-apply to themselves; coming from a tool, aimed at the one audience least able to shrug
-it off, it is an insult with a shrug attached. The mode is named for what Clarvis does,
-not for what the user lacks.
-
-**A setting, not a product.** This is worth stating flatly because it constrains every
-decision below: tutor mode is **off by default**, opt-in, and never inferred — not from
-how someone writes, not from an empty workspace, not from a wrong answer in the
-interview. Guessing that a user is a beginner is insulting when wrong and patronising
-when right. Clarvis offers it once at first run, in a sentence, and takes no for an
-answer forever.
-
-**Asked once, when a project starts.** The natural moment is §4.9's front door: before
-the planning interview begins, Clarvis asks how the user wants to work on *this*
-project — two options, plainly described by what happens rather than by who they are:
-
-> *Regular — I build, you review, we move quickly.*
-> *Tutor — I explain everything as we go, and you can write the code yourself.*
-
-Neither is labelled recommended, neither mentions experience, and there is no third
-option pretending to be a middle. The question is asked once per project and never
-re-asked; changing it later is a setting, not a prompt.
-
-**The choice is per project, not per person.** Stored workspace-scoped, with the global
-setting as the default for the next new project. The same user reasonably wants tutor
-mode for the thing they're learning on and regular mode for the thing they already know
-how to build — and a person who has graduated on one project should not be dragged back
-by an old global flag. A workspace that has never been asked inherits the global
-default and, on an existing project with code already in it, simply stays in regular
-mode without asking at all: mid-project is not the moment for this question.
-
-**Graduating changes a setting and nothing else.** The product a beginner outgrows into
-is the product they were already using — same panel, same agent, same commands, same
-`plan.md`, same project. Three consequences, each of which rules out an obvious
-shortcut:
-
-- **No separate build, no "Clarvis for Beginners" edition, no starter template.** One
-  extension, one codebase. A learner edition would need its own release, and would
-  strand its users on it.
-- **Nothing is regenerated or migrated on graduation.** The code written in tutor mode
-  *is* the project: real files, real git history, real branches, on the same gates and
-  checkpoints. A project built while learning must survive the person learning, or the
-  mode has taught them their first project was a toy.
-- **The mode is invisible in the artefacts.** No "generated in tutor mode" markers, no
-  simplified scaffolding to be untangled later, nothing in the repository a future
-  collaborator would read as training wheels. `GLOSSARY.md` is the one deliberate
-  exception, and it is *theirs* — a record they chose to keep, deletable without
-  consequence.
-
-The graduation offer (M12g) is therefore a small thing on purpose: one line, once, and
-a setting flips. It should feel like being handed the keys to the car already being
-driven, not like being moved to a different car.
-
-#### Planning, tutorialised
-
-The §4.9 interview runs, with four differences:
-
-- **Questions come with options, not a blank page.** "How should this store data?"
-  is unanswerable without context. "A file on your computer *(simplest, works offline,
-  no accounts)*, or a database *(needed if other people will use it)*?" is a decision
-  someone can make on day one. Each option carries its consequence, not its category.
-- **Every question says why it's being asked**, in one line, before it's asked. A
-  beginner cannot tell a load-bearing question from a formality, and answering blind
-  teaches nothing.
-- **Jargon is defined at first use, once**, and then used normally. Never defining it
-  leaves the user unable to read their own project; re-defining it every time is
-  condescending. There is a real tension here and it resolves toward using the real
-  word — they are learning the vocabulary, not being protected from it.
-- **Gap analysis stays.** §0's "poke holes, don't nod along" is *more* valuable to a
-  beginner, not less — they cannot yet see the hole themselves. It changes register,
-  not existence: the flaw is explained rather than merely named.
-
-#### Building, two ways
-
-Once the plan is signed off, the user picks how each milestone is built — and can switch
-at any step, because the right answer changes with fatigue and confidence:
-
-| Style | Who types | What Clarvis does |
-|---|---|---|
-| **Hands-on** (default) | The user | Explains what the step needs and why, shows the shape of the code, then waits. Reviews what was actually typed, and says what is wrong *and why* before moving on. |
-| **Guided auto** | Clarvis | Writes it, then walks through every change — what it does, why here, what would break without it. Still one step at a time, still approved before it lands. |
-
-**Both are step-by-step and both explain.** The difference is who holds the keyboard,
-not whether teaching happens. "Semi-automatic" must never quietly become "watch it
-scroll past" — a diff nobody read is not a lesson.
-
-**Hands-on review must judge intent, not text.** A user who solves the step differently
-— worse, better, or merely unusual — has still solved it, and a review that demands a
-character match teaches obedience instead of programming. What is checked: does it work,
-does it do the thing, and is there anything here that will hurt later. Style opinions are
-offered as opinions.
-
-#### What makes this better than a tutorial
-
-Everything above is a teaching *posture*. This section is the part a video course
-cannot do — all of it leans on Clarvis already watching the user's real work (§4.1,
-§4.2), which is the one advantage this format has and the reason to build it at all.
-
-- **Errors are the lesson, not the failure.** A tutor who prevents every error produces
-  someone who panics at their first red stack trace alone at midnight. So: sometimes
-  *"run it now — it will fail, and I want you to read what it says"*, then decode the
-  message together — which line, which word matters, which two-thirds are noise. The
-  errors are real ones in the user's own project, which is precisely what no tutorial
-  can arrange. **Never manufacture a failure by writing knowingly broken code**: the
-  lesson is reading reality, and a staged bug the user later discovers was staged costs
-  more trust than the lesson was worth.
-- **Lessons are triggered by events, not by a curriculum.** §4.2 already knows they've
-  hit the same error three times; that is the moment the concept lands, not chapter
-  four. The same watching that powers pattern memory decides what to teach and when.
-  A fixed syllabus would ignore the one thing Clarvis knows and YouTube doesn't.
-- **Ask before you tell.** Before revealing what a line does, ask the user to predict
-  it. Explanation alone slides off; prediction-then-correction sticks, costs one
-  question, and surfaces the misconception that would otherwise be explained straight
-  past. Wrong predictions are *useful* and must be received that way — this is the
-  single easiest place in the product to accidentally make someone feel stupid.
-- **Do not explain everything at the same volume.** Beginners drown because every line
-  arrives equally important. Mark the load-bearing part and explicitly dismiss the
-  rest: *"that block is ceremony, it's identical in every project, ignore it."*
-  Granting permission not to understand something is itself a teaching act, and it is
-  what makes the parts that matter visible.
-- **Invite experiments, because undo already exists.** Checkpoints and
-  `Clarvis: Undo Last Agent Run` (§4.6) turn *"change that number and see what breaks
-  — I'll put it back"* into a safe move. Fear of breaking things is what stops
-  beginners poking at code, and poking at code is how the model in their head forms.
-- **A running thing in the first session, above all else.** Beginner ideas are
-  enormous. §4.9's gap analysis, in this mode, aims explicitly at the smallest version
-  that *runs* — and says why it's doing that, so the scope cut doesn't read as
-  dismissal. Nothing predicts whether someone continues like having watched their own
-  thing work once.
-- **A glossary that accumulates.** Each term defined at first use is appended to a
-  `GLOSSARY.md` in the user's project — their own vocabulary, in the order they met
-  it, re-readable without scrolling the chat. Pairs with the define-once rule: the
-  word gets used normally afterwards, and the definition remains somewhere.
-- **"Just do it for me" is honoured instantly, without a lecture.** Frustration is
-  where people quit, and a tutor that insists on teaching through it is the reason
-  they quit. The step is done, briefly explained afterwards rather than before, and no
-  note is made of it. If it becomes the pattern, the graduation-in-reverse offer is to
-  switch *out* of tutor mode — not to try harder at teaching someone who isn't in the
-  mood.
-
-#### Git, taught as it happens *(design — M12, not built)*
-
-Version control is the largest thing a beginner meets here that has nothing to do with
-their project, and Clarvis uses it constantly — a branch per task, a commit per run.
-Leaving that unexplained means the tool is doing something invisible and consequential
-on their behalf, which is the opposite of learning by doing.
-
-So each git concept is taught **the first time it actually occurs**, never from a
-syllabus: `branch` when a run isolates itself, `commit` when one lands, `switch` after
-the files change under them, `merge` and `discard` when they choose one, `conflict`
-when a merge stops, `uncommitted` when it is about to matter, `flow` when one is written
-into `plan.md`.
-
-Four rules, each of which the naive version gets wrong:
-
-- **Three sentences at most**: what it is, why it happened here, what it means for
-  them. Longer is a tutorial nobody reads; shorter is a definition rather than an
-  explanation. Enforced by a test.
-- **Once per user, not once per project.** Someone who learned what a branch is on
-  their first project has learned it — teaching it again in their second is the tutor
-  forgetting them, which is worse than never having taught it.
-- **After the event, not before it**, except where knowing first changes the choice.
-  "You just switched branch, here is what that did" lands; the same words as a warning
-  beforehand are theory about something that has not happened.
-- **The lesson answers "is my work safe"**, because that is the actual question. Each
-  one names the consequence — *"anything merged elsewhere beforehand is perfectly
-  safe"*, *"nothing is broken and nothing is lost"* — rather than defining a term. The
-  same jargon ban as §4.6 applies, and should be tested: teaching the concept is not a
-  licence to teach the vocabulary that hides it.
-- **A cap on how many fire together**, which the three-sentence rule does not provide.
-
-**Sample wording**, drafted and read back as a full session before being parked. These
-are the shape to aim for, not final copy:
-
-> *I just made a branch. A branch is a separate copy of the project's history — work
-> done on one doesn't touch the others. I do every task on my own branch so that if the
-> result is wrong, you throw the branch away and nothing of yours was ever changed.
-> That's the whole safety net: it isn't that I'm careful, it's that my work starts
-> somewhere you can discard.*
-
-> *You've got uncommitted changes. Uncommitted means edited but not yet saved into the
-> project's history. They live in the folder rather than on a branch, which is why they
-> follow you when you switch. They are also the only thing here I genuinely cannot get
-> back for you, so they are worth committing before anything drastic.*
-
-**What a dry run of a whole session exposed** — worth fixing in the design before any
-of it is built again:
-
-- **Density, not length, is the problem.** Every lesson obeyed three sentences and the
-  session still carried ~250 words of instruction around a one-line fix. Three lessons
-  fired consecutively after one merge, at exactly the moment the user was trying to see
-  whether their change had landed. **M12 needs a rule for how many lessons may fire in
-  one exchange — one — with the rest deferred to their next natural trigger.**
-- **The first lesson arrived after the phrase it was needed for.** "Working on
-  `clarvis/…`. Your branch is untouched" means nothing before you know what a branch
-  is. Either the lesson precedes that line, or the line avoids the word.
-- **Two words for one thing.** The plain-language layer says "save point" and the
-  lesson says "commit". Pick one and use it everywhere, or teach the pair explicitly
-  in the same breath.
-- **The uncommitted warning fired twice** — once as a review warning, once as a lesson.
-  Acceptable for something that can lose work, but it should be a decision rather than
-  an accident of two systems both being careful.
-
-#### The things this mode gets wrong if unexamined
-
-- **Sarcasm at a beginner is just contempt.** §2's rules already aim the humour at
-  situations rather than people, and here that stops being a style note and becomes a
-  hard constraint: the joke is never about not knowing. A confused user who feels
-  mocked leaves and does not come back to programming, which is a considerably worse
-  outcome than a dull extension. Register softens; the character does not disappear —
-  a tutor with no personality is a manual.
-- **Simplification must not become a lie.** "It just remembers it for you" is fine.
-  "Files and databases are the same thing" is not, because it has to be un-learned
-  later at the user's cost. When the true answer is genuinely too big for now, say
-  that plainly — *"that's a real question and a big one, park it"* — rather than
-  inventing a small false one.
-- **The gates matter more here, not less** (§4.6). A beginner cannot evaluate
-  `rm -rf`, cannot tell a routine dependency install from a supply-chain risk, and
-  will not recognise the moment they are about to publish something public. The
-  explanation of *why this is dangerous* is exactly the teaching material. Approving
-  a gate must never be reducible to "Clarvis said yes".
-- **This mode is meant to be outgrown.** After a milestone or two of the user
-  answering their own questions, Clarvis offers to step back — once, without nagging,
-  and reversibly. A tutor that never lets go is a crutch, and the goal is a programmer,
-  not a dependent.
-- **Explanation costs tokens.** Every step carries a paragraph nobody asked for in
-  normal mode, so the §4.8 spend rollup will read very differently. Warn once at
-  enable time; do not silently spend three times as much on someone's free tier.
-- **Nothing here weakens the safety story.** Same branch isolation, same checkpoints,
-  same undo. A beginner is the user most likely to need `Clarvis: Undo Last Agent Run`
-  and least likely to know it exists — so it is named out loud the first time a step
-  writes a file.
-
-**Settings.** `clarvis.mode` (`normal` | `tutor`, default **`normal`**),
-`clarvis.tutor.buildStyle` (`handsOn` | `guidedAuto`), both changeable mid-project and
-mid-milestone. No third "expert" mode: normal *is* expert, and inventing a ladder
-implies a hierarchy nobody asked for — as well as implying that the default is somehow
-incomplete, which is the opposite of true.
-
 ### 4.11 Linters & other diagnostics providers — *ESLint, and anything like it*
 
 **Most of this is already done, and that is the point.** Clarvis consumes
@@ -2395,12 +2109,6 @@ rules, and never runs `--fix` across a workspace on its own initiative. What the
 introduced new lint errors and clean up **its own** mess before handing back. Fixing
 pre-existing findings across files it wasn't asked to touch is scope creep with a diff
 attached.
-
-**In Tutor Mode (§4.10)**, the offer carries an explanation instead of just a name —
-what a linter is, that these are style and correctness warnings rather than errors that
-stop the program, and that the squiggles about to appear everywhere are normal and not
-a sign of catastrophe. A beginner meeting 200 lint warnings with no context reasonably
-concludes they have broken something.
 
 ## 5. Dev-Moment Commentary
 
@@ -3974,9 +3682,6 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
       follow-ups.
 - [ ] The choice and its reasoning land in the generated `plan.md`; a later session
       neither re-asks nor drifts to a different language.
-- [ ] Tutor Mode: each option explains setup cost, what it feels like to write, what
-      it's used for, and how findable help is — and Clarvis will name a recommendation
-      with reasons when asked, rather than deflecting.
 - [ ] The generated `plan.md` contains a **Conventions** section derived from §0's
       clean code rules, stated in the project's own language and idiom — check a
       non-TypeScript project (Python at minimum) and confirm nothing was pasted across
@@ -3988,8 +3693,6 @@ voice because voice is explicitly a cut-without-guilt stretch and this is not.
       the rest of the ruleset, especially naming.
 - [ ] Edit an existing commented line with the agent — the comment is updated with it.
       A comment describing the previous behaviour is a defect, in either mode.
-- [ ] In Tutor Mode the question is **not asked** and comments are maximal regardless of
-      any stored setting; graduating strips nothing.
 - [ ] The interview asks about a linter exactly once, in the final round, with the
       trade-off stated rather than the tool named — and never asks again.
 - [ ] Answering "no" writes that decision into the generated `plan.md`, so a later
@@ -4945,106 +4648,6 @@ forever. No linter-specific consumption code — diagnostics already arrive gene
 - [ ] M1 fork matrix re-run against release build, no regressions from the M1 baseline.
 - [ ] Published to both Marketplace and Open VSX; install verified from Open VSX on
       at least one fork (not just VS Code stable).
-
----
-
-### M12 — Tutor Mode *(stretch — after everything it depends on)*
-
-Last on purpose: it is a teaching layer over §4.9's planning and §4.6's agent, and it
-cannot be built before the things it teaches. Nothing else depends on it, so it is the
-cleanest milestone to cut.
-
-**Build.**
-- **M12a — Mode plumbing.** `clarvis.mode` and `clarvis.tutor.buildStyle`, resolved
-  workspace-first and falling back to the global default; the mode addendum in
-  `systemPrompt.ts` (M8g) gains a teaching block. No new pipeline — the same turn,
-  differently instructed.
-- **M12a2 — The question.** One choice at the top of §4.9's planning flow, asked only
-  for a project that is actually new, recorded workspace-scoped, never re-asked.
-- **M12b — Guided interview.** §4.9's batches gain per-question *why* lines and
-  concrete options with consequences. Options are generated from the answer space of
-  the question, not a canned list, or they stop matching the project by round three.
-- **M12c — Hands-on stepping.** Explain → wait → review what the user actually wrote.
-  Review is intent-based (does it work, does it do the thing, will it hurt later), and
-  a different-but-working solution passes.
-- **M12d — Guided auto.** The M8e agent loop, one step per approval, each with a plain
-  explanation of what changed and why. Reuses the existing gate and checkpoint path
-  untouched.
-- **M12e — Teaching moments.** The event-driven half, and the part that justifies the
-  milestone: `src/tutor/moments.ts` subscribes to the same M3/M5 signals the quip
-  system uses and proposes a lesson when one is *earned* — a third repeat of an error,
-  a first real stack trace, a first successful run. Reuses `Announcer`'s budget so
-  teaching cannot become nagging. Includes the predict-before-reveal prompt and the
-  load-bearing/ceremony split in explanations.
-- **M12f — Safe experiments and the glossary.** "Change this and see" wired to the
-  existing checkpoint/undo path, plus `GLOSSARY.md` appended in the user's project on
-  first use of each term (never rewritten, never reordered — it is a record of their
-  journey, not a reference work).
-- **M12g — Graduation.** After sustained self-sufficiency, one offer to switch back to
-  normal. Declined once means never asked again this project. The inverse also exists:
-  repeated "just do it for me" offers switching *out* of tutor mode, once, without
-  comment.
-
-**Exit checklist:**
-- [ ] A user with no programming background reaches a running thing without being told
-      to "just" do anything. (`just` is the tell that a step assumes knowledge nobody
-      established.)
-- [ ] Every interview question carries a why-line, and every option carries a
-      consequence rather than a category name.
-- [ ] Hands-on: type a *working but different* solution — it passes, with any opinion
-      clearly flagged as opinion.
-- [ ] Hands-on: type a solution with a real bug — the review says what is wrong **and
-      why**, and does not simply overwrite it.
-- [ ] Guided auto still gates: a destructive command explains its danger in words a
-      beginner can act on, and cannot be approved by reflex.
-- [ ] Read a full session's output cold and confirm no joke lands at the user's
-      expense. This is a **judgement call that has to be made by a person**, and it is
-      the exit criterion most likely to fail quietly.
-- [ ] No simplification in a full session is false — spot-check the explanations
-      against what the code actually does.
-- [ ] Spend for one milestone in tutor mode is measured and reported at enable time,
-      not discovered on the bill.
-- [ ] Graduation offer fires once, is reversible, and never repeats after a decline.
-- [ ] Default install is **normal mode**; tutor mode is reachable only by the user
-      choosing it. Confirm nothing infers it — not an empty workspace, not a hesitant
-      answer, not a beginner-looking question.
-- [ ] Starting a new project asks the mode question once, describes both options by
-      what happens rather than by who the user is, marks neither as recommended, and
-      never asks again for that project.
-- [ ] Opening an *existing* project with code in it does not ask at all.
-- [ ] Two workspaces, two different modes, at the same time — neither leaks into the
-      other, and graduating one leaves the other alone.
-- [ ] Nothing user-visible anywhere says "noob" or "beginner" — UI, settings
-      descriptions, notifications, log lines, README.
-- [ ] Graduate mid-project and keep working: same panel, same `plan.md`, same branches,
-      nothing regenerated, nothing migrated, no step repeated.
-- [ ] Inspect a repository built entirely in tutor mode — nothing in the files, history
-      or config reveals which mode built it, `GLOSSARY.md` aside. A collaborator
-      cloning it cannot tell, and there is no scaffolding to untangle.
-- [ ] A real failure in the user's own project becomes a read-the-error lesson — and
-      **no lesson anywhere is built on deliberately broken code**. Grep the session for
-      any step that wrote something known-wrong on purpose; there must be none.
-- [ ] Teaching moments fire from actual events (third repeat of an error, first stack
-      trace, first successful run) and share the §6 budget — a burst of failures does
-      not produce a burst of lectures.
-- [ ] Each git concept is taught once, at the moment it first happens, and never
-      repeated — including in a second project, since the record is per user.
-- [ ] A run in tutor mode explains the branch it made *before* the user has to decide
-      what to do with it.
-- [ ] No lesson uses vocabulary the plain-language layer avoids.
-- [ ] A wrong prediction is received as useful, not corrected coldly. Same human read
-      as the humour check, and the same reason: nothing automated catches tone.
-- [ ] Explanations distinguish load-bearing code from ceremony, and the ceremony call
-      is *correct* — spot-check that nothing dismissed as boilerplate actually matters.
-- [ ] "Change this and see what breaks" restores cleanly via the existing checkpoint
-      path, with no special-case code of its own.
-- [ ] `GLOSSARY.md` accumulates in first-use order, is never rewritten, and each entry
-      still reads correctly out of context.
-- [ ] "Just do it for me" is honoured immediately, with no lecture and no visible
-      disappointment — then explained *after*, briefly.
-- [ ] Scope: the first milestone of a beginner's project produces something that runs
-      in one session. If it cannot, §4.9's gap analysis cut too little.
-
 ### M14 — The NERVIS Bridge *(signed off 29 Aug — built; two exit items need a live run)*
 
 External driver: `ECOSYSTEM_RUNBOOK.md` §6.2 Stage 8, contract in `CLARVIS.md` §6. An
@@ -5315,7 +4918,7 @@ functions sit at exactly that, so the next branch added to any of them fails the
 
 Documentation, for scale: `plan.md` is still the largest file in the repository at
 4,286 lines, with the build log at 913, the manual at 534, the README at 445, the
-tutor guide at 198, this project's snapshot at 199, the outstanding-checks list at 124
+this project's snapshot at 199, the outstanding-checks list at 124
 and the risk register at 60.
 
 ## Special thanks

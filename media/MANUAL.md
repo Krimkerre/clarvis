@@ -641,8 +641,7 @@ outright.
 
 Clarvis is under construction, and this manual describes what exists today. The agent
 and **project planning** (above) both work end to end — that list used to say
-otherwise, twice. Still to come: **voice input**, and
-**Tutor Mode** for people learning to program. See the README for progress.
+otherwise, twice. Still to come: **voice input**. See the README for progress.
 
 *`plan.md` §7 is what decides this, not this paragraph. It is restated here, in the
 README and in `docs/CURRENT_STATE.md`, and the copies have drifted before.*

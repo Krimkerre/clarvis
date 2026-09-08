@@ -40,7 +40,6 @@ before this file.
 | `README.md` | The user-facing pitch and feature list, and the index of every document here — the front door. |
 | `media/MANUAL.md` | The in-product `/help` manual — what a user can actually ask for. Lives in `media/` because it **ships in the `.vsix` and is read at runtime** by `ChatActions.ts`; it is a product asset, not project documentation. |
 | `docs/refactor-brief.md` | A cold-start prompt for a refactor pass — the constraints a fresh session would otherwise break, and the measured starting points, marked crude where they are crude. |
-| `docs/TUTOR-README.md` | Design notes for Tutor Mode (M12, not built yet). |
 | `AGENTS.md` | The working rules for a coding agent in this repo. Stays at the root because that is where agents look for it. |
 | `src/` | The extension itself. See the map below. |
 
@@ -81,7 +80,7 @@ which restate it. Current status:
   (the agent reads its own code back after a milestone), and **M13** (a gated command
   tailing the VS Code extension-host log into the workspace).
 - **Designed, not built: M9g** (a project-notes file the user can write to, read from
-  `AGENTS.md`/`CLAUDE.md`), **M10** (voice input), **M12** (Tutor Mode).
+  `AGENTS.md`/`CLAUDE.md`), **M10** (voice input).
 - **Three things shipped on 20 Aug (late) that the map above predates.** Reasoning models
   are handled at the provider — their thinking is stripped from the reply, and a stream
   that carries reasoning and no visible text is named as such instead of being reported as
@@ -124,12 +123,12 @@ Neither existed before 16 Aug; `npm run check` was a gate nobody was obliged to 
 **Packaging.** `.vscodeignore`'s `*.map` never matched the nested
 `dist/extension.js.map` — a bare `*.map` only matches at the ignore root — so 1.29 MB
 of sourcemap had been shipping in every build. Now `**/*.map`, plus `eslint.config.mjs`,
-`TUTOR-README.md`, `.github/**` and `.vscode-test.mjs`. 15 files / 1.28 MB → **10 files
+a design note since removed, `.github/**` and `.vscode-test.mjs`. 15 files / 1.28 MB → **10 files
 / 904 KB**, every survivor traced to a runtime reference.
 
 **Documentation.** Split and indexed: `docs/` now holds this file, the build log, the
-risk register (was `plan.md` §8), the outstanding-checks list (was §10) and the tutor
-guide, with the README carrying a table of all of them. `plan.md` holds the plan.
+risk register (was `plan.md` §8) and the outstanding-checks list (was §10), with the
+README carrying a table of all of them. `plan.md` holds the plan.
 
 ### What landed on 19–20 Aug, outside the milestone numbering
 

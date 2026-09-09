@@ -1,6 +1,12 @@
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { resolveInWorkspace } from './workspacePaths';
+import {
+  isCaseSensitiveFilesystem,
+  isInside,
+  realpathOfNearestExisting,
+  resolveInWorkspace,
+} from './workspacePaths';
+import { classifyPath } from '../sensitivePath';
 
 /**
  * Reading and searching the workspace.
@@ -200,12 +206,33 @@ export async function search(
 
   const limit = options.limit ?? MAX_SEARCH_RESULTS;
   const hits: SearchHit[] = [];
+  const realRoot = await realpathOfNearestExisting(root!);
+  const caseSensitive = await isCaseSensitiveFilesystem(root!);
 
   for (const file of files) {
     if (hits.length >= limit) break;
     if (options.extensions && !options.extensions.some((ext) => file.endsWith(ext))) continue;
 
+    // **Searching is reading, and this is the one path that forgot it.**
+    // `readFile` puts every sensitive path behind `gateSensitiveRead`, which
+    // asks the user before a key or a `.env` reaches the model. A search
+    // returns the matching *line*, verbatim — so a pattern that happens to
+    // appear in one of those files handed the credential over with no prompt at
+    // all, from the tool that was never gated. Skipped outright rather than
+    // prompted: a search touches hundreds of files, and a modal per file is not
+    // a question anybody can answer. The model can still ask for the file by
+    // name, which is where the gate lives.
+    if (classifyPath(file)) continue;
+
     const target = path.join(root!, file);
+
+    // **And a symlink is not a way out of the workspace.** `readdir` reports a
+    // link as neither a file nor a directory, so a link to a file outside the
+    // tree arrives here looking like an ordinary result and `readFile` follows
+    // it. Resolved before it is opened, which is the same order
+    // `resolveInWorkspace` uses and for the same reason.
+    const real = await realpathOfNearestExisting(target);
+    if (!isInside(realRoot, real, caseSensitive)) continue;
 
     let content: string;
     try {

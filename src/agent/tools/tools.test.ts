@@ -493,3 +493,60 @@ test('a virtualenv is skipped whether or not it has a dot', async () => {
 
   assert.deepEqual(files, ['nanocode.py']);
 });
+
+// ---------------------------------------------------------------------------
+// Search is reading, and it was the one read path with no gate on it.
+// From the external audit.
+// ---------------------------------------------------------------------------
+
+test('search will not return a line out of a credential file', async () => {
+  // `readFile` puts every sensitive path behind gateSensitiveRead, which asks the
+  // user before a key reaches the model. `search` returns the matching *line*,
+  // verbatim, and was never gated — so a pattern that happens to appear in a `.env`
+  // handed the credential over with no prompt at all.
+  const root = await workspace();
+  await fs.writeFile(path.join(root, '.env'), 'OPENAI_API_KEY=sk-live-4242\n');
+  await fs.writeFile(path.join(root, 'notes.md'), 'the key is stored in .env\n');
+
+  const hits = await search(root, /key/i);
+
+  assert.ok(
+    !hits.some((hit) => hit.text.includes('sk-live-4242')),
+    'a live credential was returned by a tool that never asks'
+  );
+  assert.ok(
+    hits.some((hit) => hit.file === 'notes.md'),
+    'an ordinary file mentioning the same word must still be found'
+  );
+});
+
+test('search does not read through a symlink out of the workspace', async () => {
+  // readdir reports a link as neither a file nor a directory, so a link to a file
+  // outside the tree arrives looking like an ordinary result and readFile follows it.
+  const root = await workspace();
+  const outside = await fs.mkdtemp(path.join(os.tmpdir(), 'clarvis-outside-'));
+  await fs.writeFile(path.join(outside, 'secret.txt'), 'PRIVATE-CONTENTS\n');
+  await fs.symlink(path.join(outside, 'secret.txt'), path.join(root, 'innocent.txt'));
+  await fs.writeFile(path.join(root, 'real.txt'), 'PRIVATE-CONTENTS mentioned here\n');
+
+  const hits = await search(root, /PRIVATE-CONTENTS/);
+
+  assert.ok(
+    !hits.some((hit) => hit.file === 'innocent.txt'),
+    'search read a file outside the workspace by following a link into it'
+  );
+  assert.ok(hits.some((hit) => hit.file === 'real.txt'), 'the contained file is still searched');
+});
+
+test('a symlink pointing back inside the workspace is still searched', async () => {
+  // The half that keeps this containment rather than a ban on links: somewhere still
+  // inside the workspace is somewhere search may look.
+  const root = await workspace();
+  await fs.mkdir(path.join(root, 'src'), { recursive: true });
+  await fs.writeFile(path.join(root, 'src', 'real.ts'), 'const findMe = 1;\n');
+  await fs.symlink(path.join(root, 'src', 'real.ts'), path.join(root, 'alias.ts'));
+
+  const hits = await search(root, /findMe/);
+
+  assert.ok(hits.some((hit) => hit.file === 'alias.ts'), 'a link inside the tree was skipped');
+});

@@ -81,6 +81,15 @@ export async function okToReplaceExistingPlan(io: PlanningIO, log: (message: str
  * Where a half-finished interview is kept between windows. Supplied by the caller,
  * which owns the storage; planning owns what is worth keeping and when to offer it.
  */
+/**
+ * How a sitting starts, when that was settled somewhere else.
+ *
+ * `'carry-on'`: chat offered the resume at startup and the answer was yes.
+ * `{ brief }`: a task handed over from NERVIS (E-C8) — a fresh interview whose first
+ * answer waits pre-typed in the box, for the person to change or send as it is.
+ */
+export type PlanningStart = 'carry-on' | { brief: string };
+
 export interface InterviewMemory {
   save(state: InterviewState, seed: string): Promise<void>;
   load(): InterviewSnapshot | undefined;
@@ -100,8 +109,11 @@ export async function runPlanning(
    * Chat now offers the resume at startup — that is where someone reopening a window
    * actually is — and hands the answer down rather than letting this ask again two
    * seconds later.
+   *
+   * Or a task handed over from NERVIS, which starts a fresh interview with the task
+   * waiting in the first answer box — see `PlanningStart`.
    */
-  decided?: 'carry-on'
+  decided?: PlanningStart
 ): Promise<void> {
   // **Offered before anything else, including the plan.md question.** Someone
   // halfway through an interview does not want to be asked whether to replace a
@@ -204,7 +216,7 @@ async function gatherAnswers(
   lines: PlanningLines,
   log: (message: string) => void,
   memory?: InterviewMemory,
-  decided?: 'carry-on'
+  decided?: PlanningStart
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
   const { resume, stop } = await offerResume(io, log, memory, decided);
   if (stop) return undefined;
@@ -221,6 +233,7 @@ async function gatherAnswers(
   return runInterview(models, io, log, {
     remember: memory ? (state, seed) => memory.save(state, seed) : undefined,
     resume,
+    brief: typeof decided === 'object' ? decided.brief : undefined,
     workspace: await researchWorkspace(),
   });
 }
@@ -251,7 +264,7 @@ async function offerResume(
   io: PlanningIO,
   log: (message: string) => void,
   memory?: InterviewMemory,
-  decided?: 'carry-on'
+  decided?: PlanningStart
 ): Promise<{ resume?: { state: InterviewState; seed: string }; stop?: boolean }> {
   const snapshot = memory?.load();
   if (!snapshot || !worthResuming(snapshot, Date.now())) return {};

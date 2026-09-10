@@ -87,8 +87,8 @@ export function parseNervisTask(text: string): NervisTask | undefined {
  * point of this milestone, and the way to keep it is not to send it anywhere it
  * can be reworded.
  *
- * **It names the file**, because "you can edit it first" is not actionable
- * without saying what to open.
+ * **It says what happens next**: the planning interview, with the task waiting in the
+ * answer box — which is where changing it happens now, rather than in the file.
  */
 export function handoffOffer(task: NervisTask): string {
   const when = task.askedOn ? ` on ${task.askedOn}` : '';
@@ -96,7 +96,7 @@ export function handoffOffer(task: NervisTask): string {
   return (
     `This came from NERVIS${when}${where}, not from this editor.\n\n` +
     `${task.task}\n\n` +
-    `Read it before approving. Nothing has run, and you can edit ${TASK_FILE} first — ` +
-    'I will use it as it stands when you say go.'
+    'Nothing has run. We will plan it first: I will ask a few questions, and this task ' +
+    'will be waiting in the answer box for the first one — change it, or send it as it is.'
   );
 }

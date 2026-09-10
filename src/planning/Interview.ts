@@ -87,6 +87,16 @@ export interface InterviewSession {
    * only verification available. `PlanningFlow` does the reading now.
    */
   workspace?: WorkspaceSignals;
+
+  /**
+   * Words already written for the first answer — a task handed over from NERVIS.
+   *
+   * **Put in the answer box, never taken as the answer.** It arrived from another
+   * program, so the person reads it, changes what they like and sends it themselves:
+   * §9's rule that a handed-over brief is evidence of what was asked for, not an
+   * instruction, kept by the shape of the question rather than by a warning.
+   */
+  brief?: string;
 }
 
 export async function runInterview(
@@ -95,7 +105,7 @@ export async function runInterview(
   log: (message: string) => void,
   session?: InterviewSession
 ): Promise<{ state: InterviewState; seed: string } | undefined> {
-  const { remember, resume, workspace } = session ?? {};
+  const { remember, resume, workspace, brief } = session ?? {};
 
   if (resume) return continueInterview(models, io, log, resume.state, resume.seed, remember);
 
@@ -106,7 +116,8 @@ export async function runInterview(
       'You are starting a planning interview. Ask them what they are building — one sentence is plenty, and "I don\'t know" is a perfectly good answer they can give.',
       'What are you building? One sentence is plenty.'
     ),
-    await seedHint()
+    await seedHint(),
+    brief
   );
   if (seed === undefined) return undefined;
 

@@ -38,6 +38,8 @@ interface Sitting {
   io: PlanningIO;
   /** Every prompt passed to `askText`, in the order they were asked. */
   asked: string[];
+  /** What each `askText` put in the answer box beforehand, in the same order. */
+  prefilled: (string | undefined)[];
   /** Everything said back through `io.say` — remarks, not questions. */
   said: string[];
 }
@@ -51,12 +53,14 @@ interface Sitting {
  */
 function sitting(answers: (string | undefined)[]): Sitting {
   const asked: string[] = [];
+  const prefilled: (string | undefined)[] = [];
   const said: string[] = [];
   let next = 0;
 
   const io: PlanningIO = {
-    askText: async (prompt: string) => {
+    askText: async (prompt: string, ...rest: (string | undefined)[]) => {
       asked.push(prompt);
+      prefilled.push(rest[1]);
       return next < answers.length ? answers[next++] : undefined;
     },
     askChoice: async () => undefined,
@@ -68,7 +72,7 @@ function sitting(answers: (string | undefined)[]): Sitting {
     closeDocument: async () => {},
   };
 
-  return { io, asked, said };
+  return { io, asked, prefilled, said };
 }
 
 /** The answers recorded for a topic, as plain text. */
@@ -154,6 +158,25 @@ test('cancelling later keeps what was already answered', async () => {
 
   assert.ok(result);
   assert.equal(answerFor(result.state, 'what-it-does'), 'renames photos by EXIF date');
+});
+
+test('a handed-over brief waits in the first answer box and is not taken as the answer', async () => {
+  // E-C8: a task from NERVIS came from another program, so the person sends it
+  // themselves. Cancelling that first question records nothing — the brief is a
+  // suggestion for the answer, never the answer.
+  const { io, prefilled } = sitting([undefined]);
+  const result = await runInterview(noModel(), io, () => {}, { brief: 'make me a pomodoro timer' });
+
+  assert.equal(prefilled[0], 'make me a pomodoro timer');
+  assert.equal(result, undefined);
+});
+
+test('what the person sends is the answer, even with a brief waiting', async () => {
+  const { io } = sitting(['a pomodoro timer for the terminal', undefined]);
+  const result = await runInterview(noModel(), io, () => {}, { brief: 'make me a pomodoro timer' });
+
+  assert.ok(result);
+  assert.equal(answerFor(result.state, 'what-it-does'), 'a pomodoro timer for the terminal');
 });
 
 test('resuming carries on rather than asking what you are building again', async () => {

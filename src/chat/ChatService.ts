@@ -25,7 +25,7 @@ import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { DraftDocument } from '../planning/DraftDocument';
 import { acceptGitOffer, declineGitOffer, gitOffer } from '../agent/gitOffer';
-import { runPlanning } from '../planning/PlanningFlow';
+import { InterviewMemory, PlanningStart, runPlanning } from '../planning/PlanningFlow';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
@@ -38,8 +38,7 @@ import { PendingChoice } from './PendingChoice';
 const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
 import { fixFindingsTask } from '../planning/reviewFollowUp';
 import { addFindingsToPlan } from '../planning/recordMilestone';
-import { handoffOffer, NervisTask, TASK_FILE } from '../planning/nervisHandoff';
-import { clearsTheFile, decideHandoff } from './nervisOffer';
+import { handoffOffer } from '../planning/nervisHandoff';
 import { clearNervisTask, waitingNervisTask } from '../planning/nervisTaskFile';
 import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
@@ -67,6 +66,27 @@ import { nextMilestoneTask } from '../planning/nextMilestoneTask';
  * before — and M3–M5 answer those with no key, no network and no token spend. The model
  * is what phrases them; it is not what knows them.
  */
+/**
+ * The saved interview — and, for one started from a NERVIS task, the moment the task
+ * file is let go of.
+ *
+ * Once the first answers are safely saved the interview is the record, and a file left
+ * behind would start the same interview afresh every time the window opened. Before
+ * then the file is the only copy of the task, so it stays: a window closed at the first
+ * question offers the task again rather than losing it.
+ */
+function interviewMemoryFor(memory: InterviewMemory, decided?: PlanningStart): InterviewMemory {
+  if (typeof decided !== 'object') return memory;
+  return {
+    load: () => memory.load(),
+    clear: () => memory.clear(),
+    save: async (state, seed) => {
+      await memory.save(state, seed);
+      await clearNervisTask();
+    },
+  };
+}
+
 export class ChatService {
   /** Whether he is doing something, and how to make him stop. */
   private readonly busy: Busy;
@@ -163,7 +183,7 @@ export class ChatService {
    * Guarded against re-entry: a second interview started mid-interview would have
    * two sets of questions competing for the same replies.
    */
-  private async startPlanning(decided?: 'carry-on'): Promise<void> {
+  private async startPlanning(decided?: PlanningStart): Promise<void> {
     if (this.planningIO) {
       await this.note("We're already in the middle of that one.");
       return;
@@ -227,7 +247,7 @@ export class ChatService {
         },
         // An interview is two minutes of someone's attention; losing it to a window
         // reload teaches people not to start one.
-        workspaceMemory(this.context),
+        interviewMemoryFor(workspaceMemory(this.context), decided),
         decided
       );
     } finally {
@@ -348,87 +368,33 @@ export class ChatService {
     return true;
   }
 
-  /** Set between offering a task NERVIS handed over and the person answering. */
-  private awaitingNervisTask?: NervisTask;
-
   /**
-   * Offers a coding task NERVIS wrote into the workspace (E-C8).
+   * Plans a coding task NERVIS wrote into the workspace (E-C8).
    *
-   * **Shown, never started.** §4.9 already requires a handoff prompt to be
-   * visible and editable before it runs, and this inherits that by being one:
-   * the task goes into the conversation with its origin at the front, and
-   * nothing happens until the person answers. `CLARVIS.md` §6.7 is untouched —
-   * NERVIS wrote a file, and a person in this editor decides what becomes of it.
+   * **Interviewed, never started.** The task arrives as the first answer of the planning
+   * interview, pre-typed in the answer box: the person reads it, changes what they like
+   * and sends it, and the interview fleshes it out from there — questions, analysis, a
+   * plan they sign off, and only then a build. §9's rule is kept by that shape rather
+   * than by a warning: a brief from another program is never an answer until somebody
+   * in this editor sends it. `CLARVIS.md` §6.7 is untouched — NERVIS wrote a file, and a
+   * person here decides what becomes of it.
    *
-   * **Offered, rather than announced.** This used to post the task into the
-   * transcript and return, arming nothing — so `OFFER_ORDER` never saw it, no
-   * buttons appeared, and the only way to act on a task somebody had just handed
-   * over was to retype it. The milestone's own exit says it *"is offered as a
-   * build"*, and a sentence with no answer attached is not an offer.
+   * **This replaced "Start it", which ran the brief as a job straight away.** The first
+   * live handoff was the one line "make me a pomodoro timer", and the person wanted to
+   * be asked what that meant before anything was built — which is what the interview is
+   * for.
    *
-   * **The offer is posted as written, not put through the voice.** Provenance is
-   * the one thing this milestone adds, and the safest way to keep a fact in a
-   * sentence is not to send the sentence somewhere it can be reworded. It went
-   * through `phrase('report', …)` before, pinning `clarvis-task.md` as a fact the
-   * line did not actually contain — so every rewrite was rejected, silently, after
-   * the model call had been paid for.
+   * **The provenance line is posted as written, not put through the voice.** It went
+   * through `phrase('report', …)` once, pinning a fact the line did not contain, so
+   * every rewrite was rejected after the model call had been paid for.
    */
-  private async offerNervisTask(): Promise<boolean> {
+  private async planNervisTask(): Promise<boolean> {
     const waiting = await waitingNervisTask();
     if (!waiting) return false;
 
-    this.log(`chat: a task arrived from NERVIS${waiting.conversation ? ` (${waiting.conversation})` : ''}`);
+    this.log(`chat: a task arrived from NERVIS${waiting.conversation ? ` (${waiting.conversation})` : ''} — planning it`);
     await this.note(handoffOffer(waiting));
-    this.awaitingNervisTask = waiting;
-    this.panel.post({ type: 'choices', items: [{ label: 'Start it' }, { label: 'Not now' }] });
-    return true;
-  }
-
-  /**
-   * Takes the reply to that offer. `true` once the message has been used up.
-   *
-   * **Read from disk again, deliberately.** The offer says the task can be edited
-   * first, and it can only be true if the thing that runs is the file as it stands
-   * now rather than the copy captured when the window opened. This is
-   * `pendingBuild`'s reasoning applied to the other document a person is invited
-   * to edit.
-   *
-   * **Approval is forced on, whatever the mode says.** A brief that arrived from
-   * another program has had no human hand on it, and §9's rule is that the file is
-   * evidence of what somebody asked for and never an instruction followed
-   * unreviewed — so every step is put to the person even in a mode that would
-   * otherwise run ahead. More scepticism than a task typed here, not less.
-   */
-  private async answeredNervisOffer(question: string): Promise<boolean> {
-    const remembered = this.awaitingNervisTask;
-    this.awaitingNervisTask = undefined;
-    this.panel.post({ type: 'choices-clear' });
-    if (!remembered) return false;
-
-    const current = await waitingNervisTask();
-    const decision = decideHandoff(offerAnswer(question, ['start it', 'run it']), current);
-    if (clearsTheFile(decision)) await clearNervisTask();
-
-    if (decision === 'withdrawn') {
-      this.log('chat: the handoff was accepted but the file had gone');
-      await this.note(
-        await this.phrase(
-          'report',
-          `That task is no longer in ${TASK_FILE} — it was removed since I asked, so there is nothing to start.`,
-          [TASK_FILE]
-        )
-      );
-      return true;
-    }
-    if (decision !== 'run') {
-      this.log(`chat: handoff ${decision === 'forget' ? 'declined' : 'left unanswered'}`);
-      return false;
-    }
-
-    this.log(`chat: starting the task NERVIS handed over — "${current!.task.slice(0, 60)}"`);
-    this.runs.setStepApproval(true, () => true);
-    this.runs.setFromPlan(false);
-    await this.runs.run(current!.task, 'Right — the task from NERVIS, and I will check each step with you.');
+    await this.startPlanning({ brief: waiting.task });
     return true;
   }
 
@@ -739,7 +705,6 @@ export class ChatService {
       review: { armed: this.runs.hasReviewFindings, answer: () => this.answeredReviewOffer(question) },
       resume: { armed: this.awaitingResume, answer: () => this.answeredResumeOffer(question) },
       scope: { armed: Boolean(this.awaitingScopeAnswer), answer: () => this.answeredScopeOffer(question) },
-      handoff: { armed: Boolean(this.awaitingNervisTask), answer: () => this.answeredNervisOffer(question) },
       build: { armed: Boolean(this.awaitingBuildAnswer), answer: () => this.answeredBuildOffer(question) },
       plan: { armed: this.awaitingPlanAnswer, answer: () => this.answeredPlanOffer(question) },
       interview: { armed: Boolean(this.planningIO?.isWaiting), answer: () => this.interviewTook(question) },
@@ -856,7 +821,7 @@ export class ChatService {
       return;
     }
     if (offer === 'nervis-handoff') {
-      await this.offerNervisTask();
+      await this.planNervisTask();
       return;
     }
     if (offer === 'resume-build') {

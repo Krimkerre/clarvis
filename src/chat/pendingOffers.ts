@@ -18,17 +18,8 @@ import { isStopRequest } from './chatCommands';
  * Either way the message was answered, `true` came back, and nothing stopped.
  */
 
-/**
- * The questions that can be outstanding, in the order they are tried.
- *
- * `handoff` sits beside `build` because it is the same kind of question — a proposal to
- * start work, answered yes or no — and next to the offer it most resembles is where a
- * reader will look for it. Its position cannot be observed today: it is armed only when
- * a window opens, by a path that returns as soon as it arms, so nothing else is ever
- * outstanding at the same time. That is a reason to place it sensibly and not to claim
- * a priority nobody can test.
- */
-export const OFFER_ORDER = ['review', 'resume', 'scope', 'handoff', 'build', 'plan', 'interview'] as const;
+/** The questions that can be outstanding, in the order they are tried. */
+export const OFFER_ORDER = ['review', 'resume', 'scope', 'build', 'plan', 'interview'] as const;
 
 export type ArmedOffer = (typeof OFFER_ORDER)[number];
 

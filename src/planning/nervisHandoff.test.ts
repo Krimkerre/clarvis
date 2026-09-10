@@ -68,20 +68,20 @@ test('the offer leads with where the task came from', () => {
   const offer = handoffOffer({ task: 'do the thing', askedOn: '2026-09-02', conversation: 'cv_1' });
   assert.ok(offer.startsWith('This came from NERVIS'));
   assert.match(offer, /Nothing has run/);
-  // The invitation now names the file and says what happens on yes — it used to say
-  // "you can edit it first" while the file was being deleted at the moment of asking.
-  assert.match(offer, /you can edit clarvis-task\.md first/);
-  assert.match(offer, /as it stands when you say go/);
+  // What happens next is the interview, with the task waiting in the answer box.
+  assert.match(offer, /plan it first/);
+  assert.match(offer, /answer box/);
 });
 
 // ── Provenance, and the promise the offer makes ─────────────────────────────
 
-test('the offer names the file it is inviting you to edit', () => {
-  // "You can edit it first" is not actionable without saying what to open — and until
-  // the file stopped being deleted at the moment of asking, it was not even true.
+test('the offer sends changes to the answer box, not the file', () => {
+  // Editing clarvis-task.md was the invitation while "Start it" ran the file as it
+  // stood. The interview puts the task in the answer box instead, and a line still
+  // pointing at the file would send the person to edit something nothing reads again.
   const offer = handoffOffer({ task: 'Add a retry', askedOn: '' });
-  assert.ok(offer.includes(TASK_FILE), 'the offer never says which file to edit');
-  assert.ok(offer.includes('edit'));
+  assert.ok(!offer.includes(TASK_FILE), 'the offer still points at the file');
+  assert.match(offer, /change it, or send it as it is/);
 });
 
 test('the origin is in the offer itself, which is what ships', () => {

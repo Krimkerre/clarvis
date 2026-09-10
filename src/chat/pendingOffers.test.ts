@@ -50,29 +50,3 @@ test('a message with nothing waiting routes normally', () => {
   assert.equal(offerToConsume('what is broken?', []), 'none');
   assert.equal(offerToConsume('stop', []), 'stop');
 });
-
-// ---------------------------------------------------------------------------
-// The NERVIS handoff (E-C8): an offer, not an announcement.
-// ---------------------------------------------------------------------------
-
-test('a handoff offer can own the message it is answering', () => {
-  // It used to own nothing. `offerNervisTask` posted a line and returned, arming no
-  // state, so this function could never be given 'handoff' and the only way to act on
-  // a task somebody had handed over was to retype it.
-  assert.equal(offerToConsume('start it', ['handoff']), 'handoff');
-  assert.equal(offerToConsume('not now', ['handoff']), 'handoff');
-});
-
-test('stop still means stop while a handoff is waiting', () => {
-  // The rule this whole module exists for: an offer that swallowed "stop" would make
-  // the one word that must always work the one word that did not.
-  assert.equal(offerToConsume('stop', ['handoff']), 'stop');
-});
-
-test('a handoff yields to the offers that were asked first', () => {
-  // Not a claim about priority — it is armed only when a window opens, by a path that
-  // returns as soon as it arms, so nothing else is ever outstanding beside it. This
-  // pins where it sits so a later change to the order is a visible one.
-  assert.equal(offerToConsume('yes', ['handoff', 'review']), 'review');
-  assert.equal(offerToConsume('yes', ['handoff', 'build']), 'handoff');
-});

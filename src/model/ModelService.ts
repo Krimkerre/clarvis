@@ -10,6 +10,7 @@ import {
 } from './ModelProvider';
 import { PROVIDERS, ProviderId, ProviderSpec, providerSpec, resolveBaseUrl } from './providers';
 import { ModelRole, RoleSettings, resolveRole } from './roles';
+import { launcherCredential } from './ravisCredential';
 import { randomUUID } from 'crypto';
 
 /** Secret-storage key per provider. Namespaced so one provider's key can't shadow another's. */
@@ -204,9 +205,15 @@ export class ModelService {
     const spec = this.spec(role);
     // Wrapped rather than passed through: SecretStorage returns a Thenable, and the
     // adapters want a real Promise so they can use await/catch normally.
-    const getKey = async () => this.context.secrets.get(keySecretId(spec.id));
     const override = () =>
       vscode.workspace.getConfiguration('clarvis').get<string>(`chat.baseUrl.${spec.id}`, '');
+    // **A stored key first, then the launcher's RAVIS credential.** Started by the
+    // ecosystem launcher, code-server carries a token RAVIS knows as `clarvis`, so Clarvis
+    // is a named caller with six hundred requests a minute instead of sharing the
+    // anonymous sixty with the dashboard. Only ever offered to a RAVIS on this machine —
+    // see `launcherCredential`.
+    const fallback = launcherCredential(process.env, resolveBaseUrl(spec, override()), this.model(role));
+    const getKey = async () => (await this.context.secrets.get(keySecretId(spec.id))) || fallback;
 
     if (spec.dialect === 'anthropic') {
       return new AnthropicProvider(spec, getKey, override, this.log);

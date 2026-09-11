@@ -167,6 +167,8 @@ export function handoffTask(
     // reads as minutes — the run was stopped as hung, and milestone 1 never finished.
     'A check has to finish in seconds: anything that waits on the clock — a timer, a sleep,',
     'a countdown — gets the shortest duration the program accepts, never the real one.',
+    'Never tick a step whose check did not pass. If a check could not run — something it',
+    'needs is missing, or it would not start — leave the step unticked, keep its wording, and say why.',
     milestone
       ? `Then stop. Build milestone ${milestone.number} and no further — the next one is a separate decision, and not yours.`
       : 'Then stop. Do not build past milestone 1, and do not start the next one.',

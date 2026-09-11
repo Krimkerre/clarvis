@@ -1,5 +1,8 @@
 import * as vscode from 'vscode';
-import { existsSync, readdirSync } from 'fs';
+import { existsSync, readdirSync, readFileSync } from 'fs';
+import * as path from 'path';
+import { activeBlocker, BLOCKER_KEY } from '../agent/missingDependency';
+import { plannedStack, projectEntries } from './projectFacts';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
 import { activeFailure, parseRecord, FailureRecord, FAILURE_KEY } from '../briefing/lastFailure';
@@ -70,23 +73,33 @@ export class WorkspaceFactsReader {
       problems: countProblems(),
       ...activeFileProblems(),
       lastRun: this.context.workspaceState.get(LAST_RUN_KEY),
-      files: topLevelEntries(),
+      files: projectFiles(),
+      stack: planStack(),
+      blocker: activeBlocker(this.context.workspaceState.get(BLOCKER_KEY), now),
     };
   }
 }
 
-/** The project folder's own top-level entries, by name — hidden ones left out, capped. */
-function topLevelEntries(): string[] {
+/** The project's files two levels deep, read from the workspace folder. */
+function projectFiles(): string[] {
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (!root) return [];
+  return projectEntries((relative) =>
+    readdirSync(path.join(root, relative), { withFileTypes: true }).map((entry) => ({
+      name: entry.name,
+      isDirectory: entry.isDirectory(),
+    }))
+  );
+}
+
+/** What plan.md says the project is built with, when there is a plan that says. */
+function planStack(): string | undefined {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!root) return undefined;
   try {
-    return readdirSync(root, { withFileTypes: true })
-      .filter((entry) => !entry.name.startsWith('.'))
-      .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
-      .sort()
-      .slice(0, 40);
+    return plannedStack(readFileSync(path.join(root, 'plan.md'), 'utf8'));
   } catch {
-    return [];
+    return undefined;
   }
 }
 

@@ -2,6 +2,7 @@ import type { Pattern } from '../memory/patterns';
 import { fenced } from './fence';
 import { nothingWrong, OpenProblems, problemLines } from './openProblems';
 import { explainStep, RunRecord } from '../agent/runLedger';
+import { blockerLine, BlockerRecord } from '../agent/missingDependency';
 
 /**
  * Everything Clarvis knows without asking anyone.
@@ -55,8 +56,12 @@ export interface WorkspaceFacts {
    * about *this* run's reasoning could go stale against a later one.
    */
   lastRun?: RunRecord;
-  /** The project folder's top-level entries by name, folders ending in `/`. */
+  /** The project's files and folders, two levels deep, folders ending in `/`. */
   files?: string[];
+  /** What the plan says the project is built with, from its Language section. */
+  stack?: string;
+  /** The last thing a run found missing from this computer, while it still matters. */
+  blocker?: BlockerRecord;
 }
 
 /** A local reply, plus the face to wear while giving it. */
@@ -399,7 +404,14 @@ const FACT_LINES: ((facts: WorkspaceFacts) => string | undefined)[] = [
   // no plan.md — in a folder holding one — because nothing he was given listed the files,
   // and a file nobody mentioned reads as a file that is not there.
   ({ files }) =>
-    files && files.length > 0 ? `At the top of the project: ${files.join(', ')}` : undefined,
+    files && files.length > 0 ? `Files in the project, two levels deep: ${files.join(', ')}` : undefined,
+
+  ({ stack }) => (stack ? `The plan says this project is built with: ${stack}` : undefined),
+
+  // **What is missing, so it is not explained away.** Asked to install tkinter after a run
+  // had found it missing, he said it ships with Python and needs no installing — true in
+  // general, false on this computer, which is the only one that matters here.
+  ({ blocker, now }) => (blocker ? blockerLine(blocker, ago(now - blocker.at)) : undefined),
 ];
 
 export function factsBlock(facts: WorkspaceFacts): string {

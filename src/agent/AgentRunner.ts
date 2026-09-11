@@ -25,9 +25,22 @@ import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
 import { applyEdit, writeFile } from './tools/editTools';
-import { AgentTerminal, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
+import { AgentTerminal, CommandResult, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { mayRunUnconfined, spawnFor } from './tools/sandbox';
 import { confinementNote } from './tools/confinement';
+import {
+  activeBlocker,
+  BLOCKER_KEY,
+  blockerRecord,
+  clearsBlocker,
+  explainMissing,
+  missingDependency,
+  MissingDependency,
+  missingOptions,
+  missingOutcome,
+  MissingOutcome,
+} from './missingDependency';
+import { onlyAnnounced } from './stepProgress';
 import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
@@ -147,6 +160,21 @@ export class AgentRunner {
    */
   private interjections: string[] = [];
 
+  /**
+   * Why the run is ending on Clarvis's own account, when it is: a missing dependency was
+   * put to the person and they chose to stop, or to install it themselves.
+   */
+  private halted?: string;
+
+  /** Aborted to end the run from inside a step, alongside the caller's own Stop. */
+  private halt = new AbortController();
+
+  /** What the person already decided about a missing dependency this run, by name. */
+  private readonly missingDecided = new Map<string, MissingOutcome>();
+
+  /** Whether the model has already been told to carry out a step it only announced. */
+  private nudged = false;
+
   /** Adds something the user said mid-run. Delivered before the next model call. */
   interject(text: string): void {
     this.interjections.push(text);
@@ -215,7 +243,23 @@ export class AgentRunner {
   }
 
   async *run(task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
-    yield* this.loop(task, signal, { readOnly: false, addendum: '' });
+    yield* this.loop(task, this.haltable(signal), { readOnly: false, addendum: '' });
+  }
+
+  /**
+   * The caller's signal, joined to one this runner can pull itself.
+   *
+   * A step that learns the run cannot go on — a missing dependency the person chose to
+   * install themselves — is inside the loop it would need to end, and the loop is at its
+   * complexity ceiling. Aborting reuses every exit Stop already has: no further step
+   * starts, no further model call is made, and `stopped()` says why.
+   */
+  private haltable(signal: AbortSignal): AbortSignal {
+    this.halt = new AbortController();
+    this.halted = undefined;
+    if (signal.aborted) this.halt.abort();
+    else signal.addEventListener('abort', () => this.halt.abort(), { once: true });
+    return this.halt.signal;
   }
 
   /**
@@ -378,9 +422,9 @@ export class AgentRunner {
    * run's own work, and a commit on its branch is what makes it reviewable and undoable.
    */
   private async stopped(branch: AgentBranch, task: string): Promise<AgentEvent> {
-    await this.finish(branch, task, 'Stopped before finishing');
+    await this.finish(branch, task, this.halted ? 'Stopped at a missing dependency' : 'Stopped before finishing');
     this.tidied = await branch.discardIfEmpty();
-    return { kind: 'done', text: 'Stopped.', files: [...this.touched] };
+    return { kind: 'done', text: this.halted ?? 'Stopped.', files: [...this.touched] };
   }
 
   /**
@@ -585,29 +629,11 @@ export class AgentRunner {
 
       narration = this.takeWrittenCalls(calls, narration);
 
-      // No tool calls means the model considers the task finished.
+      // No tool calls means the model considers the task finished — unless all it said
+      // was which step it was about to begin.
       if (calls.length === 0) {
-        // **The expression marker is for the face, never for the reader.** This prompt
-        // asks for a `[[state]]` tag and the streaming reply path consumes one — but the
-        // closing narration leaves through a `done` event, which that path forwards
-        // untouched on the rule that tool lines are ours rather than the model's. This
-        // one is the model's, so it arrived on screen with `[[talking]]` still on the
-        // front of it. Found live, 20 Aug, and it makes a liar of §7's checklist item
-        // saying the tag never appears in reply text — true of one path, not both.
-        // The reader may still hold a tag that arrived too late to flush as a `text`
-        // event (the stream ended before HEAD_CHARS was reached). One more pass over the
-        // full narration guarantees it never survives into the log or the summary either.
-        narration = stripTags(narration).trimStart();
-        // **Why it stopped, in the log.** A run that ended after two reads with an
-        // empty summary left nothing to diagnose from — found live, and the closing
-        // line then invented a conclusion to fill the silence. Narration is what the
-        // model said for itself before deciding it was done.
-        this.log(
-          `agent: model stopped after ${this.steps} step(s), ${this.touched.size} file(s) touched — said: ${JSON.stringify(narration.trim() || '(nothing)')}`
-        );
-        yield this.record(
-          options.readOnly ? this.completedAnswer() : await this.completedRun(branch, task, narration)
-        );
+        if (this.nudgedPastAnnouncement(narration, messages, options.readOnly)) continue;
+        yield this.record(await this.endOfTurn(branch, task, narration, options.readOnly));
         return;
       }
 
@@ -904,11 +930,68 @@ export class AgentRunner {
     const note = confinementNote(spawnAs.confined, result.exitCode, result.output, allowNetwork);
     if (note) this.log(`sandbox: "${command}" failed on something the confinement denied`);
 
-    return [
+    return this.reportCommand(command, result, note);
+  }
+
+  /**
+   * What the model is told a command did — and, when it found something missing from
+   * this computer, what the person decided to do about it.
+   *
+   * **Asked in every mode, the way the deny-list is.** Found live, 11 September 2026:
+   * `import tkinter` failed because this machine's Python was built without it, and the
+   * run carried on — it tried to reinstall Python, ticked steps whose checks never ran and
+   * rewrote the plan around the gap. A missing piece of the machine is a question for its
+   * owner, not something to work around, and Unattended is no reason to skip asking.
+   */
+  private async reportCommand(command: string, result: CommandResult, note: string | undefined): Promise<string> {
+    const said = [
       `exit ${result.exitCode ?? 'killed'}${result.timedOut ? ' (timed out)' : ''}`,
       result.output.trim() || '(no output)',
       ...(note ? ['', note] : []),
     ].join('\n');
+
+    const missing = missingDependency(result.output, result.exitCode);
+    if (!missing) {
+      await this.settleBlocker(command, result.exitCode);
+      return said;
+    }
+    return `${said}\n\n${await this.askMissing(command, missing)}`;
+  }
+
+  /**
+   * Puts a missing dependency to the person, and ends the run when that is their answer.
+   *
+   * **Once per thing per run.** Told to find another way, a model that tries the same
+   * import again should hear the same answer, not raise the same dialog.
+   */
+  private async askMissing(command: string, missing: MissingDependency): Promise<string> {
+    const earlier = this.missingDecided.get(missing.name);
+    if (earlier?.decision === 'another-way') return earlier.toldTheModel;
+
+    this.log(`agent: "${command}" found ${missing.name} missing (${missing.kind}) — asking what to do`);
+    const answer = await whileAwaiting(this.activity, 'other', () =>
+      vscode.window.showWarningMessage(explainMissing(command, missing), { modal: true }, ...missingOptions(missing))
+    );
+    const outcome = missingOutcome(missing, answer);
+    this.missingDecided.set(missing.name, outcome);
+    this.log(`agent: missing ${missing.name} — ${outcome.decision}`);
+    await this.context.workspaceState.update(
+      BLOCKER_KEY,
+      blockerRecord(command, missing, outcome.decision, Date.now())
+    );
+    if (outcome.halt) {
+      this.halted = outcome.halt;
+      this.halt.abort();
+    }
+    return outcome.toldTheModel;
+  }
+
+  /** Forgets a remembered missing dependency once the command that found it succeeds. */
+  private async settleBlocker(command: string, exitCode: number | undefined): Promise<void> {
+    const record = activeBlocker(this.context.workspaceState.get(BLOCKER_KEY), Date.now());
+    if (!clearsBlocker(record, command, exitCode)) return;
+    await this.context.workspaceState.update(BLOCKER_KEY, undefined);
+    this.log(`agent: "${command}" works now — the missing-dependency note is cleared`);
   }
 
   /**
@@ -956,6 +1039,46 @@ export class AgentRunner {
     return written.rest;
   }
 
+  /**
+   * The model announced a step and stopped there; asks it, once, to do the step.
+   *
+   * Found live, 11 September 2026: "continue building" produced a single line — `STEP: Add
+   * a label showing the timer state` — and no tool call, so the run ended after one step
+   * with "I stopped without changing anything". Announcing is half of what the brief asks;
+   * doing only that half is not the model deciding the work is done.
+   */
+  private nudgedPastAnnouncement(narration: string, messages: ModelMessage[], readOnly: boolean): boolean {
+    if (readOnly || this.nudged || !onlyAnnounced(stripTags(narration))) return false;
+    this.nudged = true;
+    this.log('agent: the reply only announced a step — asking the model to carry it out');
+    messages.push({ role: 'assistant', content: narration });
+    messages.push({ role: 'user', content: 'You announced the step but did not do it. Carry it out now, using the tools.' });
+    return true;
+  }
+
+  /** The end of a turn with no tool calls: the run, or the answer, is over. */
+  private async endOfTurn(branch: AgentBranch, task: string, narration: string, readOnly: boolean): Promise<AgentEvent> {
+    // **The expression marker is for the face, never for the reader.** This prompt
+    // asks for a `[[state]]` tag and the streaming reply path consumes one — but the
+    // closing narration leaves through a `done` event, which that path forwards
+    // untouched on the rule that tool lines are ours rather than the model's. This
+    // one is the model's, so it arrived on screen with `[[talking]]` still on the
+    // front of it. Found live, 20 Aug, and it makes a liar of §7's checklist item
+    // saying the tag never appears in reply text — true of one path, not both.
+    // The reader may still hold a tag that arrived too late to flush as a `text`
+    // event (the stream ended before HEAD_CHARS was reached). One more pass over the
+    // full narration guarantees it never survives into the log or the summary either.
+    const said = stripTags(narration).trimStart();
+    // **Why it stopped, in the log.** A run that ended after two reads with an
+    // empty summary left nothing to diagnose from — found live, and the closing
+    // line then invented a conclusion to fill the silence. Narration is what the
+    // model said for itself before deciding it was done.
+    this.log(
+      `agent: model stopped after ${this.steps} step(s), ${this.touched.size} file(s) touched — said: ${JSON.stringify(said.trim() || '(nothing)')}`
+    );
+    return readOnly ? this.completedAnswer() : this.completedRun(branch, task, said);
+  }
+
   /** Commits the run's own files onto its own branch, if there was anything to commit. */
   private async finish(branch: AgentBranch, task: string, narration: string): Promise<void> {
     if (this.touched.size === 0 || !branch.current) return;
@@ -985,6 +1108,11 @@ export class AgentRunner {
 
   get result(): { commits: string[]; files: string[] } {
     return { commits: [...this.ownCommits], files: [...this.touched] };
+  }
+
+  /** Whether the run ended at a missing dependency — which is not a finished milestone. */
+  get blocked(): boolean {
+    return this.halted !== undefined;
   }
 
   /**

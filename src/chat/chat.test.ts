@@ -718,3 +718,28 @@ test('the last run reaches the model path too, not just the local one', () => {
 function baseFacts(): WorkspaceFacts {
   return { now: Date.now(), running: [], recentFiles: [], patterns: [] };
 }
+
+test('the facts carry what the plan chose and what was found missing, so neither is guessed', () => {
+  // Found live, 11 September 2026: after a run found tkinter missing, chat said it ships
+  // with Python and needs no installing, and called a Python project Go. Neither fact was
+  // in front of it.
+  const block = factsBlock(
+    facts({
+      stack: 'Python with tkinter',
+      files: ['plan.md', 'src/', 'src/main.py'],
+      blocker: {
+        name: 'tkinter',
+        about: 'part of Python itself',
+        command: 'python3 src/main.py',
+        evidence: "ModuleNotFoundError: No module named '_tkinter'",
+        decision: 'install-myself',
+        at: NOW - 5 * 60_000,
+      },
+    })
+  );
+
+  assert.match(block, /The plan says this project is built with: Python with tkinter/);
+  assert.match(block, /src\/main\.py/);
+  assert.match(block, /Missing on this computer: tkinter/);
+  assert.match(block, /they will install it themselves/);
+});

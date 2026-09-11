@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchStep, readStepMarkers } from './stepProgress';
+import { matchStep, onlyAnnounced, readStepMarkers } from './stepProgress';
 
 test('a marker is found and removed from the text', () => {
   const { announced, text } = readStepMarkers('STEP: Create the entry point\nWriting main.py now.');
@@ -41,4 +41,14 @@ test('an announcement matching nothing moves nothing', () => {
   // A wrong match puts the bar on the wrong step, which is worse than not moving it.
   assert.equal(matchStep('Deploy to production', ['Create the entry point', 'Read EXIF dates']), undefined);
   assert.equal(matchStep('   ', ['Create the entry point']), undefined);
+});
+
+test('a reply that only announced its step is told apart from a finished one', () => {
+  // Found live, 11 September 2026: "continue building" got back exactly this line and no
+  // tool call, and the run ended as though the work were done.
+  assert.equal(onlyAnnounced('STEP: Add a label showing the timer state'), true);
+  assert.equal(onlyAnnounced('STEP: Add a label\n\n'), true);
+  assert.equal(onlyAnnounced('STEP: Add a label\nAdded it and ran the check.'), false);
+  assert.equal(onlyAnnounced('Added the label and ran the check.'), false);
+  assert.equal(onlyAnnounced(''), false);
 });

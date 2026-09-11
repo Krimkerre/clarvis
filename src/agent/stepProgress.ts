@@ -69,3 +69,14 @@ export function matchStep(announced: string, steps: string[]): number | undefine
 
   return contained === -1 ? undefined : contained;
 }
+
+/**
+ * Whether a reply was nothing but step announcements.
+ *
+ * The one case where a reply with no tool calls is not the model saying it has finished:
+ * it named the step it was starting and stopped there (found live, 11 September 2026).
+ */
+export function onlyAnnounced(text: string): boolean {
+  const { announced, text: rest } = readStepMarkers(text);
+  return announced.length > 0 && rest.trim() === '';
+}

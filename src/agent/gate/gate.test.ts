@@ -150,3 +150,36 @@ test('network is denied for everything else, including ungated commands', () => 
   }
   assert.equal(allowsNetwork(undefined), false);
 });
+
+test("changing this computer's languages and tools always asks, and cannot be undone", () => {
+  // Found live, 11 September 2026: with tkinter missing, the agent ran `pyenv install` and
+  // `pyenv global`. No rule named pyenv, so nothing asked before it tried.
+  for (const command of [
+    'pyenv install 3.11.15',
+    'pyenv global 3.11.15',
+    'brew upgrade python',
+    'conda install numpy',
+    'apt-get install python3-tk',
+    'rustup default stable',
+    'nvm install 20',
+    'softwareupdate --install --all',
+    'uv python install 3.12',
+    'xcode-select --install',
+  ]) {
+    const verdict = classifyCommand(command);
+    assert.ok(verdict, command);
+    assert.equal(verdict.category, 'toolchain', command);
+    assert.equal(verdict.reversible, false, command);
+    assert.ok(mayEscapeConfinement(verdict), command);
+    assert.equal(allowsNetwork(verdict), true, command);
+  }
+});
+
+test('looking at the toolchain is not changing it', () => {
+  // A gate on every `pyenv versions` would teach the click-through it exists to prevent.
+  // `nvm use` and `pyenv shell` change one shell, which ends with the command.
+  for (const command of ['pyenv versions', 'pyenv shell 3.11', 'brew list', 'conda list', 'rustup show', 'nvm use 20', 'softwareupdate --list']) {
+    assert.equal(classifyCommand(command), undefined, command);
+  }
+  assert.equal(classifyCommand('brew install ffmpeg')?.category, 'dependency');
+});

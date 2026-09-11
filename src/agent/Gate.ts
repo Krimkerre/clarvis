@@ -17,7 +17,8 @@ export type GateCategory =
   | 'outward-facing'
   | 'dependency'
   | 'privilege'
-  | 'remote-code';
+  | 'remote-code'
+  | 'toolchain';
 
 export interface GateVerdict {
   category: GateCategory;
@@ -128,6 +129,18 @@ const RULES: Rule[] = [
     what: 'publishes a package to a public registry',
     why: 'Published versions are permanent — most registries do not allow re-use of a version number.',
     worstCase: 'A broken release is public, and the version number is spent for good.',
+  },
+  {
+    category: 'toolchain',
+    // **The machine's languages and tools, not the project's packages.** Found live, 11
+    // September 2026: with tkinter missing, the agent ran `pyenv install 3.11.15` and
+    // `pyenv global 3.11.15` — changing the Python every project on this computer uses —
+    // and nothing here asked first, because no rule named pyenv. The sandbox refused the
+    // writes; the question belonged to the person whose computer it is, before that.
+    pattern: /\bpyenv\s+(install|uninstall|global|local)\b|\basdf\s+(install|uninstall|global|local|set|plugin)\b|\bnvm\s+(install|uninstall|alias)\b|\brustup\s+(install|uninstall|default|toolchain|update|target|component)\b|\b(conda|mamba|micromamba)\s+(install|create|update|remove)\b|\bpipx\s+(install|upgrade|reinstall)\b|\buv\s+(python|tool)\s+install\b|\bbrew\s+(upgrade|reinstall|uninstall|link|unlink|tap)\b|\b(apt|apt-get|dnf|yum|zypper|apk)\s+(install|remove|upgrade)\b|\bpacman\s+-S\b|\bport\s+install\b|\bsdk\s+install\b|\bvolta\s+(install|pin)\b|\bcorepack\s+enable\b|\bxcode-select\s+--install\b|\bsoftwareupdate\s+(-i|-ia|--install)\b/i,
+    what: 'changes the languages or developer tools installed on this computer',
+    why: 'It changes this computer for every project on it, not only this one.',
+    worstCase: 'Other projects stop working because a version or tool they relied on changed.',
   },
   {
     category: 'dependency',
@@ -242,7 +255,7 @@ export function explainGate(command: string, verdict: GateVerdict, offeringEscap
  * "yes, unconfined" is an unconfined agent with extra steps.
  */
 export function mayEscapeConfinement(verdict: GateVerdict): boolean {
-  return verdict.category === 'dependency' || verdict.category === 'privilege';
+  return ['dependency', 'privilege', 'toolchain'].includes(verdict.category);
 }
 
 /** What the button that skips the sandbox says. Spells out what is being skipped. */
@@ -269,5 +282,5 @@ export function approveLabel(verdict: GateVerdict): string {
  * sending it somewhere.
  */
 export function allowsNetwork(verdict: GateVerdict | undefined): boolean {
-  return verdict?.category === 'dependency' || verdict?.category === 'outward-facing';
+  return verdict !== undefined && ['dependency', 'outward-facing', 'toolchain'].includes(verdict.category);
 }

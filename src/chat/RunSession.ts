@@ -358,11 +358,15 @@ export class RunSession {
     const record = buildRunRecord(task, startedAt, ledgerEvents);
     await this.context.workspaceState.update(LAST_RUN_KEY, record);
 
-    await this.close(task, summary, files.length, closing, runner.branches);
+    // **A blocked run is not a finished milestone.** It ended on a missing dependency the
+    // person has just been asked about, so there is nothing to mark off, land or review
+    // yet — offering to would invite ticking work whose checks never ran.
+    const changed = runner.blocked ? 0 : files.length;
+    await this.close(task, summary, changed, closing, runner.branches);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
-    if (files.length > 0) await this.offerReview(commits, files);
+    if (changed > 0) await this.offerReview(commits, files);
   }
 
   /**

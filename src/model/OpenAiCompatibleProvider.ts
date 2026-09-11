@@ -435,18 +435,25 @@ function toCall(block: { id: string; name: string; args: string }): ToolCall {
  * is rejected, and matching results to calls by position rather than id is how the
  * wrong output gets attributed to the wrong call.
  */
-function toOpenAiMessages(message: {
+export function toOpenAiMessages(message: {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: ToolCall[];
   toolResults?: { id: string; content: string; isError?: boolean }[];
 }): unknown[] {
   if (message.toolResults?.length) {
-    return message.toolResults.map((result) => ({
-      role: 'tool',
-      tool_call_id: result.id,
-      content: result.content,
-    }));
+    return [
+      ...message.toolResults.map((result) => ({
+        role: 'tool',
+        tool_call_id: result.id,
+        content: result.content,
+      })),
+      // **What the user said mid-run follows as its own user turn.** A tool message
+      // carries only its call's output, so dropping this is how "no, use the other
+      // library" was logged and never read. It goes after the last result: a user turn
+      // between two of them leaves a call unanswered, which is rejected.
+      ...(message.content ? [{ role: 'user', content: message.content }] : []),
+    ];
   }
 
   if (message.toolCalls?.length) {

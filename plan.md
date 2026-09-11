@@ -3608,6 +3608,17 @@ something to stop with no run in progress. Both decisions are in `stopDecision.t
 and tested. Switching to Unattended still answers the waiting step "Do it": that is someone
 wanting the run to carry on, not to stop.
 
+**Typing during a run never reached the model (11 Sep).** Typing during a run (13 Aug)
+queues the message and hands it over with the next step's tool results, as the `content`
+of that same turn — and neither provider sent `content` on a turn carrying results.
+Anthropic got only its `tool_result` blocks, OpenAI-compatible providers only their
+`role: 'tool'` messages. So "no, use the other library" was logged as a redirect, taken off
+the queue and never read, and the run carried on the old way. The feature was tested where
+its wording is built (`interjections.ts`) and never where it is sent. Now Anthropic gets a
+text block after the results in the same turn, and OpenAI-compatible providers a user
+message after the last tool message — the order each API requires — while a step nobody
+interrupted still sends the results alone (`toolResultTurn.test.ts`).
+
 **Watching a run happen (13 Aug).** An **Output** button reveals the terminal every
 command and tool call already wrote to — one click away since M8c, with nothing saying
 so. Files open as they are written, focus preserved, one reused tab, and the editor

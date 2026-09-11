@@ -340,7 +340,7 @@ function toCall(block: { id: string; name: string; json: string }): ToolCall {
  * detail most easily got wrong — sending them as an assistant turn produces a
  * confusing 400 that says nothing about the real mistake.
  */
-function toAnthropicMessage(message: {
+export function toAnthropicMessage(message: {
   role: 'user' | 'assistant';
   content: string;
   toolCalls?: ToolCall[];
@@ -349,12 +349,19 @@ function toAnthropicMessage(message: {
   if (message.toolResults?.length) {
     return {
       role: 'user',
-      content: message.toolResults.map((result) => ({
-        type: 'tool_result',
-        tool_use_id: result.id,
-        content: result.content,
-        ...(result.isError ? { is_error: true } : {}),
-      })),
+      content: [
+        ...message.toolResults.map((result) => ({
+          type: 'tool_result',
+          tool_use_id: result.id,
+          content: result.content,
+          ...(result.isError ? { is_error: true } : {}),
+        })),
+        // **What the user said mid-run rides in the same turn, after the results.**
+        // Dropping it is how "no, use the other library" was logged and never read.
+        // Text ahead of the tool_result blocks is rejected, and so is an empty text
+        // block — which is every step nobody interrupted.
+        ...(message.content ? [{ type: 'text', text: message.content }] : []),
+      ],
     };
   }
 

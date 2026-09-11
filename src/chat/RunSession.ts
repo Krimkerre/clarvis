@@ -78,6 +78,25 @@ export class RunSession {
     return this.pending.supply(text);
   }
 
+  /**
+   * Lets go of the question on screen, because Stop was pressed.
+   *
+   * **Reported 11 September 2026: Stop did not release it.** Stop aborted the run and
+   * nothing else, so the run stayed parked on "Do it / Skip this step", the buttons
+   * stayed in the panel, and the stop only took effect once someone answered.
+   *
+   * Cancelled rather than answered. No answer is "not approved" to `askStep`, which the
+   * runner then sees was a stop (`stepAfterAsking`); to the landing question it is
+   * "leave it there", so nothing moves. The opposite of `modeStoppedAsking`, which
+   * answers "Do it" because the user wants the run to carry on without them.
+   */
+  stopWaiting(): void {
+    if (!this.pending.isWaiting) return;
+
+    this.log('agent: stopped — releasing the question that was waiting');
+    this.pending.cancel();
+  }
+
   /** The written bank, for the closing aside when no model is available. */
   private readonly closers = new QuipPicker();
 

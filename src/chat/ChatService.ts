@@ -33,6 +33,7 @@ import { offerAnswer } from './offerAnswer';
 import { planJob } from './jobDecision';
 import { ArmedOffer, OFFER_ORDER, offerToConsume } from './pendingOffers';
 import { PendingChoice } from './PendingChoice';
+import { stopReply } from './stopDecision';
 
 /** Set when someone turns the planning offer down, so it is asked once per project. */
 const PLAN_OFFER_DECLINED = 'clarvis.planning.offerDeclined';
@@ -1221,6 +1222,10 @@ export class ChatService {
   /** Cancels the answer in flight, if there is one. */
   stop(): void {
     this.busy.stop();
+    // **And the question on screen, if one is waiting.** Aborting alone left it there,
+    // so a stop only landed once someone answered — see `RunSession.stopWaiting`. After
+    // the abort, so the signal already says stopped when the question comes back.
+    this.runs.stopWaiting();
   }
 
   /**
@@ -1252,7 +1257,12 @@ export class ChatService {
       return;
     }
 
-    if (!busy) {
+    // **A question left waiting counts as something to stop**, running or not. The
+    // landing question is asked after the run has finished, so checking `busy` alone
+    // answered "Nothing to stop" over its buttons and left it up. See `stopReply`.
+    const reply = stopReply({ busy, waiting: this.runs.awaitingStep, runWillSayIt: this.busy.isRunning });
+
+    if (reply === 'nothing to stop') {
       this.log('chat: asked to stop, nothing running');
       await this.say(await this.phrase('report', 'Nothing to stop. I was already idle.'), 'neutral');
       return;

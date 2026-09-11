@@ -3595,6 +3595,19 @@ people to click yes without reading. Auto deciding for itself is its whole propo
 so it is left alone, and the plan-mode handoff switches to Agent rather than leaving
 whatever was set.
 
+**Stop did not release a question on screen (11 Sep).** Asking in the chat (15 Aug) moved
+the step question out of a modal, where Stop could not be pressed, into the panel, where it
+could — and Stop was never told. With "Do it / Skip this step" waiting, Stop aborted the
+run's signal and nothing else: the run stayed parked on the unanswered question, the buttons
+stayed, and the stop only took effect once someone answered. Over the end-of-run "fold this
+into master?" it said "Nothing to stop", because that question is asked after the run has
+finished. Stop now cancels whichever question is waiting (`RunSession.stopWaiting`); a step
+whose question comes back after Stop ends the run rather than starting — a "Do it" that
+raced the stop included — and is not reported as "Skipped"; and a waiting question counts as
+something to stop with no run in progress. Both decisions are in `stopDecision.ts`, pure
+and tested. Switching to Unattended still answers the waiting step "Do it": that is someone
+wanting the run to carry on, not to stop.
+
 **Watching a run happen (13 Aug).** An **Output** button reveals the terminal every
 command and tool call already wrote to — one click away since M8c, with nothing saying
 so. Files open as they are written, focus preserved, one reused tab, and the editor

@@ -33,6 +33,7 @@ import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
 import { ANSWER_SHAPE } from '../personality/character';
 import { ReplyStateReader, STATE_TAG_INSTRUCTION, stripTags } from '../chat/replyState';
+import { stepAfterAsking } from '../chat/stopDecision';
 import { absorbStreamEvent } from './streamNarration';
 import { newTraceId } from '../model/lineage';
 
@@ -434,7 +435,14 @@ export class AgentRunner {
         // — guessing here whether the callback will actually ask — is a copy of the
         // mode rules in a second place, which is how the two stop agreeing.
         const approved = await whileAwaiting(this.activity, 'step', () => this.approveStep!(step));
-        if (!approved) {
+        // **Stop wins over the answer.** Reported 11 September 2026: Stop pressed while
+        // this waited stopped nothing until someone answered. Stop now releases the
+        // question, which comes back unanswered — and a "Do it" that raced the stop must
+        // not start the step either. Breaking out leaves `loop` to notice the abort and
+        // report the stop, as it does between steps.
+        const next = stepAfterAsking(approved, signal.aborted);
+        if (next === 'stop') break;
+        if (next === 'skip') {
           this.log(`agent [declined] ${description}`);
           const declined = 'The user declined that step. Do not retry it — find another way, or stop and say what you would have done.';
           results.push({ id: call.id, content: declined, isError: true });

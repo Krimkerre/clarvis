@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { requireTrust } from './trust';
 import { spawn } from 'child_process';
+import { LEFT_RUNNING_GRACE_MS, LEFT_RUNNING_NOTE, stopProcessGroup } from './processGroup';
 
 /**
  * Running commands, reading diagnostics, and asking git what it thinks.
@@ -97,37 +98,69 @@ export async function runCommand(
     // contain pipes and `&&`; it simply cannot write outside the project. The
     // deny-list stays, demoted to explaining *why* something is dangerous rather than
     // being the only thing standing there.
+    // **Its own process group, so stopping it stops everything it started.** Killing the
+    // shell alone left `python3 main.py` running, and the run could not end — see
+    // `processGroup.ts`. Windows has no groups and keeps the old behaviour.
+    const detached = process.platform !== 'win32';
     const child = spawnAs?.confined
-      ? spawn(spawnAs.file, spawnAs.args, { cwd: root, env: commandEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] })
+      ? spawn(spawnAs.file, spawnAs.args, { cwd: root, env: commandEnvironment(), stdio: ['ignore', 'pipe', 'pipe'], detached })
       : spawn(command, {
           cwd: root,
           shell: true,
           env: commandEnvironment(),
           // A pipe rather than inherit: the extension host has no console to inherit.
           stdio: ['ignore', 'pipe', 'pipe'],
+          detached,
         });
+
+    // Stopping a run must actually stop the process — and whatever it started — not just
+    // stop listening to it.
+    const stop = () => {
+      if (!stopProcessGroup(child.pid)) child.kill('SIGKILL');
+    };
 
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGKILL');
+      stop();
     }, COMMAND_TIMEOUT_MS);
 
-    // Stopping a run must actually stop the process, not just stop listening to it.
-    const abort = () => child.kill('SIGKILL');
-    signal?.addEventListener('abort', abort, { once: true });
+    signal?.addEventListener('abort', stop, { once: true });
 
     child.stdout?.on('data', (data: Buffer) => append(data.toString()));
     child.stderr?.on('data', (data: Buffer) => append(data.toString()));
 
-    child.on('error', (error) => {
+    let settled = false;
+    let grace: NodeJS.Timeout | undefined;
+    const settle = (): boolean => {
+      if (settled) return false;
+      settled = true;
       clearTimeout(timer);
-      signal?.removeEventListener('abort', abort);
-      reject(error);
+      clearTimeout(grace);
+      signal?.removeEventListener('abort', stop);
+      return true;
+    };
+
+    child.on('error', (error) => {
+      if (settle()) reject(error);
     });
 
-    child.on('close', (code) => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', abort);
+    // **Finished when it exits, not when every copy of its output has closed.** A program
+    // it left running holds that output open for as long as it lives. Whatever is still in
+    // its group is stopped, and the model is told why — unless this was a stop or a
+    // timeout, which has already taken the group down.
+    child.on('exit', (code) => {
+      if (!timedOut && !signal?.aborted && stopProcessGroup(child.pid)) append(`\n${LEFT_RUNNING_NOTE}\n`);
+      grace = setTimeout(() => {
+        child.stdout?.destroy();
+        child.stderr?.destroy();
+        finish(code);
+      }, LEFT_RUNNING_GRACE_MS);
+    });
+
+    child.on('close', (code) => finish(code));
+
+    function finish(code: number | null): void {
+      if (!settle()) return;
 
       resolve({
         command,
@@ -139,7 +172,7 @@ export async function runCommand(
         durationMs: Date.now() - startedAt,
         timedOut,
       });
-    });
+    }
   });
 }
 

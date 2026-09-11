@@ -71,12 +71,15 @@ export function matchStep(announced: string, steps: string[]): number | undefine
 }
 
 /**
- * Whether a reply was nothing but step announcements.
+ * Whether a reply announced a step.
  *
  * The one case where a reply with no tool calls is not the model saying it has finished:
- * it named the step it was starting and stopped there (found live, 11 September 2026).
+ * it named the step it was starting, which the brief says to do *before* the work.
+ * Found live, 11 September 2026, twice in an evening — a reply that was only `STEP: Add a
+ * label showing the timer state`, and then one that copied the step, its check and its
+ * "Result: not run yet" out of plan.md. A test for a bare announcement let the second
+ * through, so any announcement counts.
  */
-export function onlyAnnounced(text: string): boolean {
-  const { announced, text: rest } = readStepMarkers(text);
-  return announced.length > 0 && rest.trim() === '';
+export function announcesStep(text: string): boolean {
+  return readStepMarkers(text).announced.length > 0;
 }

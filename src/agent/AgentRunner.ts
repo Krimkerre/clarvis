@@ -40,7 +40,7 @@ import {
   missingOutcome,
   MissingOutcome,
 } from './missingDependency';
-import { onlyAnnounced } from './stepProgress';
+import { announcesStep } from './stepProgress';
 import * as path from 'path';
 import { canonicalRelative, resolveInWorkspace } from './tools/workspacePaths';
 import { explainHeldBack } from './dirtyAtStart';
@@ -172,6 +172,16 @@ export class AgentRunner {
   /** What the person already decided about a missing dependency this run, by name. */
   private readonly missingDecided = new Map<string, MissingOutcome>();
 
+  /**
+   * What this run found missing and never got past, by the command that found it.
+   *
+   * **Emptied only by that command succeeding.** Found live, 11 September 2026: told to
+   * find another way round a missing tkinter, the model said the plan could not work
+   * without it and stopped — and the run ended as a finished milestone, committed its
+   * file and offered to merge it into master.
+   */
+  private readonly unresolved = new Map<string, MissingDependency>();
+
   /** Whether the model has already been told to carry out a step it only announced. */
   private nudged = false;
 
@@ -257,6 +267,7 @@ export class AgentRunner {
   private haltable(signal: AbortSignal): AbortSignal {
     this.halt = new AbortController();
     this.halted = undefined;
+    this.unresolved.clear();
     if (signal.aborted) this.halt.abort();
     else signal.addEventListener('abort', () => this.halt.abort(), { once: true });
     return this.halt.signal;
@@ -952,6 +963,7 @@ export class AgentRunner {
 
     const missing = missingDependency(result.output, result.exitCode);
     if (!missing) {
+      if (result.exitCode === 0) this.unresolved.delete(command);
       await this.settleBlocker(command, result.exitCode);
       return said;
     }
@@ -966,7 +978,10 @@ export class AgentRunner {
    */
   private async askMissing(command: string, missing: MissingDependency): Promise<string> {
     const earlier = this.missingDecided.get(missing.name);
-    if (earlier?.decision === 'another-way') return earlier.toldTheModel;
+    if (earlier?.decision === 'another-way') {
+      this.unresolved.set(command, missing);
+      return earlier.toldTheModel;
+    }
 
     this.log(`agent: "${command}" found ${missing.name} missing (${missing.kind}) — asking what to do`);
     const answer = await whileAwaiting(this.activity, 'other', () =>
@@ -974,6 +989,7 @@ export class AgentRunner {
     );
     const outcome = missingOutcome(missing, answer);
     this.missingDecided.set(missing.name, outcome);
+    if (!outcome.halt) this.unresolved.set(command, missing);
     this.log(`agent: missing ${missing.name} — ${outcome.decision}`);
     await this.context.workspaceState.update(
       BLOCKER_KEY,
@@ -1048,7 +1064,7 @@ export class AgentRunner {
    * doing only that half is not the model deciding the work is done.
    */
   private nudgedPastAnnouncement(narration: string, messages: ModelMessage[], readOnly: boolean): boolean {
-    if (readOnly || this.nudged || !onlyAnnounced(stripTags(narration))) return false;
+    if (readOnly || this.nudged || !announcesStep(stripTags(narration))) return false;
     this.nudged = true;
     this.log('agent: the reply only announced a step — asking the model to carry it out');
     messages.push({ role: 'assistant', content: narration });
@@ -1112,7 +1128,15 @@ export class AgentRunner {
 
   /** Whether the run ended at a missing dependency — which is not a finished milestone. */
   get blocked(): boolean {
-    return this.halted !== undefined;
+    return this.halted !== undefined || this.unresolved.size > 0;
+  }
+
+  /**
+   * What is still missing when the run went on past the question and never got past it,
+   * for the offer that follows. Not for a run the user ended there themselves.
+   */
+  get stillMissing(): MissingDependency | undefined {
+    return this.halted ? undefined : this.unresolved.values().next().value;
   }
 
   /**

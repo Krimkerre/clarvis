@@ -1,3 +1,4 @@
+import { activeBlocker, BLOCKER_KEY, MissingDependency } from '../agent/missingDependency';
 import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { ModelService } from '../model/ModelService';
@@ -215,6 +216,13 @@ export class RunSession {
     return true;
   }
 
+  /** Told when a run ends on something missing that it never got past. */
+  private blockedHandler?: (missing: MissingDependency, proposal: string) => Promise<void>;
+
+  onBlocked(handler: (missing: MissingDependency, proposal: string) => Promise<void>): void {
+    this.blockedHandler = handler;
+  }
+
   setFromPlan(on: boolean, steps: string[] = []): void {
     this.fromPlan = on;
     this.steps = steps;
@@ -350,13 +358,21 @@ export class RunSession {
       this.showProgress({ current: 0, total: 0, label: '' });
     }
 
-    const { commits, files } = runner.result;
-
     // **Persisted whether or not anything changed.** A run that did nothing is exactly
     // the run someone asks "why didn't you" about — the record that answers that has
     // to exist even when `files` is empty.
     const record = buildRunRecord(task, startedAt, ledgerEvents);
     await this.context.workspaceState.update(LAST_RUN_KEY, record);
+
+    await this.wrapUp(runner, task, summary, closing);
+  }
+
+  /**
+   * What follows a run: its closing words, where the work goes, a review of it, and what
+   * next when it could not get past something missing.
+   */
+  private async wrapUp(runner: AgentRunner, task: string, summary: string, closing: string): Promise<void> {
+    const { commits, files } = runner.result;
 
     // **A blocked run is not a finished milestone.** It ended on a missing dependency the
     // person has just been asked about, so there is nothing to mark off, land or review
@@ -367,6 +383,21 @@ export class RunSession {
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
     if (changed > 0) await this.offerReview(commits, files);
+
+    // **And what next, when it could not get past something missing.** Without this the
+    // run simply ended, and "continue building" walked into the same wall again.
+    const missing = runner.stillMissing;
+    if (missing) await this.afterMissing(missing, summary);
+  }
+
+  /** Keeps what the run proposed beside what was missing, then hands both to the offer. */
+  private async afterMissing(missing: MissingDependency, proposal: string): Promise<void> {
+    const record = activeBlocker(this.context.workspaceState.get(BLOCKER_KEY), Date.now());
+    if (record?.name === missing.name && proposal.trim()) {
+      await this.context.workspaceState.update(BLOCKER_KEY, { ...record, proposal });
+    }
+    this.log(`agent: run ended with ${missing.name} still missing — offering what next`);
+    await this.blockedHandler?.(missing, proposal);
   }
 
   /**

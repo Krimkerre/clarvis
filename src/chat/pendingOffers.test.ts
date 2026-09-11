@@ -21,7 +21,7 @@ test('stop reaches the stop path while review findings are waiting', () => {
 });
 
 test('stop reaches the stop path whichever offer is armed', () => {
-  for (const offer of ['review', 'resume', 'scope', 'build', 'plan'] as const) {
+  for (const offer of ['review', 'blocked', 'resume', 'scope', 'build', 'plan'] as const) {
     assert.equal(offerToConsume('stop', [offer]), 'stop', `${offer} must not swallow stop`);
   }
 });
@@ -49,4 +49,12 @@ test('an ordinary message goes to the first armed offer in order', () => {
 test('a message with nothing waiting routes normally', () => {
   assert.equal(offerToConsume('what is broken?', []), 'none');
   assert.equal(offerToConsume('stop', []), 'stop');
+});
+
+test('the question after a missing dependency answers before an older offer to resume or build', () => {
+  // It is about the run that just ended. A "yes" meant for it must not start the paused
+  // build instead, which would walk straight back into the missing piece.
+  assert.equal(offerToConsume('yes', ['build', 'blocked']), 'blocked');
+  assert.equal(offerToConsume('yes', ['resume', 'blocked']), 'blocked');
+  assert.equal(offerToConsume('yes', ['blocked', 'review']), 'review');
 });

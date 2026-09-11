@@ -194,7 +194,7 @@ export function missingOutcome(missing: MissingDependency, answer: string | unde
   if (answer === ANOTHER_WAY) {
     return {
       decision: 'another-way',
-      toldTheModel: `The user does not want ${name} installed. Do not install it or anything else, and do not change how this computer is set up. If the work can be done without ${name} using what is already installed, do that. If the plan depends on ${name}, stop and say plainly what in the plan would have to change — do not edit the plan or tick any step yourself.`,
+      toldTheModel: `The user does not want ${name} installed. Do not install it or anything else, and do not change how this computer is set up. If the work can be done without ${name} using what is already installed, do that. If the plan depends on ${name}, work out the smallest change to the plan that avoids it using only what is already installed, then stop and put it to the user in two or three plain sentences, ending on the question of whether to change the plan that way. Do not edit plan.md, write code for that change, or tick any step: they decide first, and Clarvis asks them.`,
     };
   }
   if (answer === INSTALL_MYSELF) {
@@ -224,6 +224,8 @@ export interface BlockerRecord {
   evidence: string;
   decision: MissingDecision;
   at: number;
+  /** What the run proposed instead, when it could not get past this and said how. */
+  proposal?: string;
 }
 
 const DECISIONS: Record<MissingDecision, string> = {
@@ -256,6 +258,7 @@ export function activeBlocker(raw: unknown, now: number): BlockerRecord | undefi
     evidence: String(record.evidence ?? ''),
     decision: record.decision,
     at: record.at,
+    ...(typeof record.proposal === 'string' && record.proposal.trim() ? { proposal: record.proposal } : {}),
   };
 }
 
@@ -267,4 +270,59 @@ export function clearsBlocker(record: BlockerRecord | undefined, command: string
 /** The fact line an answer is given, so a missing dependency is not explained away. */
 export function blockerLine(record: BlockerRecord, when: string): string {
   return `Missing on this computer: ${record.name} (${record.about}) — found ${when} running "${record.command}", which said: ${record.evidence}. What the person chose: ${DECISIONS[record.decision]}.`;
+}
+
+export const CHANGE_PLAN = 'Change the plan like that';
+export const LEAVE_IT = 'Leave it for now';
+
+export type BlockedDecision = 'change-plan' | 'install-myself' | 'leave';
+
+/**
+ * What can happen after a run that could not get past something missing.
+ *
+ * **Found live, 11 September 2026.** Told to find another way round a missing tkinter,
+ * the model said the plan needed rethinking and stopped — and nothing followed that
+ * could get from there to a plan that would build: the run offered to merge, and
+ * "continue building" walked into the same wall. Changing the plan is only offered
+ * when the run said how.
+ */
+export function blockedOptions(hasProposal: boolean): string[] {
+  return [...(hasProposal ? [CHANGE_PLAN] : []), INSTALL_MYSELF, LEAVE_IT];
+}
+
+/**
+ * What a reply to that offer means, or nothing when it is not a reply to it.
+ *
+ * Only a clear yes changes the plan. Anything else typed while the buttons show is a
+ * message in its own right, not a decision to rewrite the user's document.
+ */
+export function readBlockedAnswer(reply: string): BlockedDecision | undefined {
+  const text = reply.trim().toLowerCase();
+  if (text === CHANGE_PLAN.toLowerCase() || /^(y|yes|yeah|yep|ok|okay|sure|go ahead|do it|change (it|the plan))\b/.test(text)) {
+    return 'change-plan';
+  }
+  if (text === INSTALL_MYSELF.toLowerCase() || /^i(’|'| wi)ll install/.test(text)) return 'install-myself';
+  if (text === LEAVE_IT.toLowerCase() || /^(no|nope|not now|leave it)\b/.test(text)) return 'leave';
+  return undefined;
+}
+
+/**
+ * The task that changes the plan the way the user just agreed, then builds the milestone.
+ *
+ * **Only what depended on the missing piece is rewritten.** The plan is the user's
+ * document and everything else in it was agreed already — every other line, tick and
+ * result stays as it was.
+ */
+export function planChangeTask(name: string, proposal: string, milestoneTask: string): string {
+  return [
+    `${name} is not on this computer, and the user chose not to install it. You proposed this change to the plan, and they agreed to it:`,
+    '',
+    proposal.trim(),
+    '',
+    `First update plan.md for that change. Rewrite only what depended on ${name} — the language or tooling it names, and any step or check that names it — so the plan says what will now be built. Leave every other line, tick and result exactly as it is, and install nothing.`,
+    '',
+    'Then carry on with the milestone:',
+    '',
+    milestoneTask,
+  ].join('\n');
 }

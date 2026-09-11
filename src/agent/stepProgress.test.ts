@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchStep, onlyAnnounced, readStepMarkers } from './stepProgress';
+import { announcesStep, matchStep, readStepMarkers } from './stepProgress';
 
 test('a marker is found and removed from the text', () => {
   const { announced, text } = readStepMarkers('STEP: Create the entry point\nWriting main.py now.');
@@ -43,12 +43,15 @@ test('an announcement matching nothing moves nothing', () => {
   assert.equal(matchStep('   ', ['Create the entry point']), undefined);
 });
 
-test('a reply that only announced its step is told apart from a finished one', () => {
-  // Found live, 11 September 2026: "continue building" got back exactly this line and no
-  // tool call, and the run ended as though the work were done.
-  assert.equal(onlyAnnounced('STEP: Add a label showing the timer state'), true);
-  assert.equal(onlyAnnounced('STEP: Add a label\n\n'), true);
-  assert.equal(onlyAnnounced('STEP: Add a label\nAdded it and ran the check.'), false);
-  assert.equal(onlyAnnounced('Added the label and ran the check.'), false);
-  assert.equal(onlyAnnounced(''), false);
+test('a reply that announced a step and did nothing is told apart from a finished one', () => {
+  // Found live, 11 September 2026: "continue building" got back just the STEP line, and
+  // later the STEP line with its check and result copied out of plan.md. Both ended the
+  // run as though the work were done.
+  assert.equal(announcesStep('STEP: Add a label showing the timer state'), true);
+  assert.equal(
+    announcesStep('STEP: Create a tkinter window\n- Check: Run the script; a window appears.\n- Result: not run yet'),
+    true
+  );
+  assert.equal(announcesStep('Added the label and ran the check.'), false);
+  assert.equal(announcesStep(''), false);
 });

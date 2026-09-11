@@ -6,6 +6,11 @@ import {
   blockerLine,
   blockerRecord,
   BLOCKER_TTL_MS,
+  blockedOptions,
+  CHANGE_PLAN,
+  LEAVE_IT,
+  planChangeTask,
+  readBlockedAnswer,
   clearsBlocker,
   explainMissing,
   INSTALL_HERE,
@@ -112,7 +117,9 @@ test('finding another way goes on, forbidden to install, change the machine, or 
   assert.equal(outcome.halt, undefined);
   assert.match(outcome.toldTheModel, /Do not install/);
   assert.match(outcome.toldTheModel, /do not change how this computer is set up/);
-  assert.match(outcome.toldTheModel, /do not edit the plan or tick any step/);
+  assert.match(outcome.toldTheModel, /smallest change to the plan/);
+  assert.match(outcome.toldTheModel, /Do not edit plan\.md/);
+  assert.match(outcome.toldTheModel, /tick any step/);
 });
 
 test('installing into the project is only an answer where that is possible', () => {
@@ -150,4 +157,40 @@ test('the remembered record is read back while recent, and settled when the comm
   const line = blockerLine(record, '5m ago');
   assert.match(line, /Missing on this computer: tkinter/);
   assert.match(line, /they will install it themselves/);
+});
+
+test('after a run that could not get past it, changing the plan is offered only when the run said how', () => {
+  // Found live, 11 September 2026: "Find another way" ended on a merge offer, and there
+  // was no route from there to a plan that could be built.
+  assert.deepEqual(blockedOptions(true), [CHANGE_PLAN, INSTALL_MYSELF, LEAVE_IT]);
+  assert.deepEqual(blockedOptions(false), [INSTALL_MYSELF, LEAVE_IT]);
+});
+
+test('only a clear yes changes the plan; an unrelated message is not an answer', () => {
+  assert.equal(readBlockedAnswer(CHANGE_PLAN), 'change-plan');
+  assert.equal(readBlockedAnswer('yes please'), 'change-plan');
+  assert.equal(readBlockedAnswer(INSTALL_MYSELF), 'install-myself');
+  assert.equal(readBlockedAnswer("i'll install it tonight"), 'install-myself');
+  assert.equal(readBlockedAnswer(LEAVE_IT), 'leave');
+  assert.equal(readBlockedAnswer('no'), 'leave');
+  assert.equal(readBlockedAnswer('that last command failed'), undefined);
+  assert.equal(readBlockedAnswer('why does it need tkinter?'), undefined);
+});
+
+test('the plan change rewrites only what depended on the missing piece, then builds', () => {
+  const task = planChangeTask('tkinter', 'Build the timer as a web page instead. Shall I?', 'Continue building Distraction Tax.');
+
+  assert.match(task, /Build the timer as a web page instead/);
+  assert.match(task, /Rewrite only what depended on tkinter/);
+  assert.match(task, /Leave every other line, tick and result exactly as it is/);
+  assert.match(task, /install nothing/);
+  assert.ok(task.endsWith('Continue building Distraction Tax.'), 'the milestone task comes last');
+});
+
+test('what the run proposed is remembered with what was missing', () => {
+  const now = 1_000_000;
+  const record = { ...blockerRecord('python main.py', missingDependency(TKINTER, 1)!, 'another-way', now), proposal: 'A web page.' };
+
+  assert.equal(activeBlocker(record, now)?.proposal, 'A web page.');
+  assert.equal(activeBlocker({ ...record, proposal: '  ' }, now)?.proposal, undefined);
 });

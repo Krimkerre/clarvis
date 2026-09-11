@@ -1,3 +1,4 @@
+import { activeBlocker, BLOCKER_KEY, blockedOptions, planChangeTask, readBlockedAnswer } from '../agent/missingDependency';
 import * as vscode from 'vscode';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { AvatarController } from '../AvatarController';
@@ -493,6 +494,49 @@ export class ChatService {
     return false;
   }
 
+  /** Set between offering what next after a missing dependency and the user answering. */
+  private awaitingBlocked?: { name: string; proposal: string };
+
+  /**
+   * Offers what next when a run could not get past something missing: change the plan
+   * the way the run proposed, install it themselves, or leave it.
+   */
+  private async offerAfterMissing(name: string, proposal: string): Promise<void> {
+    this.awaitingBlocked = { name, proposal };
+    this.panel.post({ type: 'choices', items: blockedOptions(Boolean(proposal.trim())).map((label) => ({ label })) });
+  }
+
+  /** Takes the reply to that offer. `false` when the message was not a reply to it. */
+  private async answeredBlockedOffer(question: string): Promise<boolean> {
+    const offer = this.awaitingBlocked;
+    this.awaitingBlocked = undefined;
+    this.panel.post({ type: 'choices-clear' });
+    const decision = offer ? readBlockedAnswer(question) : undefined;
+    if (!offer || !decision) return false;
+
+    if (decision === 'change-plan' && offer.proposal.trim()) return this.changePlanAndBuild(offer.name, offer.proposal);
+    const record = activeBlocker(this.context.workspaceState.get(BLOCKER_KEY), Date.now());
+    if (decision === 'install-myself') {
+      if (record) await this.context.workspaceState.update(BLOCKER_KEY, { ...record, decision: 'install-myself' });
+      await this.note(`Right. Say "continue building" once ${offer.name} is installed, and I'll pick the plan back up.`);
+      return true;
+    }
+    this.log(`chat: plan left as it is, ${offer.name} still missing`);
+    return true;
+  }
+
+  /** Changes the plan as agreed, then builds its unfinished milestone against it. */
+  private async changePlanAndBuild(name: string, proposal: string): Promise<boolean> {
+    const next = await pendingBuild();
+    if (!next) return false;
+
+    await this.context.workspaceState.update(BLOCKER_KEY, undefined);
+    this.log(`chat: changing the plan to do without ${name}, then milestone ${next.milestone.number}`);
+    const task = planChangeTask(name, proposal, nextMilestoneTask(next.milestone, next.projectName, next.milestones));
+    await this.startNextMilestone(task, next.steps);
+    return true;
+  }
+
   /** Set between offering to resume a build and the user answering. */
   private awaitingBuildAnswer?: PendingBuild;
 
@@ -695,6 +739,16 @@ export class ChatService {
     const next = await pendingBuild();
     if (!next) return false;
 
+    // **Not straight back into the same wall.** The last run could not get past something
+    // missing that the plan needs, and said what it would change instead: that question
+    // comes first, rather than a run that stops in the same place.
+    const blocker = activeBlocker(this.context.workspaceState.get(BLOCKER_KEY), Date.now());
+    if (blocker?.decision === 'another-way' && blocker.proposal) {
+      await this.note(`Last time, ${blocker.name} was missing from this computer, and the plan needs it. What I suggested:\n\n${blocker.proposal}`);
+      await this.offerAfterMissing(blocker.name, blocker.proposal);
+      return true;
+    }
+
     this.log(`chat: "${question.trim().slice(0, 50)}" — picking plan.md back up at milestone ${next.milestone.number}`);
     const task = nextMilestoneTask(next.milestone, next.projectName, next.milestones);
     await this.startNextMilestone(`${task}\n\nWhat they said when asking you to carry on: ${question.trim()}`, next.steps);
@@ -725,6 +779,7 @@ export class ChatService {
     // decide, not this method's — and because the chain is what hid the stop bug.
     const offers: Record<ArmedOffer, { armed: boolean; answer: () => Promise<boolean> }> = {
       review: { armed: this.runs.hasReviewFindings, answer: () => this.answeredReviewOffer(question) },
+      blocked: { armed: Boolean(this.awaitingBlocked), answer: () => this.answeredBlockedOffer(question) },
       resume: { armed: this.awaitingResume, answer: () => this.answeredResumeOffer(question) },
       scope: { armed: Boolean(this.awaitingScopeAnswer), answer: () => this.answeredScopeOffer(question) },
       build: { armed: Boolean(this.awaitingBuildAnswer), answer: () => this.answeredBuildOffer(question) },
@@ -919,6 +974,7 @@ export class ChatService {
       (items) => panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       log
     );
+    this.runs.onBlocked((missing, proposal) => this.offerAfterMissing(missing.name, proposal));
     this.replier = new Replier(
       panel,
       avatar,

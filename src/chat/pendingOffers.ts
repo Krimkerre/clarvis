@@ -19,7 +19,7 @@ import { isStopRequest } from './chatCommands';
  */
 
 /** The questions that can be outstanding, in the order they are tried. */
-export const OFFER_ORDER = ['review', 'resume', 'scope', 'build', 'plan', 'interview'] as const;
+export const OFFER_ORDER = ['review', 'blocked', 'resume', 'scope', 'build', 'plan', 'interview'] as const;
 
 export type ArmedOffer = (typeof OFFER_ORDER)[number];
 

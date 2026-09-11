@@ -21,6 +21,8 @@ import { nudgeDelay, nudgeLine } from './waitingNudge';
 export class PendingChoice {
   private waiting?: (answer: string | undefined) => void;
   private offered: string[] = [];
+  /** Whether only the offered options answer the question in flight. */
+  private strict = false;
   private timer?: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -47,10 +49,20 @@ export class PendingChoice {
    * someone answering "no, do the other thing" is saying something the buttons could
    * not have offered.
    */
-  ask(options: { label: string; detail?: string }[], about?: string): Promise<string | undefined> {
+  ask(
+    options: { label: string; detail?: string }[],
+    about?: string,
+    /**
+     * Only these options answer it. For a question whose answers are all buttons, where
+     * typed words are far more likely to be a new message than a reply — see
+     * `RunSession.offerToLandTheWork`.
+     */
+    strict = false
+  ): Promise<string | undefined> {
     // A second question while one is pending would leave the first hanging forever.
     this.cancel();
     this.offered = options.map((option) => option.label);
+    this.strict = strict;
     this.offer(options);
     if (about && this.nudge) this.startNudging(about);
 
@@ -83,15 +95,26 @@ export class PendingChoice {
     this.timer = undefined;
   }
 
-  /** Hands the user's message to the question waiting for it. */
-  supply(answer: string): void {
+  /**
+   * Hands the user's message to the question waiting for it.
+   *
+   * `false` when the message was not an answer to a strict question: the question is
+   * dropped as unanswered, and the message is left to be read as whatever it was.
+   */
+  supply(answer: string): boolean {
     const waiting = this.waiting;
-    if (!waiting) return;
+    if (!waiting) return false;
 
+    const matched = this.match(answer);
     this.waiting = undefined;
     this.stopNudging();
     this.offer([]);
-    waiting(this.match(answer));
+    if (this.strict && matched === undefined) {
+      waiting(undefined);
+      return false;
+    }
+    waiting(matched ?? answer.trim());
+    return true;
   }
 
   /**
@@ -111,13 +134,13 @@ export class PendingChoice {
   }
 
   /**
-   * The label the user meant, or their own words.
+   * The label the user meant, or nothing when they typed something else.
    *
    * Numbers work because the panel used to render options as a numbered list and
    * people still type "1"; case-insensitive matching because "do it" and "Do it" are
    * the same answer and refusing one of them would be pedantry.
    */
-  private match(answer: string): string {
+  private match(answer: string): string | undefined {
     const trimmed = answer.trim();
 
     const byNumber = Number.parseInt(trimmed, 10);
@@ -125,6 +148,6 @@ export class PendingChoice {
       return this.offered[byNumber - 1];
     }
 
-    return this.offered.find((label) => label.toLowerCase() === trimmed.toLowerCase()) ?? trimmed;
+    return this.offered.find((label) => label.toLowerCase() === trimmed.toLowerCase());
   }
 }

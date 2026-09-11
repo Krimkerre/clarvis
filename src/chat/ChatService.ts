@@ -12,12 +12,12 @@ import { Replier } from './Replier';
 import { RunSession } from './RunSession';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
-import { chatAction, isStopRequest } from './chatCommands';
+import { chatAction, isContinueRequest, isStopRequest } from './chatCommands';
 import { ChatActions } from './ChatActions';
 import { ModelService } from '../model/ModelService';
 import { routeFor } from './routing';
 import { classifyIntent } from './intentModel';
-import { asksFirst, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM, capabilities } from './modes';
+import { asksFirst, buildMode, canEdit, ChatMode, modeSpec, PLAN_ADDENDUM, capabilities } from './modes';
 import { Voice, opening } from '../personality/Voice';
 import { researchWorkspace } from '../planning/workspaceResearch';
 import { looksLikeNewProject, planOfferPrompt } from '../planning/workspaceSignals';
@@ -40,7 +40,7 @@ import { fixFindingsTask } from '../planning/reviewFollowUp';
 import { addFindingsToPlan } from '../planning/recordMilestone';
 import { handoffOffer } from '../planning/nervisHandoff';
 import { clearNervisTask, waitingNervisTask } from '../planning/nervisTaskFile';
-import { interruptedBuild, PendingBuild } from '../planning/pendingBuild';
+import { interruptedBuild, pendingBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
 import { nextMilestoneTask } from '../planning/nextMilestoneTask';
@@ -238,7 +238,9 @@ export class ChatService {
           // one. Auto guesses whether each message is a job or a question, which is
           // a useful default to *choose* and the wrong thing to land in by accident
           // immediately after signing off on a plan.
-          await this.actions.setMode('agent');
+          // Unattended stays Unattended: somebody who chose not to be asked before each
+          // step chose that for the build too.
+          await this.actions.setMode(buildMode(modeBefore));
           this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
           // This run has a checklist to tick and has earned the pause afterwards; a
           // one-off "rename this variable" has neither.
@@ -267,10 +269,9 @@ export class ChatService {
    * had already been given. Everything else typed during a run is a correction.
    */
   private async runTook(question: string): Promise<boolean> {
-    if (this.runs.awaitingStep) {
-      this.runs.answerStep(question);
-      return true;
-    }
+    // A question that takes only its own buttons hands anything else back, to be read
+    // as the message it is — see `offerToLandTheWork`.
+    if (this.runs.awaitingStep && this.runs.answerStep(question)) return true;
 
     if (this.runs.isRunning) {
       await this.handleMidRun(question);
@@ -680,6 +681,26 @@ export class ChatService {
     this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' })
   );
   /**
+   * Picks the approved plan back up when told to carry on, at its unfinished milestone.
+   *
+   * Only in a mode that may edit, and only with a milestone left: "continue" in Chat
+   * mode is conversation, and in a folder with no plan it is whatever it would have been.
+   * What they said rides along, because "continue … fix timer.py" says more than go.
+   */
+  private async continuedBuild(question: string): Promise<boolean> {
+    if (this.runs.isRunning || !isContinueRequest(question) || !canEdit(this.actions.mode())) {
+      return false;
+    }
+    const next = await pendingBuild();
+    if (!next) return false;
+
+    this.log(`chat: "${question.trim().slice(0, 50)}" — picking plan.md back up at milestone ${next.milestone.number}`);
+    const task = nextMilestoneTask(next.milestone, next.projectName, next.milestones);
+    await this.startNextMilestone(`${task}\n\nWhat they said when asking you to carry on: ${question.trim()}`, next.steps);
+    return true;
+  }
+
+  /**
    * Starts the next milestone from an approved plan.
    *
    * Same run path as the first one — step approval on, progress showing, the pause
@@ -687,7 +708,7 @@ export class ChatService {
    * part of the plan it is building.
    */
   async startNextMilestone(task: string, steps: string[]): Promise<void> {
-    await this.actions.setMode('agent');
+    await this.actions.setMode(buildMode(this.actions.mode()));
     this.runs.setStepApproval(true, () => asksFirst(this.actions.mode()));
     this.runs.setFromPlan(true, steps);
     await this.runs.run(task, 'Right — on to the next one.');
@@ -1121,6 +1142,11 @@ export class ChatService {
       // Unless it is not a correction at all. §0: scope discovered mid-build kicks
       // back to Plan Mode rather than growing silently inside Code Mode.
       () => this.runTook(question),
+
+      // **"Continue" picks the plan back up.** Found live: a milestone run was stopped,
+      // and "continue from plan.md.. fix timer.py" went out as a one-off job, so nothing
+      // was ticked and every later run happened outside the plan.
+      () => this.continuedBuild(question),
 
       // Requests to *open* something are handled before answering: "change the voice"
       // wants the picker, not a paragraph about where the setting lives.

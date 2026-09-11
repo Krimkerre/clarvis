@@ -327,3 +327,15 @@ export function forgetTarget(text: string): string | undefined {
 
   return named.length > 0 ? stripped : undefined;
 }
+
+/**
+ * "Continue", as a request to pick an approved plan back up.
+ *
+ * Found live, 11 September 2026: after a milestone run was stopped, "continue from
+ * plan.md.. fix timer.py" went out as a one-off job — nothing in the plan was ticked and
+ * no later milestone was ever offered. Only the opening words count: "can you continue
+ * explaining" is a question, not a build.
+ */
+export function isContinueRequest(text: string): boolean {
+  return /^(continue|carry on|keep (going|building)|resume)\b/i.test(text.trim());
+}

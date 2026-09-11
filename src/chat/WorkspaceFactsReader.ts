@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { existsSync } from 'fs';
+import { existsSync, readdirSync } from 'fs';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import type { Pattern } from '../memory/patterns';
 import { activeFailure, parseRecord, FailureRecord, FAILURE_KEY } from '../briefing/lastFailure';
@@ -70,7 +70,23 @@ export class WorkspaceFactsReader {
       problems: countProblems(),
       ...activeFileProblems(),
       lastRun: this.context.workspaceState.get(LAST_RUN_KEY),
+      files: topLevelEntries(),
     };
+  }
+}
+
+/** The project folder's own top-level entries, by name — hidden ones left out, capped. */
+function topLevelEntries(): string[] {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!root) return [];
+  try {
+    return readdirSync(root, { withFileTypes: true })
+      .filter((entry) => !entry.name.startsWith('.'))
+      .map((entry) => (entry.isDirectory() ? `${entry.name}/` : entry.name))
+      .sort()
+      .slice(0, 40);
+  } catch {
+    return [];
   }
 }
 

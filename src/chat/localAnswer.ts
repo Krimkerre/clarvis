@@ -55,6 +55,8 @@ export interface WorkspaceFacts {
    * about *this* run's reasoning could go stale against a later one.
    */
   lastRun?: RunRecord;
+  /** The project folder's top-level entries by name, folders ending in `/`. */
+  files?: string[];
 }
 
 /** A local reply, plus the face to wear while giving it. */
@@ -347,12 +349,16 @@ function plural(count: number, one: string, many: string): string {
  * rather than empty — a blank line here reads to the model as a fact it has been given.
  */
 const FACT_LINES: ((facts: WorkspaceFacts) => string | undefined)[] = [
+  // **"Clean" only when it is.** This read "working tree clean, plus 3 untracked
+  // file(s)", and asked whether the build had stopped he answered that the working tree
+  // was clean — about a project none of whose files had ever been committed.
   ({ git }) =>
     !git
       ? undefined
       : `Current branch: ${git.branch}` +
-      (git.dirtyCount > 0 ? `, ${git.dirtyCount} uncommitted change(s)` : ', working tree clean') +
-        (git.untrackedCount ? `, plus ${git.untrackedCount} untracked file(s)` : ''),
+        (git.dirtyCount > 0 ? `, ${git.dirtyCount} uncommitted change(s)` : '') +
+        (git.untrackedCount ? `, ${git.untrackedCount} file(s) never committed` : '') +
+        (git.dirtyCount === 0 && !git.untrackedCount ? ', working tree clean' : ''),
 
   ({ running, now }) => {
     if (running.length === 0) return undefined;
@@ -388,6 +394,12 @@ const FACT_LINES: ((facts: WorkspaceFacts) => string | undefined)[] = [
 
   ({ recentFiles }) =>
     recentFiles.length > 0 ? `Recently edited: ${recentFiles.slice(0, 5).join(', ')}` : undefined,
+
+  // **What is in the folder, by name.** Asked what was next in plan.md, he said there was
+  // no plan.md — in a folder holding one — because nothing he was given listed the files,
+  // and a file nobody mentioned reads as a file that is not there.
+  ({ files }) =>
+    files && files.length > 0 ? `At the top of the project: ${files.join(', ')}` : undefined,
 ];
 
 export function factsBlock(facts: WorkspaceFacts): string {

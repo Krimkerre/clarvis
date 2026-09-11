@@ -71,6 +71,8 @@ export function nextMilestoneTask(
     'When the steps are done, run each check listed under them and report what actually',
     'happened — the command you ran and its real output, not what you expect it to say.',
     'A check that fails is a result, not a failure to hide: say so and stop.',
+    'A check has to finish in seconds: anything that waits on the clock — a timer, a sleep,',
+    'a countdown — gets the shortest duration the program accepts, never the real one.',
     '',
     ...(last
       ? ['Then stop. The plan is complete at that point.']

@@ -101,6 +101,16 @@ async function act(problem: GitProblem, root: string | undefined, log: (message:
     // repository in …") that means nothing to someone who does not know what git is —
     // success here is the run proceeding normally afterwards, not this sentence.
     await runCommand(root, 'git init', () => {});
+    // **A first commit, so there is something to branch from and merge back into.**
+    // Found live, 11 September 2026: a repository with no commits has a branch name and
+    // nothing behind it — every run branched from nothing, and "Merge" had nothing to
+    // merge into. Empty on purpose: what is already in the folder is the person's.
+    const first = await runCommand(root, 'git commit --allow-empty -m "Start of the project"', () => {});
+    log(
+      first.exitCode === 0
+        ? 'git offer: made the first, empty commit'
+        : `git offer: the first commit failed — ${first.output.trim().slice(0, 160)}`
+    );
     return;
   }
 

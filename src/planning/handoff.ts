@@ -162,6 +162,11 @@ export function handoffTask(
     'When the steps are done, run each check above and report what actually happened —',
     'the command you ran and its real output, not what you expect it to say. A check',
     'that fails is a result, not a failure to hide: say so and stop.',
+    // **A check has to end on its own.** Found live, 11 September 2026: "run with a
+    // 5-second interval" was run as `python timer.py 5`, which the plan's own CLI step
+    // reads as minutes — the run was stopped as hung, and milestone 1 never finished.
+    'A check has to finish in seconds: anything that waits on the clock — a timer, a sleep,',
+    'a countdown — gets the shortest duration the program accepts, never the real one.',
     milestone
       ? `Then stop. Build milestone ${milestone.number} and no further — the next one is a separate decision, and not yours.`
       : 'Then stop. Do not build past milestone 1, and do not start the next one.',

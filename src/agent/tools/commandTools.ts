@@ -21,6 +21,18 @@ export const COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 /** Output beyond this is truncated: a model does not need 40MB of webpack logs. */
 export const MAX_OUTPUT_CHARS = 30_000;
 
+/**
+ * The environment a command runs with: the editor's own, plus one line.
+ *
+ * **`PYTHONUNBUFFERED`, because output is the only sign a command is alive.** Python
+ * holds its output back when it writes to a pipe rather than a terminal, which is what
+ * this is. Found live, 11 September 2026: a check ran `python timer.py 5`, the terminal
+ * stayed blank, and the run was stopped as hung while the countdown was running.
+ */
+function commandEnvironment(): NodeJS.ProcessEnv {
+  return { ...process.env, PYTHONUNBUFFERED: '1' };
+}
+
 export interface CommandResult {
   command: string;
   exitCode: number | undefined;
@@ -86,10 +98,11 @@ export async function runCommand(
     // deny-list stays, demoted to explaining *why* something is dangerous rather than
     // being the only thing standing there.
     const child = spawnAs?.confined
-      ? spawn(spawnAs.file, spawnAs.args, { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] })
+      ? spawn(spawnAs.file, spawnAs.args, { cwd: root, env: commandEnvironment(), stdio: ['ignore', 'pipe', 'pipe'] })
       : spawn(command, {
           cwd: root,
           shell: true,
+          env: commandEnvironment(),
           // A pipe rather than inherit: the extension host has no console to inherit.
           stdio: ['ignore', 'pipe', 'pipe'],
         });

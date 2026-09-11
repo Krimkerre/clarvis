@@ -133,3 +133,27 @@ test('a pending question can be answered from outside, as a mode change does', (
     assert.equal(pending.isWaiting, false);
   });
 });
+
+test('a question that takes only its own options lets anything else go', async () => {
+  // Found live, 11 September 2026: "that last command failed", typed while "fold this
+  // into master?" waited, came back as the answer — and was read as merge.
+  const { pending } = harness();
+
+  const answer = pending.ask(YES_NO, undefined, true);
+
+  assert.equal(pending.supply('that last command failed'), false);
+  assert.equal(await answer, undefined);
+  assert.equal(pending.isWaiting, false, 'the question should be dropped, not left open');
+});
+
+test('its own options still answer a strict question, by label or by number', async () => {
+  const { pending } = harness();
+
+  const byLabel = pending.ask(YES_NO, undefined, true);
+  assert.equal(pending.supply('skip this step'), true);
+  assert.equal(await byLabel, 'Skip this step');
+
+  const byNumber = pending.ask(YES_NO, undefined, true);
+  assert.equal(pending.supply('1'), true);
+  assert.equal(await byNumber, 'Do it');
+});

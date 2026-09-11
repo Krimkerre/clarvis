@@ -7,6 +7,7 @@ import { agentSystemPrompt } from './agentPrompt';
 import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
 import { interjectionMessage } from './interjections';
 import { commitSubject } from './commitSubject';
+import { toolCallsInText } from './textToolCalls';
 import { phrase } from '../personality/Voice';
 import {
   allowsNetwork,
@@ -365,8 +366,18 @@ export class AgentRunner {
     return undefined;
   }
 
-  /** Leaving cleanly: the branch is tidied, because stopping is not a reason to litter. */
-  private async stopped(branch: AgentBranch): Promise<AgentEvent> {
+  /**
+   * Leaving cleanly: what the run wrote is committed to its own branch, and the branch is
+   * tidied if that left it holding nothing.
+   *
+   * **Committed, not abandoned.** Found live, 11 September 2026: a milestone run was
+   * stopped after writing `timer.py`, nothing was committed, and every later run found
+   * an uncommitted file that existed before it started — "those stay the user's" — so
+   * nothing in the project was ever committed. What a stopped run wrote is still the
+   * run's own work, and a commit on its branch is what makes it reviewable and undoable.
+   */
+  private async stopped(branch: AgentBranch, task: string): Promise<AgentEvent> {
+    await this.finish(branch, task, 'Stopped before finishing');
     this.tidied = await branch.discardIfEmpty();
     return { kind: 'done', text: 'Stopped.', files: [...this.touched] };
   }
@@ -525,7 +536,7 @@ export class AgentRunner {
 
     while (this.steps < cap) {
       if (signal.aborted) {
-        yield this.record(await this.stopped(branch));
+        yield this.record(await this.stopped(branch, task));
         return;
       }
 
@@ -557,12 +568,14 @@ export class AgentRunner {
         }
       } catch (error) {
         if (signal.aborted) {
-          yield this.record(await this.stopped(branch));
+          yield this.record(await this.stopped(branch, task));
           return;
         }
         yield this.record({ kind: 'error', text: `The model gave up: ${String(error)}` });
         return;
       }
+
+      narration = this.takeWrittenCalls(calls, narration);
 
       // No tool calls means the model considers the task finished.
       if (calls.length === 0) {
@@ -916,6 +929,23 @@ export class AgentRunner {
       `\n\nYour own work on \`${branch.previous}\` is untouched — my changes are on a temp branch.` +
       (tangled ? `\n\n${tangled}` : '')
     );
+  }
+
+  /**
+   * Tool calls the model wrote out as text, moved into `calls`; returns what is left to say.
+   *
+   * **A tool call written out as text is still a tool call.** Found live, 11 September
+   * 2026: one reply carried `<function=listFiles>` in its text and no structured call,
+   * and the run ended after 0 steps with the markup on screen. Its own method because
+   * the loop is at the complexity ceiling `eslint.config.mjs` enforces.
+   */
+  private takeWrittenCalls(calls: ToolCall[], narration: string): string {
+    if (calls.length > 0) return narration;
+    const written = toolCallsInText(narration);
+    if (written.calls.length === 0) return narration;
+    this.log(`agent: ${written.calls.length} tool call(s) arrived as text — reading them as calls`);
+    calls.push(...written.calls);
+    return written.rest;
   }
 
   /** Commits the run's own files onto its own branch, if there was anything to commit. */

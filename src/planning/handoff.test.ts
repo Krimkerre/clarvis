@@ -84,6 +84,7 @@ test('only the milestone being handed over is described, and it stops there', ()
 
   assert.match(task, /Milestone 2 of 4 — Batch renaming/);
   assert.match(task, /Build milestone 2 and no further/);
+  assert.match(task, /finish in seconds/);
 });
 
 test('the no-plan outcome still offers to write the thing', () => {

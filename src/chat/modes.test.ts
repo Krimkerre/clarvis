@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MODES, modeSpec, canEdit, PLAN_ADDENDUM } from './modes';
-import { isStopRequest } from './chatCommands';
+import { MODES, modeSpec, canEdit, PLAN_ADDENDUM, buildMode } from './modes';
+import { isContinueRequest, isStopRequest } from './chatCommands';
 import { chatAction, forgetTarget } from './chatCommands';
 
 test('only the three working modes may change files', () => {
@@ -12,6 +12,22 @@ test('only the three working modes may change files', () => {
   assert.equal(canEdit('agent'), true);
   assert.equal(canEdit('chat'), false);
   assert.equal(canEdit('plan'), false);
+});
+
+test('a build stays unattended when that is the mode, and is agent otherwise', () => {
+  // Unattended is the one way to say "stop asking before each step"; a build that
+  // switched it back to Agent made every approved plan a run of "Do it" presses.
+  assert.equal(buildMode('unattended'), 'unattended');
+  for (const mode of ['agent', 'auto', 'chat', 'plan', '']) assert.equal(buildMode(mode), 'agent');
+});
+
+test('"continue" at the start of a message asks for the plan to be picked back up', () => {
+  // The sentence from the 11 September log, which went out as a one-off job instead.
+  assert.equal(isContinueRequest('continue from plan.md.. fix timer.py'), true);
+  for (const said of ['carry on', 'Keep building', 'resume']) assert.equal(isContinueRequest(said), true);
+  for (const said of ['can you continue explaining?', 'what should I continue with', 'discontinue it']) {
+    assert.equal(isContinueRequest(said), false, said);
+  }
 });
 
 test('an unknown mode falls back to auto rather than to nothing', () => {

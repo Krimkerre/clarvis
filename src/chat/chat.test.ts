@@ -361,6 +361,22 @@ test('absent facts are omitted, not reported as absent', () => {
   assert.match(block, /working tree clean/);
 });
 
+test('a tree with files never committed is not called clean', () => {
+  // Found live, 11 September 2026: "working tree clean, plus 3 untracked file(s)" became
+  // "the working tree is clean", about a project none of whose files had been committed.
+  const block = factsBlock(facts({ git: { branch: 'master', dirtyCount: 0, untrackedCount: 3 } }));
+
+  assert.ok(!/clean/.test(block), block);
+  assert.match(block, /3 file\(s\) never committed/);
+});
+
+test('the files at the top of the project are named', () => {
+  // "There is no plan.md", said in a folder holding one, because nothing listed the files.
+  const block = factsBlock(facts({ files: ['plan.md', 'timer.py'] }));
+
+  assert.match(block, /plan\.md, timer\.py/);
+});
+
 test('a project with nothing observed yields no block at all', () => {
   // An empty heading followed by nothing would still cost tokens and say nothing.
   assert.equal(factsBlock(facts()), '');

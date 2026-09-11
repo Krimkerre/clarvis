@@ -73,9 +73,9 @@ export class RunSession {
     return this.pending.isWaiting;
   }
 
-  /** Hands a typed message to the step waiting for it. */
-  answerStep(text: string): void {
-    this.pending.supply(text);
+  /** Hands a typed message to the question waiting for it; `false` if it was not an answer. */
+  answerStep(text: string): boolean {
+    return this.pending.supply(text);
   }
 
   /** The written bank, for the closing aside when no model is available. */
@@ -452,7 +452,12 @@ export class RunSession {
         { label: 'Show me what changed', detail: 'Opens the diff. Nothing moves.' },
         { label: 'Leave it there', detail: `Stays on \`${branch}\` — decide later` },
       ],
-      `where ${branch} should go`
+      `where ${branch} should go`,
+      // **Only its own buttons answer it.** Found live, 11 September 2026: "that last
+      // command failed", typed while this waited, came back as the answer, and anything
+      // that was not "Show me what changed" merged. A reply that is not one of these
+      // three now leaves the work where it is and goes on to be read as a message.
+      true
     );
 
     if (!answer || answer === 'Leave it there') {

@@ -43,16 +43,22 @@ export class DraftDocument {
   }
 
   /**
-   * Closes the draft, if it is still open.
+   * Closes the draft, if it is still open, without asking to save it.
    *
-   * An untitled document with unsaved content would normally prompt to save on
-   * close; closing its *tab* rather than the document skips that, which is right —
-   * nobody wants to be asked whether to keep a draft of the file they just approved.
+   * **Emptied first.** An untitled document with text in it is dirty, and closing a
+   * dirty tab asks whether to save — this comment used to say closing the tab skipped
+   * that. Found live, 11 September 2026: a file named `# Clockwork.md`, the draft's first
+   * heading, appeared beside `plan.md` the moment the plan was approved, identical to it.
+   * An empty untitled document is not dirty, so nothing is asked and nothing is saved.
    */
   async close(): Promise<void> {
     const document = this.document;
     this.document = undefined;
     if (!document || document.isClosed) return;
+
+    const empty = new vscode.WorkspaceEdit();
+    empty.replace(document.uri, new vscode.Range(new vscode.Position(0, 0), lastPosition(document)), '');
+    await vscode.workspace.applyEdit(empty).then(undefined, () => false);
 
     const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs);
     const mine = tabs.filter((tab) => {

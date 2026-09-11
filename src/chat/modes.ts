@@ -95,6 +95,18 @@ export function asksFirst(id: string): boolean {
 }
 
 /**
+ * The mode a build from an approved plan runs in.
+ *
+ * **Agent, unless they chose Unattended.** Pressing Start Building answers "shall I
+ * build this", so a guessing mode like Auto is the wrong place to land. But Unattended
+ * is the one way to say "stop asking before each step", and a build that switched it
+ * back to Agent turned every approved plan into a run of "Do it" presses anyway.
+ */
+export function buildMode(current: string): ChatMode {
+  return current === 'unattended' ? 'unattended' : 'agent';
+}
+
+/**
  * What he can do at all, as distinct from what this turn allows.
  *
  * **He did not know he had the rest of himself.** Asked in chat whether he could debug

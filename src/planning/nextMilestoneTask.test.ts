@@ -21,6 +21,7 @@ test('it still asks for step announcements, so progress keeps working', () => {
 
 test('it stops at the milestone it was given', () => {
   assert.match(nextMilestoneTask(milestone, 'Snapshot'), /Build milestone 2 and no further/);
+  assert.match(nextMilestoneTask(milestone, 'Snapshot'), /finish in seconds/);
 });
 
 test('the task says which milestone this is out of how many', () => {

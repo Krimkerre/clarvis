@@ -45,5 +45,4 @@ export async function readGitSummary(): Promise<
  * before the repository was chosen by folder: the extension's API has no published types,
  * and this reader already probes every field it touches.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type SummaryRepository = RootedRepository & { state?: any };

@@ -4,7 +4,10 @@
 checks still to run by hand: the ones that need a real editor, a real provider, or a
 real operating system, and so cannot be a unit test.*
 
-**This is not the automated suite.** `npm run check` (1015 tests, counted 21 Aug) and
+**This is not the automated suite.** `npm run check` (1015 tests when counted on 21 Aug;
+on 12 Sep `grep -rhE '^\s*(test|it)\(' src --include='*.test.ts' | wc -l` finds 1,374 test
+declarations, a count that has run one below the runner's own at the two releases where both
+were recorded — 1,370 against 1,371 at 0.15.3) and
 `npm run test:host` run themselves and are green; see
 [`CURRENT_STATE.md`](CURRENT_STATE.md) for how to run them. Everything below is what
 those two genuinely cannot cover.

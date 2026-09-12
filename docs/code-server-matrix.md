@@ -14,6 +14,13 @@ observed.
 > `ECOSYSTEM_RUNBOOK.md` §15's "code-server compatibility is evidenced for every supported
 > matrix cell" actually requires; until then that line stays unchecked, which is where it is.
 >
+> **12 September 2026:** Clarvis is at **0.15.4**, not 0.12.4, and the grades below are still
+> the ones taken on **Clarvis 0.0.1** on 29–30 August. Only two cells have been run on a later
+> build since — multiple windows against one server, and rollback to a prior `.vsix` — both on
+> 6 September against 0.12.6, the rollback on desktop VS Code. The VSCodium regression section
+> records 0.12.0. Nothing else has been re-run, so a grade here is still not evidence about the
+> version that ships.
+>
 > Six cells cite evidence under `~/.local/share/code-server/extensions/krimkerre.clarvis-0.0.1/`.
 > That directory is gone — each install replaces it — so those paths record where the evidence
 > *was* taken, not where it can be found now. Where nothing was observed the cell says `NOT_TESTED` and names the action that

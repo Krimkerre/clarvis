@@ -71,8 +71,10 @@ break Clarvis planning against its own repo.
 
 ## What's built vs designed
 
-Milestones are numbered M0–M12 in `plan.md` §7 and tracked with per-milestone exit
-checklists (261 checklist lines total). **§7 is the authority; this is a copy, and
+Milestones are numbered M0–M14 in `plan.md` §7 — there is no M12 — and tracked with
+per-milestone exit checklists (257 checklist lines, recounted 12 Sep; this said M0–M12 and
+261 until then). M14, the NERVIS Bridge, was signed off on 29 Aug and is built, which the
+list below predates. **§7 is the authority; this is a copy, and
 copies drift** — believe it over this file, the README and the manual, all three of
 which restate it. Current status:
 

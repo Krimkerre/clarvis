@@ -3840,6 +3840,17 @@ front of it. Both misses are the prompt's boundaries working rather than failing
 - [ ] `Clarvis: Stop Tailing VS Code Logs` command stops the tailing process.
 - [ ] The feature works on all supported operating systems (macOS, Linux, Windows).
 
+> **Noted 12 Sep — what the code shows, and why no box is ticked.** Both commands are
+> contributed with these titles (`package.json`). Starting asks in a modal warning that names
+> the risk and goes on only on *Approve* (`src/logtailing/logTailing.ts`) — a VS Code dialog,
+> not the security `Gate` M13a describes. On approval it takes the newest `1-main.log` under
+> desktop VS Code's log folder, runs `tail -f` into `.clarvis/vscode.log`, and Stop kills that
+> process. None of the six checks has a recorded run: no test covers the module, and neither
+> `docs/build-log.md` nor the ecosystem's `STATUS.md` mentions one, so reading the code is not
+> a tick. A run would also have to look at two things the code suggests: the log folder is
+> desktop VS Code's own (`Code/logs`), so code-server and VSCodium logs are not where it looks;
+> and Windows has no `tail`, and its `find` is a different program.
+
 - [ ] A review that fails or times out does not fail the milestone that already landed.
 
 ### M9h — Infer, present, ask only on genuine unknowns *(opened and signed off 19 Aug)*
@@ -4674,6 +4685,9 @@ forever. No linter-specific consumption code — diagnostics already arrive gene
       at least one fork (not just VS Code stable).
 ### M14 — The NERVIS Bridge *(signed off 29 Aug — built; two exit items need a live run)*
 
+> **Noted 12 Sep:** both live items were settled on 30 Aug — see the note under *Still to
+> verify* below. The heading is left as it was written.
+
 External driver: `ECOSYSTEM_RUNBOOK.md` §6.2 Stage 8, contract in `CLARVIS.md` §6. An
 optional, extension-host-scoped read-only Bridge exposing MEP health/identity/
 capabilities/version/events plus `GET /v1/status`, so NERVIS can *observe* a running
@@ -4812,6 +4826,15 @@ unauthenticated read came back `401`; a `POST` came back `405`.
 and the "disabled restores exact standalone behaviour" check. Everything they would
 exercise is verified above, but from node — the same code, and not the same environment,
 which is a distinction this project has been caught by before.
+
+> **Settled 30 Aug, noted 12 Sep — both items ran for real.** `src/test/bridgeDisabled.spec.ts`
+> runs the disabled check under `npm run test:host` against real VS Code 1.135.0: off by default,
+> no port bound and no log line written, and the same call with the setting on binds a port that
+> accepts a connection and releases it on `stop()`. The window check went wider than asked: three
+> browser windows and one desktop VS Code client registered with the running NERVIS at once, on
+> four ports with four instance IDs, each refusing an unauthenticated read with `401`, and all
+> four leases renewed on independent clocks across a full 45-second window. Recorded in the
+> ecosystem's `STATUS.md`, "Stage 8 — the Clarvis Bridge, built and driven end to end".
 
 > **Amended 4 Sep — the three settings were workspace-settable, and that was the whole
 > attack.** An external audit of the ecosystem found it, and it is recorded here because

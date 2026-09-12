@@ -40,17 +40,43 @@ const NEVER_RECORD = [
   // the user's work, and excluding it would trade one wrong answer for another.
   /[\\/]\.vscode[\\/]/,
   /[\\/]Code[\\/]User[\\/]/,
+  // code-server keeps the same file under its own name. Named here for the case with
+  // no folder open; with one, the rule below already refuses anything outside it.
+  /[\\/]code-server[\\/]User[\\/]/,
 ];
 
-/** Whether a saved file is the user's work rather than a tool's paperwork. */
-export function isWorthRemembering(path: string): boolean {
-  return !NEVER_RECORD.some((pattern) => pattern.test(path));
+/**
+ * Whether a saved file is the user's work rather than a tool's paperwork.
+ *
+ * **Inside the project, when the project is known.** Found on 12 September 2026: in
+ * code-server the editor's own settings live under `code-server/User/`, which the
+ * `Code/User` rule above never matched, so every time Clarvis wrote a setting the
+ * briefing greeted the next window with "You were last in settings.json" — about a
+ * project with nothing open. Naming each editor's folder is a list that is always one
+ * editor short; "what you were working on" in this project is a file in this project,
+ * so a path outside every workspace folder is not recorded at all. With no folder
+ * open there is nothing to be inside, and only the named rules apply.
+ */
+export function isWorthRemembering(path: string, roots: readonly string[] = []): boolean {
+  if (NEVER_RECORD.some((pattern) => pattern.test(path))) return false;
+  return roots.length === 0 || roots.some((root) => isInside(path, root));
+}
+
+/** Whether `path` is `root` or below it — `/proj-other` is not inside `/proj`. */
+function isInside(path: string, root: string): boolean {
+  const base = root.replace(/[\\/]+$/, '');
+  return path === base || path.startsWith(`${base}/`) || path.startsWith(`${base}\\`);
 }
 
 export class RecentFiles {
   private paths: string[];
 
-  constructor(private readonly capacity = 5, initial: readonly string[] = []) {
+  constructor(
+    private readonly capacity = 5,
+    initial: readonly string[] = [],
+    /** The workspace folders a remembered file has to be inside, when there are any. */
+    private readonly roots: readonly string[] = []
+  ) {
     this.paths = initial.slice(0, capacity);
   }
 
@@ -60,7 +86,7 @@ export class RecentFiles {
    * everything else, which is exactly what happens while debugging.
    */
   record(path: string): void {
-    if (!isWorthRemembering(path)) return;
+    if (!isWorthRemembering(path, this.roots)) return;
 
     const existing = this.paths.indexOf(path);
     if (existing !== -1) this.paths.splice(existing, 1);

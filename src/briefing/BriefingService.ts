@@ -66,7 +66,14 @@ export class BriefingService {
     // session, so a path that should never have been recorded keeps being reported
     // long after the rule excluding it ships — settings.json sat at the top of a
     // stored list written before Clarvis stopped recording his own writes.
-    this.recentFiles = new RecentFiles(5, restored.filter(isWorthRemembering));
+    // And to this project: a stored settings.json from code-server's own User folder is
+    // dropped here on the next start, without anybody having to clear the list.
+    const roots = (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.uri.fsPath);
+    this.recentFiles = new RecentFiles(
+      5,
+      restored.filter((path) => isWorthRemembering(path, roots)),
+      roots
+    );
   }
 
   /**

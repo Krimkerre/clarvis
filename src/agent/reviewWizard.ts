@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { workspaceFolderPath } from './gitExtension';
+import { repositoryForFolder } from './repositoryForFolder';
 import {
   describeRun,
   foreignCommits,
@@ -345,7 +347,7 @@ function gitRepository(): GitRepository | undefined {
   const extension = vscode.extensions.getExtension<GitExports>('vscode.git');
   if (!extension?.isActive) return undefined;
 
-  return extension.exports?.getAPI?.(1)?.repositories?.[0];
+  return repositoryForFolder(extension.exports?.getAPI?.(1)?.repositories, workspaceFolderPath());
 }
 
 interface GitExports {
@@ -353,6 +355,7 @@ interface GitExports {
 }
 
 interface GitRepository {
+  rootUri?: { fsPath: string };
   state: { HEAD?: { name?: string }; workingTreeChanges: unknown[] };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
   log(options: { range: string }): Promise<{ hash: string; message?: string }[]>;

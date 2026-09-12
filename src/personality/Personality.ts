@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { workspaceFolderPath } from '../agent/gitExtension';
+import { repositoryForFolder } from '../agent/repositoryForFolder';
 import { BusyTracker, Outcome } from '../watch/BusyTracker';
 import { Announcer } from './Announcer';
 import { QuipPicker } from './QuipPicker';
@@ -212,13 +214,13 @@ export class Personality {
   }
 }
 
-/** The first repository, if the Git extension is present and has finished scanning. */
+/** This folder's repository, if the Git extension is present and has found it. */
 async function currentRepository(): Promise<any | undefined> {
   try {
     const extension = vscode.extensions.getExtension('vscode.git');
     if (!extension) return undefined;
     const exports = extension.isActive ? extension.exports : await extension.activate();
-    return exports?.getAPI?.(1)?.repositories?.[0];
+    return repositoryForFolder(exports?.getAPI?.(1)?.repositories, workspaceFolderPath());
   } catch {
     return undefined;
   }

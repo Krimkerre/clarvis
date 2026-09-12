@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
+import { repositoryForFolder, RootedRepository } from './repositoryForFolder';
 
 /**
- * The first repository the built-in Git extension knows about, activating it if it has
- * not started yet.
+ * This window's repository, activating the built-in Git extension if it has not started
+ * yet — the one containing the open folder, never merely the first found (see
+ * `repositoryForFolder`).
  *
  * **Activating rather than giving up is the whole point of the shared version.** During
  * Clarvis's own activation the Git extension's `isActive` is still false, and a caller
@@ -21,12 +23,19 @@ import * as vscode from 'vscode';
  * activatable, or no repository scanned yet. Callers that need to tell those apart do it
  * themselves (`AgentBranch.diagnoseGit`).
  */
-export async function firstGitRepository<Repository>(): Promise<Repository | undefined> {
+export async function workspaceRepository<
+  Repository extends RootedRepository,
+>(): Promise<Repository | undefined> {
   const extension = vscode.extensions.getExtension<GitExports<Repository>>('vscode.git');
   if (!extension) return undefined;
 
   const exports = extension.isActive ? extension.exports : await extension.activate();
-  return exports?.getAPI?.(1)?.repositories?.[0];
+  return repositoryForFolder(exports?.getAPI?.(1)?.repositories, workspaceFolderPath());
+}
+
+/** The folder this window is bound to, or nothing. Clarvis works in the first folder only. */
+export function workspaceFolderPath(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
 /** The one method of the Git extension's exports that anything here calls. */

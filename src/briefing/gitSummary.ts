@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { workspaceFolderPath } from '../agent/gitExtension';
+import { repositoryForFolder, RootedRepository } from '../agent/repositoryForFolder';
 import { splitChanges } from './gitChanges';
 
 /**
@@ -22,7 +24,9 @@ export async function readGitSummary(): Promise<
 
     // Repositories are discovered asynchronously — M1 saw `repoCount: 0` at activation
     // in a folder that was definitely a repo, simply because the scan hadn't finished.
-    const repository = api.repositories?.[0];
+    // **This folder's repository, not the first found** — see `repositoryForFolder`: the
+    // Git extension scans subfolders, and with nervis-tasks open this named a task's branch.
+    const repository = repositoryForFolder<SummaryRepository>(api.repositories, workspaceFolderPath());
     if (!repository) return undefined;
 
     const branch: unknown = repository.state?.HEAD?.name;
@@ -35,3 +39,11 @@ export async function readGitSummary(): Promise<
     return undefined;
   }
 }
+
+/**
+ * The slice of a Git extension repository read here. `state` stays untyped, as it was
+ * before the repository was chosen by folder: the extension's API has no published types,
+ * and this reader already probes every field it touches.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type SummaryRepository = RootedRepository & { state?: any };

@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { workspaceFolderPath } from './gitExtension';
+import { repositoryForFolder } from './repositoryForFolder';
 import { gitAbsenceReason } from './gitAbsence';
 import {
   BranchFlow,
@@ -189,7 +191,7 @@ export class BranchFlowWatcher {
       return;
     }
 
-    const repository = (await gitApi())?.repositories?.[0];
+    const repository = repositoryForFolder((await gitApi())?.repositories, workspaceFolderPath());
     if (!repository) {
       this.log('branch flow: no repository yet');
       return;
@@ -343,7 +345,7 @@ export class BranchFlowWatcher {
    * closing line says plainly.
    */
   private async commitPlan(branch: string): Promise<boolean> {
-    const repository = (await gitApi())?.repositories?.[0];
+    const repository = repositoryForFolder((await gitApi())?.repositories, workspaceFolderPath());
     const root = vscode.workspace.workspaceFolders?.[0]?.uri;
     if (!repository || !root) return false;
 
@@ -431,6 +433,7 @@ interface GitApi {
 }
 
 interface GitRepository {
+  rootUri?: { fsPath: string };
   state: { onDidChange: vscode.Event<void> };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
   add(paths: string[]): Promise<void>;

@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { requireTrust } from './trust';
 import { spawn } from 'child_process';
 import { LEFT_RUNNING_GRACE_MS, LEFT_RUNNING_NOTE, stopProcessGroup } from './processGroup';
+import { workspaceFolderPath } from '../gitExtension';
+import { repositoryForFolder, RootedRepository } from '../repositoryForFolder';
 
 /**
  * Running commands, reading diagnostics, and asking git what it thinks.
@@ -291,21 +293,26 @@ export async function gitDiff(staged = false): Promise<string> {
     : diff;
 }
 
-/** The first repository the Git extension knows about, if it is there at all. */
-function gitRepository():
-  | {
-      state: {
-        HEAD?: { name?: string };
-        indexChanges: unknown[];
-        workingTreeChanges: unknown[];
-        untrackedChanges?: unknown[];
-      };
-      diff(staged: boolean): Promise<string>;
-    }
-  | undefined {
+/** The slice of a Git extension repository the agent's git tools read. */
+type ToolRepository = RootedRepository & {
+  state: {
+    HEAD?: { name?: string };
+    indexChanges: unknown[];
+    workingTreeChanges: unknown[];
+    untrackedChanges?: unknown[];
+  };
+  diff(staged: boolean): Promise<string>;
+};
+
+/**
+ * This folder's repository, if the Git extension is there at all — never merely the
+ * first one it found, which with a parent folder open is a subfolder's (see
+ * `repositoryForFolder`).
+ */
+function gitRepository(): ToolRepository | undefined {
   const extension = vscode.extensions.getExtension('vscode.git');
   if (!extension?.isActive) return undefined;
 
   const api = extension.exports?.getAPI?.(1);
-  return api?.repositories?.[0];
+  return repositoryForFolder<ToolRepository>(api?.repositories, workspaceFolderPath());
 }

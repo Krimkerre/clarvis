@@ -1,4 +1,6 @@
 import * as vscode from 'vscode';
+import { workspaceFolderPath } from './gitExtension';
+import { repositoryForFolder } from './repositoryForFolder';
 import { join } from 'path';
 import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch, isRealBase, stackedAdvice } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
@@ -347,7 +349,8 @@ export class AgentBranch {
 
   private repository(): GitRepository | undefined {
     const api = gitExtension()?.exports?.getAPI?.(1);
-    return api?.repositories?.[0];
+    // This folder's repository: a run must never branch or commit in a subfolder's.
+    return repositoryForFolder(api?.repositories, workspaceFolderPath());
   }
 }
 
@@ -379,7 +382,7 @@ async function diagnoseGit(): Promise<GitProblem> {
  */
 export async function probeGitProblem(): Promise<GitProblem | undefined> {
   const api = gitExtension()?.exports?.getAPI?.(1);
-  if ((api?.repositories?.length ?? 0) > 0) return undefined;
+  if (repositoryForFolder(api?.repositories, workspaceFolderPath())) return undefined;
 
   return diagnoseGit();
 }
@@ -448,7 +451,7 @@ export async function returnToBranch(
   name: string,
   log: (message: string) => void
 ): Promise<{ moved: boolean; reason?: string }> {
-  const repository = gitExtension()?.exports.getAPI(1).repositories[0];
+  const repository = repositoryForFolder(gitExtension()?.exports.getAPI(1).repositories, workspaceFolderPath());
   if (!repository) return { moved: false, reason: 'no repository' };
 
   if (repository.state.HEAD?.name === name) return { moved: true };

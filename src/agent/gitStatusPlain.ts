@@ -1,6 +1,6 @@
 import { isAgentBranch } from './branchNames';
 import { explainState } from './gitPlain';
-import { firstGitRepository } from './gitExtension';
+import { workspaceRepository } from './gitExtension';
 
 /**
  * "Where am I, and is anything at risk?" — answered without git's vocabulary.
@@ -10,7 +10,7 @@ import { firstGitRepository } from './gitExtension';
  * verifiable and this stays trivial.
  */
 export async function describeGitPlainly(): Promise<string[]> {
-  const repository = await firstGitRepository<GitRepository>();
+  const repository = await workspaceRepository<GitRepository>();
   if (!repository) {
     return [
       "There's no git repository here, so nothing is being tracked — every edit is just a file on your disk. " +
@@ -35,6 +35,7 @@ export async function describeGitPlainly(): Promise<string[]> {
 }
 
 interface GitRepository {
+  rootUri?: { fsPath: string };
   state: {
     HEAD?: { name?: string; commit?: string; ahead?: number; behind?: number };
     workingTreeChanges: unknown[];

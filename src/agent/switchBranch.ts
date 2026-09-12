@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { isAgentBranch } from './branchNames';
 import { explainSwitchFailure, planSwitch } from './gitPlain';
-import { firstGitRepository } from './gitExtension';
+import { workspaceRepository } from './gitExtension';
 import { phrase } from '../personality/Voice';
 
 /**
@@ -18,7 +18,7 @@ export async function switchBranch(
   requested: string | undefined,
   log: (message: string) => void
 ): Promise<string | undefined> {
-  const repository = await firstGitRepository<GitRepository>();
+  const repository = await workspaceRepository<GitRepository>();
   if (!repository) {
     return phrase('report', "There's no git repository here, so there's nothing to switch to.");
   }
@@ -121,6 +121,7 @@ async function pickBranch(branches: string[], current?: string): Promise<string 
 }
 
 interface GitRepository {
+  rootUri?: { fsPath: string };
   state: { HEAD?: { name?: string }; workingTreeChanges: unknown[] };
   getBranches(query: { remote: boolean }): Promise<{ name?: string }[]>;
   checkout(name: string): Promise<void>;

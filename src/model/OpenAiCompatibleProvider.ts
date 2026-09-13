@@ -13,6 +13,7 @@ import { ProviderSpec, resolveBaseUrl } from './providers';
 import { SseParser, decodeStream } from './sse';
 import { ReasoningWatch, reasoningFieldError, unfinishedThinkingError } from './reasoning';
 import { lineageHeaders } from './lineage';
+import { codexListingHeaders } from '../engine/engineChoice';
 
 /**
  * One adapter, four providers: OpenAI, OpenRouter, Ollama and LM Studio.
@@ -160,7 +161,8 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   async listModels(): Promise<ModelChoice[]> {
     try {
       const response = await fetch(`${this.baseUrl}/v1/models`, {
-        headers: await this.headers(),
+        // M15 C2a: RAVIS lists `ravis/codex` only when asked, and only an address on this Mac is asked.
+        headers: { ...(await this.headers()), ...codexListingHeaders(this.baseUrl) },
         signal: AbortSignal.timeout(10_000),
       });
       if (!response.ok) {

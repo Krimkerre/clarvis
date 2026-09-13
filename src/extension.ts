@@ -22,6 +22,9 @@ import { buildStamp } from './buildStamp';
 import { AgentTerminal } from './agent/tools/commandTools';
 import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
+import { randomUUID } from 'crypto';
+import { paletteRunDecision } from './chat/codingRunFactory';
+import { currentEngineChoice, takeRunLock } from './engine/engineHost';
 import { gather, reviewRun } from './agent/reviewWizard';
 import { describeRun, ReviewAction } from './agent/runReview';
 import { LAST_RUN_KEY, renderRunSummary, RunRecord } from './agent/runLedger';
@@ -212,6 +215,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // don't arrive on top of each other.
   const planOffer = setTimeout(() => void chat?.offerPlanningIfUnplanned(), 6000);
   context.subscriptions.push({ dispose: () => clearTimeout(planOffer) });
+
+  // M15 C2a: a Codex task outlives the window that started it, so opening the project picks it back up —
+  // a moment after activation, so the briefing is said first.
+  const codexReattach = setTimeout(() => void chat?.reattachCodexTasks(), 3000);
+  context.subscriptions.push({ dispose: () => clearTimeout(codexReattach) });
 
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
@@ -986,12 +994,27 @@ async function runTaskFromPalette(
   agentTerminal: AgentTerminal,
   runState: RunState
 ): Promise<void> {
+  // M15 C2a: the palette never runs Codex, whose questions need the panel — said before a task is typed.
+  const decision = paletteRunDecision(currentEngineChoice(models));
+  if (decision.run === 'refused') {
+    void vscode.window.showInformationMessage(`Clarvis: ${decision.line}`);
+    return;
+  }
+
   const task = await vscode.window.showInputBox({
     prompt: 'What should I do?',
     placeHolder: 'e.g. fix the failing test in src/watch',
     ignoreFocusOut: true,
   });
   if (!task?.trim()) return;
+
+  // The project lock, as the chat's runs take it (M15 C2a): one writer per project, whichever window.
+  const lock = await takeRunLock(models, randomUUID(), (message) => logger.write(message), () => false);
+  if (lock && !lock.held) {
+    void vscode.window.showInformationMessage(`Clarvis: ${lock.line}`);
+    return;
+  }
+  const fence = lock?.held ? lock.lock : undefined;
 
   const controller = new AbortController();
   runState.running = true;
@@ -1005,7 +1028,8 @@ async function runTaskFromPalette(
     // The palette route has never asked before a step — its whole shape is
     // fire-and-watch-the-notification — but its gates are the same gates.
     undefined,
-    runState.activity
+    runState.activity,
+    fence
   );
 
   // Set last, read in the `finally` — the loop leaves by three routes and from in
@@ -1044,6 +1068,8 @@ async function runTaskFromPalette(
     runState.running = false;
     if (ended === 'failed') runState.activity.fail();
     else runState.activity.finish();
+    // Last: the run's loop is over, and its commands with it.
+    await fence?.release();
   }
 }
 

@@ -17,11 +17,58 @@ import { reviewMilestone } from '../agent/readBack';
 import { reviewSummary } from '../agent/milestoneReview';
 import { Finding } from '../planning/analysisPrompt';
 import { buildRunRecord, LAST_RUN_KEY, LedgerEvent } from '../agent/runLedger';
+import { randomUUID } from 'crypto';
+import type { AgentEvent } from '../agent/AgentRunner';
+import type { CodingRun, EngineKind, RunFence } from '../engine/CodingRun';
+import { codexModeFor } from '../engine/engineChoice';
+import {
+  chatModeSetting,
+  currentEngineChoice,
+  maxStepsSetting,
+  ravisAccess,
+  takeRunLock,
+  workspaceRoot,
+  type RavisLookup,
+} from '../engine/engineHost';
+import { reattachStep, type ReattachStep } from '../engine/codex/reattach';
+import { RemoteCodexRunner } from '../engine/codex/RemoteCodexRunner';
+import { CODEX_LINES, ravisUnusableLine, tokenLine } from '../engine/codex/translate';
+import type { RelayClient } from '../engine/relay/relayClient';
+import type { SessionSummary } from '../engine/relay/relayTypes';
+import { TokenStore } from '../engine/relay/tokenStore';
+import { chatRunDecision, createCodingRun, undeliveredLine } from './codingRunFactory';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
   acknowledge(task: string): Promise<string | undefined>;
   afterTask(task: string, summary: string): Promise<string | undefined>;
+}
+
+/** A run ready to go, and what to let go of once it has ended (M15 C2a). */
+interface OpenedRun {
+  runner: CodingRun;
+  release(): Promise<void>;
+}
+
+/** What a run needs before it is built: Clarvis's engine its fence, Codex its RAVIS. */
+interface RunGuard {
+  fence?: RunFence;
+  relay?: RelayClient;
+  release(): Promise<void>;
+}
+
+/** Why a run didn't start, and the Codex session to follow instead when that is the reason. */
+interface RunRefusal {
+  refusal: string;
+  attachSessionId?: string;
+}
+
+/** Codex needs a folder, and a RAVIS this window can reach with its credential. */
+function codexGuard(root: string | undefined, ravis: RavisLookup): RunGuard | RunRefusal {
+  if (!root) return { refusal: CODEX_LINES.noFolder };
+  if (ravis.kind === 'ready') return { relay: ravis.access.relay, release: async () => undefined };
+  if (ravis.kind === 'no_credential') return { refusal: CODEX_LINES.noCredential };
+  return { refusal: ravisUnusableLine(ravis.kind === 'unusable' ? ravis.reason : 'no RAVIS address') };
 }
 
 /**
@@ -194,8 +241,8 @@ export class RunSession {
   /** The steps this run is working through, for the progress display. */
   private steps: string[] = [];
 
-  /** The run in progress, while there is one. */
-  private running?: AgentRunner;
+  /** The run in progress, while there is one — Clarvis's own engine, or a Codex task (M15). */
+  private running?: CodingRun;
 
   /**
    * Hands something said mid-run to the agent, rather than answering it separately.
@@ -244,6 +291,11 @@ export class RunSession {
     // `begin()` only runs once a task is already under way.
     await offerGitFix(this.context, root, this.log);
 
+    // **Which engine, and what it needs first** (M15 C2a): the project lock for Clarvis's own
+    // engine, RAVIS for Codex. Refused here, before the opening line promises work that won't start.
+    const opened = await this.openRun(root);
+    if ('refusal' in opened) return this.refused(opened);
+
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
     const opening = (await this.live?.acknowledge(task)) ?? because;
@@ -253,6 +305,19 @@ export class RunSession {
     await this.note(opening);
     this.avatar.setState('thinking', 'chat');
 
+    await this.follow(opened, task, (signal) => opened.runner.run(task, signal));
+  }
+
+  /**
+   * A run, from its first step to the question of what to do with its work — whichever engine it is,
+   * and whether it is a new task or a Codex task picked back up (`picksUp`), which says so itself.
+   */
+  private async follow(
+    opened: OpenedRun,
+    task: string,
+    events: (signal: AbortSignal) => AsyncIterable<AgentEvent>,
+    picksUp = false
+  ): Promise<void> {
     // **`'run'`, not `'reply'` — this is the run.** Every one of `Busy.start`'s three
     // call sites passed `'reply'`, so `shared.running` was never set and `isRunning`
     // was dead code. Two suppressions that read it were therefore both off:
@@ -260,22 +325,7 @@ export class RunSession {
     // reporting it, and a typed "stop" said "Stopped." on top of the run's own ending
     // — the exact double lines the comments at both sites say they exist to prevent.
     const controller = this.busy.start('run');
-
-    const runner = new AgentRunner(
-      this.context,
-      root,
-      this.models,
-      this.terminal,
-      this.log,
-      // **Always handed over, decided per step.** Passing `undefined` here for a run
-      // that started in Unattended would freeze that choice for the whole run, which
-      // is the bug this replaced — `askStep` answers immediately when the mode says
-      // not to ask, so the decision is made at the step rather than at the start.
-      (step) => this.askStep(step),
-      // So a modal sitting open mid-run reads as `waiting_for_approval` rather than
-      // as a run that has silently stopped making progress.
-      this.busy.reported
-    );
+    const runner = opened.runner;
     // Held for the length of the run, so anything typed while it works has somewhere
     // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
     this.running = runner;
@@ -288,7 +338,7 @@ export class RunSession {
 
     // A single line while it works. Without it the panel sits silent for a minute and
     // the only signal is the avatar — but it is one line, not a running commentary.
-    await this.note(await this.phrase('report', 'Working on it…'));
+    if (!picksUp) await this.note(await this.phrase('report', 'Working on it…'));
 
     // **Nothing technical reaches the transcript.** Tool calls, commands and the
     // model's own working-out all go to the Clarvis terminal, where a build log
@@ -313,7 +363,7 @@ export class RunSession {
     // exists so the reported activity state does not call every ended run a success.
     let ended: 'ok' | 'failed' = 'failed';
     try {
-      for await (const event of runner.run(task, controller.signal)) {
+      for await (const event of events(controller.signal)) {
         if (!event.text) continue;
         if (event.kind === 'done') {
           // **Same stripping the terminal stream already gets, applied to the summary
@@ -356,6 +406,8 @@ export class RunSession {
       // longer happening. Cleared here rather than on success, so a stopped or
       // failed run clears it too.
       this.showProgress({ current: 0, total: 0, label: '' });
+      // Only now, with the run's loop over and its commands with it (design §6.3: release after).
+      await opened.release();
     }
 
     // **Persisted whether or not anything changed.** A run that did nothing is exactly
@@ -365,13 +417,167 @@ export class RunSession {
     await this.context.workspaceState.update(LAST_RUN_KEY, record);
 
     await this.wrapUp(runner, task, summary, closing);
+    await this.afterRun(runner);
+  }
+
+  /** Which engine runs this, and what it needs first; or why nothing runs (M15 C2a; design §5.1, §5.8). */
+  private async openRun(root: string | undefined): Promise<OpenedRun | RunRefusal> {
+    const decision = chatRunDecision(currentEngineChoice(this.models));
+    if (decision.run === 'refused') return { refusal: decision.line };
+    const guard = await this.guardFor(decision.run, root);
+    if ('refusal' in guard) return guard;
+    const runner = createCodingRun(decision.run, {
+      clarvis: () => this.clarvisRunner(root, guard.fence),
+      codex: () => this.codexRunner(root as string, guard.relay as RelayClient),
+    });
+    return { runner, release: guard.release };
+  }
+
+  /**
+   * What a run needs before it is built. **Clarvis's own engine takes the project lock** — a behaviour
+   * change: two editors no longer build in one project at once — and hands the run its fence. Codex needs
+   * RAVIS; its lock is RAVIS's, taken when the session is created.
+   */
+  private async guardFor(engine: EngineKind, root: string | undefined): Promise<RunGuard | RunRefusal> {
+    if (engine === 'codex') return codexGuard(root, ravisAccess(this.models));
+    const lock = await takeRunLock(this.models, randomUUID(), this.log, () => this.pending.isWaiting);
+    if (lock && !lock.held) return { refusal: lock.line, attachSessionId: lock.attachSessionId };
+    const fence = lock?.held ? lock.lock : undefined;
+    return { fence, release: async () => void (await fence?.release()) };
+  }
+
+  private clarvisRunner(root: string | undefined, fence: RunFence | undefined): CodingRun {
+    return new AgentRunner(
+      this.context,
+      root,
+      this.models,
+      this.terminal,
+      this.log,
+      // **Always handed over, decided per step.** Passing `undefined` here for a run
+      // that started in Unattended would freeze that choice for the whole run, which
+      // is the bug this replaced — `askStep` answers immediately when the mode says
+      // not to ask, so the decision is made at the step rather than at the start.
+      (step) => this.askStep(step),
+      // So a modal sitting open mid-run reads as `waiting_for_approval` rather than
+      // as a run that has silently stopped making progress.
+      this.busy.reported,
+      // The project lock this run holds: a run another window took over writes nothing more.
+      fence
+    );
+  }
+
+  private codexRunner(root: string, relay: RelayClient): RemoteCodexRunner {
+    return new RemoteCodexRunner({
+      context: this.context,
+      root,
+      relay,
+      terminal: this.terminal,
+      log: this.log,
+      mode: codexModeFor(chatModeSetting()),
+      maxSteps: maxStepsSetting(),
+    });
+  }
+
+  /** A run that didn't start: why — and the Codex task to follow, when one holds the project. */
+  private async refused(refusal: RunRefusal): Promise<void> {
+    await this.note(refusal.refusal);
+    if (refusal.attachSessionId) await this.reattachCodexTasks();
+  }
+
+  /** Nothing typed to a run vanishes; and a Codex start refused for a task already running follows it. */
+  private async afterRun(runner: CodingRun): Promise<void> {
+    const undelivered = undeliveredLine(runner.drainInterjections());
+    if (undelivered) await this.note(undelivered);
+    if (runner instanceof RemoteCodexRunner && runner.attachInstead) await this.reattachCodexTasks();
+  }
+
+  /**
+   * On window load: follows this workspace's live Codex task, if there is one (M15 C2a; design §5.7). A task
+   * outlives the editor that started it, so the next window to open the project picks it up — asks its
+   * waiting question, saves its finished work.
+   */
+  async reattachCodexTasks(): Promise<void> {
+    const root = workspaceRoot();
+    if (!root || this.running) return;
+    const ravis = ravisAccess(this.models);
+    if (ravis.kind !== 'ready') return this.noCodexAccess(ravis);
+    const listed = await ravis.access.relay.listSessions(root);
+    if (!listed.ok) return this.listFailed(listed.failure.kind);
+    await this.followListed(root, ravis.access.relay, listed.value);
+  }
+
+  /** The chat panel pinged: a Codex task followed from here counts this window attached (design §3.5.4). */
+  panelPinged(): void {
+    if (this.running instanceof RemoteCodexRunner) this.running.panelPinged();
+  }
+
+  private async followListed(root: string, relay: RelayClient, sessions: SessionSummary[]): Promise<void> {
+    const tokens = new TokenStore();
+    await this.takeReattachStep(reattachStep(sessions, (sessionId) => tokens.read(root, sessionId)), root, relay);
+  }
+
+  private async takeReattachStep(step: ReattachStep, root: string, relay: RelayClient): Promise<void> {
+    if (step.kind === 'nothing') return;
+    if (step.kind === 'unsafe_token') return this.note(tokenLine({ kind: 'refused', reason: step.reason }));
+    const runner = this.codexRunner(root, relay);
+    if (step.kind === 'reconnect' && !(await this.reconnected(runner, step.session))) return;
+    // A task picked back up has no plan steps in this window: its checkpoint will carry them (C3).
+    this.setFromPlan(false);
+    this.log(`codex: following session ${step.session.id} (${step.session.state})`);
+    const opened = { runner, release: async () => undefined };
+    await this.follow(opened, 'the Codex task in this project', (signal) => runner.attach(step.session, signal), true);
+  }
+
+  /** A task whose token this editor lost: offered, never forced (design §5.7 step 3). */
+  private async reconnected(runner: RemoteCodexRunner, session: SessionSummary): Promise<boolean> {
+    await this.note(CODEX_LINES.tokenMissing);
+    const answer = await this.pending.ask(
+      [{ label: 'Reconnect', detail: 'Asks RAVIS for a new key to this task' }, { label: 'Not now' }],
+      'reconnecting to the Codex task',
+      true
+    );
+    if (answer !== 'Reconnect') return false;
+    const refusal = await runner.reissue(session);
+    if (refusal) await this.note(refusal);
+    return refusal === undefined;
+  }
+
+  private noCodexAccessSaid = false;
+
+  /** Said once per window: an editor that uses RAVIS but has no key for it can't see Codex tasks. */
+  private async noCodexAccess(ravis: Exclude<RavisLookup, { kind: 'ready' }>): Promise<void> {
+    if (ravis.kind !== 'no_credential' || this.noCodexAccessSaid) return;
+    this.noCodexAccessSaid = true;
+    await this.note(CODEX_LINES.noCredential);
+  }
+
+  private reattachRetry: NodeJS.Timeout | undefined;
+
+  /** RAVIS not answering: said once, and looked at again every 30 s until it answers (design §5.7 step 2). */
+  private async listFailed(kind: string): Promise<void> {
+    this.log(`codex: couldn't list this project's Codex tasks (${kind})`);
+    if (kind !== 'unreachable' || this.reattachRetry) return;
+    await this.note(CODEX_LINES.tasksUnreachable);
+    this.reattachRetry = setInterval(() => void this.retryReattach(), 30_000);
+    this.reattachRetry.unref();
+  }
+
+  private async retryReattach(): Promise<void> {
+    const root = workspaceRoot();
+    const ravis = ravisAccess(this.models);
+    if (!root || ravis.kind !== 'ready' || this.running) return;
+    const listed = await ravis.access.relay.listSessions(root);
+    if (!listed.ok) return;
+    clearInterval(this.reattachRetry);
+    this.reattachRetry = undefined;
+    await this.followListed(root, ravis.access.relay, listed.value);
   }
 
   /**
    * What follows a run: its closing words, where the work goes, a review of it, and what
    * next when it could not get past something missing.
    */
-  private async wrapUp(runner: AgentRunner, task: string, summary: string, closing: string): Promise<void> {
+  private async wrapUp(runner: CodingRun, task: string, summary: string, closing: string): Promise<void> {
     const { commits, files } = runner.result;
 
     // **A blocked run is not a finished milestone.** It ended on a missing dependency the

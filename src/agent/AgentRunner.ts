@@ -49,6 +49,9 @@ import { ReplyStateReader, STATE_TAG_INSTRUCTION, stripTags } from '../chat/repl
 import { stepAfterAsking } from '../chat/stopDecision';
 import { absorbStreamEvent } from './streamNarration';
 import { newTraceId } from '../model/lineage';
+import type { CodingRun, RunFence } from '../engine/CodingRun';
+import { describeProcess } from '../engine/lock/processProbe';
+import { mayCommitNow, mayWriteNow, TAKEN_OVER_LINE, TAKEN_OVER_TOOL_RESULT } from './lockFence';
 
 /**
  * The loop: ask the model, run what it asks for, hand back the results, repeat.
@@ -104,7 +107,9 @@ export interface AgentEvent {
   step?: number;
 }
 
-export class AgentRunner {
+export class AgentRunner implements CodingRun {
+  /** Which engine this is, for the chat's run (M15 C2a: the other one is Codex, through RAVIS). */
+  readonly engine = 'clarvis' as const;
   private readonly touched = new Set<string>();
   /** Commits this run made, so a review can tell them from anyone else's. */
   private readonly ownCommits: string[] = [];
@@ -147,7 +152,15 @@ export class AgentRunner {
      * Optional because a runner that answers to nobody is a real case — the
      * palette route had no shared state at all until this milestone.
      */
-    private readonly activity?: Activity
+    private readonly activity?: Activity,
+    /**
+     * The project lock this run holds, when it holds one (M15 C2a; design §6.3, the fence).
+     *
+     * Checked before every tool call that writes and before the commit: a run another window took
+     * over stops at once and writes nothing more — no edit, no command, no commit, no tidying. Absent
+     * for a read-only answer, which takes no lock.
+     */
+    private readonly fence?: RunFence
   ) {}
 
 
@@ -188,6 +201,16 @@ export class AgentRunner {
   /** Adds something the user said mid-run. Delivered before the next model call. */
   interject(text: string): void {
     this.interjections.push(text);
+  }
+
+  /**
+   * Everything said that the model hasn't been handed yet, taken out of the run (M15 review H8).
+   *
+   * The loop takes interjections only between model turns, so a run that stops holds whatever was typed
+   * after its last turn. Whoever ends the run takes those, rather than letting them vanish with it.
+   */
+  drainInterjections(): string[] {
+    return this.interjections.splice(0);
   }
 
   /** Everything said since the last turn, as one block. Empties the queue. */
@@ -364,7 +387,7 @@ export class AgentRunner {
     // Nothing was kept, so the isolation branch is clutter. Tidied here rather than
     // left for the review wizard, which would otherwise offer five options about an
     // empty branch.
-    this.tidied = await branch.discardIfEmpty();
+    this.tidied = await this.tidy(branch);
 
     // **What he actually said, in the conversation.** Narration went to the terminal
     // only, and the chat got the branch note — so a run that ended by asking four
@@ -381,7 +404,7 @@ export class AgentRunner {
     // branches followed by an aside about the hard part being over.
     return {
       kind: 'done',
-      text: narration.trim(),
+      text: this.lostProject ? TAKEN_OVER_LINE : narration.trim(),
       closing: this.closingNote(branch) || undefined,
       files: [...this.touched],
     };
@@ -434,7 +457,7 @@ export class AgentRunner {
    */
   private async stopped(branch: AgentBranch, task: string): Promise<AgentEvent> {
     await this.finish(branch, task, this.halted ? 'Stopped at a missing dependency' : 'Stopped before finishing');
-    this.tidied = await branch.discardIfEmpty();
+    this.tidied = await this.tidy(branch);
     return { kind: 'done', text: this.halted ?? 'Stopped.', files: [...this.touched] };
   }
 
@@ -693,6 +716,12 @@ export class AgentRunner {
 
     const args = call.args as Record<string, string & boolean>;
 
+    // **The fence** (M15 C2a): a call that writes goes ahead only while this run still holds the
+    // project. Lost to another window, the run ends here and writes nothing more.
+    if (!(await this.mayWrite(mutates(name)))) {
+      return { id: call.id, content: TAKEN_OVER_TOOL_RESULT, isError: true };
+    }
+
     try {
       // Snapshot before the change, not after — the whole point of undo.
       if (mutates(name) && typeof args.path === 'string') {
@@ -930,13 +959,7 @@ export class AgentRunner {
           : 'sandbox: running unconfined (allowed for this workspace)'
     );
 
-    const result = await runCommand(
-      this.root,
-      command,
-      (chunk) => this.terminal.write(chunk),
-      signal,
-      spawnAs
-    );
+    const result = await this.runReported(command, signal, spawnAs);
 
     const note = confinementNote(spawnAs.confined, result.exitCode, result.output, allowNetwork);
     if (note) this.log(`sandbox: "${command}" failed on something the confinement denied`);
@@ -1098,6 +1121,8 @@ export class AgentRunner {
   /** Commits the run's own files onto its own branch, if there was anything to commit. */
   private async finish(branch: AgentBranch, task: string, narration: string): Promise<void> {
     if (this.touched.size === 0 || !branch.current) return;
+    // The fence, before the write that matters most: a run another window took over commits nothing.
+    if (!(await mayCommitNow(this.fence))) return this.takenOver();
 
     // Workspace-relative, deliberately: this is the form the run records and the form
     // the "already modified before we started" check compares against. AgentBranch
@@ -1106,6 +1131,59 @@ export class AgentRunner {
 
     const hash = await branch.commit(`${summary}\n\nTask: ${task}`, [...this.touched]);
     if (hash) this.ownCommits.push(hash);
+  }
+
+  /** Whether another window has taken this run's project (M15 C2a). Once true, nothing more is written. */
+  private lostProject = false;
+
+  /** Whether a call may go ahead under the fence. The first refusal ends the run. */
+  private async mayWrite(writes: boolean): Promise<boolean> {
+    if (await mayWriteNow(this.fence, writes)) return true;
+    this.takenOver();
+    return false;
+  }
+
+  /**
+   * Another window took the project: halt, so the loop leaves by the exit Stop already has, and say why.
+   * `halted` also marks the run blocked, so nothing offers to review or land work it didn't finish.
+   */
+  private takenOver(): void {
+    if (this.lostProject) return;
+    this.lostProject = true;
+    this.log('agent: another window took over this project — stopping, and writing nothing more');
+    this.halted = TAKEN_OVER_LINE;
+    this.halt.abort();
+  }
+
+  /** Removes an empty run branch — never once the project was taken over: git is written to as well. */
+  private async tidy(branch: AgentBranch): Promise<boolean> {
+    return !this.lostProject && (await branch.discardIfEmpty());
+  }
+
+  /** Bumped when a command starts and when it ends, so a late `ps` answer can't name a finished command. */
+  private commandSeq = 0;
+
+  /**
+   * Runs a command, telling the fence which process group it is while it runs (M15 C2a; final check
+   * F-A4), so a window taking the project over could stop exactly that group.
+   */
+  private async runReported(command: string, signal: AbortSignal, spawnAs: Parameters<typeof runCommand>[4]): Promise<CommandResult> {
+    const seq = ++this.commandSeq;
+    try {
+      const echo = (chunk: string) => this.terminal.write(chunk);
+      return await runCommand(this.root, command, echo, signal, spawnAs, (pid) => void this.reportRunning(seq, pid));
+    } finally {
+      this.commandSeq++;
+      this.fence?.commandEnded();
+    }
+  }
+
+  private async reportRunning(seq: number, pid: number | undefined): Promise<void> {
+    if (!this.fence || pid === undefined) return;
+    const described = await describeProcess(pid);
+    if (seq !== this.commandSeq || !described) return;
+    // Spawned detached, in its own process group, so the group id is the pid.
+    this.fence.commandStarted({ pid, pgid: pid, start: described.start, comm: described.comm });
   }
 
   /** What this run committed and touched, for the review wizard. */

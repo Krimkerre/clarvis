@@ -100,6 +100,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       stop: () => this.stopRequested.fire(),
       models: () => this.modelsRequested.fire(),
       'choose-mode': () => this.modeRequested.fire(),
+      // Every 10 s while the panel is open (M15 C2a): a Codex task followed from here counts it attached.
+      'panel-ping': () => this.pinged.fire(),
     };
   }
 
@@ -118,6 +120,7 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly modelsRequested = new vscode.EventEmitter<void>();
   private readonly modeRequested = new vscode.EventEmitter<void>();
   private readonly viewReady = new vscode.EventEmitter<void>();
+  private readonly pinged = new vscode.EventEmitter<void>();
 
   /** A question typed into the chat box. */
   readonly onDidAsk = this.asked.event;
@@ -136,6 +139,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidRequestStop = this.stopRequested.event;
   /** The webview exists and can be populated. */
   readonly onDidBecomeReady = this.viewReady.event;
+  /** The panel's 10-second ping: it is open (M15 C2a; design §3.5.4). */
+  readonly onDidPing = this.pinged.event;
 
   private readonly speechFinished = new vscode.EventEmitter<{ id: string; error?: string }>();
   private readonly systemVoicesReported = new vscode.EventEmitter<{ name: string; lang: string }[]>();
@@ -239,7 +244,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.stopRequested,
       this.modelsRequested,
       this.modeRequested,
-      this.viewReady
+      this.viewReady,
+      this.pinged
     );
   }
 

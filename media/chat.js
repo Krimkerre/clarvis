@@ -8,6 +8,12 @@
 // trap for good.
 const vscode = acquireVsCodeApi();
 
+// Presence for Codex tasks (plan.md M15 C2a; design §3.5.4). While this panel is open it pings the
+// extension host every 10 s, so a task followed from this window stops counting it as attached once
+// the tab closes, even though code-server keeps the extension host alive for hours after that.
+vscode.postMessage({ type: 'panel-ping' });
+setInterval(() => vscode.postMessage({ type: 'panel-ping' }), 10000);
+
 // Chromium blocks audio playback until this document has received a user
 // gesture. speechSynthesis is exempt, which is why the system voice works from
 // the first second and rendered audio does not. One click anywhere in the panel

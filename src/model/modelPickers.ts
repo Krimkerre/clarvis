@@ -5,6 +5,7 @@ import { ModelChoice } from './ModelProvider';
 import { PROVIDERS, ProviderId, providerSpec, acceptableOverride, providerNotRespondingLine, providerListedNothingLine } from './providers';
 import { ModelRole } from './roles';
 import { phrase } from '../personality/Voice';
+import { modelsForRole } from '../engine/engineChoice';
 
 /** Cached model lists, per provider. */
 const CATALOG_KEY = 'clarvis.model.catalog';
@@ -91,7 +92,8 @@ export async function chooseModel(
 ): Promise<void> {
   const spec = models.spec(role);
   const current = models.model(role);
-  let catalog = await cachedModels(context, models, log, role);
+  // Codex is a coding model only (M15 C2a): the chat model's list never offers it.
+  let catalog = modelsForRole(await cachedModels(context, models, log, role), role);
 
   for (;;) {
     const items: (vscode.QuickPickItem & { id: string })[] = [
@@ -128,7 +130,7 @@ export async function chooseModel(
     if (!picked) return;
 
     if (picked.id === '\0refresh') {
-      catalog = await refreshedModels(context, models, log, role);
+      catalog = modelsForRole(await refreshedModels(context, models, log, role), role);
       continue;
     }
 

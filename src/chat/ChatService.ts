@@ -946,6 +946,11 @@ export class ChatService {
     return this.agentBusy.activity.snapshot();
   }
 
+  /** On window load: picks up this project's Codex task, if one is still going (M15 C2a; design §5.7). */
+  reattachCodexTasks(): Promise<void> {
+    return this.runs.reattachCodexTasks();
+  }
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,
@@ -1022,6 +1027,8 @@ export class ChatService {
     // so rather than silently doing nothing — which, on an always-visible button, would
     // read as the button being broken.
     this.panel.onDidRequestStop(() => void this.stopFromChat());
+    // M15 C2a: a Codex task followed from this window counts the window attached only while this panel is open.
+    this.panel.onDidPing(() => this.runs.panelPinged());
     this.panel.onDidRequestModels(() => {
       // The remark and the picker go at once, deliberately. Awaiting a line before opening
       // the picker would make a joke the thing standing between the user and a button they

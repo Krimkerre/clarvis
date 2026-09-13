@@ -13,6 +13,7 @@ import { Turn } from './thread';
 import { Busy } from './Busy';
 import { afterReply, spokenPart } from './replyDelivery';
 import { newTraceId } from '../model/lineage';
+import { chatModelRefusal } from './codingRunFactory';
 
 /**
  * Answering: the two paths a question can take once a model is involved.
@@ -61,11 +62,26 @@ export class Replier {
     );
   }
 
-  async withModel(question: string, addendum = ''): Promise<void> {
-    if (!(await this.models.isReady())) {
-      await this.sayThereIsNoModel();
-      return;
+  /**
+   * Whether there is a chat model to answer with, having said why not when there isn't.
+   *
+   * **A chat model that is Codex is refused first** (M15 C2a): Codex is a coding engine, and RAVIS
+   * refuses it as a chat model, so asking would only turn a plain sentence into an HTTP error. This path
+   * never takes a project lock either: an answer writes nothing.
+   */
+  private async readyToAnswer(): Promise<boolean> {
+    const refusal = chatModelRefusal(this.models.model('chat'));
+    if (refusal) {
+      await this.say(refusal, 'neutral');
+      return false;
     }
+    if (await this.models.isReady()) return true;
+    await this.sayThereIsNoModel();
+    return false;
+  }
+
+  async withModel(question: string, addendum = ''): Promise<void> {
+    if (!(await this.readyToAnswer())) return;
 
     // With a tool-capable chat model, questions get to *look* at the project rather
     // than guess — reading a file to answer a question needs no branch and no commit.

@@ -64,7 +64,12 @@ export async function runCommand(
    * Passed in rather than worked out here so this function keeps no opinion about
    * sandboxes, and so the tests can drive both paths without one installed.
    */
-  spawnAs?: { file: string; args: string[]; confined: boolean }
+  spawnAs?: { file: string; args: string[]; confined: boolean },
+  /**
+   * Told the spawned process's id at once (M15 C2a), so a run holding the project lock can report the
+   * command's process group in its heartbeat (design §6.3, final check F-A4).
+   */
+  onSpawn?: (pid: number | undefined) => void
 ): Promise<CommandResult> {
   if (!root) throw new Error('There is no folder open, so there is nowhere to run that.');
 
@@ -114,6 +119,7 @@ export async function runCommand(
           stdio: ['ignore', 'pipe', 'pipe'],
           detached,
         });
+    onSpawn?.(child.pid);
 
     // Stopping a run must actually stop the process — and whatever it started — not just
     // stop listening to it.

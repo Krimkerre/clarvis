@@ -169,6 +169,12 @@
           "default": 25,
           "description": "Tool calls before the agent stops and asks whether to carry on. A loop that never converges should not run up a bill unattended."
         },
+        "clarvis.ravis.credentialFile": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "markdownDescription": "Desktop VS Code only: the file holding Clarvis's key for RAVIS on this Mac (the launcher's `.run/clarvis-ravis.token`), so this editor can run and follow Codex tasks. code-server gets the key from the launcher and doesn't need it. **Machine-scoped on purpose:** a project you open cannot point this anywhere."
+        },
         "clarvis.chat.mode": {
           "type": "string",
           "default": "auto",
@@ -392,7 +398,8 @@
         "clarvis.chat.baseUrl.lmstudio",
         "clarvis.chat.baseUrl.custom",
         "clarvis.chat.provider",
-        "clarvis.agent.provider"
+        "clarvis.agent.provider",
+        "clarvis.ravis.credentialFile"
       ]
     }
   }

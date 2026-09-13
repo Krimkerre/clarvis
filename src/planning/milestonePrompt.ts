@@ -115,6 +115,15 @@ export function milestonePrompt(
     'something knowable, two runs that must differ. If the only way to fail it is a',
     'crash, it is testing that the program runs, which you already know.',
     '',
+    // **A check has to be runnable where it will be run.** Found live, 13 September 2026:
+    // the plan's check "logging in … shows the user's job status and photos on a web page"
+    // was run by starting the server and curling it, and the build sandbox allows no
+    // listening port. The run found its way to testing the handler; the plan should have
+    // asked for that in the first place.
+    'Checks run where nothing can listen on a port or use the network. For anything that',
+    'serves requests, write the check against its handler — "a test client posting the',
+    'right password gets the status page, a wrong one gets 401" — not against a running server.',
+    '',
     'Output nothing but the milestones and their steps, in exactly this shape — no',
     'numbering, no markdown, no blank-line rules to interpret:',
     'MILESTONE: what this one delivers, in a few words',

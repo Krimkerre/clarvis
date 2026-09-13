@@ -35,6 +35,15 @@ test('it stops at the milestone it was given', () => {
   assert.match(nextMilestoneTask(milestone, 'Snapshot'), /Never tick a step whose check did not pass/);
 });
 
+test('a server is checked in-process, because nothing in a check can listen on a port', () => {
+  // Found live, 13 September 2026: a check started a web server and curled it, and the
+  // sandbox refused the bind twice before the run tested the handler instead.
+  const task = nextMilestoneTask(milestone, 'Snapshot');
+
+  assert.match(task, /can listen on a port or reach the network, localhost included/);
+  assert.match(task, /Check it in-process instead/);
+});
+
 test('the task says which milestone this is out of how many', () => {
   // Found live: "That's Milestone 4 finished — Milestone 5, if there is one, is a
   // separate conversation." There were four, and the plan he had just read said so.

@@ -36,6 +36,18 @@ const DENIED_NETWORK =
   /could not resolve host|connection refused|network is unreachable|\bENOTFOUND\b|\bECONNREFUSED\b|\bEHOSTUNREACH\b|\bETIMEDOUT\b|curl: \(([67])\)/i;
 
 /**
+ * A server that could not open its port.
+ *
+ * **Checked first, because it reads exactly like a denied write.** Found live, 13 September
+ * 2026: a check started a web server, Python's `socket.bind` raised `PermissionError: [Errno
+ * 1] Operation not permitted`, and that phrase matches `DENIED_WRITE` — so the note attached
+ * would have blamed write access to the workspace for a port that could never be opened.
+ * Python puts `bind` and the error on different lines, hence the short window; Node says
+ * `listen EPERM`, Go says `bind: operation not permitted`.
+ */
+const DENIED_BIND = /\bbind\b[\s\S]{0,200}?(?:operation not permitted|permission denied)|\blisten E(?:PERM|ACCES)\b/i;
+
+/**
  * What to add to a failed command's result, if anything.
  *
  * Written to the model rather than the user: it is the one deciding what to tell them
@@ -48,6 +60,16 @@ export function confinementNote(
   networkAllowed = true
 ): string | undefined {
   if (!confined || exitCode === 0) return undefined;
+
+  if (!networkAllowed && DENIED_BIND.test(output)) {
+    return [
+      'Note: this ran confined with no network — nothing it starts can listen on a port, localhost included.',
+      'A bind or listen failure here is that, not a port already in use or a permissions problem on the machine.',
+      'Do not retry on another port or start the server some other way.',
+      'Check it in-process instead: call its handler with a test client or a fake request,',
+      'and say that is how it was checked.',
+    ].join(' ');
+  }
 
   if (!networkAllowed && DENIED_NETWORK.test(output)) {
     return [

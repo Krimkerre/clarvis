@@ -57,6 +57,15 @@ test('it refuses to build past milestone one', () => {
   assert.match(handoffTask(state, 'renames photos', []), /Do not build past milestone 1/);
 });
 
+test('the no-plan task checks a server in-process too, the same as the planned one', () => {
+  // The check rules are written out twice, here and in `nextMilestoneTask`; this keeps the
+  // copy the no-plan path hands over from drifting behind.
+  const task = handoffTask(state, 'renames photos', []);
+
+  assert.match(task, /can listen on a port or reach the network, localhost included/);
+  assert.match(task, /Check it in-process instead/);
+});
+
 test('no steps says so rather than pretending the milestone is empty on purpose', () => {
   const bare: InterviewState = { answers: [{ topic: 'what-it-does', text: 'a thing' }] };
   assert.match(handoffTask(bare, 'a thing', []), /no build steps were written/);

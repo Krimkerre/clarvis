@@ -17,6 +17,16 @@ test('answering turns are told where they are too', () => {
   assert.match(agentSystemPrompt(true, '/Users/me/weather-cli'), /\/Users\/me\/weather-cli/);
 });
 
+test('the working brief says a server is checked in-process, not started and connected to', () => {
+  // Found live, 13 September 2026: a check started a web server and curled it, and the
+  // sandbox refused the bind twice before the run tested the handler instead.
+  const brief = agentSystemPrompt(false, '/Users/me/shop');
+
+  assert.match(brief, /nothing they start can listen on a port/);
+  assert.match(brief, /localhost included/);
+  assert.match(brief, /request handler in-process/);
+});
+
 test('no folder means no sentence about one', () => {
   // A window with no folder open is a real state, and inventing a root for it would be
   // the exact failure this fixes.

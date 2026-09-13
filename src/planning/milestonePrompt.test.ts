@@ -35,6 +35,15 @@ test('every step is asked to carry the check that proves it works', () => {
   assert.match(prompt, /The step \| the check that proves it works/);
 });
 
+test('a check for anything that serves requests is written against its handler', () => {
+  // Found live, 13 September 2026: "logging in … shows the user's job status and photos on a
+  // web page" was run by starting the server and curling it, which the build sandbox refuses.
+  const prompt = milestonePrompt(state);
+
+  assert.match(prompt, /nothing can listen on a port or use the network/);
+  assert.match(prompt, /not against a running server/);
+});
+
 test('accepted findings are offered for folding, work only', () => {
   // Both halves matter. Folding all of them in is what emptied milestone one — a
   // clarification is not a build step. Dropping all of them loses the fixes the user

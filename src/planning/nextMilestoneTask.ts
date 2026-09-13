@@ -77,6 +77,11 @@ export function nextMilestoneTask(
     'A check that fails is a result, not a failure to hide: say so and stop.',
     'A check has to finish in seconds: anything that waits on the clock — a timer, a sleep,',
     'a countdown — gets the shortest duration the program accepts, never the real one.',
+    // Found live, 13 September 2026: a check started a web server and curled it, and the
+    // sandbox refused the bind twice before the run tested the handler instead.
+    'Nothing a check runs can listen on a port or reach the network, localhost included, so a',
+    'server cannot be started and connected to here. Check it in-process instead — call its',
+    'handler with a test client or a fake request — and say that is how it was checked.',
     'Never tick a step whose check did not pass. If a check could not run — something it',
     'needs is missing, or it would not start — leave the step unticked, keep its wording, and say why.',
     '',

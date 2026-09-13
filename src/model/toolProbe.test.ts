@@ -149,3 +149,36 @@ test('a readiness check that times out right after an answered one is still read
     'an error the server answered with is a real answer'
   );
 });
+
+// ------------------- a reasoning stream teaches whoever built the provider
+
+test('a stream that shows reasoning reports the model, once', async () => {
+  // Found live, 13 September 2026: gemini-3.8-flash through RAVIS sent its thinking as
+  // OpenRouter's `reasoning` field, which nothing here read, before any content.
+  const spec = providerSpec('custom');
+  assert.ok(spec);
+  const seen: string[] = [];
+  const reasoner = new OpenAiCompatibleProvider(spec, async () => undefined, () => 'http://runtime.invalid', () => {}, (model) => {
+    seen.push(model);
+  });
+  const body = [
+    'data: {"choices":[{"delta":{"reasoning":"Let me think."}}]}',
+    'data: {"choices":[{"delta":{"reasoning":"Still thinking."}}]}',
+    'data: {"choices":[{"delta":{"content":"Here it is."}}]}',
+    'data: [DONE]',
+    '',
+  ].join('\n\n');
+
+  const said = await withFetch(
+    async () => new Response(body, { status: 200 }),
+    async () => {
+      let text = '';
+      const request = { system: 's', messages: [{ role: 'user' as const, content: 'hi' }], model: 'google/gemini-3.8-flash' };
+      for await (const fragment of reasoner.stream(request)) text += fragment;
+      return text;
+    }
+  );
+
+  assert.equal(said, 'Here it is.');
+  assert.deepEqual(seen, ['google/gemini-3.8-flash']);
+});

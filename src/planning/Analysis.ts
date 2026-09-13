@@ -54,7 +54,7 @@ export async function runAnalysis(
   let timedOut = false;
   try {
     const text = await withDeadline(
-      ANALYSIS_TIMEOUT_MS,
+      models.deadline(ANALYSIS_TIMEOUT_MS),
       (signal) =>
         collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: analysisPrompt(state) }], signal }, MAX_RESPONSE_CHARS),
       () => '',
@@ -104,7 +104,7 @@ export async function planMilestone(
   let timedOut = false;
   try {
     const text = await withDeadline(
-      ANALYSIS_TIMEOUT_MS,
+      models.deadline(ANALYSIS_TIMEOUT_MS),
       (signal) =>
         collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: milestonePrompt(state, accepted, rejected) }], signal }, MAX_RESPONSE_CHARS),
       () => '',
@@ -149,7 +149,7 @@ export async function revisePlan(
   let timedOut = false;
   try {
     const reply = await withDeadline(
-      REVISION_TIMEOUT_MS,
+      models.deadline(REVISION_TIMEOUT_MS),
       (signal) =>
         collect(models, { system: revisionSystemPrompt(), messages: [{ role: 'user', content: revisionPrompt(planText, feedback) }], signal }, MAX_REVISION_CHARS),
       () => '',

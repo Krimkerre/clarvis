@@ -55,7 +55,7 @@ export async function recordMilestone(
 
   try {
     const text = await withDeadline(
-      TIMEOUT_MS,
+      models.deadline(TIMEOUT_MS),
       (signal) =>
         collect(models, { system: analysisSystemPrompt(), messages: [{ role: 'user', content: recordMilestonePrompt(existing, summary) }], signal }, MAX_RESPONSE_CHARS),
       () => ''

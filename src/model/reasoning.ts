@@ -169,6 +169,19 @@ export class ReasoningWatch {
   private sawText = false;
   private sawReasoning = false;
   private sawTool = false;
+  /** OpenRouter's `reasoning` field, which only tells that the model thinks — see `push`. */
+  private sawReasoningAside = false;
+  private told = false;
+
+  constructor(
+    /**
+     * Told once, the moment the stream shows the model reasons — in a reasoning field or an
+     * inline think block — so the deadlines on its later calls can be stretched (see
+     * `reasoningDeadline`). The moment, not the end: a call cut off by its deadline still
+     * teaches the next one.
+     */
+    private readonly onReasoning?: () => void
+  ) {}
 
   /**
    * One delta in, whatever the user may see out.
@@ -180,12 +193,23 @@ export class ReasoningWatch {
    * said something. It is still *emitted*: what is shown and what counts are different
    * questions, and trimming the stream is how words get glued together.
    */
-  push(delta?: { content?: string; reasoning_content?: string }): string {
+  push(delta?: { content?: string; reasoning_content?: string; reasoning?: string }): string {
     if (delta?.reasoning_content) this.sawReasoning = true;
+    // OpenRouter's name for it, which RAVIS passes through. Only a sign that the model thinks:
+    // the "said nothing but thought" advice is about `reasoning_content`, and stays that way.
+    if (delta?.reasoning) this.sawReasoningAside = true;
 
     const text = this.filter.push(delta?.content ?? '');
     if (text.trim()) this.sawText = true;
+    this.tellOnce();
     return text;
+  }
+
+  /** Tells `onReasoning` the first time any sign of thinking has been seen, and never again. */
+  private tellOnce(): void {
+    if (this.told || !(this.sawReasoning || this.sawReasoningAside || this.filter.suppressed)) return;
+    this.told = true;
+    this.onReasoning?.();
   }
 
   /**

@@ -228,6 +228,8 @@ test('every answer is saved as it lands, not once at the end', async () => {
 function streamingModel(fragments: Iterable<string>): ModelService {
   return {
     isReady: async () => true,
+    // A model that answers at once: its deadlines are the written ones.
+    deadline: (ms: number) => ms,
     stream: async function* () {
       for (const fragment of fragments) yield fragment;
     },

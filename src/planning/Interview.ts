@@ -47,7 +47,7 @@ const PHRASE_TIMEOUT_MS = 6000;
  */
 function promptModel(models: ModelService, prompt: string, limit: number): Promise<string> {
   return withDeadline(
-    PHRASE_TIMEOUT_MS,
+    models.deadline(PHRASE_TIMEOUT_MS),
     (signal) => collect(models, { system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }], signal }, limit),
     () => ''
   );

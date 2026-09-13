@@ -90,6 +90,8 @@ interface OpenAiChunk {
        * is otherwise indistinguishable from a model that said nothing.
        */
       reasoning_content?: string;
+      /** OpenRouter's name for the same thing, passed through by RAVIS. Read only as a sign the model reasons. */
+      reasoning?: string;
       tool_calls?: {
         index?: number;
         id?: string;
@@ -141,7 +143,9 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     private readonly spec: ProviderSpec,
     private readonly getKey: () => Promise<string | undefined>,
     private readonly baseUrlOverride: () => string | undefined,
-    private readonly log: (message: string) => void
+    private readonly log: (message: string) => void,
+    /** Told when a stream shows the model reasons, with the model's id (see `ReasoningWatch`). */
+    private readonly onReasoning?: (model: string) => void
   ) {
     this.id = spec.id;
   }
@@ -292,7 +296,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
     const response = await this.post(request, openAiTools(request.tools));
     const parser = new SseParser();
     const pending = new Map<number, PartialCall>();
-    const watch = new ReasoningWatch();
+    const watch = new ReasoningWatch(() => this.onReasoning?.(request.model));
 
     for await (const chunk of decodeStream(response.body!)) {
       for (const payload of parser.push(chunk)) {
@@ -388,7 +392,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   async *stream(request: CompletionRequest): AsyncIterable<string> {
     const response = await this.post(request);
     const parser = new SseParser();
-    const watch = new ReasoningWatch();
+    const watch = new ReasoningWatch(() => this.onReasoning?.(request.model));
     let done = false;
 
     for await (const chunk of decodeStream(response.body!)) {

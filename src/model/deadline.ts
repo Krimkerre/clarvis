@@ -48,3 +48,23 @@ export async function withDeadline<T>(
     clearTimeout(timer);
   }
 }
+
+/**
+ * How much longer a model that reasons gets than a deadline written for one that answers
+ * straight away.
+ *
+ * **Found live, 13 September 2026.** With `google/gemini-3.8-flash` through RAVIS, the opening
+ * line (5 s), every interview question (6 s) and the first gap review (15 s) came back empty,
+ * so each fell back to its written line. On a one-line prompt the model spent 227 of its 240
+ * completion tokens thinking and showed its first word after 3.1 s; Clarvis's real prompts are
+ * longer. The deadlines were written for models that start answering at once.
+ *
+ * Three times, not a fixed number of seconds: a 6 s question becomes 18 s and a 15 s review 45 s,
+ * which keeps each deadline in proportion to the work it guards.
+ */
+export const REASONING_DEADLINE_FACTOR = 3;
+
+/** A deadline written for a model that answers at once, stretched for one that thinks first. */
+export function reasoningDeadline(baseMs: number): number {
+  return baseMs * REASONING_DEADLINE_FACTOR;
+}

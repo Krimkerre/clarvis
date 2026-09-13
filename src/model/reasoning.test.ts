@@ -183,3 +183,38 @@ test('the shape reported is the one the user can act on', () => {
   inline.push({ content: '<think>thinking</think>' });
   assert.equal(inline.shape(), 'inline');
 });
+
+// ------------------- a stream that shows reasoning says so once, so deadlines can stretch
+
+test('reasoning is reported the moment it shows, in each of its three shapes', () => {
+  // OpenRouter's `reasoning` (what gemini-3.8-flash sent through RAVIS on 13 September 2026),
+  // LM Studio's `reasoning_content`, and an inline think block.
+  for (const delta of [{ reasoning: 'thinking' }, { reasoning_content: 'thinking' }, { content: '<think>thinking' }]) {
+    let told = 0;
+    const watch = new ReasoningWatch(() => told++);
+
+    watch.push(delta);
+    assert.equal(told, 1, JSON.stringify(delta));
+    watch.push(delta);
+    watch.push({ content: ' the answer' });
+    assert.equal(told, 1, `told once, not per frame: ${JSON.stringify(delta)}`);
+  }
+});
+
+test('a model that just answers is never reported as reasoning', () => {
+  let told = 0;
+  const watch = new ReasoningWatch(() => told++);
+
+  watch.push({ content: 'The build ' });
+  watch.push({ content: 'passed.' });
+  watch.flush();
+  assert.equal(told, 0);
+});
+
+test("OpenRouter's reasoning field does not change what an empty reply is blamed on", () => {
+  // It only tells that the model thinks; the reasoning-only error keeps meaning LM Studio's field.
+  const watch = new ReasoningWatch();
+
+  watch.push({ reasoning: 'thinking' });
+  assert.equal(watch.saidNothing(), false);
+});

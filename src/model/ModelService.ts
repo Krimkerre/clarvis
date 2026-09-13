@@ -11,6 +11,7 @@ import {
 import { PROVIDERS, ProviderId, ProviderSpec, providerSpec, resolveBaseUrl } from './providers';
 import { ModelRole, RoleSettings, resolveRole } from './roles';
 import { launcherCredential } from './ravisCredential';
+import { REASONING_DEADLINE_FACTOR, reasoningDeadline } from './deadline';
 import { randomUUID } from 'crypto';
 
 /** Secret-storage key per provider. Namespaced so one provider's key can't shadow another's. */
@@ -28,6 +29,9 @@ export function keySecretId(provider: ProviderId): string {
 export class ModelService {
   /** Tool-support probe results, keyed by `provider/model`. Cheap, but not free. */
   private readonly toolSupport = new Map<string, boolean>();
+
+  /** Models seen reasoning this session, keyed by `provider/model`. See `deadline()`. */
+  private readonly reasoning = new Set<string>();
 
   /**
    * This window's conversation id, for RAVIS's model affinity (§12.1).
@@ -99,6 +103,24 @@ export class ModelService {
   /** Whether a question can be sent right now. */
   async isReady(role: ModelRole = 'chat'): Promise<boolean> {
     return this.provider(role).isAvailable();
+  }
+
+  /**
+   * A deadline for this role's model: as written, or stretched once the model has been seen
+   * reasoning this session (see `reasoningDeadline`). The first call of a session is the one
+   * that learns it — reasoning arrives before the answer, so even a call its deadline cuts off
+   * teaches the next one.
+   */
+  deadline(baseMs: number, role: ModelRole = 'chat'): number {
+    return this.reasoning.has(`${this.spec(role).id}/${this.model(role)}`) ? reasoningDeadline(baseMs) : baseMs;
+  }
+
+  /** Remembers, once, that a model reasons before it answers — for `deadline()`. */
+  private learnReasoning(provider: ProviderId, model: string): void {
+    const key = `${provider}/${model}`;
+    if (this.reasoning.has(key)) return;
+    this.reasoning.add(key);
+    this.log(`model: ${key} reasons before it answers — its planning and opening deadlines are stretched ×${REASONING_DEADLINE_FACTOR} from now on`);
   }
 
   /** The endpoint actually in use — the spec's default, or the user's override. */
@@ -218,7 +240,7 @@ export class ModelService {
     if (spec.dialect === 'anthropic') {
       return new AnthropicProvider(spec, getKey, override, this.log);
     }
-    return new OpenAiCompatibleProvider(spec, getKey, override, this.log);
+    return new OpenAiCompatibleProvider(spec, getKey, override, this.log, (model) => this.learnReasoning(spec.id, model));
   }
 }
 

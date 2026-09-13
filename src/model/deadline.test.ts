@@ -73,3 +73,13 @@ test('a real error still propagates rather than being read as a timeout', async 
     /provider exploded/
   );
 });
+
+import { REASONING_DEADLINE_FACTOR, reasoningDeadline } from './deadline';
+
+test('a model that reasons gets its deadline stretched, in proportion to the work', () => {
+  // Found live, 13 September 2026: gemini-3.8-flash missed the 5 s opening line, every 6 s
+  // question and the 15 s gap review, because it thinks for seconds before its first word.
+  assert.equal(REASONING_DEADLINE_FACTOR, 3);
+  assert.equal(reasoningDeadline(6000), 18000);
+  assert.equal(reasoningDeadline(15000), 45000);
+});

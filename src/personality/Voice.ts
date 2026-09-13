@@ -98,7 +98,7 @@ export class Voice {
       if (!(await this.models.isReady('chat'))) return fallback;
 
       const raw = await withDeadline(
-        OPENING_DEADLINE_MS,
+        this.models.deadline(OPENING_DEADLINE_MS),
         (signal) => this.collect(openingPrompt(situation, kind, keep), signal),
         () => '',
         () => this.tooSlow('opening')

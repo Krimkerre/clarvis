@@ -75,6 +75,8 @@ function scriptedModel(
   const asked: Kind[] = [];
   const service = {
     isReady: async () => true,
+    // A model that answers at once: its deadlines are the written ones.
+    deadline: (ms: number) => ms,
     async *stream(request: { messages: { content: unknown }[] }) {
       const prompt = String(request.messages[0]?.content);
       const kind: Kind = prompt.includes('Apply that feedback')

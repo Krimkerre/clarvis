@@ -240,6 +240,34 @@ export function withoutBranch(flow: BranchFlow, branch: string): BranchFlow {
 }
 
 /**
+ * The flow with `branch` as its trunk, keeping the old trunk as a step only if it exists.
+ *
+ * **Found live, 13 September 2026.** A plan written into a fresh repository declared
+ * `trunk: main` — the default — while `git init` had made `master`. Answering "It's the
+ * trunk" for `master` then wrote `integration: main` into the plan and said "`master` is
+ * the trunk now, with `main` kept as a step", about a branch that had never existed. Keeping
+ * the old trunk is right for a project moving from `master` to `main`, which still routes
+ * work through the old one for a while; it is only right when there is an old one.
+ *
+ * Local *and* remote, as in `missingBranches`: an old trunk deleted locally but alive on
+ * the remote is still a branch work goes through.
+ */
+export function withTrunk(
+  flow: BranchFlow,
+  branch: string,
+  existing: { local: string[]; remote: string[] }
+): { flow: BranchFlow; keptAsStep?: string } {
+  const known = new Set([...existing.local, ...existing.remote.map(stripRemote)]);
+  const old = flow.trunk;
+  const keptAsStep = old && old !== branch && known.has(old) ? old : undefined;
+
+  return {
+    flow: { ...flow, trunk: branch, extra: [...(flow.extra ?? []), ...(keptAsStep ? [keptAsStep] : [])] },
+    keptAsStep,
+  };
+}
+
+/**
  * Branches the flow names that no longer exist anywhere.
  *
  * **Local *and* remote.** Deleting a branch locally after merging it is routine — the

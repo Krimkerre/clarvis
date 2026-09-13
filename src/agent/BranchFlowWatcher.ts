@@ -9,6 +9,7 @@ import {
   missingBranches,
   parseBranchFlow,
   withoutBranch,
+  withTrunk,
   writeBranchFlow,
 } from './branchFlow';
 import { isAgentBranch } from './branchNames';
@@ -234,7 +235,7 @@ export class BranchFlowWatcher {
 
     // One at a time. Three questions at once about three branches is a form, and
     // people close forms.
-    await this.ask(unknown[0], flow, plan, options.remark);
+    await this.ask(unknown[0], flow, plan, options.remark, { local: branches, remote: remotes });
   }
 
   /**
@@ -281,7 +282,9 @@ export class BranchFlowWatcher {
     branch: string,
     flow: BranchFlow,
     plan: { uri: vscode.Uri; text: string },
-    remark: boolean
+    remark: boolean,
+    /** The branches that exist, so an old trunk is only kept when there is one. */
+    existing: { local: string[]; remote: string[] }
   ): Promise<void> {
     this.log(`branch flow: asking about "${branch}"`);
 
@@ -314,21 +317,21 @@ export class BranchFlowWatcher {
       return;
     }
 
-    const updated: BranchFlow =
-      picked === "It's the trunk"
-        ? // The old trunk becomes a step rather than being discarded — a project moving
-          // from `master` to `main` still routes work through the old one for a while.
-          { ...flow, trunk: branch, extra: [...(flow.extra ?? []), flow.trunk].filter(isName) }
-        : { ...flow, extra: [...(flow.extra ?? []), branch] };
+    // The old trunk becomes a step rather than being discarded — a project moving from
+    // `master` to `main` still routes work through the old one for a while — but only when
+    // that branch exists (see `withTrunk`).
+    const trunk = picked === "It's the trunk" ? withTrunk(flow, branch, existing) : undefined;
+    const updated: BranchFlow = trunk ? trunk.flow : { ...flow, extra: [...(flow.extra ?? []), branch] };
 
     await this.writePlan(plan, updated);
     const committed = await this.commitPlan(branch);
 
     // One line, at the end, saying what is now true — rather than a running commentary
     // of each step that got there.
+    const step = trunk?.keptAsStep ? `, with \`${trunk.keptAsStep}\` kept as a step` : '';
     this.note(
-      picked === "It's the trunk"
-        ? `\`${branch}\` is the trunk now, with \`${flow.trunk}\` kept as a step${committed ? ', and plan.md is committed' : ' — plan.md is updated but not committed'}.`
+      trunk
+        ? `\`${branch}\` is the trunk now${step}${committed ? ', and plan.md is committed' : ' — plan.md is updated but not committed'}.`
         : `Noted — work passes through \`${branch}\`${committed ? ', and plan.md is committed' : '. plan.md is updated but not committed'}.`
     );
   }
@@ -385,10 +388,6 @@ export class BranchFlowWatcher {
     const seen = this.context.workspaceState.get<string[]>(SEEN_KEY) ?? [];
     await this.context.workspaceState.update(SEEN_KEY, [...seen, branch]);
   }
-}
-
-function isName(value: string | undefined): value is string {
-  return Boolean(value);
 }
 
 async function readPlan(): Promise<{ uri: vscode.Uri; text: string } | undefined> {

@@ -268,3 +268,40 @@ test('removing the primary integration branch clears that slot', () => {
 
   assert.equal(next.integration, undefined);
 });
+
+import { withTrunk } from '../branchFlow';
+
+test('a trunk that never existed is replaced, not kept as a step', () => {
+  // Found live, 13 September 2026: the plan's default `trunk: main` in a repository where
+  // `git init` had made `master`. "It's the trunk" for `master` wrote `integration: main` and
+  // said `main` was kept as a step — a branch that had never existed.
+  const { flow, keptAsStep } = withTrunk({ trunk: 'main', work: ['clarvis/<task>'] }, 'master', { local: ['master'], remote: [] });
+
+  assert.equal(flow.trunk, 'master');
+  assert.equal(keptAsStep, undefined);
+  assert.deepEqual(flowBranches(flow), ['master']);
+  assert.deepEqual(flow.work, ['clarvis/<task>']);
+});
+
+test('an old trunk that exists is kept as a step, as a project moving trunks still needs', () => {
+  const { flow, keptAsStep } = withTrunk({ trunk: 'master', extra: ['qa'] }, 'main', { local: ['main', 'master', 'qa'], remote: [] });
+
+  assert.equal(flow.trunk, 'main');
+  assert.equal(keptAsStep, 'master');
+  assert.deepEqual(flow.extra, ['qa', 'master']);
+});
+
+test('an old trunk alive only on the remote still counts as existing', () => {
+  // Same rule as `missingBranches`: deleting a branch locally is housekeeping, not an ending.
+  const { keptAsStep } = withTrunk({ trunk: 'master' }, 'main', { local: ['main'], remote: ['origin/master'] });
+
+  assert.equal(keptAsStep, 'master');
+});
+
+test('a flow with no trunk yet simply gains one', () => {
+  const { flow, keptAsStep } = withTrunk({ integration: 'testing' }, 'main', { local: ['main', 'testing'], remote: [] });
+
+  assert.equal(flow.trunk, 'main');
+  assert.equal(flow.integration, 'testing');
+  assert.equal(keptAsStep, undefined);
+});

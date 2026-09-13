@@ -31,6 +31,8 @@ export interface CodingRun {
   readonly result: { commits: string[]; files: string[] };
   /** True when the run ended on something it could not get past. A person's Stop is not that. */
   readonly blocked: boolean;
+  /** True when the run ended because it used every step it was allowed, not because it finished. */
+  readonly endedAtStepCap: boolean;
   /** The branch the work is on, and the branch the person started from. */
   readonly branches: { working?: string; startedFrom?: string };
   readonly stillMissing: MissingDependency | undefined;

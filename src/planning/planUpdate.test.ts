@@ -233,6 +233,27 @@ test('the question about plan.md is only asked when there is one', () => {
   assert.equal(unplannedRunOffer('it works', 1).detail, 'it works');
 });
 
+// ------------------- a run stopped at its step limit is not a finished milestone
+
+import { stepCapOffer } from './planUpdate';
+
+test('a run stopped at its step limit does not claim a finished milestone', () => {
+  // Found live, 13 September 2026: 25 steps used, one of milestone 1's two steps ticked, and
+  // the pause still said "Milestone finished — 10 files changed" and offered to update the plan.
+  const { message, actions } = stepCapOffer("I've used 25 steps without finishing.", 10);
+
+  assert.match(message, /^Stopped at the step limit — 10 files changed\.$/);
+  assert.doesNotMatch(message, /finished/i);
+  assert.ok(!actions.includes('Update the plan'), 'nothing offers to tick steps whose checks never ran');
+});
+
+test('the step-limit offer keeps what the run said and leaves the plan alone', () => {
+  const { detail } = stepCapOffer("I've used 25 steps without finishing.", 1);
+
+  assert.match(detail, /^I've used 25 steps without finishing\./);
+  assert.match(detail, /isn't finished, so plan\.md is left as it is/);
+});
+
 test('one file is not "1 files"', () => {
   assert.match(plannedMilestoneOffer('', 1).message, /1 file changed/);
   assert.match(plannedMilestoneOffer('', 0).message, /0 files changed/);

@@ -134,6 +134,8 @@ export class AgentRunner implements CodingRun {
    */
   private pendingIsolation: string | undefined;
   private steps = 0;
+  /** Whether the run ended because it used every step it was allowed. See `endedAtStepCap`. */
+  private stepCapped = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -729,6 +731,7 @@ export class AgentRunner implements CodingRun {
 
     // The cap is a stop-and-ask, not a failure: a long task is not a wrong one, but a
     // loop that never converges must not run up a bill unattended.
+    this.stepCapped = true;
     yield this.record({
       kind: 'done',
       text: `I've used ${this.steps} steps without finishing. Say "carry on" if it's going well, or stop me here.`,
@@ -1268,6 +1271,14 @@ export class AgentRunner implements CodingRun {
   /** Whether the run ended at a missing dependency — which is not a finished milestone. */
   get blocked(): boolean {
     return this.halted !== undefined || this.unresolved.size > 0;
+  }
+
+  /**
+   * Whether the run ended because it used every step it was allowed — which is not a
+   * finished milestone either. The Codex engine reports the same from RAVIS's step cap.
+   */
+  get endedAtStepCap(): boolean {
+    return this.stepCapped;
   }
 
   /**

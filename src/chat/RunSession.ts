@@ -10,7 +10,7 @@ import { Busy } from './Busy';
 import { offerGitFix } from '../agent/gitOffer';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
-import { plannedMilestoneOffer, unplannedRunOffer } from '../planning/planUpdate';
+import { plannedMilestoneOffer, stepCapOffer, unplannedRunOffer } from '../planning/planUpdate';
 import { StepExplanation } from '../agent/stepExplanation';
 import { PendingChoice } from './PendingChoice';
 import { reviewMilestone } from '../agent/readBack';
@@ -749,7 +749,7 @@ export class RunSession {
     // person has just been asked about, so there is nothing to mark off, land or review
     // yet — offering to would invite ticking work whose checks never ran.
     const changed = runner.blocked ? 0 : files.length;
-    await this.close(task, summary, changed, closing, runner.branches);
+    await this.close(task, summary, changed, closing, runner);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
@@ -823,17 +823,22 @@ export class RunSession {
    * that edits it on its own behalf — recording its own work as complete, on its own
    * say-so — is exactly the thing sign-off exists to prevent.
    */
-  private async settleMilestone(summary: string, changed: number): Promise<void> {
-    // A run handed over from `NO-PLAN-NEEDED` has no plan to record against, and
-    // offering to update one anyway is a button that could only do nothing.
-    const { message, detail, actions } = (await RunSession.planExists())
-      ? plannedMilestoneOffer(summary, changed)
-      : unplannedRunOffer(summary, changed);
+  private async settleMilestone(summary: string, changed: number, ending: 'finished' | 'step-cap'): Promise<void> {
+    // A run that used every step it had did not finish its milestone, whatever it changed
+    // on the way — so it is not offered as one (see `stepCapOffer`). A run handed over from
+    // `NO-PLAN-NEEDED` has no plan to record against, and offering to update one anyway is
+    // a button that could only do nothing.
+    const { message, detail, actions } =
+      ending === 'step-cap'
+        ? stepCapOffer(summary, changed)
+        : (await RunSession.planExists())
+          ? plannedMilestoneOffer(summary, changed)
+          : unplannedRunOffer(summary, changed);
 
     const answer = await vscode.window.showInformationMessage(message, { modal: true, detail }, ...actions);
 
     if (answer !== 'Update the plan') {
-      this.log('agent: milestone finished, plan left untouched');
+      this.log(ending === 'step-cap' ? 'agent: stopped at the step limit, plan left untouched' : 'agent: milestone finished, plan left untouched');
       return;
     }
 
@@ -984,7 +989,8 @@ export class RunSession {
     summary: string,
     changed: number,
     closing = '',
-    landing?: { working?: string; startedFrom?: string }
+    /** Where the work is, and whether the run finished or used every step it had. */
+    run?: Pick<CodingRun, 'branches' | 'endedAtStepCap'>
   ): Promise<void> {
     // **A run that changed nothing still ends.** There is no closing line in that case —
     // "your own work is untouched" is meaningless when nothing was touched at all — so
@@ -1016,7 +1022,7 @@ export class RunSession {
     // live: eight `clarvis/*` branches stacked in a straight line, each announcing "I
     // couldn't start cleanly from where you were", and a request to merge to main that
     // created a branch called `clarvis/merge-to-main`.
-    await this.offerToLandTheWork(changed, landing?.working, landing?.startedFrom);
+    await this.offerToLandTheWork(changed, run?.branches.working, run?.branches.startedFrom);
 
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.
@@ -1027,10 +1033,22 @@ export class RunSession {
     // plan approved on Monday still read as entirely unbuilt on Friday. A run that
     // came from a plan stops here, shows what it changed, and offers to write that
     // back before anything else happens.
-    if (this.fromPlan && changed > 0) await this.settleMilestone(said, changed);
+    if (this.fromPlan && changed > 0) await this.settleMilestone(said, changed, run?.endedAtStepCap ? 'step-cap' : 'finished');
 
+    await this.sayAside(task, said);
+  }
+
+  /**
+   * The aside after a run — comic relief once the summary has landed.
+   *
+   * **Stripped like the summary is.** Found live, 13 September 2026: the aside after a build
+   * came back as "STEP: Implement a basic login form with username and password fields." — a
+   * step announcement, not a remark — and reached the chat as its own line.
+   */
+  private async sayAside(task: string, said: string): Promise<void> {
     const aside = (await this.live?.afterTask(task, said)) ?? this.closers.pick('taskDone')?.text;
-    if (aside) await this.note(aside);
+    const shown = aside && readStepMarkers(aside).text.trim();
+    if (shown) await this.note(shown);
   }
 
   /**

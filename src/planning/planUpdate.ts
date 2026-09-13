@@ -375,3 +375,20 @@ export function unplannedRunOffer(summary: string, changed: number): SettledOffe
     actions: ['Right you are'],
   };
 }
+
+/**
+ * A run that used every step it was allowed: say so, and offer nothing to record.
+ *
+ * **Found live, 13 September 2026.** A build used its 25 steps with milestone 1 half done —
+ * one step ticked, the other untouched — and said "I've used 25 steps without finishing".
+ * The pause that followed still opened with "Milestone finished — 10 files changed" and
+ * offered to mark off what was done. Nothing about the milestone was finished, and "Update
+ * the plan" would have invited ticking steps whose checks never ran.
+ */
+export function stepCapOffer(summary: string, changed: number): SettledOffer {
+  return {
+    message: `Stopped at the step limit — ${filesChanged(changed)}.`,
+    detail: `${summary}\n\nThe milestone isn't finished, so plan.md is left as it is.`,
+    actions: ['Right you are'],
+  };
+}

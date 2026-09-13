@@ -42,6 +42,22 @@ test('an empty string counts as missing', () => {
   assert.equal(validateArgs('readFile', { path: '' }).ok, false);
 });
 
+test('an empty file and a deletion are edits, not missing arguments', () => {
+  // Found live, 13 September 2026: `writeFile tests/__init__.py` with empty contents came
+  // back "writeFile needs \"contents\"", and the run spent a step on `: > tests/__init__.py`
+  // instead. An empty package marker is a real file; replacing text with nothing deletes it.
+  assert.equal(validateArgs('writeFile', { path: 'tests/__init__.py', contents: '' }).ok, true);
+  assert.equal(validateArgs('applyEdit', { path: 'a.ts', find: 'x', replace: '' }).ok, true);
+});
+
+test('text that must say something is still refused when empty', () => {
+  assert.equal(validateArgs('applyEdit', { path: 'a.ts', find: '', replace: 'y' }).ok, false);
+  assert.equal(validateArgs('writeFile', { path: '', contents: '' }).ok, false);
+  assert.equal(validateArgs('runCommand', { command: '' }).ok, false);
+  // Missing is still missing, even where empty is allowed.
+  assert.equal(validateArgs('writeFile', { path: 'a.ts' }).ok, false);
+});
+
 test('wrong primitive types are caught before the tool runs', () => {
   assert.equal(validateArgs('listFiles', { recursive: 'yes' }).ok, false);
   assert.equal(validateArgs('readFile', { path: 42 }).ok, false);

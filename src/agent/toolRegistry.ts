@@ -142,6 +142,17 @@ export const TOOLS: ToolSchema[] = [
 const BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));
 
 /**
+ * Required arguments where an empty string is a real value, not a missing one.
+ *
+ * **Found live, 13 September 2026.** `writeFile tests/__init__.py` with empty contents — a
+ * Python package marker, empty by design — was refused as `writeFile needs "contents"`,
+ * and the run spent a step writing it through the shell instead. Empty file text is a file;
+ * an empty replacement deletes what it matched. An empty path, search string or command
+ * still means nothing, and is still refused.
+ */
+const MAY_BE_EMPTY = new Set(['writeFile.contents', 'applyEdit.replace']);
+
+/**
  * Narrows a model-supplied string to a tool we actually have.
  *
  * The trust boundary. A model that hallucinates `deleteEverything` gets nothing back
@@ -179,7 +190,8 @@ export function validateArgs(name: ToolName, args: unknown): { ok: true } | { ok
   const supplied = args as Record<string, unknown>;
 
   for (const required of schema.parameters.required) {
-    if (supplied[required] === undefined || supplied[required] === '') {
+    const empty = supplied[required] === '' && !MAY_BE_EMPTY.has(`${name}.${required}`);
+    if (supplied[required] === undefined || empty) {
       return { ok: false, error: `${name} needs "${required}".` };
     }
   }

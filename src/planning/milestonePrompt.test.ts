@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { milestonePrompt, milestonesFrom, parseMilestones, parseMilestoneSteps } from './milestonePrompt';
 import { InterviewState } from './interviewTopics';
+import { FindingVerdict } from './verdictSummary';
 
 const state: InterviewState = {
   answers: [
@@ -71,6 +72,49 @@ test('a modified finding is offered in the user\'s own words', () => {
 
   assert.match(prompt, /- set up ruff/);
   assert.doesNotMatch(prompt, /name a linter/);
+});
+
+/** The live case from 13 Sep, verbatim: a safety finding settled by option number. */
+const plainTextPasswords: FindingVerdict = {
+  finding: {
+    class: 'safety',
+    what: 'Customer passwords are stored in plain text in passwords.txt on the server.',
+    whyItMatters: 'Storing passwords in plain text risks exposing all customer credentials if the file is accessed or leaked.',
+    fixes: [
+      'Hash the passwords before storing and compare hashed versions on login.',
+      'Use a dedicated secure user authentication system or database for login management.',
+    ],
+  },
+  status: 'modified',
+  reasoning: '1 but use bcrypt, and keep the password file out of the photos folder',
+};
+
+test('an agreed point travels with the finding it settled', () => {
+  // Found live, 13 September 2026: the planner was handed "1 but use bcrypt, and keep the
+  // password file out of the photos folder" and nothing else — no finding, no class, and no
+  // way to know what "1" was. Milestone 1 came back as "basic login and job status display
+  // with insecure password check", with the fix put off to milestone 2.
+  const prompt = milestonePrompt(state, [plainTextPasswords]);
+
+  assert.match(prompt, /1 but use bcrypt[^\n]*for the \[safety\] finding: Customer passwords are stored in plain text/);
+  assert.match(prompt, /"1" means option 1 they were offered: Hash the passwords before storing/);
+});
+
+test('a number that names no offered option is left as the user wrote it', () => {
+  const prompt = milestonePrompt(state, [{ ...plainTextPasswords, reasoning: '7 layers of hashing, please' }]);
+
+  assert.match(prompt, /- 7 layers of hashing, please — for the \[safety\] finding/);
+  assert.doesNotMatch(prompt, /means option/);
+});
+
+test('agreed points outrank earlier answers, and safety ones shape the first milestone', () => {
+  // The interview had said passwords are "compared as typed"; the agreed fix came later and
+  // has to win, from the first milestone that touches login — not as a later repair.
+  const prompt = milestonePrompt(state, [plainTextPasswords]);
+
+  assert.match(prompt, /wins over any earlier\s+answer it contradicts/);
+  assert.match(prompt, /plan the safe version from the start/);
+  assert.match(prompt, /never a step\s+that builds the unsafe way now and fixes it in a later milestone/);
 });
 
 test('no findings means no folding instructions cluttering the prompt', () => {

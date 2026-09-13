@@ -38,8 +38,9 @@ export function milestonePrompt(
    */
   rejected: FindingVerdict[] = []
 ): string {
-  // The user's own wording wins for a modified finding, same rule as everywhere else.
-  const findings = accepted.map(agreedResolution);
+  // The user's own wording wins for a modified finding, same rule as everywhere else — and
+  // it travels with the finding it settled (see `forThePlanner`).
+  const findings = accepted.map(forThePlanner);
   const turnedDown = rejected.map(rejectionNote);
 
   return [
@@ -61,6 +62,16 @@ export function milestonePrompt(
           'they belong in the order — a fix agreed before building starts is part of',
           'building, not a note about it. Leave out the ones that only ask a question',
           'to be settled; those are recorded separately and are not work.',
+          '',
+          // **Agreed later, so it wins — and safety wins from the start.** Found live, 13
+          // September 2026: the interview said passwords are "compared as typed", review
+          // settled on bcrypt, and milestone 1 was planned as "basic login … with insecure
+          // password check" with the hashing put off to milestone 2. A plan that builds the
+          // unsafe version first ships it the moment someone stops after milestone 1.
+          'An agreed point was decided after the interview, so it wins over any earlier',
+          'answer it contradicts. A [safety] point applies from the first milestone that',
+          'touches what it is about: plan the safe version from the start, never a step',
+          'that builds the unsafe way now and fixes it in a later milestone.',
           '',
         ]
       : []),
@@ -132,6 +143,31 @@ export function milestonePrompt(
     'MILESTONE: what the next one delivers',
     'Its first step | its check',
   ].join('\n');
+}
+
+/**
+ * One agreed point as the planner needs it: what was decided, and what it was about.
+ *
+ * **Found live, 13 September 2026.** A [safety] finding — customer passwords kept in plain
+ * text — was settled with "1 but use bcrypt, and keep the password file out of the photos
+ * folder". The planner was handed that line alone: no finding, no class, and no way to know
+ * that "1" meant hashing the passwords. Milestone 1 came back as "basic login and job status
+ * display with insecure password check", following the interview's "compares them as typed".
+ *
+ * The plan and the handoff keep `agreedResolution` on its own; only the planner, which has
+ * to decide where the work goes, gets the finding and the option a number points at.
+ */
+function forThePlanner(verdict: FindingVerdict): string {
+  const { finding } = verdict;
+  return `${agreedResolution(verdict)} — for the [${finding.class}] finding: ${finding.what}${optionReferredTo(verdict)}`;
+}
+
+/** What a modified answer's leading option number pointed at, when it names an offered fix. */
+function optionReferredTo(verdict: FindingVerdict): string {
+  if (verdict.status !== 'modified') return '';
+  const number = /^\s*(\d+)\b/.exec(verdict.reasoning ?? '')?.[1];
+  const fix = number ? verdict.finding.fixes[Number(number) - 1] : undefined;
+  return fix ? ` ("${number}" means option ${number} they were offered: ${fix})` : '';
 }
 
 /** One build step, with the check that proves it works. */

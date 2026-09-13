@@ -113,6 +113,14 @@ const NOT_READY_KINDS: Record<string, (reason: string) => RelayFailure> = {
 function notReady(details: Record<string, unknown>): RelayFailure {
   const state = typeof details.state === 'string' ? details.state : 'unknown';
   const reason = typeof details.reason === 'string' ? details.reason : '';
+  return failureForCodexState(state, reason);
+}
+
+/**
+ * The failure a Codex state stands for — from `409 CODEX_NOT_READY`, or read ahead of a start from
+ * `GET /api/v1/codex` (`codexReadiness.ts`, C2a), so both say the same thing.
+ */
+export function failureForCodexState(state: string, reason: string): RelayFailure {
   // hasOwn, so a state named like an Object.prototype member can't reach a function that isn't ours.
   if (Object.hasOwn(NOT_READY_KINDS, state)) return NOT_READY_KINDS[state](reason);
   return { kind: 'codex_not_ready', state, reason };

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stepAfterAsking, stopReply } from './stopDecision';
+import { engineDecisionAfterAsking, stepAfterAsking, stopReply } from './stopDecision';
 
 // Reported 11 September 2026: Stop pressed while "Do it / Skip this step" waited stopped
 // nothing until someone answered, and Stop pressed over "fold this into master?" said
@@ -20,6 +20,15 @@ test('a question released by Stop ends the run rather than reading as a decline'
   // Stop cancels the question, which comes back unanswered. Read as a decline, the model
   // would be told the user refused the step and the chat would say "Skipped".
   assert.equal(stepAfterAsking(false, true), 'stop');
+});
+
+test('a Codex answer is sent only when nothing has stopped it: a racing click, a released question and a stop elsewhere all send nothing', () => {
+  // M15 C2a: the same rule for the other engine. `stopped` covers this window's Stop, RAVIS's
+  // `stopping` (a stop from another window, the menu bar or the dashboard) and a request resolved elsewhere.
+  assert.equal(engineDecisionAfterAsking({ kind: 'once' }, false), 'send');
+  assert.equal(engineDecisionAfterAsking({ kind: 'once' }, true), 'drop');
+  assert.equal(engineDecisionAfterAsking(undefined, true), 'drop');
+  assert.equal(engineDecisionAfterAsking(undefined, false), 'drop', 'no answer is not consent');
 });
 
 test('a question still waiting after the run has finished is something to stop', () => {

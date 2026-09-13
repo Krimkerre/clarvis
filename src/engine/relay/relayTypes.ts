@@ -53,6 +53,16 @@ export type SettleNext = 'idle' | 'end' | 'transfer';
 /** Who holds a project lock: a Codex session in RAVIS, or a run of Clarvis's own engine in a window. */
 export type HolderKind = 'codex_session' | 'clarvis_run';
 
+/**
+ * What `GET /api/v1/codex` says, as far as starting a task needs it (`codex-state.json`). The body has
+ * much more — usage, runs, models, sign-in — which the menu bar and the dashboard read; Clarvis doesn't.
+ */
+export interface CodexState {
+  state: string;
+  reason: string;
+  runtime: { verdict?: string; strict_rules?: string; process?: { state?: string } };
+}
+
 /** A request Codex opened, as RAVIS relays it (`RequestView`). */
 export interface RequestView {
   id: string;

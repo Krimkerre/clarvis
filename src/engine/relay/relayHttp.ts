@@ -47,6 +47,12 @@ export function relayEndpoint(baseUrl: string, credential: string | undefined): 
   return { ok: true, endpoint: Object.freeze({ origin: url.origin, credential: secret }) };
 }
 
+/** Whether `baseUrl` is an http(s) address on this Mac: the only place the credential, or Codex, goes. */
+export function isLoopbackUrl(baseUrl: string): boolean {
+  const url = parseHttpUrl(baseUrl);
+  return url !== undefined && LOOPBACK.has(url.hostname);
+}
+
 export interface RelayRequest {
   method: 'GET' | 'POST' | 'DELETE';
   /** An absolute path on RAVIS, e.g. `/api/v1/agent-sessions`. */

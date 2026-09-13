@@ -1,0 +1,414 @@
+/**
+ * FakeRavisRelay's session state machine: turns, answers, steers, stops, presence and settles, so a
+ * Codex runner can be driven through a whole task against the contract (plan.md M15, C2a).
+ *
+ * **Still a labelled test double.** It is not RAVIS. It runs no Codex, holds no real lock and signals no
+ * process. It keeps the state the relay's routes describe — `agent-sessions.json`'s session states and
+ * the endpoint table in design §3.5.3 — and every answer and frame it produces goes through the same
+ * fixture checks as the rest of the fake (`relayContract.ts`), so it cannot drift from the contract
+ * without a test saying so. Where a fixture example exists for an answer, it answers with that example.
+ *
+ * **Where the contract leaves a choice, it says which it made:**
+ * - a created session's first turn is reported with `kind: "brief"`, the create body's `start.kind`
+ *   (the contract lists turn kinds only for later turns);
+ * - the stop sequence emits `stopping`, then each open request's `request.resolved`, then — a moment
+ *   later — `turn.completed` and `stopped` or `leftover` (design §5.3 step 3's order);
+ * - a settled session is left `idle` without its project lock (`conventions.json` open point: "the idle
+ *   view here shows it released").
+ *
+ * Test controls — `seed`, `openRequest`, `completeItem`, `completeTurn`, `ownerStop`, `restartRavis`,
+ * `supersedeLock`, `leaveProcessesOnStop`, `processesGone` — stand in for what Codex and the owner do.
+ * Test support only.
+ */
+
+import { randomBytes, randomUUID } from 'crypto';
+import type { IncomingHttpHeaders } from 'http';
+import * as path from 'path';
+import type { CreateSessionBody, DecisionKind, RequestKind, RequestView, SessionState } from '../../engine/relay/relayTypes';
+import { errorAnswer, fixtureAnswer, type FakeAnswer } from './fakeAnswers';
+import type { FakeEventStream } from './FakeRavisRelay';
+import { fixture, type FixtureRoute } from './relayContract';
+
+export interface LeftoverProcess {
+  pid: number;
+  comm: string;
+  started_at: string;
+}
+
+export interface MachineSession {
+  readonly id: string;
+  readonly token: string;
+  readonly root: string;
+  readonly taskId: string;
+  readonly stream: FakeEventStream;
+  state: SessionState;
+  activeTurn: string | null;
+  holdsLock: boolean;
+  superseded: boolean;
+  settleNeeded: boolean;
+  claim: { id: string; window: string } | null;
+  leftoverOnStop: LeftoverProcess[];
+  readonly open: Map<string, RequestView>;
+  /** Requests no longer open, and who resolved them. */
+  readonly resolvedBy: Map<string, string>;
+  // What windows did, for tests to assert on.
+  readonly answers: { requestId: string; decision: string; key: string | undefined }[];
+  readonly steers: { text: string; expectedTurnId: string | undefined; delivered: 'steered' | 'queued' }[];
+  readonly turns: { text: string; kind: string }[];
+  readonly claimsBy: string[];
+  readonly settles: { claim_id: string; commit: string; next: string }[];
+  readonly presence: { window_id: string; host: string; panel_connected: boolean }[];
+  interrupts: number;
+}
+
+/** What the machine needs from the fake that owns it. */
+export interface MachineHost {
+  stream(sessionId: string): FakeEventStream;
+  grantToken(sessionId: string, token: string): void;
+}
+
+const SESSIONS = 'POST /api/v1/agent-sessions';
+const TURNS = 'POST /api/v1/agent-sessions/{sid}/turns';
+const STEER = 'POST /api/v1/agent-sessions/{sid}/steer';
+const ANSWER = 'POST /api/v1/agent-sessions/{sid}/requests/{rid}/answer';
+const CLAIM = 'POST /api/v1/agent-sessions/{sid}/settle-claim';
+const SETTLE = 'POST /api/v1/agent-sessions/{sid}/settle';
+const LEFTOVER = 'POST /api/v1/agent-sessions/{sid}/leftover';
+
+/** Once stopping, nothing a window sends starts anything (design §5.3 step 3.3). */
+const STOPPING = new Set<SessionState>(['stopping', 'stopped', 'leftover']);
+const NEEDS_SETTLE = new Set<SessionState>(['stopped', 'completed_needs_review', 'paused_unanswered', 'paused_for_update', 'uncertain']);
+const MACHINE_LOCK_ID = 'pl_01J9ZK5A2B3C4D5E6F7G8H9J0K';
+
+type Route = (session: MachineSession, body: unknown, headers: IncomingHttpHeaders, url: URL) => FakeAnswer;
+
+export class FakeSessions {
+  /** Milliseconds between the parts of a stop sequence, and before a steer's feedback frame. */
+  stepMs = 5;
+  private readonly sessions = new Map<string, MachineSession>();
+  private counter = 0;
+
+  private readonly routes = new Map<string, Route>([
+    [TURNS, (session, body) => this.turn(session, body)],
+    [STEER, (session, body) => this.steer(session, body)],
+    ['POST /api/v1/agent-sessions/{sid}/interrupt', (session) => this.interrupt(session)],
+    [ANSWER, (session, body, headers, url) => this.answerRequest(session, url.pathname.split('/')[6], body, headers)],
+    ['POST /api/v1/agent-sessions/{sid}/presence', (session, body) => this.presence(session, body)],
+    [CLAIM, (session, body) => this.claimSettle(session, body)],
+    [SETTLE, (session, body) => this.settle(session, body)],
+    [LEFTOVER, (session) => this.stopLeftover(session)],
+  ]);
+
+  constructor(private readonly host: MachineHost) {}
+
+  /** The answer for a route this machine handles, or undefined for the fake's own default. */
+  answer(route: FixtureRoute, url: URL, headers: IncomingHttpHeaders, body: unknown): FakeAnswer | undefined {
+    if (route.key === SESSIONS) return this.create(body as CreateSessionBody);
+    if (route.key === 'GET /api/v1/agent-sessions') return this.list(url.searchParams.get('workspace_root'));
+    const session = this.sessions.get(decodeURIComponent(url.pathname.split('/')[4] ?? ''));
+    const handle = this.routes.get(route.key);
+    return session && handle ? handle(session, body, headers, url) : undefined;
+  }
+
+  get(id: string): MachineSession | undefined {
+    return this.sessions.get(id);
+  }
+
+  get all(): MachineSession[] {
+    return [...this.sessions.values()];
+  }
+
+  // ── Test controls ───────────────────────────────────────────────────────────
+
+  /** A live session with a token, as if a window had created it. */
+  seed(options: { root?: string; taskId?: string; state?: SessionState; holdsLock?: boolean; turnActive?: boolean } = {}): MachineSession {
+    this.counter++;
+    const id = `as_FAKE${String(this.counter).padStart(4, '0')}${randomBytes(4).toString('hex').toUpperCase()}`;
+    const state = options.state ?? 'running';
+    const session: MachineSession = {
+      id,
+      token: `ast_${randomBytes(32).toString('base64url')}`,
+      root: options.root ?? '/Users/owner/Documents/coding/add-utc-demo',
+      taskId: options.taskId ?? randomUUID(),
+      stream: this.host.stream(id),
+      state,
+      activeTurn: options.turnActive === false ? null : randomUUID(),
+      holdsLock: options.holdsLock ?? true,
+      superseded: false,
+      settleNeeded: NEEDS_SETTLE.has(state),
+      claim: null,
+      leftoverOnStop: [],
+      open: new Map(),
+      resolvedBy: new Map(),
+      answers: [],
+      steers: [],
+      turns: [],
+      claimsBy: [],
+      settles: [],
+      presence: [],
+      interrupts: 0,
+    };
+    this.sessions.set(id, session);
+    this.host.grantToken(id, session.token);
+    this.sync(session);
+    return session;
+  }
+
+  /** Codex asks for something: a request of `kind`, from the fixtures' example of that kind. */
+  openRequest(session: MachineSession, kind: RequestKind = 'command', patch: Partial<RequestView> = {}): RequestView {
+    const examples = fixture('agent-sessions.json').request_view_examples as RequestView[];
+    const example = examples.find((candidate) => candidate.kind === kind);
+    if (!example) throw new Error(`no ${kind} request in the fixtures`);
+    this.counter++;
+    const request: RequestView = { ...example, id: `rq_FAKE${this.counter}`, turn_id: session.activeTurn ?? randomUUID(), ...patch };
+    session.open.set(request.id, request);
+    session.state = 'waiting_on_you';
+    this.sync(session);
+    session.stream.emit('request.opened', { request });
+    return request;
+  }
+
+  /** Sends an opened request again, as a replay after a restart could. */
+  resendRequest(session: MachineSession, request: RequestView): number {
+    return session.stream.emit('request.opened', { request });
+  }
+
+  /** A finished item of Codex's turn. */
+  completeItem(session: MachineSession, item: Record<string, unknown>): number {
+    return session.stream.emit('item.completed', { turn_id: session.activeTurn ?? randomUUID(), item });
+  }
+
+  /** The turn ends; the session's work then waits to be saved. */
+  completeTurn(session: MachineSession, outcome: { status: 'completed' | 'failed' | 'interrupted'; error?: { kind: string; message: string } } = { status: 'completed' }): void {
+    const error = outcome.error ? { error: outcome.error } : {};
+    session.stream.emit('turn.completed', { turn_id: session.activeTurn ?? randomUUID(), status: outcome.status, ...error, processes_confirmed_gone: true });
+    session.activeTurn = null;
+    session.state = 'completed_needs_review';
+    session.settleNeeded = true;
+    this.sync(session);
+    session.stream.emit('session.state', { state: 'completed_needs_review', processes: { confirmed_gone: true, leftover: [] } });
+  }
+
+  /** The owner's Stop from the menu bar or the dashboard (design §3.5.5). */
+  ownerStop(session: MachineSession, source: 'menu_bar' | 'dashboard'): void {
+    this.stopSequence(session, source);
+  }
+
+  /** RAVIS restarted mid-turn: the session is uncertain, and its work waits to be saved (design §9). */
+  restartRavis(session: MachineSession): void {
+    session.activeTurn = null;
+    session.open.clear();
+    session.state = 'uncertain';
+    session.settleNeeded = true;
+    this.sync(session);
+    session.stream.emit('session.state', { state: 'uncertain', processes: { confirmed_gone: true, leftover: [] } });
+  }
+
+  /** Another editor held the checkout when RAVIS restarted: RAVIS's lock is superseded (design §6.3). */
+  supersedeLock(session: MachineSession): void {
+    session.superseded = true;
+    this.sync(session);
+    session.stream.emit('lock.changed', { state: 'superseded' });
+  }
+
+  leaveProcessesOnStop(session: MachineSession, leftover: LeftoverProcess[]): void {
+    session.leftoverOnStop = leftover;
+  }
+
+  /** The processes a stop left behind are gone now. */
+  processesGone(session: MachineSession): void {
+    session.leftoverOnStop = [];
+    this.toStopped(session, undefined);
+  }
+
+  // ── Routes ──────────────────────────────────────────────────────────────────
+
+  private create(body: CreateSessionBody): FakeAnswer {
+    const session = this.seed({ root: body.workspace_root, taskId: body.clarvis_task_id });
+    const answer = fixtureAnswer(SESSIONS, 'created');
+    const view = session.stream.view();
+    const codex = { ...(view.codex as Record<string, unknown>), active_turn_id: null };
+    answer.body = {
+      session: { ...view, state: 'starting', codex },
+      session_token: session.token,
+      events_url: `/api/v1/agent-sessions/${session.id}/events`,
+    };
+    setTimeout(() => this.announceTurn(session, 'brief'), this.stepMs);
+    return answer;
+  }
+
+  private list(root: string | null): FakeAnswer {
+    const items = this.all
+      .filter((session) => session.root === root)
+      .map((session) => ({
+        id: session.id,
+        state: session.state,
+        clarvis_task_id: session.taskId,
+        created_at: '2026-09-13T01:12:00Z',
+        updated_at: '2026-09-13T01:54:00Z',
+        waiting_on_you: session.open.size > 0,
+        attached_windows: 0,
+      }));
+    return { status: 200, body: { items } };
+  }
+
+  private turn(session: MachineSession, body: unknown): FakeAnswer {
+    const refusal = this.turnRefusal(session, body as { lock?: { transfer_token?: string } });
+    if (refusal) return fixtureAnswer(TURNS, refusal);
+    const turn = body as { text: string; kind: string };
+    session.turns.push({ text: turn.text, kind: turn.kind });
+    session.holdsLock = true;
+    session.activeTurn = randomUUID();
+    this.announceTurn(session, turn.kind);
+    return { status: 202, body: { turn: { state: 'starting' } } };
+  }
+
+  private turnRefusal(session: MachineSession, body: { lock?: { transfer_token?: string } }): string | undefined {
+    if (session.activeTurn) return 'a turn is active: steer instead';
+    if (STOPPING.has(session.state)) return 'stopping';
+    if (session.settleNeeded) return 'the last turn still needs a settle';
+    if (session.superseded) return "RAVIS's lock was superseded at a restart";
+    if (session.holdsLock || body.lock?.transfer_token) return undefined;
+    return "left idle by a switch while Clarvis's own engine holds the project";
+  }
+
+  private announceTurn(session: MachineSession, kind: string): void {
+    session.state = 'running';
+    this.sync(session);
+    session.stream.emit('session.state', { state: 'running', processes: { confirmed_gone: false, leftover: [] } });
+    session.stream.emit('turn.started', { turn_id: session.activeTurn ?? randomUUID(), kind });
+  }
+
+  private steer(session: MachineSession, body: unknown): FakeAnswer {
+    const steer = body as { text?: string; expected_turn_id?: string };
+    if (!steer.text?.trim()) return fixtureAnswer(STEER, 'empty text');
+    if (STOPPING.has(session.state)) return fixtureAnswer(STEER, 'stopping');
+    if (!session.activeTurn && !session.holdsLock) return fixtureAnswer(STEER, 'no active turn and no lock: nothing is queued');
+    const delivered = session.activeTurn ? 'steered' : 'queued';
+    const text = steer.text;
+    session.steers.push({ text, expectedTurnId: steer.expected_turn_id, delivered });
+    setTimeout(() => session.stream.emit('feedback', { text, how: delivered }), this.stepMs);
+    return { status: 202, body: { delivered } };
+  }
+
+  private interrupt(session: MachineSession): FakeAnswer {
+    session.interrupts++;
+    // Pressed again: still 202, and nothing happens twice.
+    if (!STOPPING.has(session.state)) this.stopSequence(session, 'window');
+    return { status: 202, body: { state: 'stopping' } };
+  }
+
+  /** Design §5.3 step 3, in its order: stopping; open requests resolved with their stop response; the end. */
+  private stopSequence(session: MachineSession, stoppedBy: 'window' | 'menu_bar' | 'dashboard'): void {
+    const resolvedAs = stoppedBy === 'window' ? 'stop' : 'owner_stop';
+    const open = [...session.open.keys()];
+    session.open.clear();
+    for (const id of open) session.resolvedBy.set(id, resolvedAs);
+    session.state = 'stopping';
+    this.sync(session);
+    session.stream.emit('session.state', { state: 'stopping', stopped_by: stoppedBy, processes: { confirmed_gone: false, leftover: [] } });
+    for (const id of open) session.stream.emit('request.resolved', { request_id: id, by: resolvedAs, decision_kind: 'stop' });
+    setTimeout(() => this.endStoppedTurn(session, stoppedBy), this.stepMs);
+  }
+
+  private endStoppedTurn(session: MachineSession, stoppedBy: string): void {
+    const leftover = session.leftoverOnStop;
+    const turnId = session.activeTurn ?? randomUUID();
+    session.stream.emit('turn.completed', { turn_id: turnId, status: 'interrupted', processes_confirmed_gone: leftover.length === 0 });
+    session.activeTurn = null;
+    if (leftover.length === 0) return this.toStopped(session, stoppedBy);
+    session.state = 'leftover';
+    this.sync(session);
+    session.stream.emit('session.state', { state: 'leftover', stopped_by: stoppedBy, processes: { confirmed_gone: false, leftover } });
+  }
+
+  private toStopped(session: MachineSession, stoppedBy: string | undefined): void {
+    session.state = 'stopped';
+    session.settleNeeded = true;
+    this.sync(session);
+    const by = stoppedBy ? { stopped_by: stoppedBy } : {};
+    session.stream.emit('session.state', { state: 'stopped', ...by, processes: { confirmed_gone: true, leftover: [] } });
+  }
+
+  private answerRequest(session: MachineSession, requestId: string, body: unknown, headers: IncomingHttpHeaders): FakeAnswer {
+    // Stopping comes first: after a stop, no answer reaches Codex, whatever it was (design §5.3).
+    if (STOPPING.has(session.state)) return fixtureAnswer(ANSWER, 'stopping: a late answer never starts a step');
+    const by = session.resolvedBy.get(requestId);
+    if (by) return errorAnswer(409, 'REQUEST_ALREADY_RESOLVED', undefined, { by });
+    const request = session.open.get(requestId);
+    if (!request) return fixtureAnswer(ANSWER, 'an unknown request');
+    const kind = (body as { decision?: { kind?: string } }).decision?.kind ?? '';
+    if (!request.allowed_decisions.includes(kind as DecisionKind)) {
+      return errorAnswer(422, 'DECISION_NOT_ALLOWED', undefined, { allowed_decisions: request.allowed_decisions });
+    }
+    this.resolveRequest(session, requestId, kind, headers);
+    return { status: 200, body: { resolved: true, decision_kind: kind } };
+  }
+
+  private resolveRequest(session: MachineSession, requestId: string, kind: string, headers: IncomingHttpHeaders): void {
+    session.open.delete(requestId);
+    session.resolvedBy.set(requestId, 'window');
+    const key = headers['idempotency-key'];
+    session.answers.push({ requestId, decision: kind, key: typeof key === 'string' ? key : undefined });
+    if (session.open.size === 0 && session.state === 'waiting_on_you') session.state = 'running';
+    this.sync(session);
+    session.stream.emit('request.resolved', { request_id: requestId, by: 'window', decision_kind: kind });
+  }
+
+  private presence(session: MachineSession, body: unknown): FakeAnswer {
+    session.presence.push(body as MachineSession['presence'][number]);
+    return { status: 204 };
+  }
+
+  private claimSettle(session: MachineSession, body: unknown): FakeAnswer {
+    const window = String((body as { window_id?: unknown }).window_id ?? '');
+    session.claimsBy.push(window);
+    const refusal = this.claimRefusal(session, window);
+    if (refusal) return refusal;
+    this.counter++;
+    session.claim ??= { id: `FIXTURE-settle-claim-${this.counter}`, window };
+    this.sync(session);
+    return { status: 200, body: { claim_id: session.claim.id, expires_at: '2026-09-13T01:59:00Z' } };
+  }
+
+  private claimRefusal(session: MachineSession, window: string): FakeAnswer | undefined {
+    if (session.superseded) return fixtureAnswer(CLAIM, "RAVIS's lock was superseded at a restart");
+    if (session.state === 'leftover') return fixtureAnswer(CLAIM, 'processes not confirmed gone');
+    if (!session.settleNeeded) return fixtureAnswer(CLAIM, 'nothing to settle');
+    if (!session.claim || session.claim.window === window) return undefined;
+    return errorAnswer(409, 'SETTLE_CLAIMED', undefined, { window: session.claim.window });
+  }
+
+  private settle(session: MachineSession, body: unknown): FakeAnswer {
+    const settle = body as { claim_id?: string; commit?: string; next?: string };
+    if (!session.claim || settle.claim_id !== session.claim.id) return fixtureAnswer(SETTLE, "a claim that isn't the current one");
+    session.settles.push({ claim_id: settle.claim_id, commit: String(settle.commit), next: String(settle.next) });
+    session.state = 'idle';
+    session.settleNeeded = false;
+    session.claim = null;
+    session.holdsLock = false;
+    this.sync(session);
+    session.stream.emit('session.state', { state: 'idle', processes: { confirmed_gone: true, leftover: [] } });
+    return { status: 200, body: session.stream.view() };
+  }
+
+  private stopLeftover(session: MachineSession): FakeAnswer {
+    if (session.state !== 'leftover') return fixtureAnswer(LEFTOVER, 'nothing left over');
+    this.processesGone(session);
+    return { status: 200, body: { processes_confirmed_gone: true } };
+  }
+
+  /** Keeps the session's view — what `GET …/{sid}` and a snapshot show — in step with the machine. */
+  private sync(session: MachineSession): void {
+    const view = session.stream.view();
+    session.stream.patchView({
+      state: session.state,
+      workspace: { root: session.root, name: path.basename(session.root) },
+      clarvis_task_id: session.taskId,
+      codex: { ...(view.codex as Record<string, unknown>), active_turn_id: session.activeTurn },
+      pending_requests: [...session.open.values()],
+      lock: session.holdsLock ? { id: MACHINE_LOCK_ID, state: session.superseded ? 'superseded' : 'running' } : null,
+      settle: { needed: session.settleNeeded, claimed_by: session.claim?.window ?? null },
+    });
+  }
+}

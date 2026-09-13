@@ -33,6 +33,18 @@ export async function probeProcess(pid: number, run: Runner = runQuietly): Promi
   return code === 1 ? { pid_running: false, lstart: null } : undefined;
 }
 
+/**
+ * When a process started and what it is (`ps -o lstart=,comm= -p <pid>`), for the `running_command` a
+ * heartbeat reports (C2a; design §6.3, final check F-A4). `lstart` is always five words in the C locale.
+ * Undefined when `ps` couldn't say.
+ */
+export async function describeProcess(pid: number, run: Runner = runQuietly): Promise<{ start: string; comm: string } | undefined> {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return undefined;
+  const words = (await run('ps', ['-o', 'lstart=,comm=', '-p', String(pid)])).stdout.trim().split(/\s+/);
+  if (words.length < 6) return undefined;
+  return { start: words.slice(0, 5).join(' '), comm: words.slice(5).join(' ') };
+}
+
 /** This process's own `pid_start`, in the form a lock file records it. */
 export async function ownStart(run: Runner = runQuietly): Promise<string | undefined> {
   const probe = await probeProcess(process.pid, run);

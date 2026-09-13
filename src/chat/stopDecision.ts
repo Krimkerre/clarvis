@@ -28,6 +28,24 @@ export function stepAfterAsking(approved: boolean, stopped: boolean): StepAfterA
   return approved ? 'run' : 'skip';
 }
 
+/** What becomes of an answer to one of Codex's requests once it comes back (plan.md M15, C2a). */
+export type EngineAnswerAction = 'send' | 'drop';
+
+/**
+ * Whether an answer to a Codex request is sent to RAVIS — `stepAfterAsking`'s rule, for the other
+ * engine (design §5.2, §5.3; review M3).
+ *
+ * **Stop wins over any answer.** `stopped` is true when Stop was pressed in this window, when RAVIS
+ * said the task is stopping (a stop from another window, the menu bar or the dashboard), or when the
+ * request was resolved somewhere else while it was on screen. Checked last, right before the POST, so a
+ * click that raced the stop never reaches Codex. A question Stop released comes back with no answer at
+ * all, and that sends nothing either: no answer is not consent.
+ */
+export function engineDecisionAfterAsking(answer: { kind: string } | undefined, stopped: boolean): EngineAnswerAction {
+  if (stopped || answer === undefined) return 'drop';
+  return 'send';
+}
+
 /**
  * What the chat says about a stop.
  *

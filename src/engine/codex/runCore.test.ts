@@ -1,0 +1,722 @@
+import assert from 'node:assert/strict';
+import * as fs from 'fs';
+import { test } from 'node:test';
+import * as os from 'os';
+import * as path from 'path';
+import type { AgentEvent } from '../../agent/AgentRunner';
+import { matchStep, readStepMarkers } from '../../agent/stepProgress';
+import { CLARVIS_CREDENTIAL, FakeRavisRelay } from '../../test/fakes/FakeRavisRelay';
+import type { FakeSessions, MachineSession } from '../../test/fakes/fakeSessions';
+import { CODEX_STATE_ROUTE, exampleNamed } from '../../test/fakes/relayContract';
+import { createSessionKey } from '../relay/idempotency';
+import { RelayClient } from '../relay/relayClient';
+import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
+import type { CodexState, CreateSessionBody, Decision, RequestView, SessionSummary } from '../relay/relayTypes';
+import { TokenStore } from '../relay/tokenStore';
+import {
+  CodexRunCore,
+  type CodexBranch,
+  type CodexCursors,
+  type CodexGit,
+  type CodexRunOptions,
+  type CodexSave,
+  type EngineAsker,
+} from './runCore';
+import { CODEX_LINES } from './translate';
+
+/**
+ * The remote Codex runner against `FakeRavisRelay` and its session state machine: a whole task, Stop,
+ * steering, reattaching, two windows, presence and the failure states. Every test ends by asserting that
+ * each request the runner sent and each answer and frame the fake gave matched RAVIS's contract fixtures.
+ *
+ * The guards these tests exist for, in the order a person would notice them missing: a question that
+ * stays on screen after Stop; a click after Stop that runs a command anyway; words typed to Codex that
+ * vanish; a progress bar that never moves; a file listed twice or committed by two windows; and a
+ * reopened window that asks the same question twice.
+ */
+
+const ROOT = '/Users/owner/Documents/coding/add-utc-demo';
+const WINDOW_A = { id: 'win-desktop-1c9e4d', host: 'desktop' as const };
+const WINDOW_B = { id: 'win-code-server-7f3a2b', host: 'code-server' as const };
+const TASK = 'Build milestone 2 of plan.md. Before each step, print STEP: <the step, copied from the plan>.';
+const HEAD = '3f9c2e1d8b7a6f5e4d3c2b1a0f9e8d7c6b5a4f3e';
+const COMMIT = '9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b';
+const FAST = {
+  streamBackoffMs: [20, 40, 80],
+  silenceLimitMs: 5_000,
+  retry: { attempts: 2, delayMs: 10 },
+  interruptRetry: { attempts: 3, delayMs: 10 },
+  interruptKeepTryingMs: 20,
+};
+
+/** Git as the runner sees it: records what it was asked to do, and commits only when there are files. */
+class FakeGit implements CodexGit {
+  readonly begun: string[] = [];
+  readonly saves: { summary: string; stopped: boolean; files: string[] }[] = [];
+  /** The branch each save was told the session is on. */
+  readonly branches: (string | undefined)[] = [];
+  abandoned = 0;
+
+  async begin(task: string): Promise<CodexBranch> {
+    this.begun.push(task);
+    return { ok: true, branch: 'clarvis/add-utc', headCommit: HEAD };
+  }
+
+  async save(work: { summary: string; stopped: boolean; files: string[]; branch: string | undefined }): Promise<CodexSave> {
+    this.saves.push({ summary: work.summary, stopped: work.stopped, files: work.files });
+    this.branches.push(work.branch);
+    const committed = work.files.length > 0;
+    return { ok: true, commit: committed ? COMMIT : HEAD, committed, files: work.files };
+  }
+
+  async abandon(): Promise<void> {
+    this.abandoned++;
+  }
+}
+
+interface Harness {
+  fake: FakeRavisRelay;
+  machine: FakeSessions;
+  git: FakeGit;
+  tokens: TokenStore;
+  cursors: Map<string, number>;
+  /** Each request the runner started, in order, as `METHOD /path` — and any markers a test adds. */
+  sent: string[];
+  core(options?: Partial<CodexRunOptions>): CodexRunCore;
+}
+
+function mapCursors(map: Map<string, number>): CodexCursors {
+  return { get: (id) => map.get(id) ?? null, set: (id, value) => void map.set(id, value) };
+}
+
+/** The runner's HTTP, recording each request as it is started — synchronously, before any answer. */
+function recordingHttp(fake: FakeRavisRelay, sent: string[]): RelayHttp {
+  const endpoint = relayEndpoint(fake.url, CLARVIS_CREDENTIAL);
+  if (!endpoint.ok) throw new Error(endpoint.reason);
+  return new RelayHttp(endpoint.endpoint, (input, init) => {
+    sent.push(`${init?.method ?? 'GET'} ${new URL(String(input)).pathname}`);
+    return fetch(input, init);
+  });
+}
+
+async function withCodex(run: (h: Harness) => Promise<void>): Promise<void> {
+  const fake = await FakeRavisRelay.start();
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-codex-run-'));
+  const cores: CodexRunCore[] = [];
+  const sent: string[] = [];
+  const cursors = new Map<string, number>();
+  const git = new FakeGit();
+  const tokens = new TokenStore(folder);
+  const relay = new RelayClient(recordingHttp(fake, sent));
+  const core = (options: Partial<CodexRunOptions> = {}) => {
+    const made = new CodexRunCore({
+      relay,
+      tokens,
+      cursors: mapCursors(cursors),
+      git,
+      window: WINDOW_A,
+      workspace: { root: ROOT, gitDir: `${ROOT}/.git` },
+      mode: 'agent',
+      maxSteps: 25,
+      ask: async () => undefined,
+      timing: FAST,
+      ...options,
+    });
+    cores.push(made);
+    return made;
+  };
+  try {
+    await run({ fake, machine: fake.sessions(), git, tokens, cursors, sent, core });
+    assert.deepEqual(fake.violations, [], 'every request, answer and frame matched the contract fixtures');
+  } finally {
+    for (const made of cores) made.dispose();
+    await fake.close();
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+}
+
+interface Followed {
+  events: AgentEvent[];
+  /** Resolves once the run has ended, and fails the test when it hasn't within the time. */
+  ended(timeoutMs?: number): Promise<void>;
+  /** The first event matching, waiting for it if it hasn't come yet. */
+  next(match: (event: AgentEvent) => boolean, timeoutMs?: number): Promise<AgentEvent>;
+}
+
+/**
+ * Reads a run in the background, as `RunSession` does, keeping every event. Every wait is bounded, so a
+ * run that never ends fails its test instead of hanging the suite.
+ */
+function follow(events: AsyncIterable<AgentEvent>): Followed {
+  const seen: AgentEvent[] = [];
+  let over = false;
+  void (async () => {
+    try {
+      for await (const event of events) seen.push(event);
+    } finally {
+      over = true;
+    }
+  })();
+  return {
+    events: seen,
+    ended: (timeoutMs = 5_000) => waitFor(() => over, 'the run to end', timeoutMs),
+    async next(match, timeoutMs = 5_000) {
+      await waitFor(() => over || seen.some(match), 'an event', timeoutMs);
+      const found = seen.find(match);
+      if (!found) throw new Error(`the run ended first; it said ${JSON.stringify(seen)}`);
+      return found;
+    },
+  };
+}
+
+async function waitFor(condition: () => boolean, what: string, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+const isDone = (event: AgentEvent) => event.kind === 'done';
+const chat = (followed: Followed) => followed.events.filter((event) => event.toChat).map((event) => event.text);
+const message = (id: string, text: string) => ({ type: 'agentMessage', id, text, phase: null });
+const fileChange = (id: string, ...changes: [string, string][]) => ({
+  type: 'fileChange',
+  id,
+  status: 'completed',
+  changes: changes.map(([file, change]) => ({ path: file, change, added: 1, removed: 0 })),
+});
+
+function summaryOf(session: MachineSession): SessionSummary {
+  return {
+    id: session.id,
+    state: session.state,
+    clarvis_task_id: session.taskId,
+    created_at: '2026-09-13T01:12:00Z',
+    updated_at: '2026-09-13T01:54:00Z',
+    waiting_on_you: session.open.size > 0,
+    attached_windows: 0,
+  };
+}
+
+function keepToken(h: Harness, session: MachineSession): void {
+  h.tokens.save(ROOT, session.id, session.token, session.taskId);
+}
+
+interface Asked {
+  request: RequestView;
+  signal: AbortSignal;
+  answer(decision: Decision | undefined): void;
+}
+
+/** An asker that holds each question until the test answers it, noting in `sent` when one is let go. */
+function holdingAsker(sent?: string[]): { ask: EngineAsker; asked: Asked[] } {
+  const asked: Asked[] = [];
+  const ask: EngineAsker = (request, signal) =>
+    new Promise((resolve) => {
+      signal.addEventListener('abort', () => sent?.push('question let go'));
+      asked.push({ request, signal, answer: resolve });
+    });
+  return { ask, asked };
+}
+
+async function started(h: Harness, core: CodexRunCore = h.core()) {
+  const controller = new AbortController();
+  const run = follow(core.start(TASK, controller.signal));
+  await waitFor(() => h.machine.all.length === 1 && core.isConnected, 'the task to be created and followed');
+  return { run, controller, core, session: h.machine.all[0] };
+}
+
+// ── Starting ─────────────────────────────────────────────────────────────────
+
+test('a start is refused, with the reason, before any branch or session exists when Codex may not run', () =>
+  withCodex(async (h) => {
+    const signedIn = exampleNamed(CODEX_STATE_ROUTE, 'signed in, three projects busy, read by a named caller').response.body as CodexState;
+    const unproven = { ...signedIn, runtime: { ...signedIn.runtime, strict_rules: 'unproven' } };
+    const cases: [string | { status: number; body: unknown }, RegExp][] = [
+      ['allowance used up', /^Codex can't start\. The ChatGPT plan's allowance is used up until 04:30\.$/],
+      ['signed out', /^Codex can't start\. Codex is signed out/],
+      ['paused for re-testing: the installed binary is neither tested nor accepted', /Codex changed \(now 0\.155\.0\)/],
+      [{ status: 200, body: unproven }, /Re-test the file rules/],
+    ];
+
+    for (const [answer, expected] of cases) {
+      h.fake.reply(CODEX_STATE_ROUTE, answer);
+      const core = h.core();
+      const run = follow(core.start(TASK, new AbortController().signal));
+      await run.ended();
+      assert.equal(run.events.length, 1, JSON.stringify(run.events));
+      assert.equal(run.events[0].kind, 'done');
+      assert.match(run.events[0].text, expected);
+      assert.equal(core.blocked, true);
+    }
+    assert.deepEqual(h.git.begun, [], 'no branch was made');
+    assert.equal(h.machine.all.length, 0, 'no session was created');
+  }));
+
+test("RAVIS not answering refuses the start as RAVIS being down, and says Clarvis's own engine still works", () =>
+  withCodex(async (h) => {
+    await h.fake.stopListening();
+    const run = follow(h.core().start(TASK, new AbortController().signal));
+    await run.ended();
+
+    assert.deepEqual(run.events.map((event) => event.text), [CODEX_LINES.ravisDownAtStart]);
+    assert.deepEqual(h.git.begun, []);
+  }));
+
+test('a start refused because Codex already holds the project tidies its new branch and names the session to follow', () =>
+  withCodex(async (h) => {
+    const refusal = structuredClone(
+      exampleNamed('POST /api/v1/agent-sessions', "Clarvis's own engine holds the project").response.body
+    ) as { error: { message: string; details: { lock: { holder: Record<string, unknown> } } } };
+    refusal.error.message = 'Codex is already working on this project.';
+    refusal.error.details.lock.holder = {
+      ...refusal.error.details.lock.holder,
+      kind: 'codex_session',
+      session_id: 'as_01J9ZK4T6Q8M2V7R3N5B1C0D',
+      window_id: null,
+      host: 'ravis',
+    };
+    h.fake.reply('POST /api/v1/agent-sessions', { status: 409, body: refusal });
+    const core = h.core();
+
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await run.ended();
+
+    assert.deepEqual(run.events.map((event) => event.text), ['Codex is already working on this project.']);
+    assert.equal(h.git.abandoned, 1, 'the branch made for it is tidied');
+    assert.equal(core.attachInstead, 'as_01J9ZK4T6Q8M2V7R3N5B1C0D');
+  }));
+
+test('a task runs to its settle: the contract’s create, STEP lines that move the progress bar, each file recorded once', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+
+    const create = h.fake.seen.find((request) => request.method === 'POST' && request.path === '/api/v1/agent-sessions');
+    const body = create?.body as CreateSessionBody;
+    assert.deepEqual(
+      { root: body.workspace_root, gitDir: body.git_dir, window: body.window, branch: body.branch, start: body.start, lock: body.lock, limits: body.limits },
+      {
+        root: ROOT,
+        gitDir: `${ROOT}/.git`,
+        window: WINDOW_A,
+        branch: { name: 'clarvis/add-utc', head_commit: HEAD },
+        start: { kind: 'brief', text: TASK },
+        lock: { transfer_token: null },
+        limits: { max_steps: 25 },
+      }
+    );
+    assert.equal(create?.headers['idempotency-key'], createSessionKey(body.clarvis_task_id, WINDOW_A.id, 1));
+    const kept = h.tokens.read(ROOT, session.id);
+    assert.equal(kept.kind === 'found' && kept.entry.token, session.token, 'the token is in the token file for other windows');
+    assert.equal(session.stream.connects[0].windowId, WINDOW_A.id);
+
+    // The planning handoff: Codex prints STEP lines, and RunSession matches them against the plan's steps.
+    h.machine.completeItem(session, message('msg_1', 'STEP: 2. Add the --utc flag'));
+    const announced = await run.next((event) => event.kind === 'text' && event.text.includes('STEP:'));
+    const steps = ['Parse the arguments', 'Add the --utc flag'];
+    assert.deepEqual(readStepMarkers(announced.text).announced.map((step) => matchStep(step, steps)), [1]);
+
+    const change = fileChange('call_fc_1', ['hello.py', 'add']);
+    h.machine.completeItem(session, change);
+    h.machine.completeItem(session, change); // RAVIS sending the same item again
+    h.machine.completeItem(session, message('msg_2', 'Added the flag. Checks: 3 passed.'));
+    await run.next((event) => event.text === 'Added the flag. Checks: 3 passed.\n');
+    h.machine.completeTurn(session);
+    const done = await run.next(isDone);
+
+    assert.equal(run.events.filter((event) => event.detail === 'writeFile: hello.py').length, 1, 'one chat line for the file');
+    assert.deepEqual(h.git.saves, [{ summary: 'Added the flag. Checks: 3 passed.', stopped: false, files: ['hello.py'] }]);
+    assert.deepEqual(session.settles, [{ claim_id: session.settles[0]?.claim_id, commit: COMMIT, next: 'idle' }]);
+    assert.deepEqual([done.text, done.files], ['Added the flag. Checks: 3 passed.', ['hello.py']]);
+    assert.deepEqual(core.result, { commits: [COMMIT], files: ['hello.py'] });
+    assert.equal(core.blocked, false);
+  }));
+
+// ── Stop ─────────────────────────────────────────────────────────────────────
+
+test('Stop lets go of the question before any request is made, then interrupts; a late "once" is never sent', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker(h.sent);
+    const { run, controller, session } = await started(h, h.core({ ask }));
+    h.machine.openRequest(session, 'command');
+    await waitFor(() => asked.length === 1, 'the question to be asked');
+    const before = h.sent.length;
+
+    controller.abort();
+
+    assert.equal(asked[0].signal.aborted, true, 'let go in the same tick as Stop');
+    assert.deepEqual(h.sent.slice(before), ['question let go', `POST /api/v1/agent-sessions/${session.id}/interrupt`], 'let go first, then RAVIS is told');
+
+    asked[0].answer({ kind: 'once' }); // the click that raced the stop
+    const done = await run.next(isDone);
+
+    assert.equal(done.text, CODEX_LINES.stopped);
+    assert.ok(chat(run).includes(CODEX_LINES.stopping));
+    assert.equal(h.sent.some((line) => line.endsWith('/answer')), false, 'the late answer was never even sent');
+    assert.deepEqual(session.answers, []);
+    assert.deepEqual(h.git.saves.map((save) => save.stopped), [true], "the stopped task's work is saved once");
+  }));
+
+test('an owner Stop from the dashboard lets go of the question, says where it came from, and settles; a late answer is dropped', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    h.machine.openRequest(session, 'command');
+    await waitFor(() => asked.length === 1, 'the question to be asked');
+
+    h.machine.ownerStop(session, 'dashboard');
+    await waitFor(() => asked[0].signal.aborted, 'the question to be let go');
+    asked[0].answer({ kind: 'once' });
+    const done = await run.next(isDone);
+
+    assert.ok(chat(run).includes('Stopped from the dashboard.'), chat(run).join(' | '));
+    assert.equal(session.interrupts, 0, 'this window sent no interrupt of its own');
+    assert.equal(h.sent.some((line) => line.endsWith('/answer')), false);
+    assert.equal(session.settles.length, 1);
+    assert.equal(done.text, CODEX_LINES.stopped);
+  }));
+
+test('processes a stop left behind hold the save back until they are gone', () =>
+  withCodex(async (h) => {
+    const { run, controller, session } = await started(h);
+    h.machine.leaveProcessesOnStop(session, [{ pid: 51310, comm: 'node', started_at: '2026-09-13T01:12:00Z' }]);
+
+    controller.abort();
+    await run.next((event) => event.text.includes('pid 51310'));
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    assert.deepEqual(session.claimsBy, [], 'no claim while something Codex started still runs');
+    assert.deepEqual(h.git.saves, []);
+    h.machine.processesGone(session);
+    await run.next(isDone);
+    assert.equal(h.git.saves.length, 1);
+  }));
+
+test('Stop with RAVIS unreachable says so, frees the chat, and keeps trying until RAVIS takes it', () =>
+  withCodex(async (h) => {
+    const { run, controller, session } = await started(h);
+    await h.fake.stopListening();
+
+    controller.abort();
+    const done = await run.next(isDone);
+    assert.equal(done.text, CODEX_LINES.stopUnreachable);
+
+    await h.fake.listenAgain();
+    await waitFor(() => session.interrupts === 1, 'the retried stop to reach RAVIS');
+  }));
+
+// ── Steering ─────────────────────────────────────────────────────────────────
+
+test('typed text is steered into the running turn with its turn id and its own key, and "Passed to Codex" follows', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    await waitFor(() => core.activeTurnId === session.activeTurn, 'the turn to be known');
+
+    core.interject('Use datetime.timezone.utc, not pytz.');
+    await waitFor(() => session.steers.length === 1, 'the steer');
+
+    assert.deepEqual(session.steers[0], { text: 'Use datetime.timezone.utc, not pytz.', expectedTurnId: session.activeTurn, delivered: 'steered' });
+    const steer = h.fake.seen.find((request) => request.path.endsWith('/steer'));
+    assert.match(String(steer?.headers['idempotency-key']), /^[0-9a-f-]{36}$/);
+    await run.next((event) => event.text === CODEX_LINES.passedOn);
+    assert.deepEqual(core.drainInterjections(), [], 'nothing is left waiting');
+  }));
+
+test('a steer that races the end of the turn is queued by RAVIS for the next one', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    await waitFor(() => core.activeTurnId === session.activeTurn, 'the turn to be known');
+    session.activeTurn = null; // the turn ended just as the text was typed
+
+    core.interject('Also update the README.');
+    await waitFor(() => session.steers.length === 1, 'the steer');
+
+    assert.equal(session.steers[0].delivered, 'queued');
+    await run.next((event) => event.text === CODEX_LINES.queued);
+  }));
+
+test('text typed while the task is stopping is kept, never sent, and handed back by drainInterjections', () =>
+  withCodex(async (h) => {
+    const { run, controller, session, core } = await started(h);
+
+    controller.abort();
+    core.interject('Actually, keep the old flag too.');
+    await run.next(isDone);
+
+    assert.deepEqual(session.steers, []);
+    assert.ok(chat(run).includes(CODEX_LINES.keptForLater));
+    assert.deepEqual(core.drainInterjections(), ['Actually, keep the old flag too.']);
+  }));
+
+test('a steer refused with PROJECT_LOCKED says why and keeps the text for later', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    await waitFor(() => core.activeTurnId === session.activeTurn, 'the turn to be known');
+    session.activeTurn = null;
+    session.holdsLock = false; // Clarvis's own engine took the project
+
+    core.interject('Rename the flag to --utc-time.');
+    await run.next((event) => event.text === CODEX_LINES.lockedForTurns);
+
+    assert.deepEqual(core.drainInterjections(), ['Rename the flag to --utc-time.']);
+  }));
+
+test('text typed while RAVIS is unreachable is kept, then steered in once the stream is back', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    await waitFor(() => core.activeTurnId === session.activeTurn, 'the turn to be known');
+    await h.fake.stopListening();
+    await waitFor(() => !core.isConnected, 'the stream to notice');
+
+    core.interject('Use the other library.');
+    assert.equal(session.steers.length, 0, 'nothing reaches RAVIS while it is away');
+    await h.fake.listenAgain();
+
+    await waitFor(() => session.steers.length === 1, 'the kept text to be steered in', 8_000);
+    assert.equal(session.steers[0].text, 'Use the other library.');
+    await run.next((event) => event.text === CODEX_LINES.passedOn);
+    assert.ok(chat(run).includes(CODEX_LINES.keptForLater));
+    assert.deepEqual(core.drainInterjections(), []);
+  }));
+
+test('a new turn refused with PROJECT_LOCKED says why and keeps its text; accepted later, it carries what waited first', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed({ state: 'idle', turnActive: false, holdsLock: false });
+    keepToken(h, session);
+    const core = h.core();
+    await follow(core.attach(summaryOf(session), new AbortController().signal)).ended();
+
+    assert.equal(await core.continueTurn('Carry on with milestone 2.', 'continue'), CODEX_LINES.lockedForTurns);
+    assert.equal(session.turns.length, 0, 'no turn started');
+    assert.deepEqual(core.feedback.pending, ['Carry on with milestone 2.']);
+
+    session.holdsLock = true; // Clarvis's own engine let the project go
+    assert.equal(await core.continueTurn('Carry on.', 'continue'), undefined);
+    assert.equal(session.turns.length, 1);
+    assert.match(session.turns[0].text, /- Carry on with milestone 2\.\n\nCarry on\.$/);
+    assert.deepEqual(core.feedback.pending, []);
+  }));
+
+// ── Reattaching and windows ──────────────────────────────────────────────────
+
+test('a second window reattaches from its stored cursor and a third from a snapshot; each asks the waiting question once', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed();
+    keepToken(h, session);
+    const cursorBefore = session.stream.latestId;
+    const request = h.machine.openRequest(session, 'command');
+    const windowC = { id: 'win-desktop-2b8c1f', host: 'desktop' as const };
+    const askedB: string[] = [];
+    const askedC: string[] = [];
+    // Each asker comes back at once with no answer, as a question does until C2b renders it. The slot is
+    // then free, so a replayed request would be asked a second time if the window didn't remember it.
+    const noAnswer =
+      (asked: string[]): EngineAsker =>
+      async (question) => {
+        asked.push(question.id);
+        return undefined;
+      };
+    const b = h.core({ window: WINDOW_B, ask: noAnswer(askedB), cursors: mapCursors(new Map([[session.id, cursorBefore]])) });
+    const c = h.core({ window: windowC, ask: noAnswer(askedC), cursors: mapCursors(new Map()) });
+
+    const runB = follow(b.attach(summaryOf(session), new AbortController().signal));
+    const runC = follow(c.attach(summaryOf(session), new AbortController().signal));
+    await waitFor(() => askedB.length === 1 && askedC.length === 1, 'both windows to ask');
+
+    // RAVIS sends the request again, and both connections drop and resume.
+    h.machine.resendRequest(session, request);
+    session.stream.disconnect();
+    await waitFor(() => session.stream.connects.length >= 4 && b.isConnected && c.isConnected, 'both to reconnect');
+    h.machine.completeItem(session, message('msg_after', 'Still working.'));
+    await runB.next((event) => event.text === 'Still working.\n');
+    await runC.next((event) => event.text === 'Still working.\n');
+
+    assert.deepEqual([askedB, askedC], [[request.id], [request.id]], 'asked once each');
+    const byWindow = (id: string) => session.stream.connects.filter((connect) => connect.windowId === id);
+    assert.equal(byWindow(WINDOW_B.id)[0].lastEventId, String(cursorBefore), 'B resumed from its stored cursor');
+    assert.deepEqual([byWindow(windowC.id)[0].lastEventId, byWindow(windowC.id)[0].after], [undefined, null], 'C came in on a snapshot');
+    assert.ok(Number(byWindow(WINDOW_B.id)[1].lastEventId) > cursorBefore, 'and resumed after what it had seen');
+    assert.equal(runB.events.filter((event) => event.text === 'Still working.\n').length, 1, 'nothing arrived twice');
+    assert.match(runB.events[0].text, /Codex is still working on this project \(started \d\d:\d\d; a question is waiting\)\. Reconnected\./);
+  }));
+
+test('two windows: the first answer wins, the other window’s question goes away, and only one of them commits', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed();
+    keepToken(h, session);
+    const a = holdingAsker();
+    const b = holdingAsker();
+    const coreA = h.core({ ask: a.ask, cursors: mapCursors(new Map()) });
+    const coreB = h.core({ window: WINDOW_B, ask: b.ask, cursors: mapCursors(new Map()) });
+    const runA = follow(coreA.attach(summaryOf(session), new AbortController().signal));
+    const runB = follow(coreB.attach(summaryOf(session), new AbortController().signal));
+    await waitFor(() => coreA.isConnected && coreB.isConnected, 'both windows to follow');
+
+    const request = h.machine.openRequest(session, 'command');
+    await waitFor(() => a.asked.length === 1 && b.asked.length === 1, 'both windows to ask');
+    a.asked[0].answer({ kind: 'once' });
+    await waitFor(() => b.asked[0].signal.aborted, "B's question to go once A answered");
+    b.asked[0].answer({ kind: 'once' }); // too late
+
+    h.machine.completeItem(session, fileChange('call_fc_1', ['hello.py', 'add']));
+    h.machine.completeTurn(session);
+    const [doneA, doneB] = await Promise.all([runA.next(isDone), runB.next(isDone)]);
+
+    assert.deepEqual(session.answers.map((answer) => [answer.requestId, answer.key]), [[request.id, `${request.id}:${WINDOW_A.id}`]]);
+    assert.ok(chat(runB).includes('Answered in the other editor.'));
+    assert.equal(h.git.saves.length, 1, 'one window committed');
+    assert.equal(session.settles.length, 1);
+    const saved = [doneA, doneB].filter((done) => done.text !== CODEX_LINES.savedElsewhere);
+    assert.deepEqual(saved.map((done) => done.files), [['hello.py']]);
+    assert.deepEqual(
+      [doneA, doneB].filter((done) => done.text === CODEX_LINES.savedElsewhere).map((done) => done.files),
+      [[]],
+      'the other has nothing to review'
+    );
+  }));
+
+test('a task that finished while no window was open is settled by the next window that attaches, from its replay', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed();
+    keepToken(h, session);
+    const cursor = session.stream.latestId;
+    h.machine.completeItem(session, fileChange('call_fc_1', ['hello.py', 'add']));
+    h.machine.completeItem(session, message('msg_1', 'Done: added --utc.'));
+    h.machine.completeTurn(session);
+
+    const core = h.core({ cursors: mapCursors(new Map([[session.id, cursor]])) });
+    const done = await follow(core.attach(summaryOf(session), new AbortController().signal)).next(isDone);
+
+    assert.deepEqual(h.git.saves, [{ summary: 'Done: added --utc.', stopped: false, files: ['hello.py'] }]);
+    assert.deepEqual(h.git.branches, ['clarvis/add-utc'], 'resumed from a cursor, the branch is read from RAVIS before saving');
+    assert.equal(session.settles.length, 1);
+    assert.deepEqual([done.text, done.files], ['Done: added --utc.', ['hello.py']]);
+  }));
+
+test('a panel whose pings stop is posted detached with its stream closed; when they resume, attached at once and reopened from its cursor', () =>
+  withCodex(async (h) => {
+    const t0 = Date.parse('2026-09-13T02:00:00Z');
+    const session = h.machine.seed();
+    keepToken(h, session);
+    const core = h.core({ now: () => new Date(t0) });
+    const run = follow(core.attach(summaryOf(session), new AbortController().signal));
+    await waitFor(() => core.isConnected && session.presence.length === 1, 'attached');
+    assert.deepEqual(session.presence[0], { window_id: WINDOW_A.id, host: 'desktop', panel_connected: true });
+    h.machine.completeItem(session, message('m1', 'one'));
+    await run.next((event) => event.text === 'one\n');
+    const cursor = h.cursors.get(session.id);
+
+    core.presenceTick(t0 + 25_000); // no ping for 25 s: the tab was closed
+    await waitFor(() => session.presence.length === 2 && session.stream.connections === 0, 'detached');
+    assert.equal(session.presence[1].panel_connected, false);
+    assert.equal(core.isAttached, false);
+    assert.equal(core.isFinished, false, 'closing the stream never stops the task');
+
+    core.panelPinged(t0 + 40_000); // the tab is back, same extension host
+    await waitFor(() => session.presence.length === 3 && session.stream.connections === 1, 'attached again');
+    assert.equal(session.presence[2].panel_connected, true);
+    assert.equal(session.stream.connects.at(-1)?.lastEventId, String(cursor));
+  }));
+
+test('a gap in the stream is recovered from a snapshot: the waiting question is asked once, and the stream carries on', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed();
+    keepToken(h, session);
+    for (let emitted = 0; emitted < 5; emitted++) session.stream.emitExample('usage.updated');
+    const request = h.machine.openRequest(session, 'question');
+    session.stream.expireBefore(session.stream.latestId - 1);
+    const asked: string[] = [];
+    const ask: EngineAsker = (question) => {
+      asked.push(question.id);
+      return new Promise(() => undefined);
+    };
+    const core = h.core({ ask, cursors: mapCursors(new Map([[session.id, 1234]])) });
+
+    const run = follow(core.attach(summaryOf(session), new AbortController().signal));
+    await waitFor(() => asked.length === 1, 'the question from the snapshot');
+    h.machine.completeItem(session, message('m', 'After the gap.'));
+    await run.next((event) => event.text === 'After the gap.\n');
+
+    assert.deepEqual(asked, [request.id]);
+    assert.deepEqual(
+      session.stream.connects.map((connect) => [connect.lastEventId, connect.after]),
+      [
+        ['1234', null],
+        [undefined, String(session.stream.latestId - 1)],
+      ]
+    );
+  }));
+
+test('a token the stream no longer accepts ends the run blocked, saying so; a missing token says what to do', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed();
+    h.tokens.save(ROOT, session.id, `ast_${'W'.repeat(43)}`, session.taskId);
+    const refused = h.core();
+    const done = await follow(refused.attach(summaryOf(session), new AbortController().signal)).next(isDone);
+    assert.equal(done.text, CODEX_LINES.tokenRefused);
+    assert.equal(refused.blocked, true);
+
+    const other = h.machine.seed();
+    const missing = follow(h.core().attach(summaryOf(other), new AbortController().signal));
+    await missing.ended();
+    assert.deepEqual(missing.events.map((event) => event.text), [CODEX_LINES.tokenMissing]);
+  }));
+
+// ── The fence, and failures mid-task ─────────────────────────────────────────
+
+test('a project lock RAVIS gave to another editor is the fence: the work is never committed, whether or not the claim is refused', () =>
+  withCodex(async (h) => {
+    // RAVIS says the lock is superseded, then grants the claim anyway: the window's own fence holds.
+    const { run, session, core } = await started(h);
+    h.machine.supersedeLock(session);
+    session.superseded = false;
+    await run.next((event) => event.text === CODEX_LINES.superseded);
+    h.machine.completeTurn(session);
+    const done = await run.next(isDone);
+    assert.equal(done.text, CODEX_LINES.superseded);
+    assert.equal(core.blocked, true);
+
+    // RAVIS refuses the claim with LOCK_SUPERSEDED.
+    const waiting = h.machine.seed({ state: 'completed_needs_review', turnActive: false });
+    keepToken(h, waiting);
+    h.machine.supersedeLock(waiting);
+    const refused = await follow(h.core({ cursors: mapCursors(new Map()) }).attach(summaryOf(waiting), new AbortController().signal)).next(isDone);
+    assert.equal(refused.text, CODEX_LINES.superseded);
+
+    assert.deepEqual(h.git.saves, [], 'nothing was committed');
+    assert.equal(session.settles.length + waiting.settles.length, 0);
+  }));
+
+test('RAVIS restarting mid-turn says the last step may not have finished, and the work is still saved', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    h.machine.restartRavis(session);
+    await run.next(isDone);
+
+    assert.ok(chat(run).includes(CODEX_LINES.uncertain));
+    assert.equal(h.git.saves.length, 1);
+    assert.equal(core.blocked, false);
+  }));
+
+test("a failed turn says RAVIS's own words and leaves the run blocked, with its work still saved", () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    h.machine.completeTurn(session, { status: 'failed', error: { kind: 'other', message: "Codex couldn't reach OpenAI." } });
+    await run.next(isDone);
+
+    assert.ok(chat(run).includes("Codex's turn failed: Codex couldn't reach OpenAI."));
+    assert.equal(core.blocked, true);
+    assert.equal(h.git.saves.length, 1);
+  }));
+
+test('the step cap RAVIS enforces is said in its words, is not a failure, and the work is saved', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    h.machine.completeTurn(session, { status: 'interrupted', error: { kind: 'step_cap', message: 'The step cap of 25 was reached.' } });
+    await run.next(isDone);
+
+    assert.ok(chat(run).includes('The step cap of 25 was reached. Codex stopped there; its work so far is kept.'));
+    assert.equal(core.blocked, false);
+    assert.equal(h.git.saves.length, 1);
+  }));

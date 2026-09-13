@@ -175,6 +175,16 @@ export class HeldLockFile {
   }
 
   /**
+   * Closes the descriptor and deletes nothing (C2a). For a holder that lost the lock by RAVIS's word — a
+   * revoked lease — whose file may still name it: the window that took the project over replaces the file,
+   * and this holder never releases or rewrites a lock again (the fence).
+   */
+  abandon(): void {
+    if (this.fd !== null) fs.closeSync(this.fd);
+    this.fd = null;
+  }
+
+  /**
    * Deletes the file — only while it is still this holder's. A holder that lost it closes its
    * descriptor and deletes nothing: the file now belongs to someone else. While the answer is
    * `unknown`, nothing is done, so the caller can try again.

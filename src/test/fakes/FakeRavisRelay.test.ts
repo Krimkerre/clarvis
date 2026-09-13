@@ -54,8 +54,10 @@ test('every fixture example is answered exactly as the fixture shows, and passes
         assert.equal(answer.status, example.response.status, label);
         assert.deepEqual(answer.body, example.response.body ?? null, label);
         assert.deepEqual(fake.violations.filter((violation) => violation.startsWith('response:')), [], label);
-        // Only the examples that are wrong on purpose may break the request check.
-        const wrongOnPurpose = example.request.caller === 'anonymous' || example.name === 'no Idempotency-Key';
+        // Only the examples that are wrong on purpose may break the request check. An anonymous read of
+        // Codex's state is not one of them: that route is open to any caller.
+        const anonymousRefused = example.request.caller === 'anonymous' && !route.needs.includes('any caller');
+        const wrongOnPurpose = anonymousRefused || example.name === 'no Idempotency-Key';
         assert.equal(fake.violations.some((violation) => violation.startsWith('request:')), wrongOnPurpose, `${label}: ${fake.violations.join('; ')}`);
       }
     }

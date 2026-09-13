@@ -61,6 +61,9 @@ export interface FixtureRoute {
 
 export const EVENTS_ROUTE = 'GET /api/v1/agent-sessions/{sid}/events';
 
+/** Codex's state (`codex-state.json`), which a runner reads before it starts a task (C2a). Any caller may read it. */
+export const CODEX_STATE_ROUTE = 'GET /api/v1/codex';
+
 const parsed = new Map<string, any>();
 
 /** A fixture file — a name in `relay-contract/`, or `lock-rule-cases.json` — as a fresh copy. */
@@ -72,10 +75,13 @@ export function fixture<T = any>(name: string): T {
 export function contractRoutes(): FixtureRoute[] {
   if (!parsed.has('routes')) {
     const stream = raw('event-stream.json');
+    const state = raw('codex-state.json');
     parsed.set('routes', [
       ...raw('agent-sessions.json').routes.map(routeFrom),
       ...raw('project-locks.json').routes.map(routeFrom),
       routeFrom({ ...stream.route, examples: stream.examples }),
+      // Its route names who may read it in prose ("any caller, including anonymous"); `needs` says the same.
+      routeFrom({ method: state.route.method, path: state.route.path, needs: ['any caller'], examples: state.examples }),
     ]);
   }
   return parsed.get('routes');
@@ -185,7 +191,7 @@ interface Carried {
 
 /** What each route's `needs` asks of a request: [the route needs it, the request breaks it, the problem]. */
 const HEADER_RULES: [(route: FixtureRoute) => boolean, (carried: Carried) => boolean, string][] = [
-  [() => true, (carried) => !/^Bearer \S+$/.test(carried.credential ?? ''), 'no client credential'],
+  [(route) => !route.needs.includes('any caller'), (carried) => !/^Bearer \S+$/.test(carried.credential ?? ''), 'no client credential'],
   [(route) => idempotentRoutes().has(route.key), (carried) => !validKey(carried.key), 'no valid Idempotency-Key'],
   [
     (route) => needs(route, 'Idempotency-Key: <rid>:<window_id>'),

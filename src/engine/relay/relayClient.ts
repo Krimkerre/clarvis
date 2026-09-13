@@ -24,6 +24,7 @@ import { answerKey } from './idempotency';
 import type { RelayOutcome } from './relayFailure';
 import type { CallOptions, RelayHttp, RelayRequest } from './relayHttp';
 import type {
+  CodexState,
   CreateSessionBody,
   CreatedSession,
   Decision,
@@ -39,6 +40,12 @@ import type {
 import { SESSION_TOKEN_FORMAT } from './tokenStore';
 
 const SESSIONS = '/api/v1/agent-sessions';
+
+/**
+ * How long `GET /api/v1/codex` gets before RAVIS counts as not answering (design §9). RAVIS answers it
+ * from memory, so a slow answer means RAVIS is in trouble, not busy.
+ */
+export const CODEX_STATE_TIMEOUT_MS = 1_500;
 
 export interface TurnRequest {
   text: string;
@@ -110,6 +117,12 @@ export interface Transcript {
 
 export class RelayClient {
   constructor(readonly http: RelayHttp) {}
+
+  /** Codex's state on this Mac: whether a task may start at all (C2a; design §5.1 step 1). */
+  codexState(options: CallOptions = { timeoutMs: CODEX_STATE_TIMEOUT_MS }): Promise<RelayOutcome<CodexState>> {
+    const guard = shaped({ state: 'string', reason: 'string', runtime: 'object' });
+    return this.call({ method: 'GET', path: '/api/v1/codex' }, guard, options);
+  }
 
   /** Starts a task. `key` is `createSessionKey(taskId, windowId, attempt)`. */
   createSession(body: CreateSessionBody, key: string, options?: CallOptions): Promise<RelayOutcome<CreatedSession>> {

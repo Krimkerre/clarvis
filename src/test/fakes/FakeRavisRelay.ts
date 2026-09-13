@@ -30,10 +30,11 @@ import { createHash, randomBytes } from 'crypto';
 import * as http from 'http';
 import type { AddressInfo, Socket } from 'net';
 import { RelayHttp, relayEndpoint } from '../../engine/relay/relayHttp';
+import { errorAnswer, firstSuccess, fixtureAnswer, type FakeAnswer } from './fakeAnswers';
+import { FakeSessions } from './fakeSessions';
 import {
+  CODEX_STATE_ROUTE,
   EVENTS_ROUTE,
-  errorCatalogue,
-  exampleNamed,
   fixture,
   fixtureMessage,
   frameProblems,
@@ -44,6 +45,8 @@ import {
   routeByKey,
   type FixtureRoute,
 } from './relayContract';
+
+export type { FakeAnswer } from './fakeAnswers';
 
 export type Caller = 'anonymous' | 'client.clarvis' | 'client.nervis' | 'client.other' | 'admin.launcher';
 
@@ -69,16 +72,6 @@ export const FIXTURE_LOCK = {
   id: 'pl_01J9ZK8P9Q0R1S2T3U4V5W6X7Y',
   lease: 'lk_FIXTURE_lease_not_a_secret_CCCCCCCCCCCCCCCC',
 } as const;
-
-export interface FakeAnswer {
-  status: number;
-  body?: unknown;
-  /** Sent exactly as written and not checked: a deliberately malformed payload. */
-  raw?: string;
-  headers?: Record<string, string>;
-  /** Why this answer is outside the fixtures on purpose. It is then not checked. */
-  offContract?: string;
-}
 
 export interface SeenRequest {
   method: string;
@@ -111,6 +104,7 @@ export class FakeRavisRelay {
   private readonly tokens = new Map<string, string>();
   private readonly revoked = new Map<string, string>();
   private readonly streams = new Map<string, FakeEventStream>();
+  private machine: FakeSessions | undefined;
   private readonly instance = randomBytes(8).toString('hex');
   private port = 0;
 
@@ -163,8 +157,21 @@ export class FakeRavisRelay {
     return stream;
   }
 
+  /**
+   * The session state machine (C2a): created sessions, turns, answers, steers, stops and settles. Until
+   * a test asks for it, every route answers its fixture examples as C1 built it.
+   */
+  sessions(): FakeSessions {
+    this.machine ??= new FakeSessions({
+      stream: (sessionId) => this.stream(sessionId),
+      grantToken: (sessionId, token) => this.tokens.set(sessionId, token),
+    });
+    return this.machine;
+  }
+
   /** Forgets scripts, keys, leases, tokens, streams and what it saw: a fresh fake on the same port. */
   reset(): void {
+    this.machine = undefined;
     for (const stream of this.streams.values()) stream.disconnect();
     for (const map of [this.scripts, this.losses, this.delays, this.remembered, this.revoked, this.streams, this.tokens]) map.clear();
     this.tokens.set(FIXTURE_SESSION.id, FIXTURE_SESSION.token);
@@ -226,8 +233,10 @@ export class FakeRavisRelay {
     response: http.ServerResponse
   ): FakeAnswer | undefined {
     const headers = request.headers;
+    // `GET /api/v1/codex` is read by any caller, anonymous and NERVIS included (`codex-state.json` route).
+    const identity = route.key === CODEX_STATE_ROUTE ? undefined : this.identityRefusal(headers);
     const refusal =
-      this.identityRefusal(headers) ??
+      identity ??
       this.tokenRefusal(route, url.pathname, headers) ??
       this.keyRefusal(route, headers) ??
       this.replayed(route, url.pathname, headers, body) ??
@@ -235,6 +244,8 @@ export class FakeRavisRelay {
     if (refusal) return refusal;
     const scripted = this.scripts.get(route.key)?.shift();
     if (scripted) return scripted;
+    const machined = this.machine?.answer(route, url, headers, body);
+    if (machined) return machined;
     const sessionId = url.pathname.split('/')[4];
     if (route.key === EVENTS_ROUTE) return this.stream(sessionId).connect(request, response, url);
     if (route.key === 'GET /api/v1/agent-sessions/{sid}') return { status: 200, body: this.stream(sessionId).view() };
@@ -498,22 +509,6 @@ function eventExample(event: string): Record<string, unknown> {
   );
   if (!entry) throw new Error(`no event ${event} in event-stream.json`);
   return entry.example_data;
-}
-
-function fixtureAnswer(routeKey: string, name: string): FakeAnswer {
-  const example = exampleNamed(routeKey, name);
-  return { status: example.response.status, body: example.response.body };
-}
-
-function firstSuccess(route: FixtureRoute): FakeAnswer {
-  const example = route.examples.find((candidate) => candidate.response.status < 300);
-  if (!example) throw new Error(`${route.key} has no success example`);
-  return { status: example.response.status, body: structuredClone(example.response.body) };
-}
-
-function errorAnswer(status: number, code: string, message: string = fixtureMessage(code), details: Record<string, unknown> = {}): FakeAnswer {
-  const error = { code, message, retryable: errorCatalogue()[code].retryable, details, request_id: 'fixture-request-id', trace_id: 'fixture-trace-id' };
-  return { status, body: { error } };
 }
 
 function callerFrom(authorization: string | undefined): Caller {

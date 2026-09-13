@@ -90,7 +90,15 @@ const RULES: Rule[] = [
   },
   {
     category: 'destructive',
-    pattern: /\b(mkfs|fdisk|diskutil|dd)\b/i,
+    // **Only where a shell would run it.** `\bdd\b` matched the word anywhere, and
+    // `shellSegments` splits at every `|`, quoted or not — so `grep -E "in|<dd>|<img"`
+    // produced a segment `<dd>`, and a localhost curl check was stopped as "operates on
+    // a disk" (found live, 13 September 2026). `cat dd.txt` would have been too. A disk
+    // tool is dangerous as the command, not as a word: at the start of a segment, after
+    // an env assignment or a prefix that still runs it, after a path, or inside `$(…)`,
+    // backticks or braces.
+    pattern:
+      /(?:^|[(`{]\s*)(?:\w+=\S*\s+)*(?:(?:sudo|doas|exec|env|command|time|nohup|nice|xargs|then|do|else)\s+(?:-\S+\s+)*)*(?:\S*\/)?(?:mkfs(?:\.\w+)?|fdisk|diskutil|dd)(?=\s|$)/i,
     what: 'operates on a disk or partition directly',
     why: 'These write past the filesystem, not within it.',
     worstCase: 'Data loss well beyond this project.',

@@ -34,6 +34,35 @@ test('the destructive shapes are all recognised', () => {
   }
 });
 
+test('a disk tool is stopped wherever the shell would run it', () => {
+  for (const command of [
+    'sudo dd if=/dev/zero of=/dev/disk2',
+    'FOO=1 dd if=a of=/dev/disk2',
+    'mkfs.ext4 /dev/sdb1',
+    '/sbin/fdisk /dev/sda',
+    'diskutil eraseDisk APFS Blank disk2',
+    'echo $(dd if=/dev/zero bs=1 count=1)',
+    'for d in 1; do dd if=/dev/zero of=/dev/disk2; done',
+    'echo /dev/disk2 | xargs dd if=/dev/zero of=',
+  ]) {
+    assert.equal(classifyCommand(command)?.category, 'destructive', command);
+  }
+});
+
+test('dd as a word, not a command, is not a disk operation', () => {
+  // Found live, 13 September 2026: a localhost curl check piped into
+  // `grep -E "Logged in|<dd>|<img"` was stopped as "operates on a disk or partition
+  // directly" — the split at `|` left a segment `<dd>`, and the rule matched the word.
+  for (const command of [
+    'curl -s -b .scratch/jar http://127.0.0.1:8765/ | grep -E "Logged in|<dd>|<img"',
+    'cat dd.txt',
+    'git add dd',
+    'grep -c "<dd>" page.html',
+  ]) {
+    assert.equal(classifyCommand(command), undefined, command);
+  }
+});
+
 test('outward-facing and dependency actions are gated', () => {
   assert.equal(classifyCommand('git push origin main')?.category, 'outward-facing');
   assert.equal(classifyCommand('npm publish')?.category, 'outward-facing');

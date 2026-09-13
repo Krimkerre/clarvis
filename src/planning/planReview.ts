@@ -60,6 +60,12 @@ export interface PlanningSession {
    */
   startBuild?: StartBuild;
   memory?: InterviewMemory;
+  /**
+   * The branch the project is on right now, for the plan's branch flow. Read when the draft
+   * is written rather than before the interview, because `git init` can happen during it.
+   * Absent, or answering undefined, falls back to `main`.
+   */
+  currentBranch?: () => Promise<string | undefined>;
 }
 
 /** What the interview established — and, for a sitting paused at the approve gate, its draft. */
@@ -161,6 +167,8 @@ async function draftPlan(
     milestones: planned.milestones,
     reviewProblem: analysis.problem,
     milestonesProblem: planned.problem,
+    // Read now, not before the interview: the git offer may have run `git init` since.
+    trunk: await session.currentBranch?.(),
   });
 }
 

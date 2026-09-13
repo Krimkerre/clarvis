@@ -107,7 +107,8 @@ function cleanBranchName(raw: string): string | undefined {
  * and edits this, and a document that hides machine-readable settings in an HTML
  * comment teaches people not to trust what they can see.
  */
-export function branchFlowSection(trunk: string, integration?: string): string {
+// `main` when the caller has no branch to go on — no repository yet, or a detached HEAD.
+export function branchFlowSection(trunk = 'main', integration?: string): string {
   return renderSection({ trunk, integration, work: ['clarvis/<task>'] });
 }
 

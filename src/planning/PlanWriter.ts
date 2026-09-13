@@ -27,6 +27,11 @@ export interface PlanInput {
   reviewProblem?: string;
   /** Why there are no milestones, or why the list may be incomplete, when either is so (M9i). */
   milestonesProblem?: string;
+  /**
+   * The branch the repository is on when the plan is drafted, declared as the flow's trunk.
+   * Absent with no repository or a detached HEAD, which falls back to `main`.
+   */
+  trunk?: string;
 }
 
 /**
@@ -111,7 +116,7 @@ function reviewProblemLines(problem: string | undefined): string[] {
     : [];
 }
 
-export function renderPlan({ projectName, seed, state, verdicts, milestones = [], reviewProblem, milestonesProblem }: PlanInput): string {
+export function renderPlan({ projectName, seed, state, verdicts, milestones = [], reviewProblem, milestonesProblem, trunk }: PlanInput): string {
   const title = projectName ?? seed;
   const language = state.answers.find((answer) => answer.topic === 'language');
   const accepted = verdicts.filter((verdict) => verdict.status !== 'rejected');
@@ -198,6 +203,8 @@ export function renderPlan({ projectName, seed, state, verdicts, milestones = []
     '## 9. Open Questions',
     ...(open.length > 0 ? open.map((answer) => `- ${answer.topic} — not yet known`) : ['_None._']),
     '',
-    branchFlowSection('main'),
+    // The repository's own branch, when there is one: a plan declaring `main` in a project on
+    // `master` made the first branch-flow check ask where `master` fits (13 September 2026).
+    branchFlowSection(trunk),
   ].join('\n');
 }

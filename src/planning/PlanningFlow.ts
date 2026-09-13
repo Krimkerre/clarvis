@@ -6,6 +6,7 @@ import { describeProgress, worthResuming } from './interviewStore';
 import { PLANNING_PAUSED_LINE, PlanningIO, PlanningPaused } from './PlanningIO';
 import { GatheredInterview, InterviewMemory, PlanningLines, settlePlanning, StartBuild } from './planReview';
 import { phrase } from '../personality/Voice';
+import { GitFacts } from '../engine/checkpoint/gitFacts';
 
 /**
  * The whole planning milestone, end to end, independent of where it's driven from.
@@ -20,6 +21,22 @@ import { phrase } from '../personality/Voice';
  * `planReview.ts`, which never imports it, so the half with the decisions in it runs under
  * `node --test` (M9i).
  */
+
+/**
+ * The branch the open folder's repository is on, for the plan's branch flow.
+ *
+ * Undefined with no folder, no repository or a detached HEAD, and when git itself fails —
+ * the plan then falls back to declaring `main`, which is no worse than before.
+ */
+async function currentBranch(): Promise<string | undefined> {
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!root) return undefined;
+  try {
+    return (await new GitFacts(root).head()).branch;
+  } catch {
+    return undefined;
+  }
+}
 
 /**
  * Whether it's fine to run the interview and eventually replace `plan.md` —
@@ -88,7 +105,7 @@ export async function runPlanning(
     // A paused interview keeps its snapshot: cancelling is not abandoning, and the
     // next window should still offer to carry on.
     if (!gathered) return;
-    await settlePlanning({ models, io, lines, log, startBuild, memory, writePlan: planWriter(io, log) }, gathered);
+    await settlePlanning({ models, io, lines, log, startBuild, memory, writePlan: planWriter(io, log), currentBranch }, gathered);
   } catch (error) {
     if (!(error instanceof PlanningPaused)) throw error;
     // **Stopped is not finished (M9i).** Nothing on screen was decided, nothing was started,

@@ -36,6 +36,19 @@ test('the title uses the project name when there is one, the seed otherwise', ()
   assert.match(withoutName, /^# renames photos/);
 });
 
+test("the branch flow declares the repository's own branch as the trunk", () => {
+  // Found live, 13 September 2026: every plan declared `trunk: main`, and in a repository
+  // where `git init` had made `master` the first branch-flow check asked where `master` fits.
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [], trunk: 'master' });
+
+  assert.match(plan, /## Branch flow[^]*- trunk: master/);
+  assert.doesNotMatch(plan, /- trunk: main\b/);
+});
+
+test('with no branch to go on, the flow falls back to main', () => {
+  assert.match(renderPlan({ seed: 'renames photos', state, verdicts: [] }), /- trunk: main\b/);
+});
+
 test('established answers land in their sections', () => {
   const plan = renderPlan({ seed: 'renames photos', state, verdicts: [] });
   assert.match(plan, /## 1\. Concept\n\nrenames photos by EXIF date/);

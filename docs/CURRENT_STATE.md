@@ -64,11 +64,11 @@ break Clarvis planning against its own repo.
 | `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
-| `src/engine/` | ~4,785 | The Codex engine (M15 C1 and C2a, 13 Sep). `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
-| `src/test/` | ~378 | Host-level smoke tests (`npm run test:host`), not the main suite — five specs, recounted 13 Sep (this said ~57 until then). Beside them, `fakes/` (~1,353) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles. |
+| `src/engine/` | ~7,414 | The Codex engine (M15 C1, C2a and C3, 13 Sep). `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, and `gitFacts.ts`. `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
+| `src/test/` | ~452 | Host-level smoke tests (`npm run test:host`), not the main suite — six specs, recounted 13 Sep after C3 (this said ~57, then ~378). Beside them, `fakes/` (~2,039) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover. |
 
-**60,189 lines of TypeScript across 400 files** (recounted 13 Sep, after M15 C2a) — 38,735 source,
-21,454 test, counting `src/test/fakes/` and the host specs as test. `plan.md` §11 breaks an older count down and is
+**66,011 lines of TypeScript across 426 files** (recounted 13 Sep, after M15 C3) — 42,004 source,
+24,007 test, counting `src/test/fakes/` and the host specs as test. `plan.md` §11 breaks an older count down and is
 re-counted rather than nudged.
 
 ## What's built vs designed
@@ -76,13 +76,12 @@ re-counted rather than nudged.
 Milestones are numbered M0–M15 in `plan.md` §7 — there is no M12 — and tracked with
 per-milestone exit checklists (257 checklist lines, recounted 12 Sep; this said M0–M12 and
 261 until then). M14, the NERVIS Bridge, was signed off on 29 Aug and is built, which the
-list below predates. **M15, Codex tasks through RAVIS, was signed off on 13 Sep; C1 and most of
-C2a are built** — the relay and lock clients, the Codex runner, the engine choice and the project
-lock in `src/engine/`, and `FakeRavisRelay` with its session state machine in `src/test/fakes/`,
+list below predates. **M15, Codex tasks through RAVIS, was signed off on 13 Sep; C1, C2a and C3
+are built** — the relay and lock clients, the Codex runner, the engine choice, the project
+lock, the task checkpoint and switching between the engines in `src/engine/`, and `FakeRavisRelay` with its session state machine in `src/test/fakes/`,
 all tested against RAVIS's contract fixtures (copied into `src/test/fixtures/` and checked by
 `src/test/codexContractFixtures.test.ts`). None of it has met a real RAVIS: its relay (R3) isn't
-built, so choosing Codex today gets a refusal, not a task. C2b (approvals) waits on calibration;
-C3 (the checkpoint and switching) follows. **§7 is the authority; this is a copy, and
+built, so choosing Codex today gets a refusal, not a task. C2b (approvals) waits on calibration. **§7 is the authority; this is a copy, and
 copies drift** — believe it over this file, the README and the manual, all three of
 which restate it. Current status:
 
@@ -372,8 +371,32 @@ takes the file (`groupKill.ts`, `processTable.ts`); a command that won't stop ke
 itself. A Codex task RAVIS paused because another editor held the checkout is saved from here once that
 editor is gone: its command stopped, the lock file taken and registered with RAVIS as an adoption, then the
 claim, the commit and the settle (final check F-A9). And **Carry on** after RAVIS's step cap starts a
-`carry_on` turn on the same session instead of a new task. Still open in C2a: routing typed text into the
-checkpoint's `latestFeedback`, which needs C3's checkpoint.
+`carry_on` turn on the same session instead of a new task.
+
+**C3 — the checkpoint and switching, 13 Sep.** Every writing run keeps a record of its task in the git
+folder, `clarvis-task-checkpoint.json`: what was asked and ruled out, the plan and where it got to, the
+branch with its base and saved commit, changed files, checks passed or failed, what the owner typed and
+whether an engine took it in, open questions, operations that may or may not have happened, the Codex
+thread, and whether a switch is under way. It is written only while the lock is held, never read for
+another folder, and scrubbed of secrets. **Clarvis: Switch Coding Engine** moves an unfinished task
+between Codex and Clarvis's own engine, either way, in one order: the destination is asked if it can take
+the task and the owner confirms the cost; the lock is reserved for the destination (RAVIS's `transfer`),
+then the work stops; every process is confirmed gone, and anything left over is put to the owner, whose
+cancel keeps the locks; the work is committed on the task's branch; the checkpoint is saved; Codex settles
+`next: "transfer"` and stays idle, never archived; the destination takes the lock with the token and
+continues on the same branch at the saved commit, refusing if the branch moved away; only then does the
+source let go. A Codex session whose Codex home matches is resumed with a catch-up saying what changed;
+otherwise it starts from a brief. Uncertain operations are only ever listed as things to check, never
+repeated. Text typed during a switch goes into `latestFeedback`. A window may take a project over from a
+window the lock rule allows — a stale heartbeat alone never counts, and a woken machine gets 90 seconds —
+after the owner's yes: RAVIS's lock must be this folder's, the old window's command is stopped with its
+group first, and the taken-over window's fence stops it writing. Not built: a per-task engine override (a
+later run uses the settings' engine), the Wait reminder, and offering a switch after a stopped or failed
+task. `ChatService` gained only a `switchEngine` delegate; `RunSession` hooks the switch, the takeover
+offer and the end-of-run checkpoint. Each of C3's 18 guards was broken in the compiled code and its test
+failed; three first came back uncaught, and their tests were added or tightened. C1's 38 and C2a's 13
+still fail when broken after C3's changes. Not run: `npm run test:host`, for which
+`src/test/branchContinuation.spec.ts` and `engineChoice.spec.ts` are written.
 
 ## The complexity budget, and where it stands
 
@@ -436,7 +459,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1719 tests (13 Sep, after M15 C2a's second pass)
+npm test               # node's built-in test runner, no framework — 1765 tests (13 Sep, after M15 C3)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

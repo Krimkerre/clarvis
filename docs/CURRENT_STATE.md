@@ -459,7 +459,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1765 tests (13 Sep, after M15 C3)
+npm test               # node's built-in test runner, no framework — 1768 tests (13 Sep, after the `.git` detection fix)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

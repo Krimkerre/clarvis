@@ -4114,6 +4114,14 @@ model, revising an existing plan, previews.
 - [x] `npm run check` green; each new guard's test fails with the guard removed; complexity measured before and after
 - [ ] Walked live: revision on a frontier and a local model, `NO-FINDINGS` compliance, draft read-back and Stop in VS Code and code-server
 
+**Follow-up, signed off 13 Sep: `.git` detection.** `researchWorkspace` filtered `.git` out of the
+folder listing and then looked for it in what was left, so `hasGit` was always false: a git folder
+with two entries or fewer read as a brand new project, and the interview was never told the project
+is under git. It is the review's item 4, left out of M9i above and signed off on its own. The tests
+set `hasGit` by hand, which is how it survived them.
+
+- [x] `hasGit` is read from the listing before anything is filtered out — `.git` as a folder, or as a file in a worktree
+
 ### M9g — Project notes, written by the user *(next, after the checklist)*
 
 **The direction that does not exist yet.** Clarvis already keeps per-project memory —

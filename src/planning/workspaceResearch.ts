@@ -37,7 +37,10 @@ export async function researchWorkspace(): Promise<WorkspaceSignals | undefined>
   }
 
   return {
-    hasGit: names.includes('.git'),
+    // From the listing as it came, not from `names`: `.git` is one of the entries filtered out
+    // above, so looking for it there found nothing and every git folder read as a new project.
+    // `.git` is a folder in a repository and a file in a worktree, and either counts.
+    hasGit: entries.some(([name]) => name === '.git'),
     manifestFile: MANIFEST_FILES.find((file) => names.includes(file)),
     topLevelEntries: names.slice(0, 15),
     readmeFirstLine,

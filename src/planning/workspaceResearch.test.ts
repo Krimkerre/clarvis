@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import Module from 'module';
 import { test } from 'node:test';
-import { looksLikeNewProject } from './workspaceSignals';
+import { describeWorkspaceSignals, looksLikeNewProject } from './workspaceSignals';
 
 /**
  * What the offer to plan sees in a folder, read through the real `researchWorkspace` (M15 C2a follow-up).
@@ -75,4 +75,45 @@ test('a third real entry still reads as a folder someone has been working in, lo
   ];
 
   assert.equal(looksLikeNewProject(await researchWorkspace()), false);
+});
+
+// ------------------------- `.git`, looked for before it is filtered out
+
+test('a folder under git is not a new project, however few files it holds', async () => {
+  // `.git` was filtered out of the listing and then looked for in what was left, so `hasGit` was
+  // always false: a git folder with two entries or fewer read as a brand new project, and the
+  // interview was never told the project is under git. The planning review's item 4, 13 Sep.
+  const { researchWorkspace } = await loadResearch();
+  listing = [
+    ['.git', FOLDER],
+    ['main.py', FILE],
+  ];
+
+  const signals = await researchWorkspace();
+
+  assert.ok(signals);
+  assert.equal(signals.hasGit, true);
+  assert.deepEqual(signals.topLevelEntries, ['main.py'], '.git is still not counted as one of the project’s entries');
+  assert.equal(looksLikeNewProject(signals), false);
+  assert.match(describeWorkspaceSignals(signals), /git repository/);
+});
+
+test('a git worktree, whose .git is a file rather than a folder, is under git too', async () => {
+  const { researchWorkspace } = await loadResearch();
+  listing = [
+    ['.git', FILE],
+    ['main.py', FILE],
+  ];
+
+  assert.equal((await researchWorkspace())?.hasGit, true);
+});
+
+test('a folder with no .git in it is not under git', async () => {
+  const { researchWorkspace } = await loadResearch();
+  listing = [
+    ['main.py', FILE],
+    ['.clarvis', FOLDER],
+  ];
+
+  assert.equal((await researchWorkspace())?.hasGit, false);
 });

@@ -12,7 +12,7 @@ import { WorkspaceSignals } from './workspaceSignals';
  */
 
 const MANIFEST_FILES = ['package.json', 'pyproject.toml', 'Cargo.toml', 'go.mod', 'requirements.txt'];
-const IGNORED_ENTRIES = new Set(['node_modules', '.git', 'dist', 'out', '.venv', '__pycache__']);
+const IGNORED_ENTRIES = new Set(['node_modules', '.git', 'dist', 'out', '.venv', '__pycache__', '.clarvis']);
 
 /** Reads the workspace root, one directory listing deep. `undefined` if there is no workspace open. */
 export async function researchWorkspace(): Promise<WorkspaceSignals | undefined> {

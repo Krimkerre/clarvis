@@ -951,6 +951,11 @@ export class ChatService {
     return this.runs.reattachCodexTasks();
   }
 
+  /** `Clarvis: Switch Coding Engine` (M15 C3; design §6.2). */
+  switchEngine(): Promise<void> {
+    return this.runs.switchEngine();
+  }
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,

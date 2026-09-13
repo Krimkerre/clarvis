@@ -27,11 +27,20 @@ import {
   maxStepsSetting,
   ravisAccess,
   takeRunLock,
+  windowIdentity,
   workspaceRoot,
   type RavisAccess,
   type RavisLookup,
 } from '../engine/engineHost';
 import type { LockClient } from '../engine/lock/lockClient';
+import type { AgentEngineOptions } from '../agent/AgentRunner';
+import { writeCheckpoint } from '../engine/checkpoint/checkpointFile';
+import { GitFacts } from '../engine/checkpoint/gitFacts';
+import { newCheckpoint, type TaskCheckpoint } from '../engine/checkpoint/taskCheckpoint';
+import { findGitDir } from '../engine/lock/gitDir';
+import type { ProjectLock, TakeoverOffer } from '../engine/lock/projectLock';
+import { checkpointFromClarvis } from '../engine/transfer/fromSource';
+import { ChatEngineSwitch, type CurrentRun, type SwitchHost } from './EngineSwitch';
 import { reattachStep, type ReattachStep } from '../engine/codex/reattach';
 import { RemoteCodexRunner } from '../engine/codex/RemoteCodexRunner';
 import { CODEX_LINES, ravisUnusableLine, tokenLine } from '../engine/codex/translate';
@@ -50,6 +59,10 @@ interface LiveLines {
 interface OpenedRun {
   runner: CodingRun;
   release(): Promise<void>;
+  /** M15 C3: the project lock a run of Clarvis's own engine holds, its task, and the checkpoint it started from. */
+  lock?: ProjectLock;
+  taskId?: string;
+  base?: TaskCheckpoint;
 }
 
 /** What a run needs before it is built: Clarvis's engine its fence, Codex its RAVIS. */
@@ -58,6 +71,11 @@ interface RunGuard {
   relay?: RelayClient;
   locks?: LockClient;
   release(): Promise<void>;
+  lock?: ProjectLock;
+  taskId?: string;
+  base?: TaskCheckpoint;
+  /** A task inherited from a window taken over or gone: continued on its branch (review AL3). */
+  engine?: AgentEngineOptions;
 }
 
 /** Why a run didn't start, and the Codex session to follow instead when that is the reason. */
@@ -255,15 +273,55 @@ export class RunSession {
    * answering it in chat while the agent carries on regardless, is worse: the user
    * watches it keep doing the thing they just asked it not to.
    */
-  /** Whether a run is under way and can be spoken to. */
+  /** Whether a run is under way and can be spoken to — a switch between engines counts (M15 C3). */
   get isRunning(): boolean {
-    return this.running !== undefined;
+    return this.running !== undefined || this.switcher.isSwitching;
   }
 
   redirect(text: string): boolean {
-    if (!this.running) return false;
+    // During a switch, with no run left to take it, the text goes into the checkpoint for the next engine (H8).
+    if (!this.running) return this.switcher.noteFeedback(text);
     this.running.interject(text);
     return true;
+  }
+
+  /** The run going now, as a switch or a takeover needs it (M15 C3). */
+  private current?: CurrentRun;
+
+  /** The step question on screen, by its title, for a switch to record as never answered. */
+  private stepTitle?: string;
+
+  private switcherInstance?: ChatEngineSwitch;
+
+  /** Switching engines and taking projects over, in this window (M15 C3). */
+  private get switcher(): ChatEngineSwitch {
+    this.switcherInstance ??= new ChatEngineSwitch(this.switchHost());
+    return this.switcherInstance;
+  }
+
+  /** `Clarvis: Switch Coding Engine`: the task running here, or the one that stopped, carried on by the other engine. */
+  switchEngine(): Promise<void> {
+    const ravis = ravisAccess(this.models);
+    return this.switcher.switchEngine(workspaceRoot(), ravis.kind === 'ready' ? ravis.access : undefined);
+  }
+
+  private switchHost(): SwitchHost {
+    return {
+      models: this.models,
+      log: this.log,
+      note: (text) => this.note(text),
+      current: () => this.current,
+      // The chat's own Stop for the run — its abort and the step question — without the planning cancel.
+      stopRun: () => {
+        this.busy.stop();
+        this.stopWaiting();
+      },
+      stepOnScreen: () => this.stepTitle,
+      clarvisRunner: (fence, engine, models) => this.clarvisRunner(workspaceRoot(), fence, engine, models),
+      codexRunner: (access) => this.codexRunner(workspaceRoot() as string, access.relay, access.locks),
+      follow: (start) => this.follow({ runner: start.runner, release: start.release, lock: start.lock, base: start.base, taskId: start.base?.taskId }, start.task, start.events, true),
+      setFromPlan: (on, steps) => this.setFromPlan(on, steps),
+    };
   }
 
   /** Told when a run ends on something missing that it never got past. */
@@ -296,7 +354,7 @@ export class RunSession {
 
     // **Which engine, and what it needs first** (M15 C2a): the project lock for Clarvis's own
     // engine, RAVIS for Codex. Refused here, before the opening line promises work that won't start.
-    const opened = await this.openRun(root);
+    const opened = await this.openRun(root, task);
     if ('refusal' in opened) return this.refused(opened);
 
     // Written for this job rather than the same sentence every time. It is the first
@@ -332,7 +390,10 @@ export class RunSession {
     // Held for the length of the run, so anything typed while it works has somewhere
     // to go. Cleared in the finally: a redirect handed to a finished run vanishes.
     this.running = runner;
-
+    // M15 C3: what a switch needs of the run, and a promise that says when its loop has returned.
+    let loopReturned: () => void = () => undefined;
+    const returned = new Promise<void>((resolve) => (loopReturned = resolve));
+    this.current = { runner, task, taskId: opened.taskId ?? '', lock: opened.lock, base: opened.base, returned };
 
     // Held for the whole run, so a build finishing three seconds in cannot wipe the
     // expression of work the user is watching happen (M8e2).
@@ -403,6 +464,8 @@ export class RunSession {
     } finally {
       this.busy.finish(ended);
       this.running = undefined;
+      this.current = undefined;
+      loopReturned();
       this.avatar.setState('neutral', 'agent');
       holdingFace();
       // A bar left at "step 3 of 5" after the run ends describes a run that is no
@@ -410,7 +473,7 @@ export class RunSession {
       // failed run clears it too.
       this.showProgress({ current: 0, total: 0, label: '' });
       // Only now, with the run's loop over and its commands with it (design §6.3: release after).
-      await opened.release();
+      await this.endRun(runner, opened);
     }
 
     // **Persisted whether or not anything changed.** A run that did nothing is exactly
@@ -419,21 +482,24 @@ export class RunSession {
     const record = buildRunRecord(task, startedAt, ledgerEvents);
     await this.context.workspaceState.update(LAST_RUN_KEY, record);
 
+    // A run stopped for a switch hands its work, and anything typed to it, to the switch: no offers here.
+    if (this.switcher.isSwitching) return;
+
     await this.wrapUp(runner, task, summary, closing);
     await this.afterRun(runner);
   }
 
   /** Which engine runs this, and what it needs first; or why nothing runs (M15 C2a; design §5.1, §5.8). */
-  private async openRun(root: string | undefined): Promise<OpenedRun | RunRefusal> {
+  private async openRun(root: string | undefined, task: string): Promise<OpenedRun | RunRefusal> {
     const decision = chatRunDecision(currentEngineChoice(this.models));
     if (decision.run === 'refused') return { refusal: decision.line };
-    const guard = await this.guardFor(decision.run, root);
+    const guard = await this.guardFor(decision.run, root, task);
     if ('refusal' in guard) return guard;
     const runner = createCodingRun(decision.run, {
-      clarvis: () => this.clarvisRunner(root, guard.fence),
+      clarvis: () => this.clarvisRunner(root, guard.fence, guard.engine),
       codex: () => this.codexRunner(root as string, guard.relay as RelayClient, guard.locks),
     });
-    return { runner, release: guard.release };
+    return { runner, release: guard.release, lock: guard.lock, taskId: guard.taskId, base: guard.base };
   }
 
   /**
@@ -441,19 +507,85 @@ export class RunSession {
    * change: two editors no longer build in one project at once — and hands the run its fence. Codex needs
    * RAVIS; its lock is RAVIS's, taken when the session is created.
    */
-  private async guardFor(engine: EngineKind, root: string | undefined): Promise<RunGuard | RunRefusal> {
+  private async guardFor(engine: EngineKind, root: string | undefined, task: string): Promise<RunGuard | RunRefusal> {
     if (engine === 'codex') return codexGuard(root, ravisAccess(this.models));
     const lock = await takeRunLock(this.models, randomUUID(), this.log, () => this.pending.isWaiting);
+    // M15 C3: another window holds the project but isn't answering, or waits on its owner there — asked, then taken over.
+    if (lock && !lock.held && lock.takeover && root) return this.takenOver(root, lock.takeover, task);
     if (lock && !lock.held) return { refusal: lock.line, attachSessionId: lock.attachSessionId };
-    const fence = lock?.held ? lock.lock : undefined;
-    return { fence, release: async () => void (await fence?.release()) };
+    if (!lock?.held || !root) return { release: async () => undefined };
+    // A gone window's file was replaced: its task is carried on, on its branch, rather than a new one beside it (AL3).
+    const taskId = lock.replaced?.taskId ?? lock.lock.lockFile;
+    const engineOptions = lock.replaced ? await this.inherited(root, lock.replaced.taskId, 'Work a closed Clarvis window left on its task') : undefined;
+    return this.clarvisGuard(root, lock.lock, lock.replaced ? taskId : randomUUID(), task, engineOptions);
   }
 
-  private clarvisRunner(root: string | undefined, fence: RunFence | undefined): CodingRun {
+  /** The takeover the owner confirmed, as the guard of a run that continues the taken-over task. */
+  private async takenOver(root: string, offer: TakeoverOffer, task: string): Promise<RunGuard | RunRefusal> {
+    const ravis = ravisAccess(this.models);
+    const taken = await this.switcher.takeOver(root, offer, ravis.kind === 'ready' ? ravis.access : undefined);
+    if ('refusal' in taken) return taken;
+    return this.clarvisGuard(root, taken.lock, taken.taskId, task, taken.engine);
+  }
+
+  private async inherited(root: string, taskId: string, leftoversMessage: string): Promise<AgentEngineOptions | undefined> {
+    const continueOn = await this.switcher.continuationOf(root, findGitDir(root), taskId, leftoversMessage);
+    return continueOn ? { continueOn } : undefined;
+  }
+
+  private async clarvisGuard(root: string, lock: ProjectLock, taskId: string, task: string, engine: AgentEngineOptions | undefined): Promise<RunGuard> {
+    const base = await this.baseCheckpoint(root, taskId, task, engine?.continueOn?.theirs);
+    return { fence: lock, lock, taskId, base, engine, release: async () => void (await lock.release()) };
+  }
+
+  /** The task's checkpoint as a run of Clarvis's own engine starts it: its brief, plan, base commit and the owner's files in flight. */
+  private async baseCheckpoint(root: string, taskId: string, task: string, theirs: string[] | undefined): Promise<TaskCheckpoint> {
+    const facts = new GitFacts(root);
+    const head = await facts.head();
+    const dirty = theirs ?? (await facts.dirty());
+    return newCheckpoint({
+      taskId,
+      workspaceRoot: root,
+      host: windowIdentity().host,
+      engine: 'clarvis',
+      task,
+      now: new Date(),
+      plan: { fromPlan: this.fromPlan, steps: this.steps, uncheckedSteps: this.steps },
+      git: { baseBranch: head.branch, baseCommit: head.commit, dirty },
+      previousModel: this.models.model('agent'),
+    });
+  }
+
+  /**
+   * A run's loop is over: the task's checkpoint is written while the lock is still held, so the other engine can
+   * carry it on (M15 C3), then the lock is let go. During a switch the checkpoint is the switch's to write, and the
+   * lock too: `release` answers `held_for_transfer` (review N2).
+   */
+  private async endRun(runner: CodingRun, opened: OpenedRun): Promise<void> {
+    if (opened.lock && opened.base && !this.switcher.isSwitching) await this.saveRunEnd(runner, opened.lock, opened.base);
+    await opened.release();
+  }
+
+  /** The task's checkpoint when a run of Clarvis's own engine ends, written while its lock is still held (M15 C3). */
+  private async saveRunEnd(runner: CodingRun, lock: ProjectLock, base: TaskCheckpoint): Promise<void> {
+    const facts = new GitFacts(base.workspaceRoot);
+    const head = await facts.head();
+    const branch = runner.branches.working;
+    if (!head.commit || !branch) return;
+    const agent = runner instanceof AgentRunner ? runner : undefined;
+    const diffStat = base.git.baseCommit ? await facts.diffStat(base.git.baseCommit, head.commit) : [];
+    const context = { workspaceRoot: base.workspaceRoot, host: windowIdentity().host, now: new Date() };
+    const stopped = { branch, headCommit: head.commit, changedFiles: runner.result.files, diffStat, dirty: base.git.dirty, checks: agent?.checksRun ?? [], typed: [], interrupted: agent?.interruptedOperation, lockId: lock.ravisLockId };
+    const checkpoint = { ...checkpointFromClarvis(base, stopped, context), status: runner.blocked ? ('interrupted' as const) : ('settled' as const) };
+    const written = await writeCheckpoint(base.workspaceRoot, findGitDir(base.workspaceRoot), checkpoint, () => lock.stillHolds('commit'));
+    if (written.kind !== 'saved') this.log(`agent: the task's checkpoint wasn't written (${written.kind})`);
+  }
+
+  private clarvisRunner(root: string | undefined, fence: RunFence | undefined, engine: AgentEngineOptions = {}, models: ModelService = this.models): AgentRunner {
     return new AgentRunner(
       this.context,
       root,
-      this.models,
+      models,
       this.terminal,
       this.log,
       // **Always handed over, decided per step.** Passing `undefined` here for a run
@@ -465,7 +597,9 @@ export class RunSession {
       // as a run that has silently stopped making progress.
       this.busy.reported,
       // The project lock this run holds: a run another window took over writes nothing more.
-      fence
+      fence,
+      // M15 C3: a task carried on from another engine, or inherited from another window, continues on its branch.
+      engine
     );
   }
 
@@ -817,6 +951,8 @@ export class RunSession {
     // break it fastest).
     await this.note([step.title, '', step.what, ...(step.exact ? ['', step.exact] : [])].join('\n'));
 
+    // M15 C3: a switch records the question on screen as never answered, by its title.
+    this.stepTitle = step.title;
     const answer = await this.pending.ask(
       [{ label: 'Do it' }, { label: 'Skip this step' }],
       // What the nudge will be about, if it comes to that. The step title rather than
@@ -825,6 +961,7 @@ export class RunSession {
       step.title
     );
 
+    this.stepTitle = undefined;
     // No answer means the run was stopped or the panel went away — not consent.
     return answer === 'Do it';
   }

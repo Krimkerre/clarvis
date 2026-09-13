@@ -68,6 +68,10 @@
         "title": "Clarvis: Run a Task"
       },
       {
+        "command": "clarvis.switchEngine",
+        "title": "Clarvis: Switch Coding Engine"
+      },
+      {
         "command": "clarvis.forgetBranchAnswers",
         "title": "Clarvis: Forget Branch Flow Answers"
       },

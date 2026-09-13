@@ -221,6 +221,9 @@ export function activate(context: vscode.ExtensionContext): void {
   const codexReattach = setTimeout(() => void chat?.reattachCodexTasks(), 3000);
   context.subscriptions.push({ dispose: () => clearTimeout(codexReattach) });
 
+  // M15 C3: carrying an unfinished task on with the other engine, from the chat panel's run.
+  context.subscriptions.push(vscode.commands.registerCommand('clarvis.switchEngine', () => chat?.switchEngine()));
+
   // Every unsolicited remark (M3 notices, M5 pattern hits, M6 quips) also lands in
   // the transcript. Toasts disappear after a few seconds; the thing he said about
   // your build shouldn't be unrecoverable because you were looking elsewhere.

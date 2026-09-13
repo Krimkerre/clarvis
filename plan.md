@@ -4993,10 +4993,12 @@ RAVIS's long-lived process; Codex on this ecosystem's own repositories.
 
 §4.6 describes what is built, so these are applied to it in the same commit as the code, not before:
 
-- **Model access.** `ravis/codex` becomes a coding-model choice, with a Codex model setting
+- **Model access.** `ravis/clarvis-codex` becomes a coding-model choice, with a Codex model setting
   (`clarvis.codex.model`), listed only when Clarvis sends `X-Clarvis-Engines: codex` to a loopback
-  RAVIS. Clarvis recognises it by id and confirms it against `GET /api/v1/codex`; `ravis/codex/<x>`,
-  and a `ravis/codex` set by a repository's `.vscode/settings.json`, are refused. Never a chat model.
+  RAVIS. Clarvis recognises it by id and confirms it against `GET /api/v1/codex`; `ravis/clarvis-codex/<x>`,
+  and a `ravis/clarvis-codex` set by a repository's `.vscode/settings.json`, are refused. Never a chat model.
+  (The id was `ravis/codex` until Clarvis 0.16.1: the owner renamed it on 13 September 2026 to match
+  `ravis/clarvis-agent` and `ravis/clarvis-chat`, with no alias.)
 - **Tools.** A Codex task's tools are Codex's own. Clarvis sees what Codex asks, not what it runs
   without asking.
 - **Gates.** Codex's approvals and questions are relayed, asked one at a time, and offered only with
@@ -5150,7 +5152,7 @@ The design's risks that reach Clarvis:
   before tasks run again. Per-thread permission profiles, escalation, a per-thread temp folder and
   event order across two tasks are unproven until calibration.
 - **Attachment is self-reported** by the panel heartbeat.
-- **An old Clarvis with `ravis/codex` typed by hand** still makes an empty branch before RAVIS's 400.
+- **An old Clarvis with `ravis/clarvis-codex` typed by hand** still makes an empty branch before RAVIS's 400.
 - **The proxied code-server origin** (through NERVIS's `/code/`) may not support the panel; the live
   test decides.
 

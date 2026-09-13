@@ -296,7 +296,7 @@ test("Codex → Clarvis's own engine, in order: the lock reserved, the question 
       live.engineSwitch?.noteFeedback('Typed while the work was being saved.');
       return written;
     };
-    live.engineSwitch = new EngineSwitch({ source, destination, prompts: confirmAll(confirmations), host: 'desktop', sourceModel: 'ravis/codex' });
+    live.engineSwitch = new EngineSwitch({ source, destination, prompts: confirmAll(confirmations), host: 'desktop', sourceModel: 'ravis/clarvis-codex' });
 
     const outcome = await live.engineSwitch.run();
 
@@ -331,7 +331,7 @@ test("Codex → Clarvis's own engine, in order: the lock reserved, the question 
 
     const saved = readCheckpoint(h.root, h.gitDir);
     const final = saved.kind === 'found' ? saved.checkpoint : undefined;
-    assert.deepEqual([final?.engine, final?.status, final?.transfer, final?.previousModel, final?.codexSession?.id], ['clarvis', 'running', undefined, 'ravis/codex', session.id]);
+    assert.deepEqual([final?.engine, final?.status, final?.transfer, final?.previousModel, final?.codexSession?.id], ['clarvis', 'running', undefined, 'ravis/clarvis-codex', session.id]);
     assert.deepEqual(
       final?.latestFeedback.map((note) => [note.text, note.delivered]),
       [
@@ -362,7 +362,7 @@ test('something Codex left running puts the switch to the owner; cancelling keep
       take: async () => ((destinationUsed = true), { held: false, line: 'never' }),
       run: async () => ((destinationUsed = true), { ok: true, value: undefined }),
     });
-    const engineSwitch = new EngineSwitch({ source, destination, prompts: confirmAll([], 'cancel', leftovers), host: 'desktop', sourceModel: 'ravis/codex' });
+    const engineSwitch = new EngineSwitch({ source, destination, prompts: confirmAll([], 'cancel', leftovers), host: 'desktop', sourceModel: 'ravis/clarvis-codex' });
 
     const outcome = await engineSwitch.run();
 
@@ -480,7 +480,7 @@ test('Clarvis → Codex: the lock reserved, the run stopped and its command conf
     const outcome = await engineSwitch.run();
 
     assert.equal(outcome.kind, 'started', JSON.stringify(outcome));
-    assert.deepEqual(confirmations, [switchConfirmLine('codex', 'ravis/codex')]);
+    assert.deepEqual(confirmations, [switchConfirmLine('codex', 'ravis/clarvis-codex')]);
     assert.deepEqual(
       h.sent.filter((line) => /\/transfer$|run stopped|confirmed gone|checkpoint written|\/turns$|handed over|\/release$|^POST \/api\/v1\/agent-sessions$/.test(line)),
       [

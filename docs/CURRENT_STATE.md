@@ -323,13 +323,14 @@ model call, a reload at the approve gate, and milestone one ticking from edited 
 later session needs to know.
 
 **Which engine runs a task is decided in one place.** `engineChoice.ts` picks Codex only for exactly
-`ravis/codex`, set in the owner's own settings (a repository's `.vscode/settings.json` choosing it is
+`ravis/clarvis-codex`, set in the owner's own settings (a repository's `.vscode/settings.json` choosing it is
 refused), at an address on this Mac, in a trusted folder; anything else naming Codex is refused with
 its reason. `codingRunFactory.ts` gives the three places that build runners their decision: the chat's
 run builds either engine, the palette never builds Codex (its questions need the panel), and the
 answer path refuses Codex as a chat model before any request. The model listing now sends
 `X-Clarvis-Engines: codex` to addresses on this Mac, so the coding model picker can offer
-`ravis/codex`; the chat picker never does.
+`ravis/clarvis-codex`; the chat picker never does. The id was `ravis/codex` until 0.16.1, when the owner
+renamed it to match the Clarvis pools (13 September 2026); the old id is no longer recognised.
 
 **A Codex task is followed by `runCore.ts`.** It asks RAVIS whether Codex may run before a branch
 exists, creates the session with the contract's key, keeps the token in the token file, and reads the

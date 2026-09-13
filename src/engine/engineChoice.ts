@@ -3,7 +3,7 @@
  *
  * **Codex is chosen, never drifted into.** It spends the owner's ChatGPT plan and runs inside RAVIS
  * with its own safety box, so every one of these must hold before a task goes to it:
- * - the coding model is exactly `ravis/codex` — RAVIS's id for it, confirmed by the `X-Clarvis-Engines`
+ * - the coding model is exactly `ravis/clarvis-codex` — RAVIS's id for it, confirmed by the `X-Clarvis-Engines`
  *   listing — and nothing that merely starts with it;
  * - the owner chose it in their own settings. A repository's `.vscode/settings.json` is written by
  *   whoever wrote the repository, and a project that could switch its reader onto a paid remote agent
@@ -12,7 +12,7 @@
  * - the folder is trusted. Restricted Mode means nothing edits and nothing runs, whichever engine.
  *
  * Anything else that names Codex is refused with a sentence saying why, rather than falling back to
- * Clarvis's own engine: that would send `ravis/codex` to RAVIS as a chat model, which RAVIS refuses
+ * Clarvis's own engine: that would send `ravis/clarvis-codex` to RAVIS as a chat model, which RAVIS refuses
  * anyway, after a branch had already been made for nothing.
  *
  * The per-task override (`clarvis.engine.override`) belongs to switching, which is C3.
@@ -24,7 +24,7 @@ import { isLoopbackUrl } from './relay/relayHttp';
 import type { SessionMode } from './relay/relayTypes';
 
 /** RAVIS's model id for Codex (`codex-state.json` capabilities: `backend_id`). */
-export const CODEX_MODEL_ID = 'ravis/codex';
+export const CODEX_MODEL_ID = 'ravis/clarvis-codex';
 
 /** Where the effective coding model's setting came from. */
 export type SettingSource = 'user' | 'workspace' | 'folder' | 'default';
@@ -47,7 +47,7 @@ export type EngineChoice =
 
 /** What the chat says for each refusal. Plain, and each one says what to do about it. */
 export const ENGINE_REFUSAL_LINES: Readonly<Record<EngineRefusal, string>> = {
-  codex_variant: 'Clarvis knows Codex only as ravis/codex, so nothing runs under that name. Choose Codex under Models.',
+  codex_variant: 'Clarvis knows Codex only as ravis/clarvis-codex, so nothing runs under that name. Choose Codex under Models.',
   repository_setting:
     "This project's own settings chose Codex, and only you can make that choice. Choose it yourself under Models.",
   not_loopback: "Codex runs only through RAVIS on this Mac, and the coding model's address isn't this Mac.",
@@ -58,7 +58,7 @@ const CLARVIS: EngineChoice = { engine: 'clarvis' };
 const CODEX: EngineChoice = { engine: 'codex' };
 
 /**
- * The header that lets RAVIS list `ravis/codex` (`conventions.json` headers: sent on the model listing,
+ * The header that lets RAVIS list `ravis/clarvis-codex` (`conventions.json` headers: sent on the model listing,
  * to a loopback base URL only). Other servers ignore a header they don't know.
  */
 export function codexListingHeaders(baseUrl: string): Record<string, string> {
@@ -93,7 +93,7 @@ export function chooseEngine(inputs: EngineInputs): EngineChoice {
 /** The first rule a Codex choice breaks, in the order the owner can fix them. */
 function codexRefusal(inputs: EngineInputs): EngineRefusal | undefined {
   if (inputs.model.trim() !== CODEX_MODEL_ID) return 'codex_variant';
-  // Only the owner's own settings choose Codex; `default` can never be `ravis/codex`, and is refused too.
+  // Only the owner's own settings choose Codex; `default` can never be `ravis/clarvis-codex`, and is refused too.
   if (inputs.source !== 'user') return 'repository_setting';
   if (!isLoopbackUrl(inputs.baseUrl)) return 'not_loopback';
   return inputs.trusted ? undefined : 'untrusted';

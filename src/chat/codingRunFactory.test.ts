@@ -17,9 +17,9 @@ import {
  */
 
 const trusted = { source: 'user' as const, baseUrl: 'http://127.0.0.1:8731', trusted: true };
-const codex = chooseEngine({ ...trusted, model: 'ravis/codex' });
+const codex = chooseEngine({ ...trusted, model: 'ravis/clarvis-codex' });
 const clarvis = chooseEngine({ ...trusted, model: 'ravis/clarvis-agent' });
-const refused = chooseEngine({ ...trusted, model: 'ravis/codex', source: 'workspace' });
+const refused = chooseEngine({ ...trusted, model: 'ravis/clarvis-codex', source: 'workspace' });
 
 test("the chat's run builds whichever engine was chosen, or refuses with the choice's reason", () => {
   assert.deepEqual(chatRunDecision(codex), { run: 'codex' });
@@ -34,8 +34,8 @@ test('the palette never runs Codex: it points at the panel, and still refuses a 
 });
 
 test('the answer path refuses a chat model that is Codex, before any request; every other chat model answers', () => {
-  assert.equal(chatModelRefusal('ravis/codex'), CHAT_MODEL_CODEX_LINE);
-  assert.equal(chatModelRefusal('ravis/codex/gpt-6-astra'), CHAT_MODEL_CODEX_LINE);
+  assert.equal(chatModelRefusal('ravis/clarvis-codex'), CHAT_MODEL_CODEX_LINE);
+  assert.equal(chatModelRefusal('ravis/clarvis-codex/gpt-6-astra'), CHAT_MODEL_CODEX_LINE);
   assert.equal(chatModelRefusal('ravis/clarvis-chat'), undefined);
   assert.equal(chatModelRefusal(''), undefined);
 });

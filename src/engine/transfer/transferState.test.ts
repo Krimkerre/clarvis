@@ -70,7 +70,7 @@ test('otherwise it resumes the thread only in the same Codex home, on the confir
 });
 
 test("the confirmation names what it costs, in the design's words; the holder is the engine's kind", () => {
-  assert.equal(switchConfirmLine('codex', 'ravis/codex'), "Stop and continue this task with Codex? That uses your ChatGPT plan's allowance.");
+  assert.equal(switchConfirmLine('codex', 'ravis/clarvis-codex'), "Stop and continue this task with Codex? That uses your ChatGPT plan's allowance.");
   assert.equal(
     switchConfirmLine('clarvis', 'ravis/clarvis-agent'),
     'Stop Codex and continue this task with ravis/clarvis-agent? That uses your API providers, which RAVIS counts as spend.'

@@ -8,12 +8,12 @@ import { chooseEngine, codexListingHeaders, ENGINE_REFUSAL_LINES, modelsForRole,
  * than quietly sent somewhere else.
  */
 
-const CHOSEN: EngineInputs = { model: 'ravis/codex', source: 'user', baseUrl: 'http://127.0.0.1:8731', trusted: true };
+const CHOSEN: EngineInputs = { model: 'ravis/clarvis-codex', source: 'user', baseUrl: 'http://127.0.0.1:8731', trusted: true };
 
-test('ravis/codex, chosen in the owner’s own settings, at an address on this Mac, in a trusted folder, runs Codex', () => {
+test('ravis/clarvis-codex, chosen in the owner’s own settings, at an address on this Mac, in a trusted folder, runs Codex', () => {
   assert.deepEqual(chooseEngine(CHOSEN), { engine: 'codex' });
   assert.deepEqual(chooseEngine({ ...CHOSEN, baseUrl: 'http://localhost:8731' }), { engine: 'codex' });
-  assert.deepEqual(chooseEngine({ ...CHOSEN, model: '  ravis/codex ' }), { engine: 'codex' }, 'stray spaces are not a way out');
+  assert.deepEqual(chooseEngine({ ...CHOSEN, model: '  ravis/clarvis-codex ' }), { engine: 'codex' }, 'stray spaces are not a way out');
 });
 
 test("every other model is Clarvis's own engine, whoever set it and wherever it points", () => {
@@ -21,12 +21,12 @@ test("every other model is Clarvis's own engine, whoever set it and wherever it 
   assert.deepEqual(chooseEngine({ model: 'claude-sonnet-4.5', source: 'workspace', baseUrl: 'https://api.anthropic.com', trusted: false }), {
     engine: 'clarvis',
   });
-  assert.deepEqual(chooseEngine({ ...CHOSEN, model: 'ravis/codexy' }), { engine: 'clarvis' }, 'a name that only starts the same is not Codex');
+  assert.deepEqual(chooseEngine({ ...CHOSEN, model: 'ravis/clarvis-codexy' }), { engine: 'clarvis' }, 'a name that only starts the same is not Codex');
 });
 
 test('each rule a Codex choice breaks refuses with its own reason and sentence', () => {
   const cases: [Partial<EngineInputs>, string][] = [
-    [{ model: 'ravis/codex/gpt-6-astra' }, 'codex_variant'],
+    [{ model: 'ravis/clarvis-codex/gpt-6-astra' }, 'codex_variant'],
     [{ source: 'workspace' }, 'repository_setting'],
     [{ source: 'folder' }, 'repository_setting'],
     [{ source: 'default' }, 'repository_setting'],
@@ -54,14 +54,15 @@ test('the listing asks RAVIS for Codex only on this Mac, so no other server is t
 });
 
 test('the chat model picker never offers Codex; the coding model picker does', () => {
-  const listed = [{ id: 'ravis/clarvis-chat' }, { id: 'ravis/codex' }, { id: 'ravis/codex/gpt-6-astra' }];
+  const listed = [{ id: 'ravis/clarvis-chat' }, { id: 'ravis/clarvis-codex' }, { id: 'ravis/clarvis-codex/gpt-6-astra' }];
   assert.deepEqual(modelsForRole(listed, 'chat'), [{ id: 'ravis/clarvis-chat' }]);
   assert.deepEqual(modelsForRole(listed, 'agent'), listed);
 });
 
 test('namesCodex: the id itself and anything under it, and nothing else', () => {
-  assert.equal(namesCodex('ravis/codex'), true);
-  assert.equal(namesCodex('ravis/codex/x'), true);
-  assert.equal(namesCodex('ravis/codex-mini'), false);
+  assert.equal(namesCodex('ravis/clarvis-codex'), true);
+  assert.equal(namesCodex('ravis/clarvis-codex/x'), true);
+  assert.equal(namesCodex('ravis/clarvis-codex-mini'), false);
+  assert.equal(namesCodex('ravis/codex'), false, 'the old id, renamed on 13 September 2026, has no alias');
   assert.equal(namesCodex(''), false);
 });

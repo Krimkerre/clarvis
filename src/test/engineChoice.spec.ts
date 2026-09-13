@@ -5,7 +5,7 @@ import { currentEngineChoice } from '../engine/engineHost';
 import { ModelService } from '../model/ModelService';
 
 /**
- * The engine seam against real VS Code settings (plan.md M15, C2a): `ravis/codex` chosen in the owner's
+ * The engine seam against real VS Code settings (plan.md M15, C2a): `ravis/clarvis-codex` chosen in the owner's
  * own settings, at RAVIS on this Mac, is Codex for the chat's run; the command palette never runs it; and
  * the answer path refuses it as a chat model. The rules themselves are unit-tested in
  * `engineChoice.test.ts` and `codingRunFactory.test.ts`; this checks the glue reads the settings the way
@@ -20,11 +20,11 @@ suite('engine choice in the extension host (M15 C2a)', () => {
     for (const key of ['agent.model', 'agent.provider', 'chat.baseUrl.custom']) await set(key, undefined);
   });
 
-  test('ravis/codex in user settings is Codex for the chat, and the palette refuses it with a pointer to the panel', async () => {
+  test('ravis/clarvis-codex in user settings is Codex for the chat, and the palette refuses it with a pointer to the panel', async () => {
     await vscode.extensions.getExtension('Krimkerre.clarvis')?.activate();
     await set('agent.provider', 'custom');
     await set('chat.baseUrl.custom', 'http://127.0.0.1:8731');
-    await set('agent.model', 'ravis/codex');
+    await set('agent.model', 'ravis/clarvis-codex');
     // Only settings are read for the choice; the key store is never touched.
     const models = new ModelService({} as vscode.ExtensionContext, () => undefined);
 
@@ -47,6 +47,6 @@ suite('engine choice in the extension host (M15 C2a)', () => {
   });
 
   test('the answer path refuses Codex as a chat model', () => {
-    assert.strictEqual(chatModelRefusal('ravis/codex'), CHAT_MODEL_CODEX_LINE);
+    assert.strictEqual(chatModelRefusal('ravis/clarvis-codex'), CHAT_MODEL_CODEX_LINE);
   });
 });

@@ -4942,7 +4942,7 @@ which is a distinction this project has been caught by before.
 > the real `0600` secret and registered normally; the hostile path never reached the file
 > check, since `/etc/hosts` at `0644` would have logged a refusal and none appears.
 
-### M15 — Codex tasks through RAVIS *(signed off 13 Sep — nothing built)*
+### M15 — Codex tasks through RAVIS *(signed off 13 Sep — C1 built; C2a built with four of its checks open)*
 
 External driver: the owner's decisions of 13 Sep, recorded in `ECOSYSTEM_RUNBOOK.md` §2.2.
 Contract in `CLARVIS.md` §5.5 and E-C9, `RAVIS.md` §15.1.2 and M29, and the shared fixtures
@@ -5063,18 +5063,29 @@ source and of tests.
   - Check: `npm run check`
 - Built with them, and not wired into the extension yet (C2a does that): `relayFailure` keeps an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering apart; `processProbe` reads `ps` in the C locale, because a Dutch locale prints "zo 13 sep." and a live holder would look gone; `src/test/fakes/relayContract.ts` is the fixture checker the fake uses. Every guard was broken on purpose and its test failed, 38 of 38, then restored. `npm run check`: 1,604 tests pass. `npm run test:host` was not run: its `stable` version lookup is a network call, and C1 adds nothing the extension host loads.
 
-**C2a — the remote runner, reattach, Stop, steer and the factory** (about 1,980 / 2,270)
+**C2a — the remote runner, reattach, Stop, steer and the factory** (about 1,980 / 2,270; built 13 Sep at about 2,700 source lines, 1,900 test lines and 470 lines added to the fake)
 - [ ] `src/engine/codex/runCore.ts` (pure) and `RemoteCodexRunner.ts` (vscode glue); `engineChoice.ts`; `CodingRun.ts`; `src/chat/codingRunFactory.ts`; `RunSession` (factory, `attach`, the Clarvis-engine lock with the fence); `ChatService` (reattach on activation, `runTook` routing); the `extension.ts` and `Replier.ts` guards; the pickers; the `X-Clarvis-Engines` header; `AgentRunner`'s `engine`, `drainInterjections` and `stillHolds`
-  - Check: Stop clears the question before any network call, and never sends a late accept
-  - Check: a steer race is queued; text typed while stopping, switching or detached lands in `latestFeedback` and is delivered
-  - Check: reattach from a second host with a stored cursor, and with a snapshot; two windows — the first answer wins, and there is one settle claim
-  - Check: a task completed while detached is settled; `LEASE_REVOKED` fences the run
-  - Check: an owner Stop (`stopped_by: "dashboard"`) clears the question, says where the stop came from, and settles
-  - Check: a panel whose pings stop and resume posts `panel_connected: false`, then `true`, and reopens the stream from its cursor
-  - Check: reattaching to a session a `gone` window superseded reconciles, adopts the lock file and settles
-  - Check: `409 PROJECT_LOCKED` from `turns` or `steer` shows the chat line and keeps the text in `latestFeedback`
-  - Check: `running_command` with its process group in heartbeats, and the group kill when RAVIS is down
-  - Check: a host spec for the factory and the palette guard; `npm run check` and `npm run test:host`
+  - Built: `runCore.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`, with `translate.ts`, `ledger.ts`, `questions.ts`, `feedback.ts`, `eventChannel.ts` and `reattach.ts` beside them; `engineChoice.ts`, `engineHost.ts`, `CodingRun.ts`; `src/engine/lock/projectLock.ts` and `gitDir.ts`; `codingRunFactory.ts`; `src/agent/lockFence.ts` (the fence's decisions, where a test reaches them); `RunSession`, `AgentRunner` (with the fence as `RunFence.stillHolds`), the palette in `extension.ts`, `Replier`, both pickers and the listing header. `ChatService` gained two lines: the panel ping, and reattach on activation.
+  - Open, so the item stays unticked: `runTook` routing into the checkpoint's `latestFeedback` (the checkpoint is C3; until then the runner keeps typed text itself, which `ChatService` needed no change for), the `gone`-window reconcile, and the group kill
+  - [x] Check: Stop clears the question before any network call, and never sends a late accept
+    - `runCore.test.ts`: the question's signal aborts in the same tick as Stop, before the interrupt request starts; a "once" clicked after it is never sent. Also for a stop RAVIS reports from elsewhere (`engineDecisionAfterAsking` in `stopDecision.ts`)
+  - [ ] Check: a steer race is queued; text typed while stopping, switching or detached lands in `latestFeedback` and is delivered
+    - Passes for the race, for stopping, and for detached (RAVIS unreachable, then steered in on reconnect). Switching is C3, and so is keeping `latestFeedback` in the checkpoint file: until then it lives in the run, and a run that ends with text undelivered says so in the chat
+  - [x] Check: reattach from a second host with a stored cursor, and with a snapshot; two windows — the first answer wins, and there is one settle claim
+  - [x] Check: a task completed while detached is settled; `LEASE_REVOKED` fences the run
+    - The lock and the fence's decisions are tested (`projectLock.test.ts`, `lockFence.test.ts`); `AgentRunner`'s three calls into them import `vscode` and were read, not run
+  - [x] Check: an owner Stop (`stopped_by: "dashboard"`) clears the question, says where the stop came from, and settles
+  - [x] Check: a panel whose pings stop and resume posts `panel_connected: false`, then `true`, and reopens the stream from its cursor
+    - The runner is tested; the webview's 10-second ping (`media/chat.js`) and its way through `ButlerViewProvider` and `ChatService` were read, not run
+  - [ ] Check: reattaching to a session a `gone` window superseded reconciles, adopts the lock file and settles
+    - Not built. A superseded session is followed and never committed on (tested both ways: RAVIS refusing the claim, and the window's own fence when it doesn't); reconciling the gone window and registering its file with `adopt_file_lock` wait
+  - [x] Check: `409 PROJECT_LOCKED` from `turns` or `steer` shows the chat line and keeps the text in `latestFeedback`
+    - `continueTurn` is tested against the fake; nothing in the chat calls it yet, so "carry on" after the step cap still starts a new task
+  - [ ] Check: `running_command` with its process group in heartbeats, and the group kill when RAVIS is down
+    - Half built: a run of Clarvis's own engine writes `{pid, pgid, start, comm}` into the lock file and every heartbeat (`describeProcess`). The kill is not built; instead, a lock file whose recorded command is still running refuses the run and names the command
+  - [ ] Check: a host spec for the factory and the palette guard; `npm run check` and `npm run test:host`
+    - `npm run check` passes: 1,700 tests. `src/test/engineChoice.spec.ts` is written and compiles; `npm run test:host` was not run, because its `stable` version lookup is a network call
+- Built with them, where the contract left a choice: `GET /api/v1/codex` is read before a branch exists, and a refusal there says the same as `409 CODEX_NOT_READY`; a Codex task needs a git repository with a commit, and is refused with a sentence otherwise, because the settle carries a commit; the settle sends `checkpoint_saved: true` before C3's checkpoint file exists, as the contract has no other value — C3 must write the checkpoint first; a window that picks up finished work saves it without asking, as a stopped run of Clarvis's own engine commits what it wrote, and the review and landing offers follow; a window that picked a task up commits only what Codex reported changing, one that started it also commits what else changed since, minus what the owner had already changed; until C2b, a request is declined where RAVIS allows declining, and said so, while a question waits and Stop ends the task. For the lock: a `422` from RAVIS's lock routes leaves the run on the lock file and RAVIS isn't asked again; a lock file naming this very window and process that this extension host doesn't hold is a leftover and is replaced; in a folder without git the file is `<root>/.clarvis/engine.lock`; Restricted Mode takes no lock. The fake gained the session state machine (`fakeSessions.ts`) and `GET /api/v1/codex`, and its comment says where it chose what the fixtures don't fix. Every guard was broken in the compiled code and its test failed, 27 of 27, then restored; two first came back uncaught — a test whose asker never answered couldn't see a question asked twice, and a test waited on a run with no time limit — and both tests were fixed. C1's 38 guards still fail when broken after C2a's changes to its modules. Not verified here: anything inside VS Code, and anything against a real RAVIS, whose relay (R3) isn't built.
 
 **C2b — approvals, after calibration** (about 480 / 580)
 - [ ] `src/engine/codex/approvals.ts`: first-in-first-out questions, the decision re-evaluated right before the POST, buttons rendered from `allowed_decisions`, Unattended's narrow auto-answer while attached, the fakes updated from calibration's transcripts; no "don't ask again"

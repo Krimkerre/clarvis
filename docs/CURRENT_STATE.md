@@ -71,10 +71,12 @@ break Clarvis planning against its own repo.
 
 ## What's built vs designed
 
-Milestones are numbered M0–M14 in `plan.md` §7 — there is no M12 — and tracked with
+Milestones are numbered M0–M15 in `plan.md` §7 — there is no M12 — and tracked with
 per-milestone exit checklists (257 checklist lines, recounted 12 Sep; this said M0–M12 and
 261 until then). M14, the NERVIS Bridge, was signed off on 29 Aug and is built, which the
-list below predates. **§7 is the authority; this is a copy, and
+list below predates. **M15, Codex tasks through RAVIS, was signed off on 13 Sep and nothing
+of it is built** — only RAVIS's contract fixtures, copied into `src/test/fixtures/` and
+checked by `src/test/codexContractFixtures.test.ts`. **§7 is the authority; this is a copy, and
 copies drift** — believe it over this file, the README and the manual, all three of
 which restate it. Current status:
 
@@ -371,7 +373,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1447 tests currently
+npm test               # node's built-in test runner, no framework — 1450 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

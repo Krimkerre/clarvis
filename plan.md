@@ -4942,6 +4942,205 @@ which is a distinction this project has been caught by before.
 > the real `0600` secret and registered normally; the hostile path never reached the file
 > check, since `/etc/hosts` at `0644` would have logged a refusal and none appears.
 
+### M15 — Codex tasks through RAVIS *(signed off 13 Sep — nothing built)*
+
+External driver: the owner's decisions of 13 Sep, recorded in `ECOSYSTEM_RUNBOOK.md` §2.2.
+Contract in `CLARVIS.md` §5.5 and E-C9, `RAVIS.md` §15.1.2 and M29, and the shared fixtures
+RAVIS owns (`ravis/tests/fixtures/relay-contract/` and `lock-rule-cases.json`), copied here into
+`src/test/fixtures/`. Paired with RAVIS M29 and NERVIS M28. The whole build order, both tracks,
+is in the ecosystem's `STATUS.md`, under *Codex engine through RAVIS — build plan, 2026-09-13*.
+
+**What it is, plainly.** Choose **Codex** as the coding model, in desktop VS Code or the browser
+editor, and a build runs as a Codex task on the owner's ChatGPT plan. RAVIS runs Codex on this
+Mac and passes every step, question and approval to the Clarvis chat, which works as it does for
+Clarvis's own engine. A task keeps running when the editor closes or reloads; opening the project
+again, in either editor, reconnects and shows any question still waiting. Stop — from any editor
+showing the task, or from the menu bar or dashboard — clears the question at once, and nothing is
+saved until everything Codex started for that project has stopped. Only one engine writes to a
+project at a time: RAVIS keeps that lock for Codex and for Clarvis's own engine, and an unfinished
+task moves between the two in both directions, on the same branch.
+
+**Signed off 13 Sep.** The owner approved the Codex design that morning and said that approval is
+this plan's sign-off (§0's gate). The decisions it rests on:
+
+1. **RAVIS runs Codex** — one long-lived `codex app-server`, relaying sessions to Clarvis, so tasks
+   outlive windows. A Codex hosted inside Clarvis's extension host was considered and not chosen.
+2. **Stricter file rules, gated on calibration.** No Codex task starts until a calibration run
+   proves Codex's commands cannot read the key and password files; if it fails, the question goes
+   back to the owner rather than falling back to looser rules.
+3. **Codex's conversation history is kept**, in RAVIS's own Codex folder.
+4. **The Homebrew stable Codex**, found through `brew --prefix` — not the ChatGPT app's copy.
+5. **No terms check.**
+6. **A stop-only control** on the menu bar and dashboard. Answering and steering stay in Clarvis.
+7. **Codex is refused on NERVIS-ecosystem, this repository and the coding folder itself**, by
+   default.
+
+**Not in this milestone:** switching engines automatically when the allowance runs out; Codex for
+chat, planning or the interview; remote hosts (device-code sign-in is unprobed, so remote
+code-server is unsupported); any NERVIS control of a task other than Stop; "don't ask again" for
+Codex's approvals, because Codex's session-wide approval memory would outlive the step inside
+RAVIS's long-lived process; Codex on this ecosystem's own repositories.
+
+#### What changes in §4.6 when this lands
+
+§4.6 describes what is built, so these are applied to it in the same commit as the code, not before:
+
+- **Model access.** `ravis/codex` becomes a coding-model choice, with a Codex model setting
+  (`clarvis.codex.model`), listed only when Clarvis sends `X-Clarvis-Engines: codex` to a loopback
+  RAVIS. Clarvis recognises it by id and confirms it against `GET /api/v1/codex`; `ravis/codex/<x>`,
+  and a `ravis/codex` set by a repository's `.vscode/settings.json`, are refused. Never a chat model.
+- **Tools.** A Codex task's tools are Codex's own. Clarvis sees what Codex asks, not what it runs
+  without asking.
+- **Gates.** Codex's approvals and questions are relayed, asked one at a time, and offered only with
+  the decisions RAVIS allows. The mapping from Clarvis's modes to Codex's approval settings is
+  provisional until calibration.
+- **Undo.** The task branch, plus a capture before each accepted file change while a window is
+  attached; while detached, the branch is the undo.
+- **Branch isolation.** A switch continues on the existing task branch (`AgentBranch.continueOn`);
+  Codex's work is committed at settle, by Clarvis — never by RAVIS, which runs no git.
+- **Privacy.** Code and prompts go to OpenAI; the key and password files are denied to Codex's
+  commands once that is proven; relayed content passes through RAVIS's memory, never its disk;
+  Codex's own history is kept in RAVIS's folder for 90 days after it was last used.
+- **Cost.** The ChatGPT plan's allowance, never shown as money. Switching to Clarvis's own engine
+  confirms the API spend first.
+
+#### New: tasks that outlive the window
+
+- **Reattach from either host.** On activation Clarvis lists the workspace's Codex sessions and
+  reattaches with its stored event cursor, or from a snapshot (`CLARVIS.md` §5.5).
+- **The token file.** Each session's capability token is kept at
+  `~/.local/share/clarvis/agent-sessions/<sha256(root realpath)>.json` (folder 0700, file 0600,
+  written atomically), so desktop VS Code can reattach to a task code-server started. A lost token
+  is reissued once no window has been attached for 60 s.
+- **The credential file on desktop.** Desktop VS Code reads the Clarvis credential from the file
+  named in a new machine-scoped setting, `clarvis.ravis.credentialFile`, which the owner sets once;
+  code-server keeps the launcher's environment variable.
+- **Attached means the panel is there.** The chat webview pings every 10 s and the host posts
+  presence every 20 s, so a closed tab stops counting as attached within 25 s even though
+  code-server keeps its extension host alive for 3 hours.
+- **The unanswered-request policy.** A question waits 2 hours with a window attached, or 30 minutes
+  with none; then RAVIS answers it with its stop response, pauses the task and keeps the thread.
+  The next window to open says what waited and that nothing ran.
+
+#### The checkpoint, the lock and the fence
+
+- **The checkpoint lives in the git folder** — `<git_dir>/clarvis-task-checkpoint.json` (0600, never
+  committed; `<root>/.clarvis/task-checkpoint.json` without git) — because `workspaceState` is per
+  host. Written atomically, only while holding the project lock, at most 64 KB, no secrets, never
+  sent to NERVIS or the Bridge.
+- **One writer per project.** RAVIS's project lock, with `<git_dir>/clarvis-engine.lock` as the
+  floor when RAVIS is down, judged by the shared lock rule — `alive`, `unresponsive` or `gone`, and a
+  stale heartbeat after a sleep never makes a live holder dead — against `lock-rule-cases.json`.
+- **The fence.** A holder that lost the lock never commits, writes the checkpoint or releases.
+  Lost means `409 LEASE_REVOKED`, or a lock file that no longer names this window — never RAVIS
+  being unreachable.
+- **Behaviour change for Clarvis's own engine:** its writing runs take the lock too, so two editors
+  can no longer build in one project at once. Read-only answers take no lock.
+
+#### Build steps
+
+The Clarvis track runs C1 → C2a → C2b → C3 → packaging, alongside the ecosystem track (RAVIS's
+runtime check, Codex process, calibration, relay and lock increments, and NERVIS's launcher, menu
+bar and dashboard). C1 and C2a build against `FakeRavisRelay`; C2b waits for calibration; end-to-end
+runs wait for RAVIS's relay and lock increments. Sizes are the design's estimates, in lines of
+source and of tests.
+
+**I0 — the contract (13 Sep)**
+- [x] This milestone written and signed off
+- [x] RAVIS's contract fixtures copied into `src/test/fixtures/`, held to `codex-contract.sha256` by `src/test/codexContractFixtures.test.ts`
+  - Check: `npm test` — the copy matches its manifest and, with the NERVIS-ecosystem checkout beside this one, RAVIS's own files
+
+**C1 — relay and lock clients, and the fake RAVIS** (about 1,100 / 1,300)
+- [ ] Message nervis-ecosystem-fc before the first edit; `git status` right before every commit
+- [ ] `src/engine/relay/`: `relayClient` (idempotent HTTP), `sseReader` (resume with `Last-Event-ID`, heartbeats, recovery from `409 EVENT_CURSOR_EXPIRED`), `tokenStore` (the 0600 token file), `credentialFile`, `presence`
+  - Check: SSE resume and cursor-expiry tests; the token file's folder and file modes asserted
+- [ ] `src/engine/lock/`: `lockClient`, `fileLock` (atomic `open(path, 'wx', 0o600)`), `lockRule.ts`
+  - Check: `lockRule` passes every case in `src/test/fixtures/lock-rule-cases.json`; the file lock's atomic create holds under a race
+- [ ] `src/test/fakes/FakeRavisRelay.ts`, a labelled test double built from the fixtures
+  - Check: every response the fake gives is validated against `src/test/fixtures/relay-contract/`
+- [ ] `eslint.config.mjs`: complexity 8 for `src/engine/**`
+  - Check: `npm run check`
+
+**C2a — the remote runner, reattach, Stop, steer and the factory** (about 1,980 / 2,270)
+- [ ] `src/engine/codex/runCore.ts` (pure) and `RemoteCodexRunner.ts` (vscode glue); `engineChoice.ts`; `CodingRun.ts`; `src/chat/codingRunFactory.ts`; `RunSession` (factory, `attach`, the Clarvis-engine lock with the fence); `ChatService` (reattach on activation, `runTook` routing); the `extension.ts` and `Replier.ts` guards; the pickers; the `X-Clarvis-Engines` header; `AgentRunner`'s `engine`, `drainInterjections` and `stillHolds`
+  - Check: Stop clears the question before any network call, and never sends a late accept
+  - Check: a steer race is queued; text typed while stopping, switching or detached lands in `latestFeedback` and is delivered
+  - Check: reattach from a second host with a stored cursor, and with a snapshot; two windows — the first answer wins, and there is one settle claim
+  - Check: a task completed while detached is settled; `LEASE_REVOKED` fences the run
+  - Check: an owner Stop (`stopped_by: "dashboard"`) clears the question, says where the stop came from, and settles
+  - Check: a panel whose pings stop and resume posts `panel_connected: false`, then `true`, and reopens the stream from its cursor
+  - Check: reattaching to a session a `gone` window superseded reconciles, adopts the lock file and settles
+  - Check: `409 PROJECT_LOCKED` from `turns` or `steer` shows the chat line and keeps the text in `latestFeedback`
+  - Check: `running_command` with its process group in heartbeats, and the group kill when RAVIS is down
+  - Check: a host spec for the factory and the palette guard; `npm run check` and `npm run test:host`
+
+**C2b — approvals, after calibration** (about 480 / 580)
+- [ ] `src/engine/codex/approvals.ts`: first-in-first-out questions, the decision re-evaluated right before the POST, buttons rendered from `allowed_decisions`, Unattended's narrow auto-answer while attached, the fakes updated from calibration's transcripts; no "don't ask again"
+  - Check: overlapping requests are asked one at a time; `REQUEST_ALREADY_RESOLVED`, `SESSION_STOPPING` and `DECISION_NOT_ALLOWED` each clear or redraw as `CLARVIS.md` §5.5 says
+  - Check: the answer's key is `<request id>:<window id>`, so a second window never collides with the first
+
+**C3 — the checkpoint, switching and branch continuation** (about 1,110 / 1,330)
+- [ ] The checkpoint file; `transfer` both ways through the lock API; `EngineSwitch`; `AgentBranch.continueOn` with `created` and `previousBranch`; `continuationDecision`; the Wait reminder; reusing the idle Codex session on a switch back; a takeover continuing the same task
+  - Check: `branchNames.test.ts` continuation cases
+  - Check: host spec `branchContinuation.spec.ts` on a fixture repository — after a Codex commit on `clarvis/x`, Clarvis's engine continues on `clarvis/x` with the commit present and the base still `main`
+  - Check: `transfer.test.ts` — the lock held through settle and start; leftover → cancel keeps the locks; a failure releases only after confirmation; resume versus a fresh start by fingerprint and verdict
+
+**Packaging — after RAVIS's lock increment, NERVIS's dashboard increment and C3**
+- [ ] Package `clarvis-0.16.0.vsix` from `90df7be` as the rollback copy; message nervis-ecosystem-fc (0.17.0 also delivers 0.16.0's planning changes, which have not been walked live)
+- [ ] `git status`, then 0.17.0 in `package.json` and `package-lock.json`'s root. The ecosystem agent writes `## Clarvis — 0.17.0` in `RELEASES.md` in the same sitting; `check_releases.py` is the one gate expected red between the two commits
+- [ ] `npm run check`, `npm run test:host`, `npm run package`; install into desktop VS Code and code-server with `--force`
+  - Check: `dist/extension.js` byte-compared in both hosts' installed copies, then reload
+- [ ] Docs in the same pass: `docs/CURRENT_STATE.md`, `media/MANUAL.md`, `README.md`, `docs/risks.md`, `docs/verification.md`, the Bridge hint wording, and §4.6 as listed above
+- [ ] The owner points `clarvis.ravis.credentialFile` at RAVIS's key file once, in desktop VS Code
+
+#### Acceptance — `CLARVIS.md` E-C9's exit
+
+Against `FakeRavisRelay` from the shared fixtures first, then live, in the owner's test that
+`STATUS.md` lists:
+
+- [ ] **Stop** clears the question at once and never lets a late answer start a step; nothing is saved before processes are confirmed gone
+- [ ] **Questions:** overlapping requests are asked one at a time
+- [ ] **Feedback:** text typed during a switch or while detached reaches the next turn
+- [ ] **Reattach:** from desktop VS Code, a waiting approval is replayed and answered
+- [ ] **Settle:** one window claims it
+- [ ] **Takeover:** a taken-over Clarvis-engine run writes nothing
+- [ ] **Refusals:** an untested version, unproven file rules, a changed account or an exhausted allowance refuses to start, with the reason, and never moves to a paid engine
+
+#### Risks
+
+The design's risks that reach Clarvis:
+
+- **One Codex process serves every project.** A crash, a hang or a RAVIS restart — including the
+  stack restart after RAVIS source changes — cuts off every running Codex task at once. Recovery is
+  review, save and continue, never automatic.
+- **Work continues with no editor open.** Questions wait and may pause the task; in modes that don't
+  ask, Codex keeps changing files while nobody watches; finished work stays uncommitted until an
+  editor settles it.
+- **The relay is new, security-sensitive surface.** Session tokens sit in a user file that any
+  program running as the owner can read (the permission profile keeps Codex's own commands away
+  from it), and a bug could let the wrong window answer.
+- **Unproven Codex behaviour.** Every Codex update needs a short re-test of the key-file rules
+  before tasks run again. Per-thread permission profiles, escalation, a per-thread temp folder and
+  event order across two tasks are unproven until calibration.
+- **Attachment is self-reported** by the panel heartbeat.
+- **An old Clarvis with `ravis/codex` typed by hand** still makes an empty branch before RAVIS's 400.
+- **The proxied code-server origin** (through NERVIS's `/code/`) may not support the panel; the live
+  test decides.
+
+#### Open points, carried into the build
+
+None blocks the sign-off; each is settled by the increment named.
+
+- Calibration fixes the mode-to-approval mapping, whether an approved or escalated command stays in
+  Codex's box, and how long Codex's session approval memory lasts — C2b waits for it.
+- `openExternal` is unverified under code-server, so the **Sign in** line also shows the dashboard's
+  address as text.
+- Replaying a create, a transfer or a token reissue must return the original token, while RAVIS keeps
+  only token hashes; RAVIS's relay increment decides how. The fixtures' `conventions.json` lists this
+  and the other open points in the contract.
+- The full design (codex-design.md, 13 Sep) was written outside both repositories. The contract it
+  defines is carried by the documents and fixtures cited above.
+
 ---
 
 ## 8. Risks

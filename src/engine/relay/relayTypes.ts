@@ -60,7 +60,11 @@ export type HolderKind = 'codex_session' | 'clarvis_run';
 export interface CodexState {
   state: string;
   reason: string;
-  runtime: { verdict?: string; strict_rules?: string; process?: { state?: string } };
+  runtime: { verdict?: string; strict_rules?: string; running_sha256?: string; process?: { state?: string } };
+  /** The Codex home RAVIS runs on: a thread can be resumed only in the home it lives in (C3). */
+  home?: { fingerprint?: string };
+  /** Whether Codex is signed in to the account the owner confirmed (C3: a resume needs it). */
+  account?: { fingerprint_matches?: boolean } | null;
 }
 
 /** A request Codex opened, as RAVIS relays it (`RequestView`). */

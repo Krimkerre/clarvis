@@ -60,6 +60,11 @@ class FakeGit implements CodexGit {
   readonly saves: { summary: string; stopped: boolean; files: string[] }[] = [];
   /** The branch each save was told the session is on. */
   readonly branches: (string | undefined)[] = [];
+  /** Branches continued for a switch into Codex, and the commit each was continued at. */
+  readonly continued: [string, string][] = [];
+  /** The line `continueOn` refuses with, when a test sets one. */
+  refuseContinuation: string | undefined;
+  readonly forSwitch: boolean[] = [];
   abandoned = 0;
 
   async begin(task: string): Promise<CodexBranch> {
@@ -67,7 +72,13 @@ class FakeGit implements CodexGit {
     return { ok: true, branch: 'clarvis/add-utc', headCommit: HEAD };
   }
 
-  async save(work: { summary: string; stopped: boolean; files: string[]; branch: string | undefined }): Promise<CodexSave> {
+  async continueOn(branch: string, headCommit: string): Promise<CodexBranch> {
+    this.continued.push([branch, headCommit]);
+    return this.refuseContinuation ? { ok: false, line: this.refuseContinuation } : { ok: true, branch, headCommit };
+  }
+
+  async save(work: { summary: string; stopped: boolean; files: string[]; branch: string | undefined; forSwitch?: boolean }): Promise<CodexSave> {
+    this.forSwitch.push(work.forSwitch === true);
     this.saves.push({ summary: work.summary, stopped: work.stopped, files: work.files });
     this.branches.push(work.branch);
     const committed = work.files.length > 0;

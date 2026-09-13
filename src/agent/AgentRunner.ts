@@ -50,6 +50,16 @@ import { stepAfterAsking } from '../chat/stopDecision';
 import { absorbStreamEvent } from './streamNarration';
 import { newTraceId } from '../model/lineage';
 import type { CodingRun, RunFence } from '../engine/CodingRun';
+import type { CheckRecord, UncertainOperation } from '../engine/checkpoint/taskCheckpoint';
+import type { BranchContinuation } from './branchNames';
+
+/** How a run of Clarvis's own engine starts when it carries a task on from another engine (M15 C3). */
+export interface AgentEngineOptions {
+  /** Continue the task on its branch at the saved commit (review B2), instead of starting a new branch. */
+  continueOn?: BranchContinuation;
+  /** Told once the branch is in place, right before the first model call: a switch counts the run started then. */
+  onStarted?: () => void;
+}
 import { describeProcess } from '../engine/lock/processProbe';
 import { mayCommitNow, mayWriteNow, TAKEN_OVER_LINE, TAKEN_OVER_TOOL_RESULT } from './lockFence';
 
@@ -160,8 +170,29 @@ export class AgentRunner implements CodingRun {
      * over stops at once and writes nothing more — no edit, no command, no commit, no tidying. Absent
      * for a read-only answer, which takes no lock.
      */
-    private readonly fence?: RunFence
+    private readonly fence?: RunFence,
+    /** How this run starts when it carries a task on from another engine (M15 C3). */
+    private readonly engineOptions: AgentEngineOptions = {}
   ) {}
+
+  /** The tool call a stop cut off, if one was (M15 C3). */
+  private cutOff?: UncertainOperation;
+
+  /** Every command this run ran, and how it ended, for the checkpoint (M15 C3). */
+  private readonly commandsRun: CheckRecord[] = [];
+
+  /**
+   * The tool call that was changing something when the run stopped, if any: a switch lists it as uncertain, for the
+   * next engine to check — never to repeat blindly (design §6.4).
+   */
+  get interruptedOperation(): UncertainOperation | undefined {
+    return this.cutOff;
+  }
+
+  /** The commands this run ran, with their exit codes and the end of their output. */
+  get checksRun(): CheckRecord[] {
+    return [...this.commandsRun];
+  }
 
 
   /**
@@ -323,12 +354,26 @@ export class AgentRunner implements CodingRun {
     // could do that undo could not reverse.
     await checkpoint.captureAll(branch.atRisk());
 
-    const isolation = await branch.begin(task);
+    // **A task carried on from another engine continues on its own branch** (M15 C3, review B2), at the commit
+    // that engine saved — never a new branch beside that work.
+    const continuation = this.engineOptions.continueOn;
+    const isolation = continuation ? await branch.continueOn(continuation) : await branch.begin(task);
 
     // Where to put the user back if they undo. Recorded after branching, because that is
     // when it is known — and recorded even when isolation failed, since the branch they
     // are on is still the branch they should end up on.
     await checkpoint.noteBranch(branch.previous);
+
+    // **Refused continuation ends the run before anything is done.** Unlike a failed `begin`, which carries
+    // on under snapshots, carrying the task on somewhere other than its branch would build on the wrong work.
+    if (isolation.refused) {
+      this.halted = isolation.advice ?? "The task couldn't carry on on its branch, so nothing was done.";
+      this.halt.abort();
+      yield this.record({ kind: 'text', toChat: true, text: this.halted });
+      return;
+    }
+    // The branch is in place and the first model call comes next: a switch counts this run as started.
+    this.engineOptions.onStarted?.();
 
     if (!isolation.isolated) {
       yield this.record({
@@ -728,7 +773,7 @@ export class AgentRunner implements CodingRun {
         await checkpoint.capture(await resolveInWorkspace(this.root, args.path));
       }
 
-      const content = await this.invoke(name, args, signal);
+      const content = await this.whileUnderWay(call, name, signal, () => this.invoke(name, args, signal));
 
       // Recorded from the resolved path rather than the requested one: on a
       // case-insensitive filesystem `readme.md` edits README.md, and committing the
@@ -1171,10 +1216,26 @@ export class AgentRunner implements CodingRun {
     const seq = ++this.commandSeq;
     try {
       const echo = (chunk: string) => this.terminal.write(chunk);
-      return await runCommand(this.root, command, echo, signal, spawnAs, (pid) => void this.reportRunning(seq, pid));
+      const result = await runCommand(this.root, command, echo, signal, spawnAs, (pid) => void this.reportRunning(seq, pid));
+      // Kept for the checkpoint (M15 C3): what ran and how it ended, the end of its output only.
+      this.commandsRun.push({ command, exitCode: result.exitCode ?? null, engine: 'clarvis', ranAt: new Date().toISOString(), outputTail: result.output.slice(-1_500) });
+      return result;
     } finally {
       this.commandSeq++;
       this.fence?.commandEnded();
+    }
+  }
+
+  /**
+   * A tool call that changes something, watched while it runs: cut off by a stop, it is remembered as uncertain —
+   * it may or may not have happened — so a switch hands it on as something to check, never to redo (M15 C3).
+   */
+  private async whileUnderWay(call: ToolCall, name: ToolName, signal: AbortSignal, work: () => Promise<string>): Promise<string> {
+    if (!mutates(name)) return work();
+    try {
+      return await work();
+    } finally {
+      if (signal.aborted) this.cutOff = { kind: name === 'runCommand' ? 'command' : 'fileChange', summary: describe(call), state: 'unknown' };
     }
   }
 

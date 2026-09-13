@@ -87,6 +87,11 @@ export class QuestionBoard {
     return released.length;
   }
 
+  /** Every request held, the one on screen first: what a switch records as never answered (C3). */
+  get held(): RequestView[] {
+    return [...(this.current ? [this.current.request] : []), ...this.queue];
+  }
+
   /** How many requests are held, on screen or queued. */
   get size(): number {
     return this.queue.length + (this.current ? 1 : 0);

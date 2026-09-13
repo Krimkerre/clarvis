@@ -28,6 +28,7 @@ import { commitSubject } from '../../agent/commitSubject';
 import { planCommit } from '../../agent/dirtyAtStart';
 import { workspaceRepository } from '../../agent/gitExtension';
 import type { RootedRepository } from '../../agent/repositoryForFolder';
+import { GitFacts } from '../checkpoint/gitFacts';
 import type { CodexBranch, CodexGit, CodexSave } from './runCore';
 
 interface Repository extends RootedRepository {
@@ -78,6 +79,23 @@ export class CodexGitGlue implements CodexGit {
     if (isolation.isolated && this.branch.current && head) return { ok: true, branch: this.branch.current, headCommit: head };
     await this.branch.discardIfEmpty();
     return { ok: false, line: needsGitLine(isolation.advice) };
+  }
+
+  /**
+   * A task switched to Codex (C3; review B2): the undo snapshot as for a new task, then its existing branch checked out
+   * at or after the commit the other engine saved — refused, with the reason, when that branch is missing or moved.
+   * The commit it stands on is read from git itself, not the Git extension's state, which catches up later.
+   */
+  async continueOn(branch: string, headCommit: string): Promise<CodexBranch> {
+    await this.checkpoint.begin(this.task || `Carrying on ${branch}`);
+    await this.checkpoint.captureAll(this.branch.atRisk());
+    const repository = await workspaceRepository<Repository>();
+    this.dirtyAtStart = repository ? this.changedPaths(repository) : [];
+    const isolation = await this.branch.continueOn({ branch, headCommit, theirs: this.dirtyAtStart });
+    await this.checkpoint.noteBranch(this.branch.previous);
+    const head = isolation.isolated ? (await new GitFacts(this.root).head()).commit : undefined;
+    if (head) return { ok: true, branch, headCommit: head };
+    return { ok: false, line: isolation.advice ?? `Codex couldn't carry the task on on \`${branch}\`, so nothing was started.` };
   }
 
   async save(work: SaveWork): Promise<CodexSave> {
@@ -139,16 +157,18 @@ export class CodexGitGlue implements CodexGit {
   }
 }
 
-type SaveWork = { summary: string; stopped: boolean; files: string[]; branch: string | undefined };
+type SaveWork = { summary: string; stopped: boolean; files: string[]; branch: string | undefined; forSwitch?: boolean };
 
 function headCommit(repository: Repository): string {
   return repository.state.HEAD?.commit ?? '';
 }
 
-function commitMessage(task: string, work: { summary: string; stopped: boolean }): string {
+function commitMessage(task: string, work: { summary: string; stopped: boolean; forSwitch?: boolean }): string {
   const subject = commitSubject(work.summary, task || 'Codex task');
   const lead = work.stopped ? "Codex's work, stopped part-way" : 'Codex';
-  return task ? `${lead}: ${subject}\n\nTask: ${task}` : `${lead}: ${subject}`;
+  // Design §6.2 step 4: the commit says the work was stopped to hand the task over, not abandoned.
+  const head = work.forSwitch ? `Codex's work on ${subject} (stopped for a switch)` : `${lead}: ${subject}`;
+  return task ? `${head}\n\nTask: ${task}` : head;
 }
 
 function needsGitLine(advice: string | undefined): string {

@@ -41,6 +41,58 @@ export function branchNameFor(task: string, existing: string[] = []): string {
   }
 }
 
+/**
+ * Whether a task can carry on where another engine left it (plan.md M15, C3; design §5.1, review B2 and N9).
+ *
+ * **Why it matters.** A switch between Codex and Clarvis's own engine, or a takeover, continues the *same* task.
+ * Starting a new `clarvis/<task>` branch instead would leave the first engine's committed work on a branch the
+ * second never sees — and the first engine's uncommitted leftovers would be held back as the owner's own work.
+ * So the destination checks out the existing branch at the commit the source saved.
+ *
+ * **Refused, never guessed**, when the saved branch is missing, or its tip is neither the saved commit nor a
+ * descendant of it: someone moved the branch away from the saved work, and carrying on there would build on
+ * something else. A descendant is fine — the owner may have added a commit by hand.
+ *
+ * `headIsAncestor` is whether `headCommit` is an ancestor of `tip`, which the caller asks git.
+ */
+/** What a run needs to carry a task on on its branch (`AgentBranch.continueOn`). */
+export interface BranchContinuation {
+  branch: string;
+  /** The commit the other engine saved: the branch's tip must be it or a descendant of it. */
+  headCommit: string;
+  /** Files the owner had in flight before the task started: never committed as the task's. */
+  theirs: string[];
+  /** A takeover: the old holder's uncommitted edits are committed first, with this message. */
+  leftoversMessage?: string;
+}
+
+export type ContinuationDecision =
+  | { kind: 'continue'; branch: string }
+  | { kind: 'refuse'; reason: 'nothing_saved' | 'missing' | 'moved_away'; advice: string };
+
+export function continuationDecision(
+  branch: string | undefined,
+  existing: readonly string[],
+  tip: string | undefined,
+  headCommit: string | undefined,
+  headIsAncestor: boolean
+): ContinuationDecision {
+  if (!branch || !headCommit) {
+    return { kind: 'refuse', reason: 'nothing_saved', advice: "There's no saved branch for this task, so it can't carry on where it stopped. Nothing was changed." };
+  }
+  if (!existing.includes(branch) || !tip) {
+    return { kind: 'refuse', reason: 'missing', advice: `The task's branch \`${branch}\` isn't in this repository any more, so nothing was continued.` };
+  }
+  if (tip !== headCommit && !headIsAncestor) {
+    return {
+      kind: 'refuse',
+      reason: 'moved_away',
+      advice: `\`${branch}\` no longer contains the saved work (commit ${headCommit.slice(0, 7)}), so nothing was continued. Look at the branch, then switch again.`,
+    };
+  }
+  return { kind: 'continue', branch };
+}
+
 /** Whether a branch belongs to Clarvis, for cleanup and for the undo path. */
 export function isAgentBranch(name: string): boolean {
   return name.startsWith('clarvis/');

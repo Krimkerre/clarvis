@@ -19,6 +19,9 @@ import type { AgentEvent } from '../../agent/AgentRunner';
 import type { MissingDependency } from '../../agent/missingDependency';
 import type { AgentTerminal } from '../../agent/tools/commandTools';
 import type { CodingRun } from '../CodingRun';
+import { readCheckpoint, writeCheckpoint } from '../checkpoint/checkpointFile';
+import { GitFacts } from '../checkpoint/gitFacts';
+import type { TaskCheckpoint } from '../checkpoint/taskCheckpoint';
 import { windowIdentity } from '../engineHost';
 import { findGitDir, gitDirForRelay } from '../lock/gitDir';
 import type { LockClient } from '../lock/lockClient';
@@ -27,8 +30,10 @@ import { takeProjectLock } from '../lock/projectLock';
 import type { RelayClient } from '../relay/relayClient';
 import type { Decision, RequestView, SessionMode, SessionSummary } from '../relay/relayTypes';
 import { TokenStore } from '../relay/tokenStore';
+import { CodexDestination, CodexSource } from '../transfer/codexSwitch';
+import { checkpointFromCodex } from '../transfer/fromSource';
 import { CodexGitGlue } from './codexGit';
-import { CodexRunCore, type CodexCursors, type CodexLockFloor } from './runCore';
+import { CodexRunCore, type CodexCheckpointPort, type CodexCursors, type CodexLockFloor } from './runCore';
 import { declinedLine } from './translate';
 
 const PRESENCE_TICK_MS = 5_000;
@@ -52,19 +57,23 @@ export class RemoteCodexRunner implements CodingRun {
   private readonly core: CodexRunCore;
   private readonly git: CodexGitGlue;
 
-  constructor(deps: RemoteCodexDeps) {
+  constructor(private readonly deps: RemoteCodexDeps) {
     this.git = new CodexGitGlue(deps.context, deps.root, deps.log);
+    const gitDir = findGitDir(deps.root);
     this.core = new CodexRunCore({
       relay: deps.relay,
       tokens: new TokenStore(),
       cursors: workspaceCursors(deps.context.workspaceState),
       git: this.git,
       window: windowIdentity(),
-      workspace: { root: deps.root, gitDir: gitDirForRelay(deps.root, findGitDir(deps.root)) },
+      workspace: { root: deps.root, gitDir: gitDirForRelay(deps.root, gitDir) },
       mode: deps.mode,
       maxSteps: deps.maxSteps,
       ask: (request) => this.declineUntilApprovals(request),
       floor: deps.locks ? checkoutFloor(deps, deps.locks) : undefined,
+      // M15 C3: a switch reserves the project with the session's token, and every settle writes the checkpoint first.
+      locks: deps.locks,
+      checkpoint: checkpointPort(deps, gitDir),
       terminal: (text) => deps.terminal.write(text),
       log: deps.log,
     });
@@ -92,6 +101,23 @@ export class RemoteCodexRunner implements CodingRun {
   /** The task's last turn ended at RAVIS's step cap. */
   get endedAtStepCap(): boolean {
     return this.core.endedAtStepCap;
+  }
+
+  /** This Codex task as the engine a switch stops (M15 C3; design §6.2). */
+  switchSource(place: { workspaceRoot: string; gitDir: string | undefined; saved: TaskCheckpoint | undefined; homeFingerprint?: string }): CodexSource {
+    return new CodexSource({ core: this.core, host: windowIdentity().host, ...place });
+  }
+
+  /** Codex as the engine a switch hands a task to (M15 C3). `follow` is the chat's run loop, given this runner's events. */
+  switchDestination(place: { workspaceRoot: string; gitDir: string | undefined }, follow: (run: (signal: AbortSignal) => AsyncIterable<AgentEvent>) => void): CodexDestination {
+    return new CodexDestination({
+      core: this.core,
+      relay: this.deps.relay,
+      git: new GitFacts(place.workspaceRoot),
+      host: windowIdentity().host,
+      ...place,
+      follow: (run) => follow((signal) => this.followed(run(signal))),
+    });
   }
 
   interject(text: string): void {
@@ -175,6 +201,23 @@ function checkoutFloor(deps: RemoteCodexDeps, locks: LockClient): CodexLockFloor
         log: deps.log,
       });
       return outcome.held ? { release: () => outcome.lock.release() } : { refusal: outcome.line };
+    },
+  };
+}
+
+/**
+ * The checkpoint at every settle, written before the settle tells RAVIS it was (M15 C3; design §6.1). The core calls
+ * it only from the window holding RAVIS's settle claim, on a lock RAVIS didn't give away — its fence for Codex.
+ */
+function checkpointPort(deps: RemoteCodexDeps, gitDir: string | undefined): CodexCheckpointPort {
+  return {
+    save: async (facts) => {
+      const read = readCheckpoint(deps.root, gitDir);
+      const saved = read.kind === 'found' ? read.checkpoint : undefined;
+      const checkpoint = checkpointFromCodex(saved, facts, { workspaceRoot: deps.root, host: windowIdentity().host, now: new Date() });
+      const written = await writeCheckpoint(deps.root, gitDir, checkpoint, async () => true);
+      if (written.kind !== 'saved') deps.log(`codex: the task's checkpoint wasn't written (${written.kind})`);
+      return written.kind === 'saved';
     },
   };
 }

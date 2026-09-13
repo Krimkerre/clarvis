@@ -31,6 +31,7 @@ import * as http from 'http';
 import type { AddressInfo, Socket } from 'net';
 import { RelayHttp, relayEndpoint } from '../../engine/relay/relayHttp';
 import { errorAnswer, firstSuccess, fixtureAnswer, type FakeAnswer } from './fakeAnswers';
+import { FakeLocks } from './fakeLocks';
 import { FakeSessions } from './fakeSessions';
 import {
   CODEX_STATE_ROUTE,
@@ -105,6 +106,7 @@ export class FakeRavisRelay {
   private readonly revoked = new Map<string, string>();
   private readonly streams = new Map<string, FakeEventStream>();
   private machine: FakeSessions | undefined;
+  private lockMachine: FakeLocks | undefined;
   private readonly instance = randomBytes(8).toString('hex');
   private port = 0;
 
@@ -165,13 +167,29 @@ export class FakeRavisRelay {
     this.machine ??= new FakeSessions({
       stream: (sessionId) => this.stream(sessionId),
       grantToken: (sessionId, token) => this.tokens.set(sessionId, token),
+      locks: () => this.lockMachine,
     });
     return this.machine;
+  }
+
+  /**
+   * The project-lock machine (C3): locks taken, heartbeaten, released, taken over and transferred, including the
+   * lock a Codex session holds. Until a test asks for it, every lock route answers its fixture examples.
+   */
+  locks(): FakeLocks {
+    this.lockMachine ??= new FakeLocks({
+      revokeLease: (lease, takenOverBy) => this.revokeLease(lease, takenOverBy),
+      sessionToken: (sessionId) => this.tokens.get(sessionId),
+      sessionLostLock: (sessionId) => this.sessions().lostLock(sessionId),
+      unsupersede: (root) => this.sessions().unsupersede(root),
+    });
+    return this.lockMachine;
   }
 
   /** Forgets scripts, keys, leases, tokens, streams and what it saw: a fresh fake on the same port. */
   reset(): void {
     this.machine = undefined;
+    this.lockMachine = undefined;
     for (const stream of this.streams.values()) stream.disconnect();
     for (const map of [this.scripts, this.losses, this.delays, this.remembered, this.revoked, this.streams, this.tokens]) map.clear();
     this.tokens.set(FIXTURE_SESSION.id, FIXTURE_SESSION.token);
@@ -244,13 +262,18 @@ export class FakeRavisRelay {
     if (refusal) return refusal;
     const scripted = this.scripts.get(route.key)?.shift();
     if (scripted) return scripted;
-    const machined = this.machine?.answer(route, url, headers, body);
+    const machined = this.machineAnswer(route, url, headers, body);
     if (machined) return machined;
     const sessionId = url.pathname.split('/')[4];
     if (route.key === EVENTS_ROUTE) return this.stream(sessionId).connect(request, response, url);
     if (route.key === 'GET /api/v1/agent-sessions/{sid}') return { status: 200, body: this.stream(sessionId).view() };
     if (route.key === 'POST /api/v1/agent-sessions/{sid}/reissue-token') return this.reissue(sessionId, body);
     return firstSuccess(route);
+  }
+
+  /** The lock machine's answer, then the session machine's — whichever a test turned on. */
+  private machineAnswer(route: FixtureRoute, url: URL, headers: http.IncomingHttpHeaders, body: unknown): FakeAnswer | undefined {
+    return this.lockMachine?.answer(route, url, headers, body) ?? this.machine?.answer(route, url, headers, body);
   }
 
   private identityRefusal(headers: http.IncomingHttpHeaders): FakeAnswer | undefined {

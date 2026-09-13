@@ -57,6 +57,10 @@ const VERB_FOR_CHANGE = new Map([
 export class CodexLedger {
   /** Every command Codex ran and how it ended, for the "checks Codex ran" lines. */
   readonly checks: CheckRun[] = [];
+  /** Commands and file changes RAVIS said had started and hasn't said finished, by item id (C3). */
+  private readonly underWay = new Map<string, { kind: 'command' | 'fileChange'; summary: string }>();
+  /** Item ids RAVIS said completed: a replayed start of one is not under way again. */
+  private readonly completed = new Set<string>();
   private readonly seen = new Set<string>();
   private readonly changed: string[] = [];
   private lastText = '';
@@ -71,10 +75,28 @@ export class CodexLedger {
     return this.lastText;
   }
 
+  /**
+   * An item RAVIS says has started (`item.started`). Commands and file changes are remembered until they finish,
+   * so a task stopped or switched mid-item can say what may or may not have happened — never do it again (C3).
+   */
+  started(value: unknown): void {
+    const item = value as { type?: unknown; id?: unknown; command?: unknown; changes?: unknown } | null;
+    if (!item || typeof item.id !== 'string' || this.completed.has(item.id)) return;
+    if (item.type === 'commandExecution' && typeof item.command === 'string') this.underWay.set(item.id, { kind: 'command', summary: item.command });
+    if (item.type === 'fileChange') this.underWay.set(item.id, { kind: 'fileChange', summary: changedPaths(item.changes) });
+  }
+
+  /** What had started and never finished, as far as this window heard. */
+  get unfinished(): { kind: 'command' | 'fileChange'; summary: string }[] {
+    return [...this.underWay.values()];
+  }
+
   /** The events a completed item adds. None for one already recorded, or one this doesn't recognise. */
   record(value: unknown): AgentEvent[] {
     const item = readItem(value);
     if (!item) return [];
+    this.underWay.delete(item.id);
+    this.completed.add(item.id);
     if (item.type === 'agentMessage') return this.message(item);
     if (item.type === 'commandExecution') return this.command(item);
     return this.fileChange(item);
@@ -142,6 +164,12 @@ function readFileChange(item: Partial<Record<string, unknown>>): Item | undefine
   if (typeof item.status !== 'string' || !Array.isArray(item.changes)) return undefined;
   const changes = item.changes.filter(isChangedFile);
   return { type: 'fileChange', id: item.id as string, status: item.status, changes };
+}
+
+/** A file change's paths, for saying what it was. */
+function changedPaths(changes: unknown): string {
+  const files = Array.isArray(changes) ? changes.filter(isChangedFile).map((change) => change.path) : [];
+  return files.length > 0 ? files.join(', ') : 'files';
 }
 
 function isChangedFile(value: unknown): value is ChangedFile {

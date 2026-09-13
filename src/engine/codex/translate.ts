@@ -38,6 +38,12 @@ export const CODEX_LINES = {
   adoptedFromGoneEditor:
     "The editor that paused this Codex task has closed, so this one stopped what it left running and took the project over to save Codex's work.",
   carryOnOffer: 'Codex used all the steps it may take in one go. Carry on where it stopped?',
+  cannotSwitch: "This Codex task can't be handed over from here right now, so nothing was stopped.",
+  stoppingForSwitch: 'Stopping Codex to hand the task over…',
+  handedOver: "Codex has stopped, and its work is saved on the task's branch for the other engine to carry on.",
+  transferExpired: "The hand-over ran out of time, so Codex didn't start. Nothing was released; try the switch again.",
+  checkpointNotSaved: "The task's checkpoint couldn't be saved, so Codex's work wasn't marked as saved. It waits to be saved.",
+  switchAbandoned: "The switch didn't go ahead. Codex's work is committed on the task's branch and waits to be saved; open the task again to finish that.",
   otherEditorSaving: "The other editor is saving Codex's work.",
   savedElsewhere: "Codex's work was saved from the other editor.",
   tokenRefused: "RAVIS no longer accepts this editor's key to that Codex task, so it can't be followed from here.",
@@ -214,6 +220,17 @@ export function declinedLine(request: RequestView): string {
   const pending = 'answering Codex from the chat comes with the approvals step';
   if (request.kind === 'question') return `Codex asked a question (${questionHeader(request)}). It waits: ${pending}. Stop ends the task.`;
   return `Codex asked to ${requestedAction(request)}. I declined: ${pending}.`;
+}
+
+/** An open request as a checkpoint lists it when a switch let it go unanswered (C3). */
+export function requestSummary(request: RequestView): string {
+  if (request.kind === 'question') return `Codex asked a question (${questionHeader(request)})`;
+  return `Codex asked to ${requestedAction(request)}`;
+}
+
+/** Why Codex didn't take a task over: a transfer token that ran out is said plainly, anything else as at a start. */
+export function switchStartLine(failure: RelayFailure): string {
+  return refusalCode(failure) === 'LOCK_TRANSFER_INVALID' ? CODEX_LINES.transferExpired : failureLine(failure, 'start');
 }
 
 function requestedAction(request: RequestView): string {

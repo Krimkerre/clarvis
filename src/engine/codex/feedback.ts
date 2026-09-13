@@ -54,6 +54,13 @@ export class FeedbackQueue {
     }
   }
 
+  /** Takes every waiting note out, with when and where it was typed, for a switch's checkpoint (C3). */
+  drainEntries(): FeedbackEntry[] {
+    const waiting = this.entries.filter((entry) => !entry.delivered).map((entry) => ({ ...entry }));
+    this.drain();
+    return waiting;
+  }
+
   /** Takes every waiting text out, for a caller that will carry it on (review H8's `drainInterjections`). */
   drain(): string[] {
     const texts = this.pending;

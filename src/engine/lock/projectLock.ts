@@ -41,7 +41,7 @@ import type { RunFence } from '../CodingRun';
 import { clockTime } from '../codex/translate';
 import { freshKey } from '../relay/idempotency';
 import type { RelayFailure } from '../relay/relayFailure';
-import type { AcquireLockBody, Host, LockView, RunningCommand } from '../relay/relayTypes';
+import type { AcquireLockBody, HolderKind, Host, LockView, RunningCommand } from '../relay/relayTypes';
 import { createLockFile, lockFilePath, readLockFile, type HeldLockFile, type LockFileContent, type LockFileRead } from './fileLock';
 import { gitDirForRelay } from './gitDir';
 import { stopCommandGroup, type GroupStop, type Survivor } from './groupKill';
@@ -72,6 +72,13 @@ export interface ProjectLockDeps {
    * superseded at a restart: the reconcile a window does for a Codex task a gone window left paused (F-A9).
    */
   adopt?: boolean;
+  /**
+   * A switch from Codex (design §6.2 step 6): the transfer token the lock was reserved with, taken atomically by
+   * `POST /api/v1/project-locks`, and the session it comes from — whose checkout lock file RAVIS wrote, and which
+   * this window may therefore replace.
+   */
+  transferToken?: string;
+  transferredFrom?: string;
   waitingOnYou?: () => boolean;
   now?: () => Date;
   log?: (line: string) => void;
@@ -82,6 +89,26 @@ export interface LockRefusal {
   line: string;
   /** A Codex session holds the project: follow it instead. */
   attachSessionId?: string;
+  /** Another window holds it but isn't answering, or waits on its owner there: the owner may take it over (`takeover.ts`). */
+  takeover?: TakeoverOffer;
+}
+
+/** A takeover the owner may confirm (design §6.3): who holds the project, since when, and how long it has been quiet. */
+export interface TakeoverOffer {
+  holderWindowId: string;
+  holderHost: string;
+  holderSince: string;
+  heartbeatAgeSeconds: number;
+  /** The window stopped answering, or it is waiting on its owner there. */
+  why: 'unresponsive' | 'waiting';
+}
+
+/** The confirmation, naming the window and its age (design §6.3). Nothing is taken over without a yes. */
+export function takeoverQuestion(offer: TakeoverOffer): string {
+  const age = offer.heartbeatAgeSeconds;
+  const quiet = age >= 120 ? `${Math.round(age / 60)} min` : `${age} s`;
+  const state = offer.why === 'waiting' ? 'is waiting on you there' : "isn't answering";
+  return `Another Clarvis window (${offer.holderHost}${since(offer.holderSince)}, last heard from ${quiet} ago) holds this project and ${state}. Take it over? Anything it has running is stopped first, and it won't write anything more.`;
 }
 
 /** A gone window's lock file this run replaced: its task is the one to continue (review AL3). */
@@ -116,7 +143,16 @@ export const LOCK_LINES = {
   unreadable: (detail: string) => `This project's lock file can't be read right now (${detail}), so nothing was started.`,
   failed: (detail: string) => `This project's lock file couldn't be created (${detail}), so nothing was started.`,
   race: 'Another window took this project at the same moment, so nothing was started.',
+  noRavisForSwitch: "RAVIS isn't holding this project's lock right now, so the task can't be handed to the other engine. Your run carries on.",
+  stillRunning: 'Something this run started is still running, so the project can’t be handed over yet.',
 };
+
+/** Why a transfer was refused, as the switch says it. Nothing was stopped: the run carries on. */
+function transferRefusedLine(failure: RelayFailure): string {
+  if (failure.kind === 'refused' && failure.code === 'PROCESSES_NOT_CONFIRMED_GONE') return LOCK_LINES.stillRunning;
+  if (failure.kind === 'unreachable') return "RAVIS isn't answering, so the task can't be handed to the other engine. Your run carries on.";
+  return failure.kind === 'refused' ? failure.message : `RAVIS didn't reserve the project for the other engine (${failure.kind}).`;
+}
 
 /** Takes the project for a run of Clarvis's own engine, or says who has it. */
 export async function takeProjectLock(deps: ProjectLockDeps): Promise<LockOutcome> {
@@ -141,6 +177,10 @@ export class ProjectLock implements RunFence {
   private ravisGoverns: boolean;
   /** Evidence of loss stays evidence: a later heartbeat RAVIS doesn't answer can't undo it. */
   private lost = false;
+  /** Reserved for the other engine (design §6.2): never released while this lasts (N2). */
+  private transferring = false;
+  /** The last command a run started, kept after it ended, so a switch can confirm its group is gone. */
+  private lastCommand: RunningCommand | null = null;
   private readonly logged = new Set<string>();
 
   constructor(
@@ -166,6 +206,65 @@ export class ProjectLock implements RunFence {
 
   commandStarted(command: RunningCommand): void {
     this.running = command;
+    this.lastCommand = command;
+    this.writeFile();
+  }
+
+  /** The last command the run started, running or not: what a switch confirms is gone before it saves. */
+  get recordedCommand(): RunningCommand | null {
+    return this.lastCommand;
+  }
+
+  get isTransferring(): boolean {
+    return this.transferring;
+  }
+
+  /**
+   * Reserves the project for the other engine (design §6.2 step 2): RAVIS's lock goes to `transferring` and a
+   * transfer token comes back. From here this holder never releases the lock; the destination takes it with the
+   * token. A refusal stops nothing: the run carries on.
+   */
+  async transfer(to: HolderKind): Promise<{ ok: true; token: string } | { ok: false; line: string }> {
+    if (!this.lease && !this.lost) await this.register(true);
+    const lease = this.holds() ? this.lease : undefined;
+    const locks = this.deps.locks;
+    if (!lease || !locks) return { ok: false, line: LOCK_LINES.noRavisForSwitch };
+    const granted = await locks.transfer(lease.id, { lease: lease.token }, to, freshKey(), { timeoutMs: RAVIS_TIMEOUT_MS });
+    if (!granted.ok) return { ok: false, line: transferRefusedLine(granted.failure) };
+    this.transferring = true;
+    this.writeFile();
+    return { ok: true, token: granted.value.transfer_token };
+  }
+
+  /** The switch ended without the destination taking the project: this holder has it again, and lets go as usual. */
+  transferEnded(): void {
+    this.transferring = false;
+    this.writeFile();
+  }
+
+  /**
+   * The destination took the project with the transfer token (design §6.2 step 6). The lock is the new holder's
+   * now, so this one stops heartbeating, forgets its lease without releasing it — a release would free the new
+   * holder's lock — and never writes again. Its lock file is removed only while it still names this window: RAVIS
+   * rewrites the file for a Codex session, and a file it rewrote is RAVIS's.
+   */
+  handOver(): 'dropped' | 'left' {
+    this.cancelBeat?.();
+    this.transferring = false;
+    this.lease = undefined;
+    this.lost = true;
+    HELD_HERE.delete(this.file.file);
+    if (this.file.check() === 'holds') {
+      this.file.release();
+      return 'dropped';
+    }
+    this.file.abandon();
+    return 'left';
+  }
+
+  /** A lease RAVIS gave this holder by taking the project over for it (`takeover.ts`). */
+  useLease(lease: { id: string; token: string }): void {
+    this.lease = lease;
     this.writeFile();
   }
 
@@ -175,7 +274,9 @@ export class ProjectLock implements RunFence {
   }
 
   /** Lets go, once the run's processes are gone. A holder that lost the lock deletes nothing. */
-  async release(): Promise<'released' | 'lost' | 'unknown'> {
+  async release(): Promise<'released' | 'lost' | 'unknown' | 'held_for_transfer'> {
+    // Never while a switch holds the lock: the destination takes it with the transfer token (review N2).
+    if (this.transferring) return 'held_for_transfer';
     this.cancelBeat?.();
     if (!this.holds()) return this.letGoLost();
     if (this.lease) await this.releaseRavis(this.lease);
@@ -226,7 +327,7 @@ export class ProjectLock implements RunFence {
       await this.register(true);
       return;
     }
-    const body = { waiting_on_you: this.waiting(), state: 'running', running_command: this.running };
+    const body = { waiting_on_you: this.waiting(), state: this.stateWord(), running_command: this.running };
     const locks = this.deps.locks as LockClient;
     this.lastBeat = await locks.heartbeat(this.lease.id, this.lease.token, body, { timeoutMs: RAVIS_TIMEOUT_MS });
     if (this.lastBeat.kind !== 'revoked') return;
@@ -237,7 +338,7 @@ export class ProjectLock implements RunFence {
   private writeFile(): void {
     // A holder that lost the lock never rewrites it, even while the file still names this window.
     if (this.lost) return;
-    const update = { running_command: this.running, waitingOnYou: this.waiting(), ravis_lock_id: this.lease?.id ?? null };
+    const update = { running_command: this.running, waitingOnYou: this.waiting(), ravis_lock_id: this.lease?.id ?? null, state: this.stateWord() };
     if (this.file.heartbeat(update, this.now()) !== 'lost') return;
     this.lost = true;
     this.logOnce('file', 'lock: the lock file no longer names this window');
@@ -267,6 +368,10 @@ export class ProjectLock implements RunFence {
     return this.deps.waitingOnYou?.() ?? false;
   }
 
+  private stateWord(): 'running' | 'transferring' {
+    return this.transferring ? 'transferring' : 'running';
+  }
+
   private now(): Date {
     return (this.deps.now ?? (() => new Date()))();
   }
@@ -280,22 +385,23 @@ export class ProjectLock implements RunFence {
 
 /** The lock file, created — replacing a stale one when the rule allows — or why not. */
 async function createFileLock(file: string, deps: ProjectLockDeps): Promise<{ lock: HeldLockFile; replaced?: LockFileContent } | LockRefusal> {
-  const first = createLockFile(file, contentFor(deps));
-  if (first.ok) return { lock: hold(first.lock) };
+  const first = createLockFile(file, lockFileContentFor(deps));
+  if (first.ok) return { lock: holdHere(first.lock) };
   if (first.reason === 'failed') return { line: LOCK_LINES.failed(first.detail) };
   const refusal = await decideOnExisting(file, first.existing, deps);
   if (refusal) return refusal;
-  const second = createLockFile(file, contentFor(deps));
+  const second = createLockFile(file, lockFileContentFor(deps));
   if (!second.ok) return { line: LOCK_LINES.race };
   const replaced = first.existing.kind === 'present' ? first.existing.content : undefined;
-  return { lock: hold(second.lock), replaced };
+  return { lock: holdHere(second.lock), replaced };
 }
 
 function holderOf(content: LockFileContent): ReplacedHolder {
   return { taskId: content.taskId, windowId: content.holder.window_id, host: content.holder.host, since: content.holder.since };
 }
 
-function hold(lock: HeldLockFile): HeldLockFile {
+/** Notes a lock file this extension host now holds, so a second run here is refused. */
+export function holdHere(lock: HeldLockFile): HeldLockFile {
   HELD_HERE.add(lock.file);
   return lock;
 }
@@ -311,17 +417,34 @@ async function decideOnExisting(file: string, read: LockFileRead, deps: ProjectL
 
 async function refusalFor(file: string, content: LockFileContent, ageSeconds: number, deps: ProjectLockDeps): Promise<LockRefusal | undefined> {
   const holder = content.holder;
-  if (holder.kind === 'codex_session') return { line: LOCK_LINES.codex, attachSessionId: holder.session_id ?? undefined };
+  if (holder.kind === 'codex_session') return codexFileRefusal(holder, deps);
   if (holder.window_id === deps.window.id && holder.pid === deps.pid) return HELD_HERE.has(file) ? { line: LOCK_LINES.here } : undefined;
   const verdict = await (deps.judge ?? judgeHolder)(content, ageSeconds);
-  return verdict === undefined ? { line: LOCK_LINES.unjudged } : otherWindow(content, verdict, deps);
+  return verdict === undefined ? { line: LOCK_LINES.unjudged } : otherWindow(content, verdict, ageSeconds, deps);
 }
 
-async function otherWindow(content: LockFileContent, verdict: Verdict, deps: ProjectLockDeps): Promise<LockRefusal | undefined> {
+/**
+ * A Codex session's lock file is never taken — except the one RAVIS wrote for the very session this window
+ * holds a transfer token from: that session has settled and is handing the project over (design §6.2).
+ */
+function codexFileRefusal(holder: LockFileContent['holder'], deps: ProjectLockDeps): LockRefusal | undefined {
+  const handedOver = deps.transferToken !== undefined && holder.session_id !== null && holder.session_id === deps.transferredFrom;
+  return handedOver ? undefined : { line: LOCK_LINES.codex, attachSessionId: holder.session_id ?? undefined };
+}
+
+async function otherWindow(content: LockFileContent, verdict: Verdict, ageSeconds: number, deps: ProjectLockDeps): Promise<LockRefusal | undefined> {
   const outcome = onFindingALock('clarvis_run', verdict, content.waitingOnYou);
   if (outcome === 'refuse') return { line: LOCK_LINES.working(content.holder.host, content.holder.since) };
-  if (outcome !== 'reconcile') return { line: LOCK_LINES.stalled(content.holder.host, content.holder.since) };
+  if (outcome !== 'reconcile') return { line: LOCK_LINES.stalled(content.holder.host, content.holder.since), takeover: offerFrom(content, verdict, ageSeconds) };
   return reconcileGone(content.running_command, deps);
+}
+
+/** What the owner is asked to confirm: never offered for a holder without a window to name. */
+function offerFrom(content: LockFileContent, verdict: Verdict, heartbeatAgeSeconds: number): TakeoverOffer | undefined {
+  const windowId = content.holder.window_id;
+  if (!windowId) return undefined;
+  const why = verdict === 'unresponsive' ? 'unresponsive' : 'waiting';
+  return { holderWindowId: windowId, holderHost: content.holder.host, holderSince: content.holder.since, heartbeatAgeSeconds, why };
 }
 
 /**
@@ -360,7 +483,8 @@ function lockViewRefusal(lock: LockView | undefined): LockRefusal {
   return { line: describe(holder.host, holder.since) };
 }
 
-function contentFor(deps: ProjectLockDeps): LockFileContent {
+/** This window's lock file, as a run (or a takeover, `takeover.ts`) writes it. */
+export function lockFileContentFor(deps: ProjectLockDeps): LockFileContent {
   const at = (deps.now ?? (() => new Date()))().toISOString();
   return {
     version: 3,
@@ -380,11 +504,12 @@ function contentFor(deps: ProjectLockDeps): LockFileContent {
 function acquireBody(deps: ProjectLockDeps, adopt: boolean): AcquireLockBody {
   const holder = { kind: 'clarvis_run' as const, window_id: deps.window.id, host: deps.window.host, pid: deps.pid, pid_start: deps.pidStart };
   const body: AcquireLockBody = { workspace_root: deps.root, clarvis_task_id: deps.taskId, holder, git_dir: gitDirForRelay(deps.root, deps.gitDir) };
+  if (deps.transferToken) return { ...body, transfer_token: deps.transferToken };
   return adopt ? { ...body, adopt_file_lock: true } : body;
 }
 
 /** The shared lock rule applied to a lock file's holder, with this Mac's `ps` and wake time. */
-async function judgeHolder(content: LockFileContent, heartbeatAgeSeconds: number): Promise<Verdict | undefined> {
+export async function judgeHolder(content: LockFileContent, heartbeatAgeSeconds: number): Promise<Verdict | undefined> {
   const [probe, awake] = await Promise.all([probeProcess(content.holder.pid), observerAwakeSeconds()]);
   if (!probe || awake === undefined) return undefined;
   const lock = { pid: content.holder.pid, pid_start: content.holder.pid_start, heartbeat_age_seconds: heartbeatAgeSeconds };

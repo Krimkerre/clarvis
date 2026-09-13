@@ -2,10 +2,11 @@ import * as vscode from 'vscode';
 import { workspaceFolderPath } from './gitExtension';
 import { repositoryForFolder } from './repositoryForFolder';
 import { join } from 'path';
-import { branchNameFor, adviseOnGit, GitProblem, isAgentBranch, isRealBase, stackedAdvice } from './branchNames';
+import { branchNameFor, adviseOnGit, continuationDecision, GitProblem, isAgentBranch, isRealBase, stackedAdvice, type BranchContinuation } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
 import { atRiskPaths } from './atRisk';
+import { GitFacts } from '../engine/checkpoint/gitFacts';
 
 /** What `begin()` managed, and what the user needs told about it. */
 export interface Isolation {
@@ -13,6 +14,11 @@ export interface Isolation {
   branch?: string;
   /** Said before any work happens, when the arrangement is not the usual one. */
   advice?: string;
+  /**
+   * `continueOn` refused (M15 C3): the saved branch is missing or moved away. Unlike `begin`, the run must not go
+   * ahead on snapshots alone — it would carry the task on somewhere other than its work.
+   */
+  refused?: boolean;
 }
 
 
@@ -127,6 +133,58 @@ export class AgentBranch {
       isolated: false,
       advice: "I couldn't create a branch to work on, so I'll snapshot files instead and you can undo the run.",
     };
+  }
+
+  /**
+   * Carries a task on on its existing branch — at the commit another engine saved, or a descendant of it — instead
+   * of starting a new `clarvis/<task>` beside that work (plan.md M15, C3; design §5.1, review B2 and N9).
+   *
+   * **Refused, never guessed**, when the branch is missing or its tip no longer contains the saved commit
+   * (`continuationDecision`); the ancestry is asked of git itself (`GitFacts`). Otherwise the branch is checked out,
+   * `clarvis.agent.baseBranch` is left as it was, and `created` and `previousBranch` are set, so `discardIfEmpty`,
+   * the review and undo read `base..branch` as they do for a run that began here.
+   *
+   * `theirs` are the files the owner had in flight before the task started: they stay the owner's. A takeover also
+   * passes `leftoversMessage`, and the old holder's uncommitted edits are committed on the branch first, as that
+   * task's work — never as the owner's own in a new task (review AL3).
+   */
+  async continueOn(continuation: BranchContinuation): Promise<Isolation> {
+    const repository = this.repository();
+    const root = repository?.rootUri?.fsPath ?? workspaceFolderPath();
+    if (!repository || !root) {
+      return { isolated: false, refused: true, advice: "There's no git repository here, so the task can't carry on on its branch. Nothing was changed." };
+    }
+    const facts = new GitFacts(root);
+    const tip = await facts.tip(continuation.branch);
+    const containsSaved = tip !== undefined && (await facts.isAncestor(continuation.headCommit, tip));
+    const decision = continuationDecision(continuation.branch, await facts.branches(), tip, continuation.headCommit, containsSaved);
+    if (decision.kind === 'refuse') {
+      this.log(`branch: not continuing ${continuation.branch} — ${decision.reason}`);
+      return { isolated: false, refused: true, advice: decision.advice };
+    }
+    return this.checkOutContinuation(repository, continuation);
+  }
+
+  private async checkOutContinuation(repository: GitRepository, continuation: BranchContinuation): Promise<Isolation> {
+    try {
+      if (repository.state.HEAD?.name !== continuation.branch) await repository.checkout(continuation.branch);
+    } catch (error) {
+      return { isolated: false, refused: true, advice: `\`${continuation.branch}\` couldn't be checked out (${String(error)}), so nothing was continued.` };
+    }
+    const existing = (await repository.getBranches({ remote: false })).map((branch) => branch.name ?? '');
+    this.theirsAtStart = continuation.theirs;
+    this.created = continuation.branch;
+    // The base stays the branch the owner started from, so undo and "fold it back" still mean that branch.
+    this.previousBranch = this.rememberedBase(existing);
+    this.log(`branch: continuing ${continuation.branch} at ${continuation.headCommit.slice(0, 7)}, based on ${this.previousBranch ?? 'nothing remembered'}`);
+    if (continuation.leftoversMessage) await this.commitLeftovers(repository, continuation.leftoversMessage);
+    return { isolated: true, branch: continuation.branch };
+  }
+
+  /** A takeover's first step: what the old holder left uncommitted, committed as its task's work (review AL3). */
+  private async commitLeftovers(repository: GitRepository, message: string): Promise<void> {
+    const leftovers = workingTreePaths(repository);
+    if (leftovers.length > 0) await this.commit(message, leftovers);
   }
 
   /**

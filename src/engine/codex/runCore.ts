@@ -43,8 +43,11 @@
 import { randomUUID } from 'crypto';
 import type { AgentEvent } from '../../agent/AgentRunner';
 import { engineDecisionAfterAsking } from '../../chat/stopDecision';
+import type { CheckpointStatus, CodexThreadRef, OpenQuestion, TaskCheckpoint, UncertainOperation } from '../checkpoint/taskCheckpoint';
+import type { LockClient } from '../lock/lockClient';
 import { codexReadiness } from '../relay/codexReadiness';
-import { createSessionKey, freshKey } from '../relay/idempotency';
+import { createSessionKey, freshKey, switchCreateKey } from '../relay/idempotency';
+import type { CodexStart } from '../transfer/transferState';
 import { PresenceTracker, type PresenceAction } from '../relay/presence';
 import type { RelayClient } from '../relay/relayClient';
 import type { RelayFailure } from '../relay/relayFailure';
@@ -62,8 +65,8 @@ import type {
 import { RECONNECT_BACKOFF_MS, RelayEventStream, SILENCE_LIMIT_MS, type StreamItem } from '../relay/sseReader';
 import type { TokenRead } from '../relay/tokenStore';
 import { EventChannel } from './eventChannel';
-import { FeedbackQueue } from './feedback';
-import { CodexLedger } from './ledger';
+import { FeedbackQueue, type FeedbackEntry } from './feedback';
+import { CodexLedger, type CheckRun } from './ledger';
 import { QuestionBoard, type Asking } from './questions';
 import {
   answerRefusedLine,
@@ -73,10 +76,12 @@ import {
   leftoverLine,
   reattachedLine,
   refusalCode,
+  requestSummary,
   resolvedLine,
   settleStateLine,
   steerRefusedLine,
   stoppedByLine,
+  switchStartLine,
   tokenLine,
   turnEndLine,
 } from './translate';
@@ -101,10 +106,16 @@ export interface CodexGit {
   /** The checkpoint and the task branch, before the session exists (design §5.1 step 2). */
   begin(task: string): Promise<CodexBranch>;
   /**
+   * A task switched to Codex (C3; review B2): its existing branch, checked out at the commit the other engine saved
+   * or a descendant of it — never a new branch beside that work. Refused, with a line, otherwise.
+   */
+  continueOn(branch: string, headCommit: string): Promise<CodexBranch>;
+  /**
    * Commits Codex's work on the task branch at settle; `commit` is the tip the session settles at.
    * `branch` is the session's branch, so a window that didn't make it can check it stands on it.
+   * `forSwitch` marks work stopped to hand the task to Clarvis's own engine.
    */
-  save(work: { summary: string; stopped: boolean; files: string[]; branch: string | undefined }): Promise<CodexSave>;
+  save(work: { summary: string; stopped: boolean; files: string[]; branch: string | undefined; forSwitch?: boolean }): Promise<CodexSave>;
   /** Tidies a branch made for a session RAVIS then refused. */
   abandon(): Promise<void>;
 }
@@ -127,6 +138,44 @@ export interface CodexLockFloor {
    * registers it with RAVIS with `adopt_file_lock`. A refusal when it is still there, or couldn't be judged.
    */
   takeFromGoneEditor(taskId: string): Promise<AdoptedCheckout | { refusal: string }>;
+}
+
+/** What a settle knows, for the checkpoint (C3; design §6.1). The glue turns it into the file. */
+export interface CodexSettleFacts {
+  taskId: string;
+  session: CodexThreadRef;
+  branch: string | undefined;
+  headCommit: string;
+  changedFiles: string[];
+  checks: CheckRun[];
+  /** Everything typed for the task, with whether Codex took it in. */
+  feedback: FeedbackEntry[];
+  unanswered: OpenQuestion[];
+  uncertain: UncertainOperation[];
+  status: CheckpointStatus;
+}
+
+/** Writes the checkpoint at a settle, before the settle says it did (`checkpoint_saved: true`). */
+export interface CodexCheckpointPort {
+  /** False: not written — and then nothing is settled. */
+  save(facts: CodexSettleFacts): Promise<boolean>;
+}
+
+export type SwitchResult<T> = { ok: true; value: T } | { ok: false; line: string };
+
+/** RAVIS's word on a stop for a switch: every process confirmed gone, what is left, or that it couldn't be told. */
+export type SwitchConfirmation = { gone: true } | { gone: false; leftover: string } | { gone: undefined; line: string };
+
+/** Clarvis's own engine → Codex: what Codex starts from (design §6.2 step 6). */
+export interface SwitchIntoCodex {
+  checkpoint: TaskCheckpoint;
+  /** Absent for a task that stopped: nothing holds the project, and Codex takes it as a new task does. */
+  transferToken?: string;
+  start: CodexStart;
+  /** The task and its rendered checkpoint, for a fresh start. */
+  brief: string;
+  /** The catch-up, for the task's idle session or its resumed thread. */
+  catchUp: string;
 }
 
 export interface CodexTiming {
@@ -161,6 +210,10 @@ export interface CodexRunOptions {
   ask: EngineAsker;
   /** Absent: a task RAVIS paused for another editor is only followed from here, never saved. */
   floor?: CodexLockFloor;
+  /** RAVIS's lock API: a switch reserves the project for Clarvis's own engine with this session's token (C3). */
+  locks?: LockClient;
+  /** Writes the checkpoint at every settle (C3). Absent in tests that don't look at it. */
+  checkpoint?: CodexCheckpointPort;
   /** Codex's streamed text and command output: the terminal only (design §5.5). */
   terminal?: (text: string) => void;
   log?: (line: string) => void;
@@ -227,6 +280,15 @@ export class CodexRunCore {
   /** F-A9's adoption is tried once per run. */
   private adoptionTried = false;
   private adopted: AdoptedCheckout | undefined;
+  /** A switch to Clarvis's own engine under way (C3): RAVIS's next word on the stop, and the claim once made. */
+  private switching: { waiting?: (confirmation: SwitchConfirmation) => void; last?: SwitchConfirmation; claim?: { id: string; commit: string } } | undefined;
+  /** The project lock RAVIS keeps for this session, as its views name it. */
+  private lockId: string | undefined;
+  /** Requests a switch let go: never answered for the other engine (design §6.4). */
+  private readonly unanswered: OpenQuestion[] = [];
+  private lastTurn: { id?: string; status: CodexThreadRef['lastTurnStatus'] } = { status: 'unknown' };
+  /** Clarvis's own engine → Codex: resolved once Codex's first turn begins. */
+  private switchStart: { promise: Promise<SwitchResult<void>>; resolve: (result: SwitchResult<void>) => void; done: boolean } | undefined;
 
   private readonly handlers = new Map<string, Handler>([
     ['snapshot', (data) => this.onSnapshot(data as unknown as SessionView)],
@@ -234,6 +296,7 @@ export class CodexRunCore {
     ['turn.started', (data) => this.onTurnStarted(data)],
     ['turn.completed', (data) => this.onTurnCompleted(data)],
     ['item.completed', (data) => this.pushAll(this.ledger.record(data.item))],
+    ['item.started', (data) => this.ledger.started(data.item)],
     ['agent.delta', (data) => this.terminal(data.text)],
     ['command.output', (data) => this.terminal(data.text)],
     ['request.opened', (data) => this.openRequest(data.request)],
@@ -310,6 +373,223 @@ export class CodexRunCore {
     this.noteDetails(view.value);
     const refused = await this.continueTurn(text, 'carry_on');
     return refused && refused !== CODEX_LINES.passedOn ? { line: refused, failed: false } : { cursor: view.value.last_event_id };
+  }
+
+  // ── Switching to Clarvis's own engine (C3; design §6.2) ─────────────────────
+
+  /**
+   * Codex → Clarvis's own engine, steps 2 and 3: the project reserved for the other engine with this session's
+   * token, then every question let go — recorded as never answered — and the turn interrupted for a switch. When
+   * RAVIS won't reserve it, nothing is stopped and the task carries on.
+   */
+  async stopForSwitch(): Promise<SwitchResult<{ transferToken: string }>> {
+    const reservable = await this.reservableLock();
+    if (!reservable) return { ok: false, line: CODEX_LINES.cannotSwitch };
+    const { session, locks, lockId } = reservable;
+    const granted = await locks.transfer(lockId, { token: session.token }, 'clarvis_run', freshKey(), { retry: this.timing.retry });
+    if (!granted.ok) return { ok: false, line: failureLine(granted.failure, 'during') };
+    this.switching = {};
+    for (const request of this.board.held) this.unanswered.push({ engine: 'codex', summary: requestSummary(request) });
+    this.releaseQuestions();
+    this.say(CODEX_LINES.stoppingForSwitch);
+    void this.interruptForSwitch(session);
+    return { ok: true, value: { transferToken: granted.value.transfer_token } };
+  }
+
+  /** Step 3: RAVIS's next word on the stop — every process confirmed gone, or what is left. */
+  stoppedForSwitch(): Promise<SwitchConfirmation> {
+    const switching = this.switching;
+    if (!switching) return Promise.resolve({ gone: undefined, line: CODEX_LINES.cannotSwitch });
+    const last = switching.last;
+    switching.last = undefined;
+    return last ? Promise.resolve(last) : new Promise((resolve) => (switching.waiting = resolve));
+  }
+
+  /** Leftovers: RAVIS is asked to stop them (`POST …/leftover`), then its next word on the stop is awaited. */
+  async stopLeftoversForSwitch(): Promise<SwitchConfirmation> {
+    const session = this.session as Session;
+    const stopped = await this.options.relay.stopLeftover(session.id, session.token, { retry: this.timing.retry });
+    if (!stopped.ok && refusalCode(stopped.failure) !== 'NO_LEFTOVER') return { gone: undefined, line: failureLine(stopped.failure, 'during') };
+    return this.stoppedForSwitch();
+  }
+
+  /**
+   * Step 4, first half: the settle claimed and Codex's work committed on the task's branch as stopped for a switch.
+   * What the checkpoint needs comes back; nothing is settled until `settleForSwitch`, once the checkpoint is written.
+   */
+  async claimForSwitch(): Promise<SwitchResult<CodexSettleFacts>> {
+    const session = this.session;
+    const switching = this.switching;
+    if (!session || !switching || this.superseded) return { ok: false, line: this.superseded ? CODEX_LINES.superseded : CODEX_LINES.cannotSwitch };
+    const claim = await this.options.relay.claimSettle(session.id, session.token, this.options.window.id);
+    if (!claim.ok) return { ok: false, line: failureLine(claim.failure, 'during') };
+    const branch = this.branchName ?? (await this.readBranch(session));
+    const saved = await this.options.git.save({ summary: this.ledger.lastMessage, stopped: true, files: this.ledger.files, branch, forSwitch: true });
+    if (!saved.ok) return { ok: false, line: saved.line };
+    this.noteSaved(saved);
+    switching.claim = { id: claim.value.claim_id, commit: saved.commit };
+    return { ok: true, value: this.settleFacts(session, saved.commit, 'transferring', this.feedback.drainEntries()) };
+  }
+
+  /** Whether this window may write the switch's checkpoint: it holds the settle claim, on a lock RAVIS didn't give away. */
+  holdsSwitchClaim(): boolean {
+    return this.switching?.claim !== undefined && !this.superseded;
+  }
+
+  /** Step 4, second half, once the checkpoint is written: `settle {next:"transfer"}`. The session stays idle, never ended (AH4). */
+  async settleForSwitch(): Promise<SwitchResult<void>> {
+    const session = this.session;
+    const claim = this.switching?.claim;
+    if (!session || !claim) return { ok: false, line: CODEX_LINES.cannotSwitch };
+    const body = { claim_id: claim.id, commit: claim.commit, next: 'transfer' as const };
+    const settled = await this.options.relay.settle(session.id, session.token, body, freshKey(), { retry: this.timing.retry });
+    if (!settled.ok) return { ok: false, line: failureLine(settled.failure, 'during') };
+    this.switching = undefined;
+    this.finishWith({ kind: 'done', text: CODEX_LINES.handedOver, files: this.result.files });
+    return { ok: true, value: undefined };
+  }
+
+  /**
+   * The switch failed or was cancelled before the destination took the project. This window goes on as after a
+   * Stop: once RAVIS confirms everything gone, it settles the task itself. Work already committed for the switch
+   * waits to be saved; nothing is settled on a checkpoint that wasn't written.
+   */
+  abandonSwitch(): void {
+    const switching = this.switching;
+    this.switching = undefined;
+    if (!switching || this.finished) return;
+    this.stopRequested = true;
+    if (switching.claim) return this.finishWith(this.doneEvent(CODEX_LINES.switchAbandoned));
+    if (NEEDS_SETTLE.has(this.state ?? '')) void this.settle();
+  }
+
+  // ── Switching into Codex (C3; design §6.2 step 6) ───────────────────────────
+
+  /**
+   * Clarvis's own engine → Codex: the task's branch continued at the saved commit, then the project taken with the
+   * transfer token — a catch-up turn on the task's idle session (AH4), a new session resuming its thread, or a fresh
+   * brief — and the session followed. `started` resolves once Codex's turn has begun, or with why it didn't.
+   */
+  continueFromSwitch(into: SwitchIntoCodex, signal: AbortSignal): { events: AsyncGenerator<AgentEvent>; started: Promise<SwitchResult<void>> } {
+    let resolve: (result: SwitchResult<void>) => void = () => undefined;
+    const promise = new Promise<SwitchResult<void>>((settle) => (resolve = settle));
+    this.switchStart = { promise, resolve, done: false };
+    return { events: this.switchEvents(into, signal), started: promise };
+  }
+
+  /** Whether the session holds the project for Codex: the checkpoint is written only then (C3). */
+  holdsProjectLock(): boolean {
+    return this.session !== undefined && !this.superseded;
+  }
+
+  private async *switchEvents(into: SwitchIntoCodex, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+    const opened = await this.openForSwitch(into);
+    if ('line' in opened) {
+      this.resolveSwitchStart({ ok: false, line: opened.line });
+      yield this.failure(opened.line);
+      return;
+    }
+    yield* this.follow(signal, opened.cursor);
+  }
+
+  private async openForSwitch(into: SwitchIntoCodex): Promise<{ cursor: number | null } | { line: string }> {
+    const saved = into.checkpoint.git;
+    const branch = await this.options.git.continueOn(saved.branch ?? '', saved.headCommit ?? '');
+    if (!branch.ok) return { line: branch.line };
+    return into.start.kind === 'catch_up' ? this.catchUpTurn(into, into.start.sessionId) : this.createForSwitch(into, branch);
+  }
+
+  /** The task's idle session takes a catch-up turn, taking the lock with the token (AH4: never a new session). */
+  private async catchUpTurn(into: SwitchIntoCodex, sessionId: string): Promise<{ cursor: number } | { line: string }> {
+    const read = this.options.tokens.read(this.options.workspace.root, sessionId);
+    if (read.kind !== 'found') return { line: tokenLine(read) };
+    this.session = { id: sessionId, token: read.entry.token, taskId: read.entry.taskId };
+    const view = await this.options.relay.getSession(sessionId, read.entry.token);
+    if (!view.ok) return { line: failureLine(view.failure, 'during') };
+    this.noteDetails(view.value);
+    // With a transfer token the lock is taken from Clarvis's own engine; without one (a stopped task) the turn takes
+    // the project when nothing holds it, as any turn does.
+    const turn = into.transferToken ? { text: into.catchUp, kind: 'catch_up' as const, lock: { transfer_token: into.transferToken } } : { text: into.catchUp, kind: 'catch_up' as const };
+    const started = await this.options.relay.startTurn(sessionId, read.entry.token, turn, freshKey(), { retry: this.timing.retry });
+    return started.ok ? { cursor: view.value.last_event_id } : { line: switchStartLine(started.failure) };
+  }
+
+  /** A new session for the same task: resuming the old thread, or from the brief — taking the lock with the token. */
+  private async createForSwitch(into: SwitchIntoCodex, branch: { branch: string; headCommit: string }): Promise<{ cursor: number } | { line: string }> {
+    const taskId = into.checkpoint.taskId;
+    const start = into.start.kind === 'resume' ? { kind: 'resume' as const, thread_id: into.start.threadId, catch_up_text: into.catchUp } : { kind: 'brief' as const, text: into.brief };
+    const body: CreateSessionBody = { ...this.createBody(into.brief, taskId, branch), start, lock: { transfer_token: into.transferToken ?? null } };
+    const attempt = into.transferToken ?? `checkpoint:${into.checkpoint.savedAt}`;
+    const created = await this.options.relay.createSession(body, switchCreateKey(taskId, this.options.window.id, attempt), { retry: this.timing.retry });
+    if (!created.ok) return { line: switchStartLine(created.failure) };
+    const { session, session_token: token } = created.value;
+    this.session = { id: session.id, token, taskId };
+    this.keepToken(session.id, token, taskId);
+    this.noteView(session);
+    // From the created session's own cursor, not a snapshot: Codex's first `turn.started` may come before the
+    // stream opens, and a snapshot would never replay it — the switch would wait for a start that already happened.
+    return { cursor: session.last_event_id };
+  }
+
+  private resolveSwitchStart(result: SwitchResult<void>): void {
+    const start = this.switchStart;
+    if (!start || start.done) return;
+    start.done = true;
+    start.resolve(result);
+  }
+
+  private async reservableLock(): Promise<{ session: Session; locks: LockClient; lockId: string } | undefined> {
+    const session = this.session;
+    const locks = this.options.locks;
+    if (!session || !locks || this.finished) return undefined;
+    const lockId = this.lockId ?? (await this.readLockId(session));
+    return lockId ? { session, locks, lockId } : undefined;
+  }
+
+  private async readLockId(session: Session): Promise<string | undefined> {
+    const view = await this.options.relay.getSession(session.id, session.token);
+    return view.ok ? view.value.lock?.id : undefined;
+  }
+
+  private async interruptForSwitch(session: Session): Promise<void> {
+    const sent = await this.options.relay.interrupt(session.id, session.token, 'switch', { retry: this.timing.interruptRetry });
+    if (!sent.ok) this.resolveSwitch({ gone: undefined, line: failureLine(sent.failure, 'during') });
+  }
+
+  private resolveSwitch(confirmation: SwitchConfirmation): void {
+    const switching = this.switching;
+    if (!switching) return;
+    const waiting = switching.waiting;
+    switching.waiting = undefined;
+    if (waiting) waiting(confirmation);
+    else switching.last = confirmation;
+  }
+
+  /** Whether a state is the end of a stop a switch is waiting on. */
+  private switchOwns(state: string): boolean {
+    return this.switching !== undefined && (NEEDS_SETTLE.has(state) || state === 'leftover');
+  }
+
+  /** RAVIS's stop for a switch reached an end: confirmed gone (a state that waits to be saved), or leftover. */
+  private switchStopped(state: string, processes: unknown): void {
+    if (NEEDS_SETTLE.has(state)) this.workWaited = true;
+    this.resolveSwitch(state === 'leftover' ? { gone: false, leftover: leftoverLine(processes) } : { gone: true });
+  }
+
+  /** The checkpoint's facts at a settle. `feedback` is what the settle hands on. */
+  private settleFacts(session: Session, headCommit: string, status: CheckpointStatus, feedback: FeedbackEntry[]): CodexSettleFacts {
+    return {
+      taskId: session.taskId,
+      session: { id: session.id, threadId: session.threadId, lastTurnId: this.lastTurn.id, lastTurnStatus: this.lastTurn.status, sawHeadCommit: headCommit },
+      branch: this.branchName,
+      headCommit,
+      changedFiles: this.result.files,
+      checks: [...this.ledger.checks],
+      feedback,
+      unanswered: [...this.unanswered],
+      uncertain: this.ledger.unfinished.map((operation) => ({ ...operation, state: 'unknown' as const })),
+      status,
+    };
   }
 
   /** A new token for a session whose token file lost it (design §3.5.1): undefined once kept, else why not. */
@@ -486,6 +766,8 @@ export class CodexRunCore {
       await pumping;
       // Only now, with nothing more to save from here: a checkout taken over for the save is let go (F-A9).
       await this.releaseAdopted();
+      // A switch into Codex that ended before its turn began didn't start.
+      this.resolveSwitchStart({ ok: false, line: CODEX_LINES.ravisDownMidTurn });
     }
   }
 
@@ -574,7 +856,12 @@ export class CodexRunCore {
   private noteDetails(view: SessionView): void {
     if (this.session && view.codex?.thread_id) this.session.threadId = view.codex.thread_id;
     if (view.branch?.name) this.branchName = view.branch.name;
-    if (view.lock?.state === 'superseded') this.superseded = true;
+    this.noteLock(view.lock);
+  }
+
+  private noteLock(lock: SessionView['lock'] | undefined): void {
+    if (lock?.id) this.lockId = lock.id;
+    if (lock?.state === 'superseded') this.superseded = true;
   }
 
   private onSessionState(data: Record<string, unknown>): void {
@@ -589,11 +876,13 @@ export class CodexRunCore {
     this.ravisStopping = true;
     this.releaseQuestions();
     // This window's own Stop has said its line; a stop from anywhere else says where it came from.
-    const line = this.stopRequested ? undefined : stoppedByLine(stoppedBy);
+    const line = this.stopRequested || this.switching ? undefined : stoppedByLine(stoppedBy);
     if (line) this.sayOnce(`stopped-by:${String(stoppedBy)}`, line);
   }
 
   private afterState(state: string, processes: unknown): void {
+    // During a switch the stop's end is the switch's to act on: it settles once the checkpoint is written.
+    if (this.switchOwns(state)) return this.switchStopped(state, processes);
     if (NEEDS_SETTLE.has(state)) return this.toSettle(state);
     if (state === 'leftover') return this.sayOnce(`leftover`, leftoverLine(processes));
     if (state === 'failed') this.failed = true;
@@ -610,12 +899,15 @@ export class CodexRunCore {
 
   private onTurnStarted(data: Record<string, unknown>): void {
     if (typeof data.turn_id === 'string') this.activeTurn = data.turn_id;
+    // A switch into Codex has started once Codex's turn has begun (design §6.2 step 7).
+    this.resolveSwitchStart({ ok: true, value: undefined });
     void this.deliverKept();
   }
 
   private onTurnCompleted(data: Record<string, unknown>): void {
     this.activeTurn = null;
     this.stepCap = (data.error as { kind?: unknown } | undefined)?.kind === 'step_cap';
+    this.lastTurn = turnRef(data);
     if (data.status === 'failed') this.failed = true;
     const line = turnEndLine(data.status, data.error);
     if (line) this.say(line);
@@ -696,7 +988,8 @@ export class CodexRunCore {
   }
 
   private isStopping(): boolean {
-    return this.stopRequested || this.ravisStopping || this.finished;
+    // A switch under way is a stop: no answer is sent, and typed text is kept for the other engine.
+    return this.stopRequested || this.ravisStopping || this.finished || this.switching !== undefined;
   }
 
   // ── Steering ──────────────────────────────────────────────────────────────
@@ -836,11 +1129,21 @@ export class CodexRunCore {
     const saved = await this.options.git.save(work);
     if (!saved.ok) return this.finishWith(this.failure(saved.line));
     this.noteSaved(saved);
+    // C3: the checkpoint is written before the settle says it was (`checkpoint_saved: true`).
+    if (!(await this.checkpointSaved(session, saved.commit))) return this.finishWith(this.failure(CODEX_LINES.checkpointNotSaved));
     // A new key for each settle attempt; its retries reuse it, so a lost answer replays the settled view.
     const body = { claim_id: claimId, commit: saved.commit, next: 'idle' as const };
     const settled = await this.options.relay.settle(session.id, session.token, body, freshKey(), { retry: this.timing.retry });
     if (!settled.ok) this.say(failureLine(settled.failure, 'during'));
     this.finishWith(this.closingEvent());
+  }
+
+  /** The checkpoint for an ordinary settle: what was typed stays with the run too, so its closing can still say so. */
+  private async checkpointSaved(session: Session, headCommit: string): Promise<boolean> {
+    const port = this.options.checkpoint;
+    if (!port) return true;
+    const status: CheckpointStatus = this.state === 'uncertain' ? 'uncertain' : this.wasStopped() ? 'interrupted' : 'settled';
+    return port.save(this.settleFacts(session, headCommit, status, [...this.feedback.all]));
   }
 
   /** The task's branch, read from RAVIS when this window resumed from a cursor and never saw a snapshot. */
@@ -971,6 +1274,12 @@ function codexHolder(failure: RelayFailure): string | undefined {
   if (refusalCode(failure) !== 'PROJECT_LOCKED' || failure.kind !== 'refused') return undefined;
   const holder = (failure.details.lock as { holder?: { kind?: unknown; session_id?: unknown } } | undefined)?.holder;
   return holder?.kind === 'codex_session' && typeof holder.session_id === 'string' ? holder.session_id : undefined;
+}
+
+/** The turn a `turn.completed` names, and how it ended, for the checkpoint's thread reference. */
+function turnRef(data: Record<string, unknown>): { id?: string; status: CodexThreadRef['lastTurnStatus'] } {
+  const status = data.status === 'completed' || data.status === 'interrupted' || data.status === 'failed' ? data.status : 'unknown';
+  return typeof data.turn_id === 'string' ? { id: data.turn_id, status } : { status };
 }
 
 function isRequestView(value: unknown): value is RequestView {

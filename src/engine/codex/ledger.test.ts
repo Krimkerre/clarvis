@@ -84,3 +84,19 @@ test('a command whose exit code is unknown says so rather than inventing one', (
   const [event] = ledger.record({ type: 'commandExecution', id: 'c9', command: 'npm test', exit_code: null });
   assert.equal(event.detail, 'runCommand: npm test → exit unknown');
 });
+
+test('a command or file change that started and never finished is under way — for a switch to list as uncertain — until it completes', () => {
+  const ledger = new CodexLedger();
+
+  ledger.started({ ...items.commandExecution, exit_code: null });
+  ledger.started({ type: 'fileChange', id: 'call_fc_9', status: 'inProgress', changes: [{ path: 'app.py', change: 'update' }] });
+  ledger.started(items.agentMessage);
+  assert.deepEqual(ledger.unfinished, [
+    { kind: 'command', summary: 'python3 -m pytest -q' },
+    { kind: 'fileChange', summary: 'app.py' },
+  ]);
+
+  ledger.record(items.commandExecution);
+  ledger.started(items.commandExecution); // a replay of its start, after it finished
+  assert.deepEqual(ledger.unfinished, [{ kind: 'fileChange', summary: 'app.py' }]);
+});

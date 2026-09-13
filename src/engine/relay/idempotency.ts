@@ -29,6 +29,14 @@ export function createSessionKey(taskId: string, windowId: string, attempt: numb
   return createHash('sha256').update(`${taskId}:${windowId}:${attempt}`).digest('hex');
 }
 
+/**
+ * The key for creating a session that takes a task over from Clarvis's own engine (C3): one per transfer token, so
+ * a retry of that create replays, and a later switch of the same task from the same window is a new create.
+ */
+export function switchCreateKey(taskId: string, windowId: string, transferToken: string): string {
+  return createHash('sha256').update(`${taskId}:${windowId}:switch:${transferToken}`).digest('hex');
+}
+
 /** The key for answering request `requestId` from window `windowId`. */
 export function answerKey(requestId: string, windowId: string): string {
   return `${requestId}:${windowId}`;

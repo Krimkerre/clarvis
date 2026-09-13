@@ -32,6 +32,7 @@ import type { IncomingHttpHeaders } from 'http';
 import * as path from 'path';
 import type { CreateSessionBody, DecisionKind, RequestKind, RequestView, SessionState } from '../../engine/relay/relayTypes';
 import { errorAnswer, fixtureAnswer, type FakeAnswer } from './fakeAnswers';
+import type { FakeLocks, SessionTake } from './fakeLocks';
 import type { FakeEventStream } from './FakeRavisRelay';
 import { fixture, type FixtureRoute } from './relayContract';
 
@@ -71,7 +72,27 @@ export interface MachineSession {
 export interface MachineHost {
   stream(sessionId: string): FakeEventStream;
   grantToken(sessionId: string, token: string): void;
+  /** The lock machine, once a test turned it on (C3); until then the simpler root rule below applies. */
+  locks(): FakeLocks | undefined;
 }
+
+/** What a turn is refused with, by the lock machine's answer (`agent-sessions.json` turns examples). */
+const TURN_REFUSALS: Record<SessionTake, string | undefined> = {
+  ok: undefined,
+  invalid_token: 'an expired transfer token',
+  locked: "left idle by a switch while Clarvis's own engine holds the project",
+  nested: 'a folder around this one is locked',
+  superseded: "RAVIS's lock was superseded at a restart",
+};
+
+/** What a create is refused with, by the lock machine's answer (`agent-sessions.json` create examples). */
+const CREATE_REFUSALS: Record<SessionTake, string | undefined> = {
+  ok: undefined,
+  invalid_token: 'an expired transfer token',
+  locked: "Clarvis's own engine holds the project",
+  nested: 'a folder around this one is locked',
+  superseded: "resuming while RAVIS's lock is superseded",
+};
 
 const SESSIONS = 'POST /api/v1/agent-sessions';
 const TURNS = 'POST /api/v1/agent-sessions/{sid}/turns';
@@ -217,6 +238,7 @@ export class FakeSessions {
   /** Another editor held the checkout when RAVIS restarted: RAVIS's lock is superseded (design §6.3). */
   supersedeLock(session: MachineSession): void {
     session.superseded = true;
+    this.host.locks()?.supersede(session.root);
     this.sync(session);
     session.stream.emit('lock.changed', { state: 'superseded' });
   }
@@ -240,10 +262,33 @@ export class FakeSessions {
     this.heldByClarvis.delete(root);
   }
 
+  /** The lock machine moved a session's lock to a window (a transfer taken with its token). */
+  lostLock(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+    session.holdsLock = false;
+    this.sync(session);
+  }
+
+  /** An adoption replaced RAVIS's superseded lock for `root`: its sessions can be settled again. */
+  unsupersede(root: string): void {
+    for (const session of this.all) {
+      if (session.root !== root || !session.superseded) continue;
+      session.superseded = false;
+      session.holdsLock = false;
+      this.sync(session);
+    }
+  }
+
   // ── Routes ──────────────────────────────────────────────────────────────────
 
   private create(body: CreateSessionBody): FakeAnswer {
+    const locks = this.host.locks();
+    const refusal = locks ? CREATE_REFUSALS[locks.sessionTakes(body.workspace_root, undefined, body.lock.transfer_token)] : undefined;
+    if (refusal) return fixtureAnswer(SESSIONS, refusal);
     const session = this.seed({ root: body.workspace_root, taskId: body.clarvis_task_id });
+    locks?.giveToSession(body.workspace_root, session.id, body.lock.transfer_token);
+    this.sync(session);
     const answer = fixtureAnswer(SESSIONS, 'created');
     const view = session.stream.view();
     const codex = { ...(view.codex as Record<string, unknown>), active_turn_id: null };
@@ -274,7 +319,8 @@ export class FakeSessions {
   private turn(session: MachineSession, body: unknown): FakeAnswer {
     const refusal = this.turnRefusal(session, body as { lock?: { transfer_token?: string } });
     if (refusal) return fixtureAnswer(TURNS, refusal);
-    const turn = body as { text: string; kind: string };
+    const turn = body as { text: string; kind: string; lock?: { transfer_token?: string } };
+    this.host.locks()?.giveToSession(session.root, session.id, turn.lock?.transfer_token);
     session.turns.push({ text: turn.text, kind: turn.kind });
     session.holdsLock = true;
     session.activeTurn = randomUUID();
@@ -287,6 +333,8 @@ export class FakeSessions {
     if (STOPPING.has(session.state)) return 'stopping';
     if (session.settleNeeded) return 'the last turn still needs a settle';
     if (session.superseded) return "RAVIS's lock was superseded at a restart";
+    const locks = this.host.locks();
+    if (locks) return TURN_REFUSALS[locks.sessionTakes(session.root, session.id, body.lock?.transfer_token)];
     if (session.holdsLock || body.lock?.transfer_token) return undefined;
     // Taken in the same request when nothing holds the root (conventions.json turns_need_the_project_lock).
     return this.heldByClarvis.has(session.root) ? "left idle by a switch while Clarvis's own engine holds the project" : undefined;
@@ -316,7 +364,8 @@ export class FakeSessions {
     const steer = body as { text?: string; expected_turn_id?: string };
     if (!steer.text?.trim()) return fixtureAnswer(STEER, 'empty text');
     if (STOPPING.has(session.state)) return fixtureAnswer(STEER, 'stopping');
-    const lockedOut = !session.holdsLock && this.heldByClarvis.has(session.root);
+    const locks = this.host.locks();
+    const lockedOut = locks ? locks.sessionTakes(session.root, session.id, undefined) !== 'ok' : !session.holdsLock && this.heldByClarvis.has(session.root);
     if (!session.activeTurn && lockedOut) return fixtureAnswer(STEER, 'no active turn and no lock: nothing is queued');
     const delivered = session.activeTurn ? 'steered' : 'queued';
     const text = steer.text;
@@ -421,6 +470,7 @@ export class FakeSessions {
     session.settleNeeded = false;
     session.claim = null;
     session.holdsLock = false;
+    this.host.locks()?.sessionSettled(session.id, String(settle.next));
     this.sync(session);
     session.stream.emit('session.state', { state: 'idle', processes: { confirmed_gone: true, leftover: [] } });
     return { status: 200, body: session.stream.view() };
@@ -432,6 +482,13 @@ export class FakeSessions {
     return { status: 200, body: { processes_confirmed_gone: true } };
   }
 
+  /** The lock a session's view names: the lock machine's row once it is on, the fixture lock otherwise. */
+  private lockView(session: MachineSession): { id: string; state: string } | null {
+    const row = this.host.locks()?.rowForSession(session.id);
+    if (row) return { id: row.id, state: session.superseded ? 'superseded' : row.state };
+    return session.holdsLock ? { id: MACHINE_LOCK_ID, state: session.superseded ? 'superseded' : 'running' } : null;
+  }
+
   /** Keeps the session's view — what `GET …/{sid}` and a snapshot show — in step with the machine. */
   private sync(session: MachineSession): void {
     const view = session.stream.view();
@@ -441,7 +498,7 @@ export class FakeSessions {
       clarvis_task_id: session.taskId,
       codex: { ...(view.codex as Record<string, unknown>), active_turn_id: session.activeTurn },
       pending_requests: [...session.open.values()],
-      lock: session.holdsLock ? { id: MACHINE_LOCK_ID, state: session.superseded ? 'superseded' : 'running' } : null,
+      lock: this.lockView(session),
       settle: { needed: session.settleNeeded, claimed_by: session.claim?.window ?? null },
     });
   }

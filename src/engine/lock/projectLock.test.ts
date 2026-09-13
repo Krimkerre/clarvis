@@ -250,6 +250,24 @@ test('the command a run has going is written into the lock file and sent with th
     await lock.release();
   }));
 
+test('a lock reserved for a switch is never let go by its holder: release answers held_for_transfer, and RAVIS and the file keep it until the switch ends', () =>
+  withProject(async (project) => {
+    const machine = project.fake.locks();
+    const lock = await held(await takeProjectLock(project.deps()));
+    const reserved = await lock.transfer('codex_session');
+    assert.equal(reserved.ok, true, JSON.stringify(reserved));
+
+    assert.equal(await lock.release(), 'held_for_transfer');
+    assert.equal(project.requests.some((request) => request.path.endsWith('/release')), false, 'RAVIS was not asked to release');
+    assert.equal(machine.rowFor(project.root)?.state, 'transferring');
+    assert.equal(holderOf(project.file), WINDOW.id, 'the lock file still names this window');
+
+    // The switch ended without the destination taking the project: now the holder lets go as usual.
+    lock.transferEnded();
+    assert.equal(await lock.release(), 'released');
+    assert.equal(machine.rowFor(project.root), undefined);
+  }));
+
 // ── Finding a lock file already there ────────────────────────────────────────
 
 test("a Codex session's lock file is never taken: the run is refused and pointed at the session", () =>

@@ -73,17 +73,24 @@ suite('workspace containment, against a real workspace folder', () => {
     // is suspicious — it sits in the workspace root — so only resolving the link
     // catches it. Skipped rather than failed where symlinks cannot be created,
     // because that is a property of the filesystem and not of the gate.
-    const target = path.join(os.tmpdir(), 'clarvis-containment-target.txt');
-    const link = path.resolve(root(), 'clarvis-containment-link');
+    //
+    // **Named for this run alone.** On 13 Sep VS Code 1.137 ran this suite in two extension
+    // hosts at once against the same folder. With fixed names, one host's cleanup deleted the
+    // link the other was still checking — and a missing path inside the workspace resolves —
+    // so the gate read as broken when only the fixture was shared.
+    const unique = `${process.pid}-${Date.now()}`;
+    const target = path.join(os.tmpdir(), `clarvis-containment-target-${unique}.txt`);
+    const link = path.resolve(root(), `clarvis-containment-link-${unique}`);
     await fs.writeFile(target, 'outside the workspace root\n');
     try {
       await fs.symlink(target, link);
     } catch {
+      await fs.rm(target, { force: true });
       return;
     }
 
     try {
-      await refusedAsOutside('clarvis-containment-link', 'a symlink leading out');
+      await refusedAsOutside(path.basename(link), 'a symlink leading out');
     } finally {
       await fs.rm(link, { force: true });
       await fs.rm(target, { force: true });

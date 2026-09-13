@@ -147,6 +147,8 @@ export function acceptRewrite(line: Line, raw: string | undefined): string | und
   // A statement that became a question has changed what the user is expected to do.
   if (!line.fallback.trim().endsWith('?') && text.endsWith('?')) return undefined;
 
+  if (!stillTheLine(line.fallback, text)) return undefined;
+
   // **A number that was not in the written line is a number nobody supplied.** The rules
   // forbid this in prose — `ONLY_WHAT_YOU_WERE_GIVEN` says every count and timing must come
   // from what was actually given — and on a capable model the rules hold. On a small one
@@ -162,6 +164,27 @@ export function acceptRewrite(line: Line, raw: string | undefined): string | und
   }
 
   return text;
+}
+
+/** The instruction's own words. A written line almost never uses them; a reply about the task does. */
+const TALKS_ABOUT_THE_TASK = /\brewrit(?:e|es|ten|ing)\b|\bin character\b/i;
+
+/**
+ * Whether the rewrite still does the job the written line does.
+ *
+ * **Found live, 13 September 2026, on gpt-4.1-mini.** The build offer's lead-in "This is
+ * what I would be handing myself:" introduces the task printed under it. One rewrite
+ * finished the sentence with a thought of its own — "…: turning this single swallowed
+ * exception into something actionable takes precedent over clever silence." — and another
+ * answered the instruction instead: "A line rewritten in character requires a line to
+ * rewrite." Both passed every check above, because none of them asked whether the result
+ * was still the line.
+ */
+function stillTheLine(fallback: string, text: string): boolean {
+  // A lead-in introduces what follows it, so the rewrite must still end by introducing it.
+  if (fallback.trim().endsWith(':') && !text.endsWith(':')) return false;
+  // A remark about being asked to rewrite something is not a line at all.
+  return !TALKS_ABOUT_THE_TASK.test(text) || TALKS_ABOUT_THE_TASK.test(fallback);
 }
 
 /**

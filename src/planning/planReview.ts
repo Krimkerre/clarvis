@@ -363,7 +363,15 @@ async function offerToStart(
   for (;;) {
     const choice = await io.confirm(
       await phrase('ask', BUILD_OFFER_QUESTION[backing], []),
-      `${await phrase('report', 'This is what I would be handing myself:', [])}\n\n${task}${note}`,
+      // **The situation, because the line is only a lead-in.** Given nothing but the colon,
+      // one rewrite finished the sentence with an invented thought and another complained
+      // there was nothing to rewrite (13 September 2026).
+      `${await phrase(
+        'report',
+        'This is what I would be handing myself:',
+        [],
+        'this line introduces the build task, which is shown in full directly below it'
+      )}\n\n${task}${note}`,
       [START, EDIT_TASK, NOT_YET]
     );
     if (!choice || choice === NOT_YET) {

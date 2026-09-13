@@ -225,3 +225,41 @@ test('a line with no numbers is unaffected', () => {
     'You are on main, still.'
   );
 });
+
+// ------------- a rewrite has to still be the line
+
+test('a lead-in that no longer leads in is rejected', () => {
+  // Found live, 13 September 2026: the build offer's lead-in came back finished with an
+  // invented thought, and the task it was meant to introduce read as an afterthought.
+  const line = { purpose: 'report' as const, fallback: 'This is what I would be handing myself:' };
+
+  assert.equal(
+    acceptRewrite(
+      line,
+      'This is what I would be handing myself: turning this single swallowed exception into something actionable takes precedent over clever silence.'
+    ),
+    undefined
+  );
+  assert.equal(acceptRewrite(line, 'Here is the errand I would be sending myself on:'), 'Here is the errand I would be sending myself on:');
+});
+
+test('a reply about the instruction is not a line', () => {
+  // The other live output from the same lead-in: the model explained the task back.
+  assert.equal(
+    acceptRewrite(
+      { purpose: 'report', fallback: 'This is what I would be handing myself:' },
+      'A line rewritten in character requires a line to rewrite.'
+    ),
+    undefined
+  );
+  assert.equal(
+    acceptRewrite({ purpose: 'report', fallback: 'The tests pass.' }, 'I cannot rewrite this in character.'),
+    undefined
+  );
+});
+
+test('a line that is itself about rewriting may still say so', () => {
+  const line = { purpose: 'report' as const, fallback: 'The rewrite of the parser is merged.' };
+
+  assert.equal(acceptRewrite(line, 'The parser rewrite is merged, at last.'), 'The parser rewrite is merged, at last.');
+});

@@ -174,11 +174,12 @@ export function setVoice(voice: Voice): void {
  * The line, in character where possible and verbatim where not.
  *
  * `keep` names the facts that must survive — branch names, counts, commands — and a
- * rewrite that loses one is rejected rather than used.
+ * rewrite that loses one is rejected rather than used. `situation` says what is going on,
+ * for a line that is *about* a moment rather than containing it (see `Line.situation`).
  */
-export async function phrase(purpose: Purpose, fallback: string, keep?: string[]): Promise<string> {
+export async function phrase(purpose: Purpose, fallback: string, keep?: string[], situation?: string): Promise<string> {
   if (!writer) return fallback;
-  return writer.say({ purpose, fallback, keep });
+  return writer.say({ purpose, fallback, keep, situation });
 }
 
 /** An original line for a moment, from anywhere. See `Voice.open`. */

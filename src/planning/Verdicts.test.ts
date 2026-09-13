@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { collectVerdicts } from './Verdicts';
 import { Finding } from './analysisPrompt';
-import { PlanningIO } from './PlanningIO';
+import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { agreedResolution } from './verdictSummary';
 
 const FINDING: Finding = {
@@ -35,6 +35,9 @@ function fakeIO(replies: (string | undefined)[]): PlanningIO & { buttons: string
     async say() {},
     async showDocument() {},
     async closeDocument() {},
+    async readDocument() {
+      return undefined;
+    },
   };
 }
 
@@ -81,11 +84,18 @@ test('an answer typed instead of clicked is taken as it stands, not asked for tw
   assert.equal(agreedResolution(verdict), 'Use a passkey and store nothing');
 });
 
-test('no answer at all keeps the finding with its first fix', async () => {
-  const [verdict] = await collectVerdicts([FINDING], fakeIO([undefined]), () => {});
+test('no answer at all pauses planning, and keeps nothing', async () => {
+  // M9i: this kept the finding with its first fix — a decision nobody made, written into the
+  // plan as though they had.
+  await assert.rejects(collectVerdicts([FINDING], fakeIO([undefined]), () => {}), PlanningPaused);
+});
 
-  assert.equal(verdict.status, 'accepted');
-  assert.equal(agreedResolution(verdict), 'Hash the passwords before storing');
+test('cancelling "Something else" pauses rather than taking the first fix', async () => {
+  await assert.rejects(collectVerdicts([FINDING], fakeIO(['Something else', undefined]), () => {}), PlanningPaused);
+});
+
+test('an emptied "Something else" box is no more a decision than Escape on it', async () => {
+  await assert.rejects(collectVerdicts([FINDING], fakeIO(['Something else', '   ']), () => {}), PlanningPaused);
 });
 
 test('dropping a finding asks why and keeps the reason', async () => {
@@ -95,4 +105,15 @@ test('dropping a finding asks why and keeps the reason', async () => {
 
   assert.equal(verdict.status, 'rejected');
   assert.equal(verdict.reasoning, 'No accounts in this thing at all');
+});
+
+test('a reason sent empty still drops the finding, recorded as given no reason', async () => {
+  const [verdict] = await collectVerdicts([FINDING], fakeIO(['No, drop this', '']), () => {});
+
+  assert.equal(verdict.status, 'rejected');
+  assert.equal(verdict.reasoning, undefined);
+});
+
+test('cancelling the reason pauses rather than dropping the finding', async () => {
+  await assert.rejects(collectVerdicts([FINDING], fakeIO(['No, drop this', undefined]), () => {}), PlanningPaused);
 });

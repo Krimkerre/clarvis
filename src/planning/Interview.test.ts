@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runInterview } from './Interview';
-import { PlanningIO } from './PlanningIO';
+import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
 import { WorkspaceSignals } from './workspaceSignals';
@@ -70,6 +70,7 @@ function sitting(answers: (string | undefined)[]): Sitting {
     },
     showDocument: async () => {},
     closeDocument: async () => {},
+    readDocument: async () => undefined,
   };
 
   return { io, asked, prefilled, said };
@@ -262,4 +263,17 @@ test('a model that will not stop talking is cut off at the cap', async () => {
   assert.ok(asked[0].length > 0);
   // 400 for every topic but language, plus whatever fragment tipped it over.
   assert.ok(asked[0].length < 500, `expected the reply capped near 400, got ${asked[0].length}`);
+});
+
+test('a stop at the name picker pauses planning rather than skipping the name (M9i)', async () => {
+  // The picker sits inside a catch-all that turns any failure into "name left unresolved" and
+  // carries on. A stop is not a failure — swallowed there, it went straight on to the next question.
+  const { io, asked } = sitting(['renames photos by EXIF date']);
+  io.askChoice = async () => {
+    throw new PlanningPaused();
+  };
+  const models = streamingModel(['Snapshot | short and plain\nPhotoname | says what it does']);
+
+  await assert.rejects(runInterview(models, io, () => {}, {}), PlanningPaused);
+  assert.equal(asked.length, 1, 'nothing after the first question was asked');
 });

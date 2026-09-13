@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { handoffTask, BUILD_OFFER_QUESTION, plannedFacingLines, standaloneFacingLines } from './handoff';
+import { handoffTask, BUILD_OFFER_QUESTION, standaloneFacingLines } from './handoff';
 import { InterviewState } from './interviewTopics';
 import { FindingVerdict } from './verdictSummary';
 
@@ -33,17 +33,10 @@ test('the task names the project and what was established', () => {
   assert.match(task, /renames photos by EXIF date/);
 });
 
-test('the build list is the steps; findings are named as questions', () => {
+test('agreed findings travel as questions to settle, and turned-down ones stay out', () => {
   // Found live: handing over a list of "Clarify whether…" items produced a run that
   // read the plan, found nothing it could do, and stopped.
-  const task = handoffTask(state, 'renames photos', verdicts, {
-    current: { title: 'A CLI that renames one file', steps: [{ step: 'Create the entry point', check: 'run `photoname --help`' }] },
-    number: 1,
-    total: 3,
-  });
-  assert.match(task, /Milestone 1 of 3 — A CLI that renames one file[^]*- Create the entry point/);
-  // The check travels with the step, and running it is part of the job.
-  assert.match(task, /Check: run `photoname --help`/);
+  const task = handoffTask(state, 'renames photos', verdicts);
   assert.match(task, /report what actually happened/);
   assert.match(task, /Agreed during review[^]*- add a --dry-run flag/);
   assert.doesNotMatch(task, /support all formats/);
@@ -55,11 +48,7 @@ test('a modified finding is settled in the user\'s own wording', () => {
     status: 'modified',
     reasoning: 'use ruff',
   };
-  const task = handoffTask(state, 'renames photos', [modified], {
-    current: { title: 'v1', steps: [{ step: 'Create the entry point' }] },
-    number: 1,
-    total: 1,
-  });
+  const task = handoffTask(state, 'renames photos', [modified]);
   assert.match(task, /- use ruff/);
   assert.doesNotMatch(task, /name a linter/);
 });
@@ -73,19 +62,12 @@ test('no steps says so rather than pretending the milestone is empty on purpose'
   assert.match(handoffTask(bare, 'a thing', []), /no build steps were written/);
 });
 
-test('only the milestone being handed over is described, and it stops there', () => {
-  // The rest of the plan is written down and waiting. Starting the next one is a
-  // separate decision, taken after this one lands.
-  const task = handoffTask(state, 'renames photos', [], {
-    current: { title: 'Batch renaming', steps: [{ step: 'Accept a folder' }] },
-    number: 2,
-    total: 4,
-  });
-
-  assert.match(task, /Milestone 2 of 4 — Batch renaming/);
-  assert.match(task, /Build milestone 2 and no further/);
-  assert.match(task, /finish in seconds/);
-  assert.match(task, /Never tick a step whose check did not pass/);
+test('the task is the no-plan brief: it says there is no plan.md and never sends the agent to one', () => {
+  // M9i: a planned build is handed its milestone from plan.md by `nextMilestoneTask`. This task
+  // is only ever the brief for a build with no plan behind it.
+  const task = handoffTask(state, 'renames photos', verdicts);
+  assert.match(task, /there is no plan\.md/);
+  assert.doesNotMatch(task, /following the approved plan\.md/);
 });
 
 test('the no-plan outcome still offers to write the thing', () => {
@@ -125,13 +107,6 @@ test('with no plan, the conventions travel in the task itself', () => {
   assert.deepEqual(conventions, ['Comments: add comments']);
 });
 
-test('with a plan, the task points at it rather than restating it', () => {
-  const { opening, conventions, heading } = plannedFacingLines('Validatron');
-  assert.match(opening, /following the approved plan\.md/);
-  assert.match(conventions[0], /Conventions section in plan\.md/);
-  assert.match(heading, /ticking each off in plan\.md/);
-});
-
 test('with no plan, every answer travels in the task', () => {
   // Found live: "generate a dozen or so, and embed them in the script" was answered, and
   // never reached the agent — the task carried six of the eight topics because plan.md
@@ -146,13 +121,6 @@ test('with no plan, every answer travels in the task', () => {
     'Data: generate a dozen or so, and embed them in the script',
     'Linter: not needed',
   ]);
-});
-
-test('with a plan, they are left to the plan rather than duplicated', () => {
-  // plan.md already carries data and linter. Restating them here would be a second copy
-  // to drift from the first, which is the rule the conventions line already follows.
-  const { standalone } = plannedFacingLines('Ego Refresh');
-  assert.deepEqual(standalone, []);
 });
 
 test('answers that were never given add no empty lines', () => {

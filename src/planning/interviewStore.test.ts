@@ -1,12 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  describeProgress,
-  parseSnapshot,
-  planningIsSettled,
-  STALE_AFTER_MS,
-  worthResuming,
-} from './interviewStore';
+import { describeProgress, parseSnapshot, STALE_AFTER_MS, worthResuming } from './interviewStore';
 import { InterviewState } from './interviewTopics';
 
 const now = 1_700_000_000_000;
@@ -104,14 +98,25 @@ test('a part-way interview is still counted', () => {
   );
 });
 
-test('the interview is dropped only once planning reached an outcome', () => {
-  assert.equal(planningIsSettled(true, undefined), true, 'the plan was written');
-  assert.equal(planningIsSettled(false, 'thirty lines, no state'), true, 'there was no plan to write');
+// ------------------------- M9i: the draft at the approve gate is kept with the interview
+//
+// When the interview is dropped — only on an outcome, never on a draft walked away from — is
+// tested where that now happens, in planReview.test.ts.
+
+test('a drafted plan is kept with the interview it came from', () => {
+  const stored = { seed: 'x', at: 1, state: { answers: [] }, draft: '# Ego Refill' };
+  assert.equal(parseSnapshot(stored)?.draft, '# Ego Refill');
 });
 
-test('a draft walked away from is not an outcome', () => {
-  // Dismissing the approve gate is how the draft gets discarded deliberately, and it is
-  // also what happens when someone reloads the window mid-decision. Neither means throw
-  // the interview away — same rule as the resume offer, where Escape is "not now".
-  assert.equal(planningIsSettled(false, undefined), false);
+test('a draft that is not text is dropped, not the interview it came with', () => {
+  const snapshot = parseSnapshot({ seed: 'x', at: 1, state: { answers: [] }, draft: 42 });
+  assert.equal(snapshot?.seed, 'x');
+  assert.equal(snapshot?.draft, undefined);
+});
+
+test('an interview waiting at the approve gate is described by its draft', () => {
+  assert.equal(
+    describeProgress({ seed: 'prints a compliment', state: complete, at: now, draft: '# Ego Refill' }),
+    'Ego Refill — a drafted plan is waiting for approval'
+  );
 });

@@ -36,3 +36,10 @@ test('a run in progress reports its own stop, so the chat adds nothing', () => {
   // A chat reply being cut off has no ending of its own to report.
   assert.equal(stopReply({ busy: true, waiting: false, runWillSayIt: false }), 'stopped');
 });
+
+test('planning pauses, with a question on screen or a model still working out the next one', () => {
+  // M9i: planning is never busy in Busy's sense, so a stop between its questions answered
+  // "Nothing to stop" — and the next question arrived anyway.
+  assert.equal(stopReply({ busy: false, waiting: false, runWillSayIt: false, planning: true }), 'paused');
+  assert.equal(stopReply({ busy: false, waiting: true, runWillSayIt: false, planning: true }), 'paused');
+});

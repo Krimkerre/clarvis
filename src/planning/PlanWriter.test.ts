@@ -101,6 +101,34 @@ test('a plan with no milestones says so rather than looking finished', () => {
   assert.match(plan, /_No milestones written/);
 });
 
+test('a plan with no milestones says why, when that is known', () => {
+  // M9i: it said "planning could not reach a model" whatever the reason — including a model
+  // that had answered, with a refusal.
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [], milestonesProblem: 'the model sent back nothing' });
+  assert.match(plan, /_No milestones written — the model sent back nothing\._/);
+});
+
+test('a milestone list that may be incomplete says so beneath it', () => {
+  const plan = renderPlan({
+    seed: 'renames photos',
+    state,
+    verdicts: [],
+    milestones: [{ title: 'v1', steps: [{ step: 'Create the entry point', check: 'run it with --help' }] }],
+    milestonesProblem: 'the model ran out of time',
+  });
+  assert.match(plan, /- \[ \] Create the entry point[^]*_This list may not be complete: the model ran out of time\._/);
+});
+
+test('a review that did not finish is named where its decisions would be', () => {
+  // M9i: a draft from a review that never ran read exactly like one whose review found nothing.
+  const plan = renderPlan({ seed: 'renames photos', state, verdicts: [], reviewProblem: 'the model ran out of time' });
+  assert.match(plan, /## 8\. Decisions\n_The gap review did not finish \(the model ran out of time\)/);
+});
+
+test('a review that finished adds no such line', () => {
+  assert.doesNotMatch(renderPlan({ seed: 'renames photos', state, verdicts }), /did not finish|may not be complete/);
+});
+
 test('rejected findings become decisions', () => {
   const plan = renderPlan({ seed: 'renames photos', state, verdicts });
   assert.doesNotMatch(plan, /support common formats/);

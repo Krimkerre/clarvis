@@ -25,9 +25,14 @@ export class DraftDocument {
     const existing = this.document;
 
     if (existing && !existing.isClosed) {
-      const edit = new vscode.WorkspaceEdit();
-      edit.replace(existing.uri, new vscode.Range(new vscode.Position(0, 0), lastPosition(existing)), text);
-      await vscode.workspace.applyEdit(edit);
+      // **Unchanged text is not written again (M9i).** The draft is shown after every
+      // decision now, usually unchanged, and replacing a document with itself still throws
+      // away the cursor of someone who is in the middle of editing it.
+      if (this.text() !== text) {
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(existing.uri, new vscode.Range(new vscode.Position(0, 0), lastPosition(existing)), text);
+        await vscode.workspace.applyEdit(edit);
+      }
       // Brought forward rather than reopened: the tab already exists, and this is
       // what makes a redraw visible when the reader is looking at something else.
       await vscode.window.showTextDocument(existing, { preview: false, viewColumn: vscode.ViewColumn.One });
@@ -40,6 +45,17 @@ export class DraftDocument {
     const document = await vscode.workspace.openTextDocument({ content: text, language: 'markdown' });
     this.document = document;
     await vscode.window.showTextDocument(document, { preview: false, viewColumn: vscode.ViewColumn.One });
+  }
+
+  /**
+   * What the draft says now, edits included — or `undefined` once it has been closed (M9i).
+   *
+   * Line endings come back as `\n` on every platform: the draft was written with them, and an
+   * editor handing back `\r\n` would make a draft nobody touched read as one somebody edited.
+   */
+  text(): string | undefined {
+    const document = this.document;
+    return document && !document.isClosed ? document.getText().replace(/\r\n/g, '\n') : undefined;
   }
 
   /**

@@ -32,17 +32,23 @@ export function stepAfterAsking(approved: boolean, stopped: boolean): StepAfterA
  * What the chat says about a stop.
  *
  * `silent` when a run is in progress: the run reports its own ending, and saying it here
- * as well is how two disagreeing "Stopped." lines happened.
+ * as well is how two disagreeing "Stopped." lines happened. `paused` when a planning
+ * sitting is under way.
  */
-export type StopReply = 'nothing to stop' | 'stopped' | 'silent';
+export type StopReply = 'nothing to stop' | 'stopped' | 'silent' | 'paused';
 
 /**
  * What Stop says, given what it found.
  *
  * **A question left waiting counts as something to stop**, with or without a run in
  * progress — "Nothing to stop" said over a question's buttons is simply false.
+ *
+ * **Planning pauses (M9i).** It is never busy in `Busy`'s sense — no answer streaming, no run
+ * going — so a stop typed while a model worked out its next question fell through to "Nothing
+ * to stop", and planning asked that question a moment later.
  */
-export function stopReply(state: { busy: boolean; waiting: boolean; runWillSayIt: boolean }): StopReply {
+export function stopReply(state: { busy: boolean; waiting: boolean; runWillSayIt: boolean; planning?: boolean }): StopReply {
+  if (state.planning) return 'paused';
   if (!state.busy && !state.waiting) return 'nothing to stop';
   return state.runWillSayIt ? 'silent' : 'stopped';
 }

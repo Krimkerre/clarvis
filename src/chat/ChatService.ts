@@ -26,7 +26,9 @@ import { AgentTerminal } from '../agent/tools/commandTools';
 import { PlanningChatIO } from './PlanningChatIO';
 import { DraftDocument } from '../planning/DraftDocument';
 import { acceptGitOffer, declineGitOffer, gitOffer } from '../agent/gitOffer';
-import { InterviewMemory, PlanningStart, runPlanning } from '../planning/PlanningFlow';
+import { PlanningStart, runPlanning } from '../planning/PlanningFlow';
+import { InterviewMemory } from '../planning/planReview';
+import { PLANNING_PAUSED_LINE, PlanningPaused } from '../planning/PlanningIO';
 import { workspaceMemory } from '../planning/workspaceMemory';
 import { describeProgress, worthResuming } from '../planning/interviewStore';
 import { startupOffer } from './startupOffer';
@@ -82,8 +84,8 @@ function interviewMemoryFor(memory: InterviewMemory, decided?: PlanningStart): I
   return {
     load: () => memory.load(),
     clear: () => memory.clear(),
-    save: async (state, seed) => {
-      await memory.save(state, seed);
+    save: async (state, seed, draft) => {
+      await memory.save(state, seed, draft);
       await clearNervisTask();
     },
   };
@@ -195,8 +197,7 @@ export class ChatService {
       (text) => this.remark(text),
       (text) => this.note(text),
       (items) => this.panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
-      (text) => this.draft.show(text),
-      () => this.draft.close(),
+      this.draft,
       (text) => this.panel.post({ type: 'prefill', text }),
       this.log
     );
@@ -210,17 +211,17 @@ export class ChatService {
     const modeBefore = this.actions.mode();
     await this.actions.setMode('plan');
 
-    // **Before the interview, not before the first run.** The offer used to fire only
-    // from `RunSession.run()`, which meant a folder with no repository was interviewed,
-    // planned and had `plan.md` written into it without git being mentioned once —
-    // found live on the second checklist project, where the whole point of the folder
-    // was that it had none. Planning is the better moment anyway: it is about to write
-    // the first artifact, and the question is whether that artifact will be
-    // recoverable. Asked through the chat rather than a modal, because here there is a
-    // conversation to put it in and buttons the interview already uses.
-    await this.offerGitInChat(io);
-
     try {
+      // **Before the interview, not before the first run.** The offer used to fire only
+      // from `RunSession.run()`, which meant a folder with no repository was interviewed,
+      // planned and had `plan.md` written into it without git being mentioned once —
+      // found live on the second checklist project, where the whole point of the folder
+      // was that it had none. Planning is the better moment anyway: it is about to write
+      // the first artifact, and the question is whether that artifact will be
+      // recoverable. Asked through the chat rather than a modal, because here there is a
+      // conversation to put it in and buttons the interview already uses.
+      await this.offerGitInChat(io);
+
       await runPlanning(
         this.models,
         io,
@@ -254,6 +255,9 @@ export class ChatService {
         interviewMemoryFor(workspaceMemory(this.context), decided),
         decided
       );
+    } catch (error) {
+      // A stop at the git offer, before planning proper has begun — `runPlanning` catches its own (M9i).
+      if (!(error instanceof PlanningPaused)) throw error;
     } finally {
       this.planningIO = undefined;
       // Restored unless planning already moved on to Agent for the build — putting
@@ -784,7 +788,11 @@ export class ChatService {
       scope: { armed: Boolean(this.awaitingScopeAnswer), answer: () => this.answeredScopeOffer(question) },
       build: { armed: Boolean(this.awaitingBuildAnswer), answer: () => this.answeredBuildOffer(question) },
       plan: { armed: this.awaitingPlanAnswer, answer: () => this.answeredPlanOffer(question) },
-      interview: { armed: Boolean(this.planningIO?.isWaiting), answer: () => this.interviewTook(question) },
+      // **Armed for the whole sitting, not only while a question waits (M9i).** "stop" typed
+      // while a model works out the next question has to reach planning too — it answered
+      // "Nothing to stop", and the question arrived a moment later. Anything else typed with no
+      // question waiting still routes as it always did.
+      interview: { armed: Boolean(this.planningIO), answer: () => this.interviewTook(question) },
     };
 
     const armed = OFFER_ORDER.filter((offer) => offers[offer].armed);
@@ -795,15 +803,17 @@ export class ChatService {
     return chosen === 'stop' || chosen === 'none' ? false : offers[chosen].answer();
   }
 
-  /** The interview's own message handling, including the stop that cancels it. */
+  /** The interview's own message handling, including the stop that pauses it. */
   private async interviewTook(question: string): Promise<boolean> {
-    if (!this.planningIO?.isWaiting) return false;
+    if (!this.planningIO) return false;
 
+    // One stop path, however it arrives: typed here, or pressed in the panel.
     if (isStopRequest(question)) {
-      this.log('chat: planning cancelled from chat');
-      this.planningIO.cancel();
+      await this.stopFromChat();
       return true;
     }
+    if (!this.planningIO.isWaiting) return false;
+
     this.planningIO.supply(question);
     return true;
   }
@@ -1282,6 +1292,8 @@ export class ChatService {
     // so a stop only landed once someone answered — see `RunSession.stopWaiting`. After
     // the abort, so the signal already says stopped when the question comes back.
     this.runs.stopWaiting();
+    // And a planning sitting, whether its question is on screen or still being written (M9i).
+    this.planningIO?.cancel();
   }
 
   /**
@@ -1316,7 +1328,8 @@ export class ChatService {
     // **A question left waiting counts as something to stop**, running or not. The
     // landing question is asked after the run has finished, so checking `busy` alone
     // answered "Nothing to stop" over its buttons and left it up. See `stopReply`.
-    const reply = stopReply({ busy, waiting: this.runs.awaitingStep, runWillSayIt: this.busy.isRunning });
+    const planning = Boolean(this.planningIO);
+    const reply = stopReply({ busy, waiting: this.runs.awaitingStep, runWillSayIt: this.busy.isRunning, planning });
 
     if (reply === 'nothing to stop') {
       this.log('chat: asked to stop, nothing running');
@@ -1324,7 +1337,7 @@ export class ChatService {
       return;
     }
 
-    this.log('chat: stopped by typed request');
+    this.log(planning ? 'chat: planning paused by a stop' : 'chat: stopped by typed request');
     this.stop();
 
     // **One "Stopped." per stop.** A run reports its own ending, so saying it here too
@@ -1335,7 +1348,7 @@ export class ChatService {
     // Verbatim, not phrased. It is two words of status at a moment the user is anxious,
     // there is nothing in it to be funny about, and every rewrite of it so far has
     // either invented a project or complained about not having been given one.
-    await this.say('Stopped.', 'neutral');
+    await this.say(reply === 'paused' ? PLANNING_PAUSED_LINE : 'Stopped.', 'neutral');
   }
 
   /**

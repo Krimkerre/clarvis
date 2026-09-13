@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { MilestoneState, milestoneSteps, nextMilestone, readMilestones } from './planUpdate';
+import { MilestoneState, milestoneSteps, nextMilestone, planTitle, readMilestones } from './planUpdate';
 
 /**
  * The milestone this workspace is part-way through, if there is one.
@@ -42,8 +42,7 @@ export async function pendingBuild(): Promise<PendingBuild | undefined> {
   return {
     milestone,
     milestones,
-    // The plan's own title, which is the project name planning chose.
-    projectName: /^#\s+(.+)$/m.exec(planText)?.[1]?.trim() ?? 'this project',
+    projectName: planTitle(planText),
     steps: milestoneSteps(planText, milestone.number),
     started: milestones.some((entry) => entry.done > 0),
   };

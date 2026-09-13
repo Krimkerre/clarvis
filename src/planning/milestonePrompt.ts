@@ -197,3 +197,37 @@ export function parseMilestones(text: string): Milestone[] {
 
   return milestones.filter((milestone) => milestone.steps.length > 0);
 }
+
+/** What a milestone planning pass came to: the milestones, and why they cannot be trusted as complete, when they cannot. */
+export interface PlannedMilestones {
+  milestones: Milestone[];
+  /**
+   * Why there are none, or why the list may be missing some (M9i): no model, a timeout, a
+   * failed call, or a reply with nothing in it that could be built and checked.
+   */
+  problem?: string;
+}
+
+/**
+ * The model's milestones as a result: the usable ones, or why there are none (M9i).
+ *
+ * **A refusal is not a step.** "Sorry, I cannot produce milestones for this" has no header, so
+ * `parseMilestones` keeps it as the only step of a milestone called v1 — the flat-list
+ * leniency doing what it was built for, on input it was never meant to see — and it was drawn
+ * into the plan and offered as a build. What tells work from prose is the check: every step is
+ * asked for one, and a reply in which no step carries one has nothing that could be built and
+ * then shown to work. A timeout keeps what arrived, and says the list may be short.
+ */
+export function milestonesFrom(text: string, timedOut: boolean): PlannedMilestones {
+  const milestones = parseMilestones(text);
+  const usable = milestones.some((milestone) => milestone.steps.some((step) => step.check));
+
+  if (usable) return timedOut ? { milestones, problem: 'the model ran out of time' } : { milestones };
+  if (timedOut) return { milestones: [], problem: 'the model ran out of time' };
+  return {
+    milestones: [],
+    problem: text.trim()
+      ? 'the reply had no step with a check, so nothing in it could be built and checked'
+      : 'the model sent back nothing',
+  };
+}

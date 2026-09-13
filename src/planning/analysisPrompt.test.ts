@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { analysisPrompt, parseAnalysisResult } from './analysisPrompt';
+import { analysisPrompt, parseAnalysisResult, readAnalysis } from './analysisPrompt';
 import { InterviewState } from './interviewTopics';
 
 const state: InterviewState = {
@@ -90,8 +90,43 @@ test('drops a block with an invalid class', () => {
   assert.equal(result.findings.length, 0);
 });
 
-test('empty text is zero findings, not an error', () => {
+test('empty text parses as no findings — whether the review finished is readAnalysis\'s call', () => {
   const result = parseAnalysisResult('');
   assert.equal(result.findings.length, 0);
   assert.equal(result.noPlanNeeded, undefined);
+});
+
+// ------------------------- M9i: a review that did not finish is not a clean one
+
+test('the prompt asks for NO-FINDINGS rather than silence', () => {
+  const prompt = analysisPrompt(state);
+  assert.match(prompt, /^NO-FINDINGS$/m);
+  assert.doesNotMatch(prompt, /output nothing/);
+});
+
+test('NO-FINDINGS is a finished review with nothing to raise', () => {
+  assert.deepEqual(readAnalysis('NO-FINDINGS', false), { findings: [] });
+});
+
+test('an empty reply is not a finished review', () => {
+  assert.equal(readAnalysis('', false).problem, 'the model sent back nothing');
+});
+
+test('prose instead of findings is not a finished review', () => {
+  assert.equal(
+    readAnalysis('I reviewed the interview and it all looks reasonable.', false).problem,
+    'the reply was not in the review format'
+  );
+});
+
+test('findings, or NO-PLAN-NEEDED, are a finished review', () => {
+  const finding = ['class: safety', 'what: x', 'why: y', 'fix: z'].join('\n');
+  assert.equal(readAnalysis(finding, false).problem, undefined);
+  assert.equal(readAnalysis('NO-PLAN-NEEDED: a thirty-line script', false).problem, undefined);
+});
+
+test('a review cut short by the deadline keeps what it found, and says it did not finish', () => {
+  const result = readAnalysis(['class: safety', 'what: x', 'why: y', 'fix: z'].join('\n'), true);
+  assert.equal(result.findings.length, 1);
+  assert.equal(result.problem, 'the model ran out of time');
 });

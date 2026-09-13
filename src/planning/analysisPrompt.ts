@@ -32,6 +32,12 @@ export interface AnalysisResult {
   findings: Finding[];
   /** Set when the project is too small to need a plan at all — a legitimate result, not a failure to find anything. */
   noPlanNeeded?: string;
+  /**
+   * Why the review did not finish, when it did not (M9i): no model, a timeout, a failed call,
+   * or a reply that was not in the review format. Absent means it finished, whatever it found —
+   * which used to be the same empty list either way.
+   */
+  problem?: string;
 }
 
 const VALID_CLASSES: FindingClass[] = ['safety', 'logic', 'scope', 'improvement'];
@@ -87,7 +93,12 @@ export function analysisPrompt(state: InterviewState): string {
     'between different answers, and two lines saying the same thing is a false one.',
     'Keep each under about twelve words: they are shown as buttons to click.',
     '',
-    'Zero findings is a legitimate result too — output nothing rather than pad the list.',
+    // **Nothing to raise is said, not left silent (M9i).** An empty reply is also what a failed
+    // call, a timeout or a broken stream produces, and every one of those used to read as a
+    // clean review.
+    'If there is nothing worth raising, output exactly one line and nothing else:',
+    'NO-FINDINGS',
+    'Zero findings is a legitimate result — never pad the list to avoid it.',
   ]
     .filter((line) => line !== '')
     .join('\n');
@@ -143,4 +154,23 @@ function parseFindingBlock(block: string): Finding | undefined {
   if (!fields.what || !fields.why || fixes.length === 0) return undefined;
 
   return { class: findingClass, what: fields.what, whyItMatters: fields.why, fixes };
+}
+
+/** A reply that says, in so many words, that there was nothing to raise. */
+const NO_FINDINGS = /^NO-FINDINGS\s*$/m;
+
+/**
+ * The analysis as a result: what it found, and whether it actually finished (M9i).
+ *
+ * **"Found nothing" and "did not work" used to be the same empty list.** An empty reply, a
+ * paragraph of prose instead of blocks, and a timeout all parsed as zero findings, and the
+ * draft that followed read as reviewed. So nothing counts as a finished review unless it says
+ * so: findings, `NO-PLAN-NEEDED`, or `NO-FINDINGS`. A timeout keeps what arrived — a finding
+ * that parsed is still a finding — and says the review did not finish.
+ */
+export function readAnalysis(text: string, timedOut: boolean): AnalysisResult {
+  const result = parseAnalysisResult(text);
+  if (timedOut) return { ...result, problem: 'the model ran out of time' };
+  if (result.noPlanNeeded || result.findings.length > 0 || NO_FINDINGS.test(text)) return result;
+  return { ...result, problem: text.trim() ? 'the reply was not in the review format' : 'the model sent back nothing' };
 }

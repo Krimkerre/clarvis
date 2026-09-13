@@ -182,6 +182,72 @@ export function nextMilestone(planText: string): MilestoneState | undefined {
   return readMilestones(planText).find((milestone) => milestone.done < milestone.total);
 }
 
+/** A step's check in the plan — `  - Check: …` — with something after the colon. */
+const CHECK_LINE = /^\s*- Check:\s*\S/;
+
+/** One step of a milestone as the plan writes it, and whether it says how to know it worked. */
+export interface ChecklistStep {
+  step: string;
+  hasCheck: boolean;
+}
+
+/**
+ * A milestone's steps, and which of them carry a check (M9i).
+ *
+ * Read from the plan as it stands, hand edits included, because this decides whether a build
+ * is offered at all: a step deleted by hand is not built, and a check deleted by hand is not
+ * one the build can be held to.
+ */
+export function milestoneChecklist(planText: string, number: number): ChecklistStep[] {
+  const steps: ChecklistStep[] = [];
+  let inside = false;
+  let indent = '';
+
+  for (const line of planText.split('\n')) {
+    const heading = MILESTONE_HEADING.exec(line.trim());
+    if (heading) {
+      inside = Number(heading[1]) === number;
+      continue;
+    }
+    if (!inside) continue;
+
+    const step = STEP_LINE.exec(line);
+    if (step) {
+      steps.push({ step: step[3], hasCheck: false });
+      indent = step[1];
+      continue;
+    }
+
+    const last = steps.at(-1);
+    if (last && isSubLineOf(line, indent) && CHECK_LINE.test(line)) last.hasCheck = true;
+  }
+
+  return steps;
+}
+
+/**
+ * Why a milestone cannot be handed to a build yet, or `undefined` when it can (M9i).
+ *
+ * **Steps, and at least one check.** No steps is nothing to build. No check anywhere is
+ * nothing to hold the build to — "done" would mean the agent said so, which is the thing every
+ * check in the plan exists to prevent. A milestone with neither was offered as a build, told to
+ * "work out the smallest thing that runs".
+ */
+export function buildBlocker(steps: readonly ChecklistStep[]): string | undefined {
+  if (steps.length === 0) {
+    return 'Its first milestone has no steps to build yet — add some under Milestones, then ask me to continue building.';
+  }
+  if (!steps.some((entry) => entry.hasCheck)) {
+    return 'Its first milestone has no step with a check, so nothing would show it works — add a Check line under a step, then ask me to continue building.';
+  }
+  return undefined;
+}
+
+/** The plan's own title: the project name planning chose, or whatever it has been renamed to since. */
+export function planTitle(planText: string): string {
+  return /^#\s+(.+)$/m.exec(planText)?.[1]?.trim() ?? 'this project';
+}
+
 /**
  * Adds steps to a milestone that already exists in the plan.
  *

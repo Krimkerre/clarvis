@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
-import { InterviewMemory } from './PlanningFlow';
 import { INTERVIEW_KEY, parseSnapshot } from './interviewStore';
 import { InterviewState } from './interviewTopics';
+import { InterviewMemory } from './planReview';
 
 /**
  * A half-finished interview, kept in `workspaceState`.
@@ -16,8 +16,9 @@ import { InterviewState } from './interviewTopics';
  */
 export function workspaceMemory(context: vscode.ExtensionContext): InterviewMemory {
   return {
-    async save(state: InterviewState, seed: string): Promise<void> {
-      await context.workspaceState.update(INTERVIEW_KEY, { seed, state, at: Date.now() });
+    async save(state: InterviewState, seed: string, draft?: string): Promise<void> {
+      // The draft rides along once there is one (M9i); an interview still being answered has none.
+      await context.workspaceState.update(INTERVIEW_KEY, { seed, state, at: Date.now(), ...(draft === undefined ? {} : { draft }) });
     },
 
     load() {

@@ -4041,6 +4041,79 @@ pushed back on), F3 (a question asked back is consumed as an answer), F5 (a reje
 finding is recorded and then ignored) — are **separate bugs that survive this redesign**
 and are fixed on their own terms, not folded in.
 
+### M9i — Feedback that lands, a Stop that stops, failures that say so *(signed off 13 Sep)*
+
+**Where this came from.** An outside review of the planning path (13 Sep, read against
+`01a130e`) numbered ten findings; items 1, 2, 6 and 8 were reproduced against the compiled
+code before anything here was proposed. Those numbers are the review's own, unrelated to the
+runbook's F1–F20 above.
+
+- **Feedback did not reach the plan it was about.** "Keep Refining" appended a note and redrew
+  the same milestones, so "remove cloud sync; keep everything local" left the cloud-sync scope
+  and step in place with a contradicting note beneath them — and the build task still said
+  `Scope: …cloud sync` and `- Sync jobs to the cloud`, because it was assembled from the
+  interview rather than from the plan. Approve wrote the rendered text rather than the
+  editor's, so a hand edit to the draft was silently discarded.
+- **Stop did not stop.** Cancelling a finding recorded it as accepted with its first fix —
+  deliberately, `Verdicts.ts` said so. Stop at "Go with that?" put the same options back. Stop
+  at a finding, the name picker or a follow-up recorded a default and asked the next question.
+  "stop" typed while a model call was running answered "Nothing to stop".
+- **A qualified answer lost its qualification.** `parseInt` read `1 but keep offline support`
+  as button 1; at the approve gate that is Approve, and plan.md was written.
+- **A review that failed looked like a clean one.** No model, a timeout, an error and an
+  unreadable reply all came back as zero findings with nothing in the draft saying so; a
+  refusal ("Sorry, I cannot produce milestones") parsed as milestone one's only step; and a
+  plan with no milestones was still offered as a build, told to "work out the smallest thing
+  that runs".
+- **Found while tracing, not in the review.** Any reply to "Start Building / Edit The Task
+  First / Not Yet" that was not one of the three started the build. Approving also opened the
+  interview summary as a second untitled tab beside plan.md.
+
+**Signed off 13 Sep, as recommended.** Three of these reverse an earlier decision, and say so.
+
+1. **Typed feedback revises the plan.** The model returns only the sections the feedback
+   changes, and code splices them into the draft *as it currently reads*, so a hand edit
+   survives a revision. This supersedes M9d's and M9h decision 3's note-and-redraw rung — the
+   rung M9h said to replace if it proved too coarse, and it did. A reply naming a heading the
+   draft does not have, one cut off before it finished, or one that would leave nothing to
+   build is refused: the draft stays as it was and Clarvis says why. With no model the feedback
+   goes under Notes, and that is said too.
+2. **Cancelling pauses; it never decides.** Reverses `Verdicts.ts`'s "cancelling keeps the
+   finding with its first fix". One path: `PlanningPaused` out of any question, caught once in
+   `runPlanning`, the saved interview kept. A model call already running finishes inside its
+   own deadline and is ignored — aborting it is later work. In the command palette, Escape on
+   the name picker or a follow-up keeps meaning *skip*.
+3. **A build is offered only for a milestone with steps and at least one check.** Steps without
+   a check are named in the offer.
+4. **Milestone one's task is read from the written plan.md**, by `nextMilestoneTask`, the way
+   every later milestone's already is. The interview's answers no longer travel in it, and
+   `handoffTask` keeps only the no-plan path.
+5. **A review or milestone plan that did not finish asks Try Again or Go On Without It**, and
+   the draft says what is missing. With no model configured it is said once instead.
+6. **Only Start Building starts a build.** Anything else starts nothing, and the question comes
+   back.
+7. **The draft is saved with the interview**, every round and at a pause, and a resumed sitting
+   goes straight back to it rather than re-running the review.
+8. **Revision limits.** §0 and Branch flow are never revised from typed feedback (a hand edit
+   still can); 30 seconds; 12,000 characters. Starting values, to be measured live.
+9. **No summary document after approval.** plan.md is the document.
+
+**Not in this milestone:** the review's other items — adaptive interviewing (M9h parts 1–3),
+deeper workspace research and the `.git` detection bug, resuming individual finding decisions,
+the command palette's missing interview memory, fewer confirmations, planning on the agent
+model, revising an existing plan, previews.
+
+- [x] A number picks an option only when it is the whole reply
+- [x] Stop pauses planning: `PlanningPaused` out of every question, one stop path in chat, nothing decided or started
+- [x] The flow after the interview lives in `planReview.ts`, free of `vscode`, driven end to end under `node --test`
+- [x] The draft is read back before every decision, and Approve writes exactly what it reads
+- [x] The build is offered from the written plan.md, only with steps and a check, and starts only on Start Building
+- [x] Typed feedback revises the sections it affects (`planRevision.ts`), validated, with a hand edit made meanwhile kept
+- [x] Review and milestone outcomes are told apart, retried or marked in the draft
+- [x] The draft survives a pause and a reload
+- [x] `npm run check` green; each new guard's test fails with the guard removed; complexity measured before and after
+- [ ] Walked live: revision on a frontier and a local model, `NO-FINDINGS` compliance, draft read-back and Stop in VS Code and code-server
+
 ### M9g — Project notes, written by the user *(next, after the checklist)*
 
 **The direction that does not exist yet.** Clarvis already keeps per-project memory —

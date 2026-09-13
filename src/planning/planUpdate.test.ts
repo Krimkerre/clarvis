@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addSteps, appendMilestone, markSteps, milestoneComplete, milestoneSteps, nextMilestone, readMilestones, plannedMilestoneOffer, unplannedRunOffer } from './planUpdate';
+import { addSteps, appendMilestone, buildBlocker, markSteps, milestoneChecklist, milestoneComplete, milestoneSteps, nextMilestone, planTitle, readMilestones, plannedMilestoneOffer, unplannedRunOffer } from './planUpdate';
 
 const plan = [
   '## 7. Milestone 1 — v1',
@@ -236,4 +236,45 @@ test('the question about plan.md is only asked when there is one', () => {
 test('one file is not "1 files"', () => {
   assert.match(plannedMilestoneOffer('', 1).message, /1 file changed/);
   assert.match(plannedMilestoneOffer('', 0).message, /0 files changed/);
+});
+
+// ------------------------- M9i: what a build is offered for, read from the plan as it stands
+
+const checklistPlan = [
+  '### Milestone 1 — First job',
+  '',
+  '- [ ] Store a job locally',
+  '  - Check: create one, restart, it is still listed',
+  '  - Result: not run yet',
+  '- [ ] Make it look nice',
+  '  - Result: not run yet',
+  '',
+  '### Milestone 2 — Photos',
+  '',
+  '- [ ] Attach a photo',
+  '  - Check: attach one, it shows on the job',
+].join('\n');
+
+test('a milestone checklist says which of its steps carry a check', () => {
+  assert.deepEqual(milestoneChecklist(checklistPlan, 1), [
+    { step: 'Store a job locally', hasCheck: true },
+    { step: 'Make it look nice', hasCheck: false },
+  ]);
+  assert.deepEqual(milestoneChecklist(checklistPlan, 2), [{ step: 'Attach a photo', hasCheck: true }]);
+});
+
+test('a check line with nothing after it is not a check', () => {
+  const empty = checklistPlan.replace('  - Check: attach one, it shows on the job', '  - Check:');
+  assert.deepEqual(milestoneChecklist(empty, 2), [{ step: 'Attach a photo', hasCheck: false }]);
+});
+
+test('a milestone is offered as a build only with a step and a check', () => {
+  assert.equal(buildBlocker(milestoneChecklist(checklistPlan, 1)), undefined);
+  assert.match(buildBlocker([]) ?? '', /no steps/);
+  assert.match(buildBlocker([{ step: 'Make it look nice', hasCheck: false }]) ?? '', /no step with a check/);
+});
+
+test("the plan's title is its project name, whatever it has been renamed to", () => {
+  assert.equal(planTitle('# Repair Log\n*Track repair jobs*\n\n## 0. Working Process'), 'Repair Log');
+  assert.equal(planTitle('## 1. Concept\n\nno title'), 'this project');
 });

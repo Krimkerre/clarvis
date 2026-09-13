@@ -23,6 +23,10 @@ export interface PlanInput {
   verdicts: FindingVerdict[];
   /** The milestones, in build order. Empty means none could be written. */
   milestones?: Milestone[];
+  /** Why the gap review did not finish, when it did not (M9i). */
+  reviewProblem?: string;
+  /** Why there are no milestones, or why the list may be incomplete, when either is so (M9i). */
+  milestonesProblem?: string;
 }
 
 /**
@@ -80,7 +84,34 @@ function section(heading: string, answer: Answer | undefined): string {
   return [heading, '', ...(answer.question ? [`**Asked:** ${answer.question}`, ''] : []), answer.text].join('\n');
 }
 
-export function renderPlan({ projectName, seed, state, verdicts, milestones = [] }: PlanInput): string {
+/**
+ * The line a plan with no milestones carries — why, not only that (M9i).
+ *
+ * It said "planning could not reach a model" whatever the reason, including a model that had
+ * answered with a refusal.
+ */
+function noMilestonesLine(problem: string | undefined): string {
+  return `_No milestones written — ${problem ?? 'planning could not reach a model'}._`;
+}
+
+/** A milestone list that may be missing its end says so beneath it (M9i). */
+function incompleteMilestonesLines(count: number, problem: string | undefined): string[] {
+  return count > 0 && problem ? [`_This list may not be complete: ${problem}._`, ''] : [];
+}
+
+/**
+ * A review that did not finish, named where its decisions would have been (M9i).
+ *
+ * A draft from a review that never ran used to be indistinguishable from one whose review
+ * found nothing to raise.
+ */
+function reviewProblemLines(problem: string | undefined): string[] {
+  return problem
+    ? [`_The gap review did not finish (${problem}), so it may have missed safety, logic or scope problems._`]
+    : [];
+}
+
+export function renderPlan({ projectName, seed, state, verdicts, milestones = [], reviewProblem, milestonesProblem }: PlanInput): string {
   const title = projectName ?? seed;
   const language = state.answers.find((answer) => answer.topic === 'language');
   const accepted = verdicts.filter((verdict) => verdict.status !== 'rejected');
@@ -143,7 +174,8 @@ export function renderPlan({ projectName, seed, state, verdicts, milestones = []
           ]),
           '',
         ])
-      : ['_No milestones written — planning could not reach a model._', '']),
+      : [noMilestonesLine(milestonesProblem), '']),
+    ...incompleteMilestonesLines(milestones.length, milestonesProblem),
     // The findings keep their own section — as the record of what was agreed and
     // why, not a second checklist. Whichever of them described actual work is
     // already above, folded into the steps in the order it belongs; the rest are
@@ -156,6 +188,7 @@ export function renderPlan({ projectName, seed, state, verdicts, milestones = []
         ]
       : []),
     '## 8. Decisions',
+    ...reviewProblemLines(reviewProblem),
     ...(rejected.length > 0
       ? rejected.map(
           (verdict) => `- **[${verdict.finding.class}]** ${verdict.finding.what} — rejected. ${verdict.reasoning ?? '(no reason given)'}`

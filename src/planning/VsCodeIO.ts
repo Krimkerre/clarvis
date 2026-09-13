@@ -44,4 +44,8 @@ export class VsCodeIO implements PlanningIO {
   async closeDocument(): Promise<void> {
     await this.draft.close();
   }
+
+  async readDocument(): Promise<string | undefined> {
+    return this.draft.text();
+  }
 }

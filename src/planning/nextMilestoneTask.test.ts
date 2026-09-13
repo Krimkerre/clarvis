@@ -15,6 +15,16 @@ test('the task points at the plan rather than restating it', () => {
   assert.match(task, /only the unticked steps/);
 });
 
+test('an untouched first milestone is started, not continued', () => {
+  // M9i: milestone one is handed over from the approved plan now, the moment it is written.
+  assert.match(
+    nextMilestoneTask({ number: 1, title: 'First job', done: 0, total: 2 }, 'Repair Log'),
+    /^Start building Repair Log, following the approved plan\.md/
+  );
+  assert.match(nextMilestoneTask({ number: 1, title: 'First job', done: 1, total: 2 }, 'Repair Log'), /^Continue building/);
+  assert.match(nextMilestoneTask(milestone, 'Snapshot'), /^Continue building/);
+});
+
 test('it still asks for step announcements, so progress keeps working', () => {
   assert.match(nextMilestoneTask(milestone, 'Snapshot'), /STEP: <the step, copied from the plan>/);
 });

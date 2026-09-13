@@ -11,6 +11,9 @@ import { MilestoneState } from './planUpdate';
  * Deliberately thin. The agent is being pointed at a document it can read rather
  * than handed a copy of it, which is also the only version of this that stays true
  * when the user edits the plan by hand between milestones.
+ *
+ * **Milestone one as well, since M9i**, handed over the moment its plan is approved — so an
+ * untouched first milestone is started rather than continued.
  */
 export function nextMilestoneTask(
   milestone: MilestoneState,
@@ -29,9 +32,10 @@ export function nextMilestoneTask(
   const total = all.length;
   const later = all.filter((entry) => entry.number > milestone.number);
   const last = total > 0 && later.length === 0;
+  const verb = milestone.number === 1 && milestone.done === 0 ? 'Start' : 'Continue';
 
   return [
-    `Continue building ${projectName}, following the approved plan.md in this workspace.`,
+    `${verb} building ${projectName}, following the approved plan.md in this workspace.`,
     '',
     total > 0
       ? `Milestone ${milestone.number} of ${total} — ${milestone.title}.`

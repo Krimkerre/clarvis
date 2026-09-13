@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { milestonePrompt, parseMilestones, parseMilestoneSteps } from './milestonePrompt';
+import { milestonePrompt, milestonesFrom, parseMilestones, parseMilestoneSteps } from './milestonePrompt';
 import { InterviewState } from './interviewTopics';
 
 const state: InterviewState = {
@@ -203,4 +203,39 @@ test('no rejections adds nothing to the prompt', () => {
   const prompt = milestonePrompt(state, [], []);
   assert.doesNotMatch(prompt, /turned them down/);
   assert.doesNotMatch(prompt, /Do not plan any of these/);
+});
+
+// ------------------------- M9i: a refusal is not a milestone, and a short list says so
+
+test('a refusal is not drawn as a milestone', () => {
+  // The flat-list leniency above kept "Sorry, I cannot…" as the only step of a milestone called
+  // v1 — and it was drawn into the plan and offered as a build.
+  const planned = milestonesFrom('Sorry, I cannot produce milestones for this.', false);
+  assert.deepEqual(planned.milestones, []);
+  assert.match(planned.problem ?? '', /no step with a check/);
+});
+
+test('steps with checks are milestones, with nothing wrong', () => {
+  const planned = milestonesFrom('MILESTONE: v1\nCreate the entry point | run it with --help', false);
+  assert.equal(planned.milestones.length, 1);
+  assert.equal(planned.problem, undefined);
+});
+
+test('a flat list is still usable when its steps carry checks', () => {
+  assert.equal(milestonesFrom('Create the entry point | run it\nRename a file | it renames', false).problem, undefined);
+});
+
+test('a list in which no step carries a check has nothing that could be shown to work', () => {
+  assert.deepEqual(milestonesFrom('MILESTONE: v1\nCreate the entry point\nRename a file', false).milestones, []);
+});
+
+test('nothing at all is said to be nothing', () => {
+  assert.equal(milestonesFrom('', false).problem, 'the model sent back nothing');
+});
+
+test('a list cut short by the deadline is kept, and said to have run out of time', () => {
+  const planned = milestonesFrom('MILESTONE: v1\nCreate the entry point | run it', true);
+  assert.equal(planned.milestones.length, 1);
+  assert.equal(planned.problem, 'the model ran out of time');
+  assert.deepEqual(milestonesFrom('', true), { milestones: [], problem: 'the model ran out of time' });
 });

@@ -1,5 +1,5 @@
 import { ModelService } from '../model/ModelService';
-import { PlanningIO } from './PlanningIO';
+import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { opening, phrase } from '../personality/Voice';
 import { Answer, InterviewState, knownFacts, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
 import { namedLanguage } from './conventions';
@@ -285,6 +285,8 @@ async function challengeAnswer(
     const synthesized = await synthesizeAnswer(models, topic, answer.text!, result.followUp, raw.trim(), log);
     return { ...answer, text: synthesized };
   } catch (error) {
+    // A stop during the follow-up is not a challenge that failed: it has to reach `runPlanning` (M9i).
+    if (error instanceof PlanningPaused) throw error;
     log(`planning: "${topic}" — challenge failed (${String(error)}), kept original answer`);
     return answer;
   }
@@ -463,6 +465,8 @@ async function offerIdeas(
     log(`planning: seed — chose idea: ${picked}`);
     return idea ? { seed: `${idea.name}, ${idea.description}`, name: idea.name } : { seed: picked, name: picked };
   } catch (error) {
+    // A stop while the ideas are on screen is not an idea generation that failed (M9i).
+    if (error instanceof PlanningPaused) throw error;
     log(`planning: seed — idea generation failed (${String(error)})`);
     return undefined;
   }
@@ -526,6 +530,8 @@ async function resolveProjectName(
     await remarkOnName(io, picked, seed, log);
     return picked;
   } catch (error) {
+    // A stop at the name picker is not a name that failed to resolve: it pauses planning (M9i).
+    if (error instanceof PlanningPaused) throw error;
     log(`planning: name — resolution failed (${String(error)}), skipped`);
     return undefined;
   }

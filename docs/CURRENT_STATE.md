@@ -262,6 +262,54 @@ it, reflowing them is a diff across nearly every file, and `eslint.config.mjs` e
 refuses style rules that produce a wall of warnings. The rule and the practice disagree;
 that is recorded rather than resolved.
 
+### What landed on 13 Sep: M9i — feedback that lands, a Stop that stops, failures that say so
+
+An outside review of the planning path, reproduced against the compiled code before anything
+changed. `plan.md`'s M9i section has the findings and the nine signed-off decisions; this is
+what a later session needs to know.
+
+**The flow after the interview is `planReview.ts`, and it has tests.** It lived in
+`PlanningFlow.ts`, which imports `vscode`, so the analysis → findings → milestones → draft →
+approval → build offer stretch had none — and every defect M9i fixed was in it.
+`PlanningFlow.ts` keeps where a sitting starts, the workspace read and the plan.md write;
+`planReview.test.ts` drives the rest with a scripted person, a scripted model and a draft that
+can be edited while a question waits.
+
+**One draft revision, and it is the one on screen.** `PlanningIO.readDocument()` reads the
+draft back before every decision, and Approve writes exactly that. Typed feedback — Keep
+Refining, or anything said at the gate that is not a button — goes to `planRevision.ts`: the
+model returns only the sections it changes, and code splices them into the draft as it
+currently reads, refusing the fixed sections (§0, Branch flow), unknown headings, cut-off
+replies and a result with nothing left to build. With no model the feedback goes under Notes.
+A draft edited while the model works keeps the edit and drops the revision, and says so.
+
+**The build is offered from the written plan.md.** Milestone one's task is
+`nextMilestoneTask`, like every later milestone's; `handoffTask` is the no-plan brief only.
+There is no offer without a milestone that has steps and a check (`buildBlocker`), and only
+the words Start Building start one.
+
+**Stop pauses, and cancelling never decides.** `PlanningPaused` is thrown out of any question
+and caught once, in `runPlanning`, which keeps the snapshot — and the snapshot now carries the
+draft (`InterviewSnapshot.draft`), so carrying on returns to the same revision without running
+the review again. In chat, `stopFromChat` → `stopReply` answers `paused` for the whole sitting,
+not only while a question waits, and `PlanningChatIO` neither says nor shows anything a model
+finishes after the stop. A model call already running is not aborted: it runs out its own
+deadline and is ignored.
+
+**A review that did not finish is told apart from a clean one.** `readAnalysis` needs
+findings, `NO-PLAN-NEEDED` or the new `NO-FINDINGS`; `milestonesFrom` needs a step with a check
+(a refusal used to parse as a step). Either failing asks Try Again or Go On Without It, and the
+draft names what is missing.
+
+**A number is an option only on its own.** `optionIndex`: `1` picks; `1 but …` and `1.5` are
+free text.
+
+**Not verified here, and needed before M9i is closed:** the revision and `NO-FINDINGS` prompts
+against real models — a frontier one and the MLX tiers M9h already requires — and, in VS Code
+and code-server, reading back an edited untitled draft, Stop at each question and during a
+model call, a reload at the approve gate, and milestone one ticking from edited steps.
+`ChatService` and `DraftDocument` import `vscode`, so their part of this was read, not run.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
@@ -323,7 +371,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1182 tests currently
+npm test               # node's built-in test runner, no framework — 1447 tests currently
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

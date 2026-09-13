@@ -16,6 +16,14 @@ export interface InterviewSnapshot {
   state: InterviewState;
   /** When it was last touched, so a stale one can be described honestly. */
   at: number;
+  /**
+   * The drafted plan, as it read when it was last shown or when planning was paused (M9i).
+   *
+   * Absent until there is a draft. A sitting that carries on goes straight back to it rather
+   * than re-running a review whose findings might come out differently, and a milestone plan
+   * the person may already have rewritten by hand.
+   */
+  draft?: string;
 }
 
 /** Where a half-finished interview lives. Workspace-scoped: a plan is about *this* project. */
@@ -57,10 +65,12 @@ export function worthResuming(snapshot: InterviewSnapshot | undefined, now: numb
  *
  * A complete interview is described as complete rather than counted. "Ego Refill — 8
  * questions in" is true and useless: it reads as though there are more to come, when what
- * is actually waiting is the plan itself.
+ * is actually waiting is the plan itself. And one paused at the approve gate is described
+ * by its draft, because carrying on goes straight back to that (M9i).
  */
 export function describeProgress(snapshot: InterviewSnapshot): string {
   const name = snapshot.state.projectName ?? snapshot.seed;
+  if (snapshot.draft !== undefined) return `${name} — a drafted plan is waiting for approval`;
   if (readyToDraft(snapshot.state)) return `${name} — all answered, no plan written yet`;
 
   const answered = snapshot.state.answers.filter((answer) => answer.text).length;
@@ -81,16 +91,11 @@ export function parseSnapshot(stored: unknown): InterviewSnapshot | undefined {
   if (typeof candidate.seed !== 'string' || typeof candidate.at !== 'number') return undefined;
   if (!candidate.state || !Array.isArray(candidate.state.answers)) return undefined;
 
-  return { seed: candidate.seed, state: candidate.state, at: candidate.at };
-}
-
-/**
- * Whether planning reached an outcome, and the saved interview can be dropped.
- *
- * The plan was written, or there was no plan to write. **A draft the user walked away
- * from is not an outcome** — the same rule the resume offer already holds to, where
- * Escape means "not now" and never "delete it".
- */
-export function planningIsSettled(approved: boolean, noPlanNeeded: string | undefined): boolean {
-  return approved || Boolean(noPlanNeeded);
+  return {
+    seed: candidate.seed,
+    state: candidate.state,
+    at: candidate.at,
+    // A draft that is not text is dropped, not the interview it came with.
+    ...(typeof candidate.draft === 'string' ? { draft: candidate.draft } : {}),
+  };
 }

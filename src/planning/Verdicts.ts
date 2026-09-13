@@ -1,5 +1,5 @@
 import { Finding } from './analysisPrompt';
-import { PlanningIO } from './PlanningIO';
+import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { FindingVerdict } from './verdictSummary';
 
 /** The escape hatch, offered on every finding. */
@@ -23,9 +23,12 @@ const REJECT = 'No, drop this';
  * So each fix is its own button, `Something else` covers the answer Clarvis didn't
  * think of, and nothing has to be typed to choose between the ones he did.
  *
- * Cancelling any prompt (Escape, or an unrecognised chat reply) counts as accepting
- * the finding with its first fix — silently dropping a finding the user didn't
- * actively reject would be worse than keeping it.
+ * **Cancelling decides nothing (M9i).** Escape on any of these prompts, or Stop in the
+ * chat, pauses planning: nothing is recorded for the finding, and nothing after it is
+ * asked. It used to count as accepting the finding with its first fix, on the grounds that
+ * silently dropping a finding the user had not actively rejected would be worse than keeping
+ * it — but dropping it was never the only other choice, and keeping it wrote a decision
+ * nobody made into the plan as one they had.
  *
  * **The whole finding is shown, not a truncated line.** Found live: a QuickPick's
  * `placeHolder` is a single line and VS Code truncated findings mid-sentence in it.
@@ -45,17 +48,10 @@ export async function collectVerdicts(
       OTHER,
       REJECT,
     ]);
-
-    if (!pick) {
-      log(`planning: verdict [${finding.class}] accepted (no answer) — ${finding.fixes[0]}`);
-      verdicts.push({ finding, status: 'accepted' });
-      continue;
-    }
+    if (!pick) throw new PlanningPaused();
 
     if (pick === REJECT) {
-      const reasoning = await io.askText('Why drop this one?');
-      log(`planning: verdict [${finding.class}] rejected — ${reasoning || '(no reason given)'}`);
-      verdicts.push({ finding, status: 'rejected', reasoning: reasoning?.trim() || undefined });
+      verdicts.push(await rejection(io, finding, log));
       continue;
     }
 
@@ -70,16 +66,21 @@ export async function collectVerdicts(
     // both mean the same thing, and the typed one is already the answer, so asking for
     // it again would be Clarvis not listening.
     const own = pick === OTHER ? await ownSolution(io, finding) : pick;
-    if (!own?.trim()) {
-      log(`planning: verdict [${finding.class}] own-solution cancelled, kept as-is`);
-      verdicts.push({ finding, status: 'accepted' });
-      continue;
-    }
+    // An emptied box is no more a decision than Escape on it.
+    if (!own?.trim()) throw new PlanningPaused();
     log(`planning: verdict [${finding.class}] settled the user's way — ${own.trim()}`);
     verdicts.push({ finding, status: 'modified', reasoning: own.trim() });
   }
 
   return verdicts;
+}
+
+/** Turning a finding down, with the reason given — or none, when the box is sent empty. Escape pauses. */
+async function rejection(io: PlanningIO, finding: Finding, log: (message: string) => void): Promise<FindingVerdict> {
+  const reasoning = await io.askText('Why drop this one?');
+  if (reasoning === undefined) throw new PlanningPaused();
+  log(`planning: verdict [${finding.class}] rejected — ${reasoning.trim() || '(no reason given)'}`);
+  return { finding, status: 'rejected', reasoning: reasoning.trim() || undefined };
 }
 
 /** The first fix, in the box, editable — a starting point beats an empty prompt. */

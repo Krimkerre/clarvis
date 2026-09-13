@@ -749,11 +749,15 @@ export class RunSession {
     // person has just been asked about, so there is nothing to mark off, land or review
     // yet — offering to would invite ticking work whose checks never ran.
     const changed = runner.blocked ? 0 : files.length;
-    await this.close(task, summary, changed, closing, runner);
+    const { askedWhereItGoes } = await this.close(task, summary, changed, closing, runner);
 
     await vscode.commands.executeCommand('clarvis.checkBranchFlow');
 
-    if (changed > 0) await this.offerReview(commits, files);
+    // **Asked once, not twice.** Found live, 13 September 2026: "Leave it there" was answered,
+    // and a moment later this offered "Keep it" — a merge — for the same work, from a run that
+    // had stopped at its step limit. Where the work goes is settled by the question above
+    // whenever it was asked; this is only for runs that question does not cover.
+    if (changed > 0 && !askedWhereItGoes) await this.offerReview(commits, files);
 
     // **And what next, when it could not get past something missing.** Without this the
     // run simply ended, and "continue building" walked into the same wall again.
@@ -864,8 +868,8 @@ export class RunSession {
    * it": the work ends up on the branch they were on, and the *next* run starts from
    * there rather than stacking on this one.
    */
-  private async offerToLandTheWork(changed: number, branch?: string, home?: string): Promise<void> {
-    if (changed === 0 || !branch || !home || branch === home) return;
+  private async offerToLandTheWork(changed: number, branch?: string, home?: string): Promise<boolean> {
+    if (changed === 0 || !branch || !home || branch === home) return false;
 
     this.log(`review: offering to land ${branch} on ${home}`);
     await this.note(
@@ -892,13 +896,14 @@ export class RunSession {
 
     if (!answer || answer === 'Leave it there') {
       this.log(`review: ${branch} left where it is`);
-      return;
+      return true;
     }
 
     await vscode.commands.executeCommand(
       'clarvis.reviewRun',
       answer === 'Show me what changed' ? 'diff' : 'merge-origin'
     );
+    return true;
   }
   /**
    * Reviews the milestone's own diff, and offers what to do about it.
@@ -991,7 +996,7 @@ export class RunSession {
     closing = '',
     /** Where the work is, and whether the run finished or used every step it had. */
     run?: Pick<CodingRun, 'branches' | 'endedAtStepCap'>
-  ): Promise<void> {
+  ): Promise<{ askedWhereItGoes: boolean }> {
     // **A run that changed nothing still ends.** There is no closing line in that case —
     // "your own work is untouched" is meaningless when nothing was touched at all — so
     // the chat went quiet after "Working on it…" and stayed that way. Silence is how a
@@ -1009,7 +1014,7 @@ export class RunSession {
       (changed === 0
         ? await this.phrase('report', 'I stopped without changing anything, and without saying why. Ask me again if that was not what you wanted.')
         : '');
-    if (!said && !closing) return;
+    if (!said && !closing) return { askedWhereItGoes: false };
 
     // The branch note goes after whatever was said, and never instead of it. Joined
     // upstream it counted as a summary, so a run that narrated nothing looked like a
@@ -1022,7 +1027,7 @@ export class RunSession {
     // live: eight `clarvis/*` branches stacked in a straight line, each announcing "I
     // couldn't start cleanly from where you were", and a request to merge to main that
     // created a branch called `clarvis/merge-to-main`.
-    await this.offerToLandTheWork(changed, run?.branches.working, run?.branches.startedFrom);
+    const askedWhereItGoes = await this.offerToLandTheWork(changed, run?.branches.working, run?.branches.startedFrom);
 
     // A run that ended on a question is waiting for an answer, and the next message
     // is almost certainly it.
@@ -1036,6 +1041,7 @@ export class RunSession {
     if (this.fromPlan && changed > 0) await this.settleMilestone(said, changed, run?.endedAtStepCap ? 'step-cap' : 'finished');
 
     await this.sayAside(task, said);
+    return { askedWhereItGoes };
   }
 
   /**

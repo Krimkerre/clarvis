@@ -18,9 +18,13 @@
  * **Finding the file already there.** A Codex session's file is never taken: the owner follows that task
  * instead. A file naming this very window is a leftover of an earlier run here that didn't release, and is
  * replaced — unless this extension host holds it right now, in which case a run is already going here.
- * Another window's file is judged by the shared lock rule: `gone` with nothing it started still running is
- * replaced; `alive` and working is refused; `unresponsive`, or waiting on its owner, is refused for now —
- * taking over with a confirmation, and stopping a gone window's command group, come with switching (C3).
+ * Another window's file is judged by the shared lock rule: `alive` and working is refused; `unresponsive`,
+ * or waiting on its owner, is refused with the offer to take over, which the owner confirms (`takeover.ts`);
+ * `gone` is replaced — once the command it recorded as running, with its whole process group and every
+ * descendant, has been stopped and confirmed gone (`groupKill.ts`). A command that won't stop, or whose
+ * state couldn't be checked, keeps the file where it is and the run refused, naming it. The caller learns
+ * whose file was replaced (`replaced`), because the new holder continues that task rather than sweeping its
+ * leftovers into a new one (design §6.3, review AL3).
  *
  * **The fence** (`stillHolds`). False only on evidence of loss: a heartbeat answered `409 LEASE_REVOKED`,
  * or a lock file that no longer names this window. RAVIS not answering is never loss. Before a commit the
@@ -40,8 +44,9 @@ import type { RelayFailure } from '../relay/relayFailure';
 import type { AcquireLockBody, Host, LockView, RunningCommand } from '../relay/relayTypes';
 import { createLockFile, lockFilePath, readLockFile, type HeldLockFile, type LockFileContent, type LockFileRead } from './fileLock';
 import { gitDirForRelay } from './gitDir';
+import { stopCommandGroup, type GroupStop, type Survivor } from './groupKill';
 import { fenceHolds, type HeartbeatResult, type LockClient } from './lockClient';
-import { judgeLock, onFindingALock, sameStart, type Verdict } from './lockRule';
+import { judgeLock, onFindingALock, type Verdict } from './lockRule';
 import { observerAwakeSeconds, probeProcess } from './processProbe';
 
 export const HEARTBEAT_MS = 15_000;
@@ -60,7 +65,13 @@ export interface ProjectLockDeps {
   /** RAVIS's lock API; absent when no RAVIS is configured for this window. */
   locks?: LockClient;
   judge?: (content: LockFileContent, heartbeatAgeSeconds: number) => Promise<Verdict | undefined>;
-  commandAlive?: (command: RunningCommand) => Promise<boolean | undefined>;
+  /** Stops a gone holder's recorded command with its group and descendants, and confirms (`groupKill.ts`). */
+  stopGroup?: (command: RunningCommand) => Promise<GroupStop>;
+  /**
+   * Registers the file lock with RAVIS as an adoption (`adopt_file_lock`), replacing a lock row RAVIS marked
+   * superseded at a restart: the reconcile a window does for a Codex task a gone window left paused (F-A9).
+   */
+  adopt?: boolean;
   waitingOnYou?: () => boolean;
   now?: () => Date;
   log?: (line: string) => void;
@@ -73,7 +84,15 @@ export interface LockRefusal {
   attachSessionId?: string;
 }
 
-export type LockOutcome = { held: true; lock: ProjectLock } | ({ held: false } & LockRefusal);
+/** A gone window's lock file this run replaced: its task is the one to continue (review AL3). */
+export interface ReplacedHolder {
+  taskId: string;
+  windowId: string | null;
+  host: string;
+  since: string;
+}
+
+export type LockOutcome = { held: true; lock: ProjectLock; replaced?: ReplacedHolder } | ({ held: false } & LockRefusal);
 
 /** Lock files this extension host holds right now. */
 const HELD_HERE = new Set<string>();
@@ -88,7 +107,11 @@ export const LOCK_LINES = {
     `Another Clarvis window (${host}${since(from)}) holds this project but isn't answering, or is waiting on you there. Stop it there, or close that window, then try again.`,
   unjudged: "Another Clarvis window holds this project, and whether it's still working couldn't be checked, so nothing was started.",
   command: (command: RunningCommand) =>
-    `A command from a Clarvis window that closed may still be running (\`${command.comm}\`, pid ${command.pid}). Stop it, then try again.`,
+    `A command from a Clarvis window that closed may still be running (\`${command.comm}\`, pid ${command.pid}), and whether it stopped couldn't be checked, so nothing was started.`,
+  survivors: (survivors: Survivor[]) =>
+    `A command from a Clarvis window that closed is still running and wouldn't stop: ${survivors
+      .map((survivor) => `\`${survivor.comm}\` (pid ${survivor.pid})`)
+      .join(', ')}. Nothing was started.`,
   nested: 'A folder inside or around this project is locked by another task, so nothing was started.',
   unreadable: (detail: string) => `This project's lock file can't be read right now (${detail}), so nothing was started.`,
   failed: (detail: string) => `This project's lock file couldn't be created (${detail}), so nothing was started.`,
@@ -99,15 +122,15 @@ export const LOCK_LINES = {
 export async function takeProjectLock(deps: ProjectLockDeps): Promise<LockOutcome> {
   const file = lockFilePath(deps.root, deps.gitDir);
   const created = await createFileLock(file, deps);
-  if (!('check' in created)) return { held: false, ...created };
-  const lock = new ProjectLock(deps, created);
-  const refused = await lock.register(false);
+  if ('line' in created) return { held: false, ...created };
+  const lock = new ProjectLock(deps, created.lock);
+  const refused = await lock.register(deps.adopt === true);
   if (refused) {
     lock.dropFile();
     return { held: false, ...refused };
   }
   lock.startHeartbeat();
-  return { held: true, lock };
+  return created.replaced ? { held: true, lock, replaced: holderOf(created.replaced) } : { held: true, lock };
 }
 
 export class ProjectLock implements RunFence {
@@ -255,14 +278,21 @@ export class ProjectLock implements RunFence {
   }
 }
 
-async function createFileLock(file: string, deps: ProjectLockDeps): Promise<HeldLockFile | LockRefusal> {
+/** The lock file, created — replacing a stale one when the rule allows — or why not. */
+async function createFileLock(file: string, deps: ProjectLockDeps): Promise<{ lock: HeldLockFile; replaced?: LockFileContent } | LockRefusal> {
   const first = createLockFile(file, contentFor(deps));
-  if (first.ok) return hold(first.lock);
+  if (first.ok) return { lock: hold(first.lock) };
   if (first.reason === 'failed') return { line: LOCK_LINES.failed(first.detail) };
   const refusal = await decideOnExisting(file, first.existing, deps);
   if (refusal) return refusal;
   const second = createLockFile(file, contentFor(deps));
-  return second.ok ? hold(second.lock) : { line: LOCK_LINES.race };
+  if (!second.ok) return { line: LOCK_LINES.race };
+  const replaced = first.existing.kind === 'present' ? first.existing.content : undefined;
+  return { lock: hold(second.lock), replaced };
+}
+
+function holderOf(content: LockFileContent): ReplacedHolder {
+  return { taskId: content.taskId, windowId: content.holder.window_id, host: content.holder.host, since: content.holder.since };
 }
 
 function hold(lock: HeldLockFile): HeldLockFile {
@@ -291,11 +321,21 @@ async function otherWindow(content: LockFileContent, verdict: Verdict, deps: Pro
   const outcome = onFindingALock('clarvis_run', verdict, content.waitingOnYou);
   if (outcome === 'refuse') return { line: LOCK_LINES.working(content.holder.host, content.holder.since) };
   if (outcome !== 'reconcile') return { line: LOCK_LINES.stalled(content.holder.host, content.holder.since) };
-  const command = content.running_command;
+  return reconcileGone(content.running_command, deps);
+}
+
+/**
+ * A gone window's file may go only once the command it recorded is stopped — group, descendants and all —
+ * and confirmed gone (design §6.3; final check F-A4). Not knowing is not gone: the file stays.
+ */
+async function reconcileGone(command: RunningCommand | null, deps: ProjectLockDeps): Promise<LockRefusal | undefined> {
   if (!command) return undefined;
-  // Only a command known to be gone lets the file go; not knowing is not gone.
-  const alive = await (deps.commandAlive ?? commandStillRunning)(command);
-  return alive === false ? undefined : { line: LOCK_LINES.command(command) };
+  const stopped = await (deps.stopGroup ?? ((recorded: RunningCommand) => stopCommandGroup(recorded)))(command);
+  if (stopped.gone === true) {
+    deps.log?.(`lock: stopped the closed window's command \`${command.comm}\` (pid ${command.pid}) and ${stopped.signalled - 1} process(es) it started`);
+    return undefined;
+  }
+  return stopped.gone === false ? { line: LOCK_LINES.survivors(stopped.survivors) } : { line: LOCK_LINES.command(command) };
 }
 
 /** Deletes the file judged stale — only if it is still exactly that file's holder and heartbeat. */
@@ -349,12 +389,6 @@ async function judgeHolder(content: LockFileContent, heartbeatAgeSeconds: number
   if (!probe || awake === undefined) return undefined;
   const lock = { pid: content.holder.pid, pid_start: content.holder.pid_start, heartbeat_age_seconds: heartbeatAgeSeconds };
   return judgeLock(lock, probe, awake);
-}
-
-async function commandStillRunning(command: RunningCommand): Promise<boolean | undefined> {
-  const probe = await probeProcess(command.pid);
-  if (!probe) return undefined;
-  return probe.pid_running && probe.lstart !== null && sameStart(probe.lstart, command.start);
 }
 
 function every(ms: number, tick: () => void): () => void {

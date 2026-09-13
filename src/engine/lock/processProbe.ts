@@ -74,7 +74,8 @@ export function parseSysctlSeconds(text: string): number | undefined {
   return match ? Number(match[1]) : undefined;
 }
 
-function runQuietly(file: string, args: string[]): Promise<{ code: number | null; stdout: string }> {
+/** Runs `file` in the C locale, never throwing: `ps` and `sysctl` here, and the process table (`processTable.ts`). */
+export function runQuietly(file: string, args: string[]): Promise<{ code: number | null; stdout: string }> {
   return new Promise((resolve) => {
     execFile(
       file,

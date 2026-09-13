@@ -14,11 +14,17 @@
  * - the stop sequence emits `stopping`, then each open request's `request.resolved`, then — a moment
  *   later — `turn.completed` and `stopped` or `leftover` (design §5.3 step 3's order);
  * - a settled session is left `idle` without its project lock (`conventions.json` open point: "the idle
- *   view here shows it released").
+ *   view here shows it released");
+ * - a turn or a steer from a session without the lock takes it when nothing holds the root
+ *   (`conventions.json` turns_need_the_project_lock); the root counts as held only when a test says a
+ *   window of Clarvis's own engine holds it (`holdRootForClarvis`);
+ * - a lock registered with `adopt_file_lock` for a root replaces the lock RAVIS marked superseded there, so
+ *   its sessions can be settled again (`lock-rule-cases.json` adoption_rule "then"); the answer itself is
+ *   still the fake's fixture answer.
  *
  * Test controls — `seed`, `openRequest`, `completeItem`, `completeTurn`, `ownerStop`, `restartRavis`,
- * `supersedeLock`, `leaveProcessesOnStop`, `processesGone` — stand in for what Codex and the owner do.
- * Test support only.
+ * `supersedeLock`, `leaveProcessesOnStop`, `processesGone`, `holdRootForClarvis`, `releaseRootFromClarvis`
+ * — stand in for what Codex, the owner and other windows do. Test support only.
  */
 
 import { randomBytes, randomUUID } from 'crypto';
@@ -74,6 +80,7 @@ const ANSWER = 'POST /api/v1/agent-sessions/{sid}/requests/{rid}/answer';
 const CLAIM = 'POST /api/v1/agent-sessions/{sid}/settle-claim';
 const SETTLE = 'POST /api/v1/agent-sessions/{sid}/settle';
 const LEFTOVER = 'POST /api/v1/agent-sessions/{sid}/leftover';
+const LOCKS = 'POST /api/v1/project-locks';
 
 /** Once stopping, nothing a window sends starts anything (design §5.3 step 3.3). */
 const STOPPING = new Set<SessionState>(['stopping', 'stopped', 'leftover']);
@@ -86,6 +93,8 @@ export class FakeSessions {
   /** Milliseconds between the parts of a stop sequence, and before a steer's feedback frame. */
   stepMs = 5;
   private readonly sessions = new Map<string, MachineSession>();
+  /** Roots a window of Clarvis's own engine holds, as a test declares them. */
+  private readonly heldByClarvis = new Set<string>();
   private counter = 0;
 
   private readonly routes = new Map<string, Route>([
@@ -105,6 +114,7 @@ export class FakeSessions {
   answer(route: FixtureRoute, url: URL, headers: IncomingHttpHeaders, body: unknown): FakeAnswer | undefined {
     if (route.key === SESSIONS) return this.create(body as CreateSessionBody);
     if (route.key === 'GET /api/v1/agent-sessions') return this.list(url.searchParams.get('workspace_root'));
+    if (route.key === LOCKS) return this.adoptFileLock(body);
     const session = this.sessions.get(decodeURIComponent(url.pathname.split('/')[4] ?? ''));
     const handle = this.routes.get(route.key);
     return session && handle ? handle(session, body, headers, url) : undefined;
@@ -221,6 +231,15 @@ export class FakeSessions {
     this.toStopped(session, undefined);
   }
 
+  /** A window running Clarvis's own engine holds `root`: a Codex session without the lock can't start a turn there. */
+  holdRootForClarvis(root: string): void {
+    this.heldByClarvis.add(root);
+  }
+
+  releaseRootFromClarvis(root: string): void {
+    this.heldByClarvis.delete(root);
+  }
+
   // ── Routes ──────────────────────────────────────────────────────────────────
 
   private create(body: CreateSessionBody): FakeAnswer {
@@ -269,7 +288,21 @@ export class FakeSessions {
     if (session.settleNeeded) return 'the last turn still needs a settle';
     if (session.superseded) return "RAVIS's lock was superseded at a restart";
     if (session.holdsLock || body.lock?.transfer_token) return undefined;
-    return "left idle by a switch while Clarvis's own engine holds the project";
+    // Taken in the same request when nothing holds the root (conventions.json turns_need_the_project_lock).
+    return this.heldByClarvis.has(session.root) ? "left idle by a switch while Clarvis's own engine holds the project" : undefined;
+  }
+
+  /** A file lock registered with `adopt_file_lock` replaces RAVIS's superseded lock for its root. */
+  private adoptFileLock(body: unknown): undefined {
+    const request = (body ?? {}) as { workspace_root?: unknown; adopt_file_lock?: unknown };
+    if (request.adopt_file_lock !== true) return undefined;
+    for (const session of this.all) {
+      if (session.root !== request.workspace_root || !session.superseded) continue;
+      session.superseded = false;
+      session.holdsLock = false;
+      this.sync(session);
+    }
+    return undefined;
   }
 
   private announceTurn(session: MachineSession, kind: string): void {
@@ -283,7 +316,8 @@ export class FakeSessions {
     const steer = body as { text?: string; expected_turn_id?: string };
     if (!steer.text?.trim()) return fixtureAnswer(STEER, 'empty text');
     if (STOPPING.has(session.state)) return fixtureAnswer(STEER, 'stopping');
-    if (!session.activeTurn && !session.holdsLock) return fixtureAnswer(STEER, 'no active turn and no lock: nothing is queued');
+    const lockedOut = !session.holdsLock && this.heldByClarvis.has(session.root);
+    if (!session.activeTurn && lockedOut) return fixtureAnswer(STEER, 'no active turn and no lock: nothing is queued');
     const delivered = session.activeTurn ? 'steered' : 'queued';
     const text = steer.text;
     session.steers.push({ text, expectedTurnId: steer.expected_turn_id, delivered });

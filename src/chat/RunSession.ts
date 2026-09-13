@@ -28,8 +28,10 @@ import {
   ravisAccess,
   takeRunLock,
   workspaceRoot,
+  type RavisAccess,
   type RavisLookup,
 } from '../engine/engineHost';
+import type { LockClient } from '../engine/lock/lockClient';
 import { reattachStep, type ReattachStep } from '../engine/codex/reattach';
 import { RemoteCodexRunner } from '../engine/codex/RemoteCodexRunner';
 import { CODEX_LINES, ravisUnusableLine, tokenLine } from '../engine/codex/translate';
@@ -54,6 +56,7 @@ interface OpenedRun {
 interface RunGuard {
   fence?: RunFence;
   relay?: RelayClient;
+  locks?: LockClient;
   release(): Promise<void>;
 }
 
@@ -66,7 +69,7 @@ interface RunRefusal {
 /** Codex needs a folder, and a RAVIS this window can reach with its credential. */
 function codexGuard(root: string | undefined, ravis: RavisLookup): RunGuard | RunRefusal {
   if (!root) return { refusal: CODEX_LINES.noFolder };
-  if (ravis.kind === 'ready') return { relay: ravis.access.relay, release: async () => undefined };
+  if (ravis.kind === 'ready') return { relay: ravis.access.relay, locks: ravis.access.locks, release: async () => undefined };
   if (ravis.kind === 'no_credential') return { refusal: CODEX_LINES.noCredential };
   return { refusal: ravisUnusableLine(ravis.kind === 'unusable' ? ravis.reason : 'no RAVIS address') };
 }
@@ -428,7 +431,7 @@ export class RunSession {
     if ('refusal' in guard) return guard;
     const runner = createCodingRun(decision.run, {
       clarvis: () => this.clarvisRunner(root, guard.fence),
-      codex: () => this.codexRunner(root as string, guard.relay as RelayClient),
+      codex: () => this.codexRunner(root as string, guard.relay as RelayClient, guard.locks),
     });
     return { runner, release: guard.release };
   }
@@ -466,11 +469,12 @@ export class RunSession {
     );
   }
 
-  private codexRunner(root: string, relay: RelayClient): RemoteCodexRunner {
+  private codexRunner(root: string, relay: RelayClient, locks?: LockClient): RemoteCodexRunner {
     return new RemoteCodexRunner({
       context: this.context,
       root,
       relay,
+      locks,
       terminal: this.terminal,
       log: this.log,
       mode: codexModeFor(chatModeSetting()),
@@ -484,11 +488,37 @@ export class RunSession {
     if (refusal.attachSessionId) await this.reattachCodexTasks();
   }
 
-  /** Nothing typed to a run vanishes; and a Codex start refused for a task already running follows it. */
+  /**
+   * Nothing typed to a run vanishes; a Codex start refused for a task already running follows it; and a Codex
+   * task RAVIS stopped at its step cap is offered "Carry on".
+   */
   private async afterRun(runner: CodingRun): Promise<void> {
     const undelivered = undeliveredLine(runner.drainInterjections());
     if (undelivered) await this.note(undelivered);
     if (runner instanceof RemoteCodexRunner && runner.attachInstead) await this.reattachCodexTasks();
+    if (runner instanceof RemoteCodexRunner && runner.endedAtStepCap) await this.offerCarryOn(runner);
+  }
+
+  /**
+   * "Carry on" after Codex's step cap continues the same session with a `carry_on` turn (design §5.5, M15 C2a),
+   * never a new task on a new branch. Only its own buttons answer it, so typing "carry on" works and anything
+   * else is read as the message it is.
+   */
+  private async offerCarryOn(ended: RemoteCodexRunner): Promise<void> {
+    const session = ended.codexSession;
+    const root = workspaceRoot();
+    const ravis = ravisAccess(this.models);
+    if (!session || !root || ravis.kind !== 'ready') return;
+    await this.note(CODEX_LINES.carryOnOffer);
+    const answer = await this.pending.ask(
+      [{ label: 'Carry on', detail: 'Codex continues the same task where it stopped' }, { label: 'Not now' }],
+      'carrying on with the Codex task',
+      true
+    );
+    if (answer !== 'Carry on') return;
+    const runner = this.codexRunner(root, ravis.access.relay, ravis.access.locks);
+    const opened = { runner, release: async () => undefined };
+    await this.follow(opened, 'the Codex task in this project', (signal) => runner.carryOn(session.id, 'Carry on where you stopped.', signal), true);
   }
 
   /**
@@ -503,7 +533,7 @@ export class RunSession {
     if (ravis.kind !== 'ready') return this.noCodexAccess(ravis);
     const listed = await ravis.access.relay.listSessions(root);
     if (!listed.ok) return this.listFailed(listed.failure.kind);
-    await this.followListed(root, ravis.access.relay, listed.value);
+    await this.followListed(root, ravis.access, listed.value);
   }
 
   /** The chat panel pinged: a Codex task followed from here counts this window attached (design §3.5.4). */
@@ -511,15 +541,16 @@ export class RunSession {
     if (this.running instanceof RemoteCodexRunner) this.running.panelPinged();
   }
 
-  private async followListed(root: string, relay: RelayClient, sessions: SessionSummary[]): Promise<void> {
+  private async followListed(root: string, access: RavisAccess, sessions: SessionSummary[]): Promise<void> {
     const tokens = new TokenStore();
-    await this.takeReattachStep(reattachStep(sessions, (sessionId) => tokens.read(root, sessionId)), root, relay);
+    await this.takeReattachStep(reattachStep(sessions, (sessionId) => tokens.read(root, sessionId)), root, access);
   }
 
-  private async takeReattachStep(step: ReattachStep, root: string, relay: RelayClient): Promise<void> {
+  private async takeReattachStep(step: ReattachStep, root: string, access: RavisAccess): Promise<void> {
     if (step.kind === 'nothing') return;
     if (step.kind === 'unsafe_token') return this.note(tokenLine({ kind: 'refused', reason: step.reason }));
-    const runner = this.codexRunner(root, relay);
+    // With RAVIS's lock API, so a task a closed editor left paused can be taken over and saved (F-A9).
+    const runner = this.codexRunner(root, access.relay, access.locks);
     if (step.kind === 'reconnect' && !(await this.reconnected(runner, step.session))) return;
     // A task picked back up has no plan steps in this window: its checkpoint will carry them (C3).
     this.setFromPlan(false);
@@ -570,7 +601,7 @@ export class RunSession {
     if (!listed.ok) return;
     clearInterval(this.reattachRetry);
     this.reattachRetry = undefined;
-    await this.followListed(root, ravis.access.relay, listed.value);
+    await this.followListed(root, ravis.access, listed.value);
   }
 
   /**

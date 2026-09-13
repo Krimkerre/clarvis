@@ -8,6 +8,7 @@ import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
 import type { RunningCommand } from '../relay/relayTypes';
 import { encodeLockFile, lockFilePath, readLockFile, type LockFileContent } from './fileLock';
 import { LockClient } from './lockClient';
+import type { GroupStop } from './groupKill';
 import type { Verdict } from './lockRule';
 import { LOCK_LINES, takeProjectLock, type ProjectLock, type ProjectLockDeps } from './projectLock';
 
@@ -59,7 +60,7 @@ async function withProject(run: (project: Project) => Promise<void>): Promise<vo
     pidStart: 'Sun Sep 13 05:10:02 2026',
     locks,
     judge: async () => 'alive',
-    commandAlive: async () => false,
+    stopGroup: async () => ({ gone: true, signalled: 1 }),
     every: () => () => undefined,
     log: (line) => log.push(line),
     ...overrides,
@@ -273,14 +274,15 @@ test("this window's own leftover is replaced, but a lock this window holds right
 
 test("another window's lock file is judged by the shared rule", () =>
   withProject(async (project) => {
-    const cases: { verdict: Verdict | undefined; waiting?: boolean; command?: RunningCommand; alive?: boolean; expect: RegExp | 'taken' }[] = [
+    const npmLeftRunning: GroupStop = { gone: false, survivors: [{ pid: 48210, comm: 'npm', start: NPM.start }] };
+    const cases: { verdict: Verdict | undefined; waiting?: boolean; command?: RunningCommand; stop?: GroupStop; expect: RegExp | 'taken' }[] = [
       { verdict: 'alive', expect: /is working on this project/ },
       { verdict: 'alive', waiting: true, expect: /isn't answering, or is waiting on you/ },
       { verdict: 'unresponsive', expect: /isn't answering/ },
       { verdict: undefined, expect: /couldn't be checked/ },
-      { verdict: 'gone', command: NPM, alive: true, expect: /may still be running \(`npm`, pid 48210\)/ },
-      { verdict: 'gone', command: NPM, alive: undefined, expect: /may still be running/ },
-      { verdict: 'gone', command: NPM, alive: false, expect: 'taken' },
+      { verdict: 'gone', command: NPM, stop: npmLeftRunning, expect: /still running and wouldn't stop: `npm` \(pid 48210\)/ },
+      { verdict: 'gone', command: NPM, stop: { gone: undefined }, expect: /may still be running \(`npm`, pid 48210\), and whether it stopped couldn't be checked/ },
+      { verdict: 'gone', command: NPM, stop: { gone: true, signalled: 3 }, expect: 'taken' },
       { verdict: 'gone', expect: 'taken' },
     ];
 
@@ -288,7 +290,7 @@ test("another window's lock file is judged by the shared rule", () =>
       fs.rmSync(project.file, { force: true });
       writeForeignLock(project.file, {}, { waitingOnYou: each.waiting ?? false, running_command: each.command ?? null });
       const outcome = await takeProjectLock(
-        project.deps({ locks: undefined, judge: async () => each.verdict, commandAlive: async () => each.alive })
+        project.deps({ locks: undefined, judge: async () => each.verdict, stopGroup: async () => each.stop ?? { gone: undefined } })
       );
       const label = JSON.stringify(each);
       if (each.expect === 'taken') {

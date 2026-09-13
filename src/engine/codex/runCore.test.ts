@@ -5,19 +5,24 @@ import * as os from 'os';
 import * as path from 'path';
 import type { AgentEvent } from '../../agent/AgentRunner';
 import { matchStep, readStepMarkers } from '../../agent/stepProgress';
-import { CLARVIS_CREDENTIAL, FakeRavisRelay } from '../../test/fakes/FakeRavisRelay';
+import { CLARVIS_CREDENTIAL, FakeRavisRelay, FIXTURE_LOCK } from '../../test/fakes/FakeRavisRelay';
 import type { FakeSessions, MachineSession } from '../../test/fakes/fakeSessions';
 import { CODEX_STATE_ROUTE, exampleNamed } from '../../test/fakes/relayContract';
+import { encodeLockFile, lockFilePath, readLockFile, type LockFileContent } from '../lock/fileLock';
+import { LockClient } from '../lock/lockClient';
+import type { Verdict } from '../lock/lockRule';
+import { takeProjectLock } from '../lock/projectLock';
 import { createSessionKey } from '../relay/idempotency';
 import { RelayClient } from '../relay/relayClient';
 import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
-import type { CodexState, CreateSessionBody, Decision, RequestView, SessionSummary } from '../relay/relayTypes';
+import type { CodexState, CreateSessionBody, Decision, RequestView, RunningCommand, SessionSummary } from '../relay/relayTypes';
 import { TokenStore } from '../relay/tokenStore';
 import {
   CodexRunCore,
   type CodexBranch,
   type CodexCursors,
   type CodexGit,
+  type CodexLockFloor,
   type CodexRunOptions,
   type CodexSave,
   type EngineAsker,
@@ -82,6 +87,8 @@ interface Harness {
   cursors: Map<string, number>;
   /** Each request the runner started, in order, as `METHOD /path` — and any markers a test adds. */
   sent: string[];
+  /** The recording HTTP the runner uses, for a lock client whose requests belong in `sent` too. */
+  http: RelayHttp;
   core(options?: Partial<CodexRunOptions>): CodexRunCore;
 }
 
@@ -107,7 +114,8 @@ async function withCodex(run: (h: Harness) => Promise<void>): Promise<void> {
   const cursors = new Map<string, number>();
   const git = new FakeGit();
   const tokens = new TokenStore(folder);
-  const relay = new RelayClient(recordingHttp(fake, sent));
+  const http = recordingHttp(fake, sent);
+  const relay = new RelayClient(http);
   const core = (options: Partial<CodexRunOptions> = {}) => {
     const made = new CodexRunCore({
       relay,
@@ -126,7 +134,7 @@ async function withCodex(run: (h: Harness) => Promise<void>): Promise<void> {
     return made;
   };
   try {
-    await run({ fake, machine: fake.sessions(), git, tokens, cursors, sent, core });
+    await run({ fake, machine: fake.sessions(), git, tokens, cursors, sent, http, core });
     assert.deepEqual(fake.violations, [], 'every request, answer and frame matched the contract fixtures');
   } finally {
     for (const made of cores) made.dispose();
@@ -455,6 +463,7 @@ test('a steer refused with PROJECT_LOCKED says why and keeps the text for later'
     await waitFor(() => core.activeTurnId === session.activeTurn, 'the turn to be known');
     session.activeTurn = null;
     session.holdsLock = false; // Clarvis's own engine took the project
+    h.machine.holdRootForClarvis(ROOT);
 
     core.interject('Rename the flag to --utc-time.');
     await run.next((event) => event.text === CODEX_LINES.lockedForTurns);
@@ -483,6 +492,7 @@ test('text typed while RAVIS is unreachable is kept, then steered in once the st
 test('a new turn refused with PROJECT_LOCKED says why and keeps its text; accepted later, it carries what waited first', () =>
   withCodex(async (h) => {
     const session = h.machine.seed({ state: 'idle', turnActive: false, holdsLock: false });
+    h.machine.holdRootForClarvis(ROOT); // left idle by a switch; Clarvis's own engine holds the project
     keepToken(h, session);
     const core = h.core();
     await follow(core.attach(summaryOf(session), new AbortController().signal)).ended();
@@ -491,7 +501,7 @@ test('a new turn refused with PROJECT_LOCKED says why and keeps its text; accept
     assert.equal(session.turns.length, 0, 'no turn started');
     assert.deepEqual(core.feedback.pending, ['Carry on with milestone 2.']);
 
-    session.holdsLock = true; // Clarvis's own engine let the project go
+    h.machine.releaseRootFromClarvis(ROOT); // Clarvis's own engine let the project go: the turn takes it
     assert.equal(await core.continueTurn('Carry on.', 'continue'), undefined);
     assert.equal(session.turns.length, 1);
     assert.match(session.turns[0].text, /- Carry on with milestone 2\.\n\nCarry on\.$/);
@@ -686,6 +696,150 @@ test('a project lock RAVIS gave to another editor is the fence: the work is neve
 
     assert.deepEqual(h.git.saves, [], 'nothing was committed');
     assert.equal(session.settles.length + waiting.settles.length, 0);
+  }));
+
+const NPM_COMMAND: RunningCommand = { pid: 48210, pgid: 48210, start: 'Sun Sep 13 05:41:07 2026', comm: 'npm' };
+
+/** A checkout on disk, with a git folder for the lock file, removed afterwards. */
+async function withCheckout(run: (root: string, gitDir: string) => Promise<void>): Promise<void> {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-codex-checkout-')));
+  const gitDir = path.join(root, '.git');
+  fs.mkdirSync(gitDir);
+  try {
+    await run(root, gitDir);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+}
+
+/** The lock file an editor left when it closed mid-run, still recording the command it had going. */
+function closedEditorsLock(file: string, command: RunningCommand | null): void {
+  const content: LockFileContent = {
+    version: 3,
+    ravis_lock_id: null,
+    taskId: 'the-closed-editors-task',
+    engine: 'clarvis',
+    state: 'running',
+    holder: { kind: 'clarvis_run', session_id: null, pid: 999_999, pid_start: 'Sun Sep 13 01:00:00 2026', window_id: WINDOW_B.id, host: WINDOW_B.host, since: '2026-09-13T01:12:00Z' },
+    heartbeatAt: '2026-09-13T01:40:00Z',
+    waitingOnYou: false,
+    leftover: [],
+    takenOverFrom: null,
+    running_command: command,
+  };
+  fs.writeFileSync(file, encodeLockFile(content), { mode: 0o600 });
+}
+
+/** The real project lock over the fake, with the other editor judged `verdict` and its command's stop recorded. */
+function checkoutFloor(h: Harness, root: string, gitDir: string, verdict: Verdict, stopped: RunningCommand[]): CodexLockFloor {
+  return {
+    takeFromGoneEditor: async (taskId) => {
+      const outcome = await takeProjectLock({
+        root,
+        gitDir,
+        taskId,
+        window: WINDOW_A,
+        pid: process.pid,
+        pidStart: 'Sun Sep 13 05:10:02 2026',
+        locks: new LockClient(h.http),
+        adopt: true,
+        judge: async () => verdict,
+        stopGroup: async (command) => {
+          stopped.push(command);
+          h.sent.push("the closed editor's command stopped");
+          return { gone: true, signalled: 2 };
+        },
+        every: () => () => undefined,
+      });
+      return outcome.held ? { release: () => outcome.lock.release() } : { refusal: outcome.line };
+    },
+  };
+}
+
+test('a task an editor that closed left paused is reconciled: its command stopped, the checkout adopted, the work saved, the lock let go after (F-A9)', () =>
+  withCodex((h) =>
+    withCheckout(async (root, gitDir) => {
+      const file = lockFilePath(root, gitDir);
+      closedEditorsLock(file, NPM_COMMAND);
+      const session = h.machine.seed({ root, state: 'uncertain', turnActive: false });
+      h.tokens.save(root, session.id, session.token, session.taskId);
+      h.machine.supersedeLock(session);
+      const stopped: RunningCommand[] = [];
+      const core = h.core({ workspace: { root, gitDir }, floor: checkoutFloor(h, root, gitDir, 'gone', stopped), cursors: mapCursors(new Map()) });
+
+      const run = follow(core.attach(summaryOf(session), new AbortController().signal));
+      const done = await run.next(isDone);
+      await run.ended();
+
+      assert.deepEqual(stopped, [NPM_COMMAND], 'what the closed editor left running was stopped first');
+      assert.deepEqual(
+        h.sent.filter((line) => /stopped|project-locks|settle/.test(line)),
+        [
+          "the closed editor's command stopped",
+          'POST /api/v1/project-locks',
+          `POST /api/v1/agent-sessions/${session.id}/settle-claim`,
+          `POST /api/v1/agent-sessions/${session.id}/settle`,
+          `POST /api/v1/project-locks/${FIXTURE_LOCK.id}/release`,
+        ],
+        'stopped, adopted, claimed, saved — and only then let go'
+      );
+      const adopt = h.fake.seen.find((request) => request.path === '/api/v1/project-locks')?.body as { adopt_file_lock?: boolean; clarvis_task_id?: string };
+      assert.deepEqual([adopt.adopt_file_lock, adopt.clarvis_task_id], [true, session.taskId]);
+      assert.equal(h.git.saves.length, 1);
+      assert.ok(chat(run).includes(CODEX_LINES.adoptedFromGoneEditor));
+      assert.notEqual(done.text, CODEX_LINES.superseded);
+      assert.equal(fs.existsSync(file), false, 'the lock file is gone once the run is over');
+    })
+  ));
+
+test('a task paused for an editor that is still there stays fenced: nothing is stopped, adopted, claimed or saved', () =>
+  withCodex((h) =>
+    withCheckout(async (root, gitDir) => {
+      const file = lockFilePath(root, gitDir);
+      closedEditorsLock(file, NPM_COMMAND);
+      const session = h.machine.seed({ root, state: 'uncertain', turnActive: false });
+      h.tokens.save(root, session.id, session.token, session.taskId);
+      h.machine.supersedeLock(session);
+      const stopped: RunningCommand[] = [];
+      const core = h.core({ workspace: { root, gitDir }, floor: checkoutFloor(h, root, gitDir, 'unresponsive', stopped), cursors: mapCursors(new Map()) });
+
+      const done = await follow(core.attach(summaryOf(session), new AbortController().signal)).next(isDone);
+
+      assert.equal(done.text, CODEX_LINES.superseded);
+      assert.deepEqual(stopped, []);
+      assert.equal(h.sent.some((line) => line.includes('project-locks') || line.endsWith('/settle-claim')), false);
+      assert.deepEqual(h.git.saves, []);
+      const read = readLockFile(file);
+      assert.equal(read.kind === 'present' && read.content.holder.window_id, WINDOW_B.id, "the other editor's lock file is untouched");
+    })
+  ));
+
+test('"carry on" after the step cap is a carry_on turn on the same session, followed to its own settle — never a new task', () =>
+  withCodex(async (h) => {
+    const { run, session, core } = await started(h);
+    h.machine.completeTurn(session, { status: 'interrupted', error: { kind: 'step_cap', message: 'The step cap of 25 was reached.' } });
+    await run.next(isDone);
+    await run.ended();
+    assert.equal(core.endedAtStepCap, true);
+    // As it happens live: the first run closed its stream once its settle was answered, before RAVIS's `idle`
+    // reached it, so this host's cursor stops just short of the last turn's end.
+    h.cursors.set(session.id, session.stream.latestId - 1);
+
+    const next = h.core();
+    const carried = follow(next.carryOn(session.id, 'Carry on where you stopped.', new AbortController().signal));
+    await waitFor(() => session.turns.length === 1, 'the carry-on turn');
+    h.machine.completeItem(session, message('msg_rest', 'Finished the rest.'));
+    h.machine.completeTurn(session);
+    const done = await carried.next(isDone);
+
+    assert.deepEqual(session.turns, [{ text: 'Carry on where you stopped.', kind: 'carry_on' }]);
+    const read = h.sent.lastIndexOf(`GET /api/v1/agent-sessions/${session.id}`);
+    assert.ok(read !== -1 && read < h.sent.indexOf(`POST /api/v1/agent-sessions/${session.id}/turns`), 'where the stream stands is read before the turn starts');
+    assert.equal(h.machine.all.length, 1, 'no second session');
+    assert.deepEqual(h.git.begun, [TASK], 'no second branch');
+    assert.equal(done.text, 'Finished the rest.');
+    assert.equal(session.settles.length, 2);
+    assert.equal(next.endedAtStepCap, false);
   }));
 
 test('RAVIS restarting mid-turn says the last step may not have finished, and the work is still saved', () =>

@@ -21,11 +21,14 @@ import type { AgentTerminal } from '../../agent/tools/commandTools';
 import type { CodingRun } from '../CodingRun';
 import { windowIdentity } from '../engineHost';
 import { findGitDir, gitDirForRelay } from '../lock/gitDir';
+import type { LockClient } from '../lock/lockClient';
+import { ownStart } from '../lock/processProbe';
+import { takeProjectLock } from '../lock/projectLock';
 import type { RelayClient } from '../relay/relayClient';
 import type { Decision, RequestView, SessionMode, SessionSummary } from '../relay/relayTypes';
 import { TokenStore } from '../relay/tokenStore';
 import { CodexGitGlue } from './codexGit';
-import { CodexRunCore, type CodexCursors } from './runCore';
+import { CodexRunCore, type CodexCursors, type CodexLockFloor } from './runCore';
 import { declinedLine } from './translate';
 
 const PRESENCE_TICK_MS = 5_000;
@@ -36,6 +39,8 @@ export interface RemoteCodexDeps {
   context: vscode.ExtensionContext;
   root: string;
   relay: RelayClient;
+  /** RAVIS's lock API, for taking a paused task's checkout over from an editor that closed (F-A9). */
+  locks?: LockClient;
   terminal: AgentTerminal;
   log: (line: string) => void;
   mode: SessionMode;
@@ -59,6 +64,7 @@ export class RemoteCodexRunner implements CodingRun {
       mode: deps.mode,
       maxSteps: deps.maxSteps,
       ask: (request) => this.declineUntilApprovals(request),
+      floor: deps.locks ? checkoutFloor(deps, deps.locks) : undefined,
       terminal: (text) => deps.terminal.write(text),
       log: deps.log,
     });
@@ -76,6 +82,16 @@ export class RemoteCodexRunner implements CodingRun {
   /** A new token for a task whose token file lost it. Undefined once kept; otherwise why not. */
   reissue(summary: SessionSummary): Promise<string | undefined> {
     return this.core.reissue(summary);
+  }
+
+  /** "Carry on" after the step cap: a new turn on the same Codex session, followed like the first (design §5.5). */
+  carryOn(sessionId: string, text: string, signal: AbortSignal): AsyncIterable<AgentEvent> {
+    return this.followed(this.core.carryOn(sessionId, text, signal));
+  }
+
+  /** The task's last turn ended at RAVIS's step cap. */
+  get endedAtStepCap(): boolean {
+    return this.core.endedAtStepCap;
   }
 
   interject(text: string): void {
@@ -137,6 +153,30 @@ export class RemoteCodexRunner implements CodingRun {
     this.core.note(declinedLine(request));
     return request.allowed_decisions.includes('skip') ? { kind: 'skip' } : undefined;
   }
+}
+
+/**
+ * The checkout lock file, for a task RAVIS paused because another editor held the checkout when it restarted:
+ * taken over only when that editor is gone by the shared lock rule, after what it left running is stopped,
+ * and registered with RAVIS as an adoption (design §5.7 step 6; final check F-A9).
+ */
+function checkoutFloor(deps: RemoteCodexDeps, locks: LockClient): CodexLockFloor {
+  return {
+    takeFromGoneEditor: async (taskId) => {
+      const outcome = await takeProjectLock({
+        root: deps.root,
+        gitDir: findGitDir(deps.root),
+        taskId,
+        window: windowIdentity(),
+        pid: process.pid,
+        pidStart: (await ownStart()) ?? '',
+        locks,
+        adopt: true,
+        log: deps.log,
+      });
+      return outcome.held ? { release: () => outcome.lock.release() } : { refusal: outcome.line };
+    },
+  };
 }
 
 /** The last event id per session, kept per host in `workspaceState` and written at most once a second. */

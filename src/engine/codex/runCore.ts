@@ -30,7 +30,12 @@
  *   is done again here.
  * - A request is asked once however often it is replayed (`QuestionBoard`).
  * - Work is committed only by the window holding RAVIS's settle claim, and never once RAVIS says the
- *   project lock was superseded — the fence, for a Codex task.
+ *   project lock was superseded — the fence, for a Codex task. The one way past it: the editor that held
+ *   the checkout when RAVIS restarted has closed (`gone` by the shared lock rule). Then this window stops
+ *   what that editor left running, takes the checkout lock file, registers it with RAVIS as an adoption,
+ *   and only then claims, saves and settles — letting the lock go once the run is over (final check F-A9).
+ * - "Carry on" after RAVIS's step cap is a new `carry_on` turn on the same session, followed like the
+ *   first, never a new task on a new branch (design §5.5).
  * - A panel that stops pinging is reported detached and its stream closed; when it pings again, presence
  *   is posted at once and the stream reopens from its cursor (review AH2, final check F-A8).
  */
@@ -107,6 +112,23 @@ export interface CodexGit {
 /** Puts one of Codex's requests to the owner. `signal` aborts when the request no longer wants an answer. */
 export type EngineAsker = (request: RequestView, signal: AbortSignal) => Promise<Decision | undefined>;
 
+/** A checkout lock this window took over, let go of once the run is over. */
+export interface AdoptedCheckout {
+  release(): Promise<unknown>;
+}
+
+/**
+ * The checkout lock file, for a Codex task RAVIS paused because another editor held the checkout when
+ * RAVIS restarted (design §5.7 step 6, §6.3's restart adoption rule; final check F-A9).
+ */
+export interface CodexLockFloor {
+  /**
+   * Takes the checkout from that editor when it is `gone` — after stopping what it had running — and
+   * registers it with RAVIS with `adopt_file_lock`. A refusal when it is still there, or couldn't be judged.
+   */
+  takeFromGoneEditor(taskId: string): Promise<AdoptedCheckout | { refusal: string }>;
+}
+
 export interface CodexTiming {
   streamBackoffMs: readonly number[];
   silenceLimitMs: number;
@@ -137,6 +159,8 @@ export interface CodexRunOptions {
   mode: SessionMode;
   maxSteps: number;
   ask: EngineAsker;
+  /** Absent: a task RAVIS paused for another editor is only followed from here, never saved. */
+  floor?: CodexLockFloor;
   /** Codex's streamed text and command output: the terminal only (design §5.5). */
   terminal?: (text: string) => void;
   log?: (line: string) => void;
@@ -198,6 +222,11 @@ export class CodexRunCore {
   private delivering = false;
   private finished = false;
   private failed = false;
+  /** The last turn ended at RAVIS's step cap, so "carry on" continues this session. */
+  private stepCap = false;
+  /** F-A9's adoption is tried once per run. */
+  private adoptionTried = false;
+  private adopted: AdoptedCheckout | undefined;
 
   private readonly handlers = new Map<string, Handler>([
     ['snapshot', (data) => this.onSnapshot(data as unknown as SessionView)],
@@ -252,6 +281,35 @@ export class CodexRunCore {
     this.state = summary.state;
     yield { kind: 'text', text: reattachedLine(summary), toChat: true };
     yield* this.follow(signal, this.options.cursors.get(summary.id));
+  }
+
+  /**
+   * "Carry on" after the step cap (design §5.5): a `carry_on` turn on the same session, then followed as
+   * before. A turn RAVIS says is already running got the text as a steer instead, and is followed all the same.
+   */
+  async *carryOn(sessionId: string, text: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+    const started = await this.startCarryOn(sessionId, text);
+    if ('line' in started) {
+      yield started.failed ? this.failure(started.line) : this.doneEvent(started.line);
+      return;
+    }
+    yield* this.follow(signal, started.cursor);
+  }
+
+  /**
+   * Reads where the session's stream stands, then starts the turn, and follows from that point. Not from this
+   * host's stored cursor: the run that ended at the step cap may have closed its stream before RAVIS's `idle`
+   * arrived, and replaying that old ending would end this run before its turn began.
+   */
+  private async startCarryOn(sessionId: string, text: string): Promise<{ cursor: number } | { line: string; failed: boolean }> {
+    const read = this.options.tokens.read(this.options.workspace.root, sessionId);
+    if (read.kind !== 'found') return { line: tokenLine(read), failed: true };
+    this.session = { id: sessionId, token: read.entry.token, taskId: read.entry.taskId };
+    const view = await this.options.relay.getSession(sessionId, read.entry.token);
+    if (!view.ok) return { line: failureLine(view.failure, 'during'), failed: true };
+    this.noteDetails(view.value);
+    const refused = await this.continueTurn(text, 'carry_on');
+    return refused && refused !== CODEX_LINES.passedOn ? { line: refused, failed: false } : { cursor: view.value.last_event_id };
   }
 
   /** A new token for a session whose token file lost it (design §3.5.1): undefined once kept, else why not. */
@@ -347,6 +405,11 @@ export class CodexRunCore {
     return this.finished;
   }
 
+  /** The last turn this window saw ended at RAVIS's step cap: "carry on" should continue this session. */
+  get endedAtStepCap(): boolean {
+    return this.stepCap;
+  }
+
   /** The turn Codex is in, as far as this window has heard; a steer names it. */
   get activeTurnId(): string | null {
     return this.activeTurn;
@@ -421,6 +484,8 @@ export class CodexRunCore {
       signal.removeEventListener('abort', onAbort);
       this.finish();
       await pumping;
+      // Only now, with nothing more to save from here: a checkout taken over for the save is let go (F-A9).
+      await this.releaseAdopted();
     }
   }
 
@@ -550,6 +615,7 @@ export class CodexRunCore {
 
   private onTurnCompleted(data: Record<string, unknown>): void {
     this.activeTurn = null;
+    this.stepCap = (data.error as { kind?: unknown } | undefined)?.kind === 'step_cap';
     if (data.status === 'failed') this.failed = true;
     const line = turnEndLine(data.status, data.error);
     if (line) this.say(line);
@@ -695,12 +761,53 @@ export class CodexRunCore {
     if (this.settling || this.finished || !this.attached || !session) return;
     this.settling = true;
     try {
-      const claim = await this.options.relay.claimSettle(session.id, session.token, this.options.window.id);
-      if (claim.ok) await this.saveAndSettle(session, claim.value.claim_id);
-      else this.claimRefused(claim.failure);
+      await this.claimAndSave(session);
     } finally {
       this.settling = false;
     }
+  }
+
+  /** The claim, then the save — after taking the checkout over from a gone editor, when RAVIS's lock was superseded. */
+  private async claimAndSave(session: Session): Promise<void> {
+    if (this.superseded && !(await this.adoptCheckout(session))) return this.fenced();
+    const claim = await this.options.relay.claimSettle(session.id, session.token, this.options.window.id);
+    if (claim.ok) return this.saveAndSettle(session, claim.value.claim_id);
+    if (this.mayAdoptAfter(claim.failure)) {
+      this.superseded = true;
+      return this.claimAndSave(session);
+    }
+    this.claimRefused(claim.failure);
+  }
+
+  /** RAVIS refused the claim as superseded, and this window hasn't tried taking the checkout over yet. */
+  private mayAdoptAfter(failure: RelayFailure): boolean {
+    return refusalCode(failure) === 'LOCK_SUPERSEDED' && this.options.floor !== undefined && !this.adoptionTried;
+  }
+
+  /**
+   * Takes the checkout over from the editor that held it when RAVIS restarted, if that editor is gone
+   * (final check F-A9). False — and the fence stands — when there is no lock file to use, or the editor is
+   * still there, or couldn't be judged.
+   */
+  private async adoptCheckout(session: Session): Promise<boolean> {
+    const floor = this.options.floor;
+    if (!floor || this.adoptionTried) return false;
+    this.adoptionTried = true;
+    const taken = await floor.takeFromGoneEditor(session.taskId);
+    if ('refusal' in taken) {
+      this.log(`codex: the checkout stays with the other editor (${taken.refusal})`);
+      return false;
+    }
+    this.adopted = taken;
+    this.superseded = false;
+    this.say(CODEX_LINES.adoptedFromGoneEditor);
+    return true;
+  }
+
+  private async releaseAdopted(): Promise<void> {
+    const adopted = this.adopted;
+    this.adopted = undefined;
+    if (adopted) await adopted.release();
   }
 
   private claimRefused(failure: RelayFailure): void {

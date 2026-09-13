@@ -363,9 +363,17 @@ waited on a run without a time limit hung instead of failing — and both tests 
 **Not verified here:** anything inside VS Code — `RunSession`, `AgentRunner`, `ChatService`, the palette
 in `extension.ts`, `Replier` and the panel's 10-second ping import `vscode` and were read, not run — and
 anything against a real RAVIS, whose relay (R3) isn't built. `npm run test:host` wasn't run (its
-`stable` lookup is a network call); `src/test/engineChoice.spec.ts` is written for it. Still open in
-C2a: reconciling a `gone` window that superseded RAVIS's lock, the command group kill, and wiring
-"carry on" to `continueTurn`.
+`stable` lookup is a network call); `src/test/engineChoice.spec.ts` is written for it.
+
+**Finished in a second pass the same day.** A window that finds a closed window's lock file stops the
+command that window recorded as running — its whole process group and every descendant, each checked by
+pid and start time in the C locale before any signal, SIGTERM then SIGKILL, then confirmed gone — before it
+takes the file (`groupKill.ts`, `processTable.ts`); a command that won't stop keeps the file and names
+itself. A Codex task RAVIS paused because another editor held the checkout is saved from here once that
+editor is gone: its command stopped, the lock file taken and registered with RAVIS as an adoption, then the
+claim, the commit and the settle (final check F-A9). And **Carry on** after RAVIS's step cap starts a
+`carry_on` turn on the same session instead of a new task. Still open in C2a: routing typed text into the
+checkpoint's `latestFeedback`, which needs C3's checkpoint.
 
 ## The complexity budget, and where it stands
 
@@ -428,7 +436,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1700 tests (13 Sep, after M15 C2a)
+npm test               # node's built-in test runner, no framework — 1719 tests (13 Sep, after M15 C2a's second pass)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

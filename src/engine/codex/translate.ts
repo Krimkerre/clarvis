@@ -35,6 +35,9 @@ export const CODEX_LINES = {
   uncertain:
     'RAVIS restarted while Codex was working. The last step may not have finished; its changes are in the project.',
   superseded: "Codex's task is paused until Clarvis's own run here finishes.",
+  adoptedFromGoneEditor:
+    "The editor that paused this Codex task has closed, so this one stopped what it left running and took the project over to save Codex's work.",
+  carryOnOffer: 'Codex used all the steps it may take in one go. Carry on where it stopped?',
   otherEditorSaving: "The other editor is saving Codex's work.",
   savedElsewhere: "Codex's work was saved from the other editor.",
   tokenRefused: "RAVIS no longer accepts this editor's key to that Codex task, so it can't be followed from here.",

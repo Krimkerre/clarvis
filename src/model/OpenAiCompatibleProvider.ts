@@ -56,6 +56,27 @@ export function probeAnswered(status: number): boolean {
   return status >= 400 && status < 500 && !isAboutAccess(status);
 }
 
+/**
+ * How long an endpoint that answered is still believed up when one readiness probe goes
+ * unanswered.
+ *
+ * **Found live, 13 September 2026.** Mid-interview, one `/v1/models` probe to RAVIS missed its
+ * 2 s timeout while RAVIS was busy with failing catalogue refreshes — it answered in under 25 ms
+ * before and after — and planning logged "no model configured" and used the written question.
+ * `isReady` is asked before nearly every model call, so one slow moment turned into a claim
+ * about configuration. A minute is long enough to cover that moment, and short enough that an
+ * endpoint that has really gone is noticed; the call itself still reports a real failure.
+ */
+export const REACHABLE_GRACE_MS = 60_000;
+
+/** When each endpoint last answered a readiness probe. Module-level: a provider is built per call. */
+const ANSWERED_AT = new Map<string, number>();
+
+/** Whether an endpoint that last answered at `answeredAt` still counts as up at `now`. */
+export function stillReachable(answeredAt: number | undefined, now: number, graceMs = REACHABLE_GRACE_MS): boolean {
+  return answeredAt !== undefined && now - answeredAt < graceMs;
+}
+
 /** The shape of a streamed chunk, as far as this file cares about it. */
 interface OpenAiChunk {
   choices?: {
@@ -139,13 +160,21 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   async isAvailable(): Promise<boolean> {
     if (this.spec.needsKey) return Boolean(await this.getKey());
 
+    const url = this.baseUrl;
     try {
-      const response = await fetch(`${this.baseUrl}/v1/models`, {
+      const response = await fetch(`${url}/v1/models`, {
         signal: AbortSignal.timeout(2000),
       });
+      if (response.ok) ANSWERED_AT.set(url, Date.now());
+      // A server that answered with an error did answer: that is a real "not available".
       return response.ok;
     } catch {
-      return false;
+      // Unanswered — a timeout or a dropped connection. Right after an answer, that is a slow
+      // moment rather than an outage (see `REACHABLE_GRACE_MS`); the call itself still reports
+      // a real failure if there is one.
+      const recent = stillReachable(ANSWERED_AT.get(url), Date.now());
+      if (recent) this.log(`model: ${url} did not answer the readiness check in 2 s, but did a moment ago — still treated as available`);
+      return recent;
     }
   }
 

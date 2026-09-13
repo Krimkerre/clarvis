@@ -117,3 +117,35 @@ test('a model that answers the probe supports tools', async () => {
 
   assert.equal(supported, true);
 });
+
+// ------------------- one slow readiness check is not "no model configured"
+
+import { REACHABLE_GRACE_MS, stillReachable } from './OpenAiCompatibleProvider';
+
+test('an endpoint that just answered still counts as up, for a minute', () => {
+  assert.equal(stillReachable(1_000, 1_000 + 5_000), true);
+  assert.equal(stillReachable(1_000, 1_000 + REACHABLE_GRACE_MS + 1), false);
+  assert.equal(stillReachable(undefined, 1_000), false);
+});
+
+test('a readiness check that times out right after an answered one is still ready', async () => {
+  // Found live, 13 September 2026: one `/v1/models` check to RAVIS missed its 2 s timeout
+  // mid-interview, and planning logged "no model configured" and used the written question.
+  // Its own base URL, because the memory of answers outlives any one provider object.
+  const spec = providerSpec('custom');
+  assert.ok(spec);
+  const url = `http://readiness-${Date.now()}.invalid`;
+  const checked = new OpenAiCompatibleProvider(spec, async () => undefined, () => url, () => {});
+  const unanswered = (async () => {
+    throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  }) as typeof fetch;
+
+  assert.equal(await withFetch(unanswered, () => checked.isAvailable()), false, 'never answered: not ready');
+  assert.equal(await withFetch(async () => new Response('{"data":[]}', { status: 200 }), () => checked.isAvailable()), true);
+  assert.equal(await withFetch(unanswered, () => checked.isAvailable()), true, 'answered a moment ago: one slow check is not an outage');
+  assert.equal(
+    await withFetch(async () => new Response('down', { status: 500 }), () => checked.isAvailable()),
+    false,
+    'an error the server answered with is a real answer'
+  );
+});

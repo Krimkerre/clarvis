@@ -5050,16 +5050,18 @@ source and of tests.
 - [x] RAVIS's contract fixtures copied into `src/test/fixtures/`, held to `codex-contract.sha256` by `src/test/codexContractFixtures.test.ts`
   - Check: `npm test` — the copy matches its manifest and, with the NERVIS-ecosystem checkout beside this one, RAVIS's own files
 
-**C1 — relay and lock clients, and the fake RAVIS** (about 1,100 / 1,300)
-- [ ] Message nervis-ecosystem-fc before the first edit; `git status` right before every commit
-- [ ] `src/engine/relay/`: `relayClient` (idempotent HTTP), `sseReader` (resume with `Last-Event-ID`, heartbeats, recovery from `409 EVENT_CURSOR_EXPIRED`), `tokenStore` (the 0600 token file), `credentialFile`, `presence`
+**C1 — relay and lock clients, and the fake RAVIS** (about 1,100 / 1,300; built 13 Sep at 2,083 source lines, 1,916 test lines and 888 lines of fake and fixture checker)
+- [x] Message nervis-ecosystem-fc before the first edit; `git status` right before every commit
+  - The coordinating session told nervis-ecosystem-fc before the work started; `git status` showed nothing else changed before the commit
+- [x] `src/engine/relay/`: `relayClient` (idempotent HTTP), `sseReader` (resume with `Last-Event-ID`, heartbeats, recovery from `409 EVENT_CURSOR_EXPIRED`), `tokenStore` (the 0600 token file), `credentialFile`, `presence`
   - Check: SSE resume and cursor-expiry tests; the token file's folder and file modes asserted
-- [ ] `src/engine/lock/`: `lockClient`, `fileLock` (atomic `open(path, 'wx', 0o600)`), `lockRule.ts`
+- [x] `src/engine/lock/`: `lockClient`, `fileLock` (atomic `open(path, 'wx', 0o600)`), `lockRule.ts`
   - Check: `lockRule` passes every case in `src/test/fixtures/lock-rule-cases.json`; the file lock's atomic create holds under a race
-- [ ] `src/test/fakes/FakeRavisRelay.ts`, a labelled test double built from the fixtures
+- [x] `src/test/fakes/FakeRavisRelay.ts`, a labelled test double built from the fixtures
   - Check: every response the fake gives is validated against `src/test/fixtures/relay-contract/`
-- [ ] `eslint.config.mjs`: complexity 8 for `src/engine/**`
+- [x] `eslint.config.mjs`: complexity 8 for `src/engine/**`
   - Check: `npm run check`
+- Built with them, and not wired into the extension yet (C2a does that): `relayFailure` keeps an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering apart; `processProbe` reads `ps` in the C locale, because a Dutch locale prints "zo 13 sep." and a live holder would look gone; `src/test/fakes/relayContract.ts` is the fixture checker the fake uses. Every guard was broken on purpose and its test failed, 38 of 38, then restored. `npm run check`: 1,604 tests pass. `npm run test:host` was not run: its `stable` version lookup is a network call, and C1 adds nothing the extension host loads.
 
 **C2a — the remote runner, reattach, Stop, steer and the factory** (about 1,980 / 2,270)
 - [ ] `src/engine/codex/runCore.ts` (pure) and `RemoteCodexRunner.ts` (vscode glue); `engineChoice.ts`; `CodingRun.ts`; `src/chat/codingRunFactory.ts`; `RunSession` (factory, `attach`, the Clarvis-engine lock with the fence); `ChatService` (reattach on activation, `runTook` routing); the `extension.ts` and `Replier.ts` guards; the pickers; the `X-Clarvis-Engines` header; `AgentRunner`'s `engine`, `drainInterjections` and `stillHolds`

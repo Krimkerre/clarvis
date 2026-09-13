@@ -64,19 +64,23 @@ break Clarvis planning against its own repo.
 | `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
-| `src/test/` | ~57 | Host-level smoke tests (`npm run test:host`), not the main suite. |
+| `src/engine/` | ~2,083 | The Codex engine's plumbing (M15 C1, 13 Sep), **not yet used by the extension**. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence. `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, and the lock rule shared with RAVIS through `lock-rule-cases.json`. vscode-free, complexity limit 8. |
+| `src/test/` | ~57 | Host-level smoke tests (`npm run test:host`), not the main suite. Beside them, `fakes/` (~888) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures. |
 
-**41,940 lines of TypeScript across 281 files** — 29,580 source, 12,360 test. `plan.md`
-§11 breaks that down and is re-counted rather than nudged.
+**54,747 lines of TypeScript across 366 files** (recounted 13 Sep) — 35,570 source, 19,177
+test, counting `src/test/fakes/` as test. `plan.md` §11 breaks an older count down and is
+re-counted rather than nudged.
 
 ## What's built vs designed
 
 Milestones are numbered M0–M15 in `plan.md` §7 — there is no M12 — and tracked with
 per-milestone exit checklists (257 checklist lines, recounted 12 Sep; this said M0–M12 and
 261 until then). M14, the NERVIS Bridge, was signed off on 29 Aug and is built, which the
-list below predates. **M15, Codex tasks through RAVIS, was signed off on 13 Sep and nothing
-of it is built** — only RAVIS's contract fixtures, copied into `src/test/fixtures/` and
-checked by `src/test/codexContractFixtures.test.ts`. **§7 is the authority; this is a copy, and
+list below predates. **M15, Codex tasks through RAVIS, was signed off on 13 Sep; of it only C1
+is built** — the relay and lock clients in `src/engine/` and `FakeRavisRelay` in
+`src/test/fakes/`, all tested against RAVIS's contract fixtures (copied into `src/test/fixtures/`
+and checked by `src/test/codexContractFixtures.test.ts`), none of it reachable from the
+extension yet. Choosing Codex, running a task and reattaching start at C2a. **§7 is the authority; this is a copy, and
 copies drift** — believe it over this file, the README and the manual, all three of
 which restate it. Current status:
 
@@ -373,7 +377,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1450 tests currently
+npm test               # node's built-in test runner, no framework — 1604 tests (13 Sep)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

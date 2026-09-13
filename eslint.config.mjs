@@ -55,6 +55,13 @@ export default tseslint.config(
     },
   },
   {
+    // The Codex engine (plan.md M15): new code, held to a tighter branch budget from its first
+    // line, so none of it grows into another function sitting at the ceiling. This block comes
+    // before the tests block on purpose, so tests beside these modules keep the tests' exemptions.
+    files: ['src/engine/**/*.ts'],
+    rules: { complexity: ['error', 8] },
+  },
+  {
     // Tests describe *why* a rule exists, at length, and set up deliberately awkward
     // states. Holding them to the production thresholds would mean shortening the
     // explanations, which are the point of them.

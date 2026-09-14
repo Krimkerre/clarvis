@@ -476,7 +476,7 @@ export class AgentRunner implements CodingRun {
       const provider = this.models.spec(role);
       return {
         kind: 'error',
-        text: `The coding model isn't configured — ${provider.label} has no key. The bowtie by the prompt sorts that out.`,
+        text: `The coding model isn't configured — ${provider.label} has no key. API config, in the bowtie menu by the prompt, sorts that out.`,
       };
     }
 

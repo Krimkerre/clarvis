@@ -190,7 +190,14 @@ document
   .addEventListener('click', () => vscode.postMessage({ type: 'show-output' }));
 
 const modelsButton = document.getElementById('clarvis-models');
-modelsButton.addEventListener('click', () => vscode.postMessage({ type: 'models' }));
+// The bowtie opens its fold-out menu (media/bowtieMenu.js, M15 C2b+): API config, which posts `models` as the bowtie
+// itself used to, and a Codex section the host fills when the menu opens.
+const bowtieMenu = ClarvisBowtieMenu.createBowtieMenu({
+  document,
+  button: modelsButton,
+  panel: document.getElementById('clarvis-bowtie-menu'),
+  post: (message) => vscode.postMessage(message),
+});
 
 const modeButton = document.getElementById('clarvis-mode');
 modeButton.addEventListener('click', () => vscode.postMessage({ type: 'choose-mode' }));
@@ -317,6 +324,12 @@ window.addEventListener('message', (event) => {
 
   if (msg.type === 'model-info') {
     modelsButton.title = msg.text;
+    return;
+  }
+
+  // The Codex section of the bowtie's menu, read from RAVIS when the menu opened.
+  if (msg.type === 'codex-menu') {
+    bowtieMenu.render(msg.state);
     return;
   }
 

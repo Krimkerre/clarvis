@@ -15,6 +15,7 @@ import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
 import { chatAction, isContinueRequest, isStopRequest } from './chatCommands';
 import { ChatActions } from './ChatActions';
+import { CodexMenu } from './codexMenuHost';
 import { ModelService } from '../model/ModelService';
 import { routeFor } from './routing';
 import { classifyIntent } from './intentModel';
@@ -166,6 +167,8 @@ export class ChatService {
 
   /** The things chat can *do*, as opposed to answer. */
   private readonly actions: ChatActions;
+  /** The Codex section of the bowtie's fold-out (M15 C2b+). */
+  private readonly codexMenu: CodexMenu;
 
   /** Present only while a planning interview is running in the panel. */
   private planningIO?: PlanningChatIO;
@@ -1018,6 +1021,7 @@ export class ChatService {
       (needle) => this.forgetPattern(needle),
       patterns
     );
+    this.codexMenu = new CodexMenu({ models, post: (message) => panel.post(message), log, taskRunning: () => this.runs.codexTaskRunning });
 
     this.panel.onDidAsk((question) => void this.ask(question));
     this.panel.onDidToggleMute(() => this.voice.toggleMute());
@@ -1041,13 +1045,17 @@ export class ChatService {
       void this.remarkOnModels();
       void vscode.commands.executeCommand('clarvis.configureModels');
     });
+    // M15 C2b+: the bowtie opens a fold-out. API config above posts `models`, the path just above, unchanged; the Codex
+    // section is read from RAVIS when the menu opens, and a pick in it is kept in the owner's own settings.
+    this.panel.onDidOpenBowtieMenu(() => void this.codexMenu.opened());
+    this.panel.onDidChooseCodex((picked) => void this.codexMenu.chose(picked));
     this.panel.onDidRequestMode(() => void this.actions.chooseMode());
 
     // Keep the bowtie's tooltip honest when the settings change underneath it —
     // including from the picker it opens, so it never describes the previous choice.
     this.context.subscriptions.push(
       vscode.workspace.onDidChangeConfiguration((event) => {
-        if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent')) {
+        if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent') || event.affectsConfiguration('clarvis.codex')) {
           this.actions.postModelInfo();
           this.actions.postMode();
           // **A switch to Unattended answers the question already on the table.**
@@ -1291,7 +1299,7 @@ export class ChatService {
     }
 
     await this.say(
-      "That's beyond what I've watched happen here, and there's no model wired up to think about it. The bowtie by the prompt sorts that out.",
+      "That's beyond what I've watched happen here, and there's no model wired up to think about it. API config, in the bowtie menu by the prompt, sorts that out.",
       'neutral'
     );
   }

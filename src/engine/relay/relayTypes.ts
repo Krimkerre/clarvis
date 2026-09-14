@@ -74,6 +74,32 @@ export interface CodexState {
   account?: { fingerprint_matches?: boolean } | null;
   /** The models Codex offers this account, from Codex's `model/list`. Empty while signed out. */
   models?: CodexModel[];
+  /** The ChatGPT plan's allowance, as Codex last reported it: never money, and never 0 when unknown. */
+  usage?: CodexUsage;
+}
+
+/** `GET /api/v1/codex` → `usage` (`codex-state.json` usage_rules). */
+export interface CodexUsage {
+  /** False until Codex has reported: then `windows` is empty and there are no percentages. */
+  known: boolean;
+  /** True after 30 minutes without a reading while no turn runs. */
+  stale: boolean;
+  observed_at: string | null;
+  /** Codex's `rateLimitReachedType`: non-null once a limit is reached. */
+  limit_reached: unknown;
+  spend_control_reached: boolean | null;
+  windows: CodexUsageWindow[];
+}
+
+/** One allowance window: the five-hour one, the weekly one. */
+export interface CodexUsageWindow {
+  id: string;
+  /** From the window's length, e.g. "5-hour window". */
+  label: string;
+  duration_minutes: number;
+  used_percent: number;
+  remaining_percent: number;
+  resets_at: string;
 }
 
 /** One Codex model and the efforts it takes (`codex-state.json` → `models`). */

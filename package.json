@@ -179,6 +179,18 @@
           "scope": "machine",
           "markdownDescription": "Desktop VS Code only: the file holding Clarvis's key for RAVIS on this Mac (the launcher's `.run/clarvis-ravis.token`), so this editor can run and follow Codex tasks. code-server gets the key from the launcher and doesn't need it. **Machine-scoped on purpose:** a project you open cannot point this anywhere."
         },
+        "clarvis.codex.model": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "markdownDescription": "The Codex model a new Codex task runs, from those RAVIS lists for your ChatGPT plan. Empty uses the plan's default model. Choose it in the menu behind the bowtie beside the chat box; a task keeps the model it started with. **Your own settings only:** a project's settings never choose it."
+        },
+        "clarvis.codex.effort": {
+          "type": "string",
+          "default": "",
+          "scope": "application",
+          "markdownDescription": "How hard Codex thinks in a new task: one of the levels its model offers, such as `low`, `medium` or `high`. Empty uses that model's default. A bigger model or higher effort uses the ChatGPT plan's allowance faster. **Your own settings only.**"
+        },
         "clarvis.chat.mode": {
           "type": "string",
           "default": "auto",

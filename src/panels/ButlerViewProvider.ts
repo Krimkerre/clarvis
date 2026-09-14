@@ -98,7 +98,11 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       'show-history': () => this.historyRequested.fire(),
       'show-output': () => this.outputRequested.fire(),
       stop: () => this.stopRequested.fire(),
+      // API config, in the bowtie's fold-out: the same message the bowtie itself sent before M15 C2b+.
       models: () => this.modelsRequested.fire(),
+      // The fold-out opened, and its Codex section wants filling; then the owner's pick in it.
+      'bowtie-menu': () => this.bowtieMenuOpened.fire(),
+      'codex-choice': (msg) => this.codexChosen.fire({ model: msg.model, effort: msg.effort }),
       'choose-mode': () => this.modeRequested.fire(),
       // Every 10 s while the panel is open (M15 C2a): a Codex task followed from here counts it attached.
       'panel-ping': () => this.pinged.fire(),
@@ -118,6 +122,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly outputRequested = new vscode.EventEmitter<void>();
   private readonly stopRequested = new vscode.EventEmitter<void>();
   private readonly modelsRequested = new vscode.EventEmitter<void>();
+  private readonly bowtieMenuOpened = new vscode.EventEmitter<void>();
+  private readonly codexChosen = new vscode.EventEmitter<{ model: unknown; effort: unknown }>();
   private readonly modeRequested = new vscode.EventEmitter<void>();
   private readonly viewReady = new vscode.EventEmitter<void>();
   private readonly pinged = new vscode.EventEmitter<void>();
@@ -131,8 +137,12 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   /** The History button was clicked. */
   readonly onDidRequestHistory = this.historyRequested.event;
   readonly onDidRequestOutput = this.outputRequested.event;
-  /** The bowtie next to the prompt was clicked. */
+  /** API config was clicked, in the menu behind the bowtie next to the prompt. */
   readonly onDidRequestModels = this.modelsRequested.event;
+  /** The bowtie's menu opened: its Codex section is read from RAVIS now, and never while it's closed. */
+  readonly onDidOpenBowtieMenu = this.bowtieMenuOpened.event;
+  /** A Codex model or effort was picked in the bowtie's menu. Unchecked: the host holds it to what RAVIS lists. */
+  readonly onDidChooseCodex = this.codexChosen.event;
   /** The mode button was clicked. */
   readonly onDidRequestMode = this.modeRequested.event;
   /** Stop was clicked while an answer was streaming. */
@@ -243,6 +253,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.outputRequested,
       this.stopRequested,
       this.modelsRequested,
+      this.bowtieMenuOpened,
+      this.codexChosen,
       this.modeRequested,
       this.viewReady,
       this.pinged
@@ -328,7 +340,9 @@ ${fs.readFileSync(vscode.Uri.joinPath(extensionUri, 'media', 'chat.css').fsPath,
       <div class="clarvis-prompt">
         <!-- Inline SVG rather than a file: the CSP is default-src 'none' with no
              img-src, and one path is cheaper than opening that up. -->
-        <button id="clarvis-models" class="clarvis-bowtie" title="Models">
+        <!-- The bowtie's fold-out (M15 C2b+): filled by media/bowtieMenu.js, anchored to this row. -->
+        <div id="clarvis-bowtie-menu" class="clarvis-menu" role="dialog" aria-label="Models and Codex" hidden></div>
+        <button id="clarvis-models" class="clarvis-bowtie" title="Models" aria-controls="clarvis-bowtie-menu">
           <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
             <path fill="currentColor" d="M2 6l8 4.2v3.6L2 18V6zm20 0v12l-8-4.2v-3.6L22 6zM12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
           </svg>
@@ -367,6 +381,8 @@ ${fs.readFileSync(vscode.Uri.joinPath(extensionUri, 'media', 'chat.css').fsPath,
  * in it interpolates, so the only thing the host adds is the nonce on the tag.
  */
 function chatBridge(n: string, extensionUri: vscode.Uri): string {
+  // The bowtie's menu first: `chat.js` creates it (M15 C2b+). Both under the same nonce, neither interpolated.
+  const menu = vscode.Uri.joinPath(extensionUri, 'media', 'bowtieMenu.js');
   const file = vscode.Uri.joinPath(extensionUri, 'media', 'chat.js');
-  return `<script nonce="${n}">\n${fs.readFileSync(file.fsPath, 'utf8')}\n</script>`;
+  return [menu, file].map((script) => `<script nonce="${n}">\n${fs.readFileSync(script.fsPath, 'utf8')}\n</script>`).join('');
 }

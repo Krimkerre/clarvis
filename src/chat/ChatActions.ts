@@ -12,6 +12,9 @@ import { ACTION_QUESTIONS, worthInferring } from './actionIntent';
 import { classifyAction } from './intentModel';
 import { FAILURE_KEY, parseRecord } from '../briefing/lastFailure';
 import type { Pattern } from '../memory/patterns';
+import { choiceSummary } from '../engine/codexChoice';
+import { CODEX_MODEL_ID } from '../engine/engineChoice';
+import { storedCodexChoice } from './codexMenuHost';
 
 /**
  * Doing the things chat can do, as opposed to answering.
@@ -113,7 +116,9 @@ export class ChatActions {
       ? `${this.models.spec('agent').label} · ${this.models.model('agent')}`
       : 'same as chat';
 
-    this.panel.post({ type: 'model-info', text: `Chat: ${chat}\nCoding: ${coding}\n\nClick to change` });
+    // M15 C2b+: the bowtie opens a menu, so the tooltip names what is in it — and, with Codex coding, what a new task runs.
+    const codex = this.models.model('agent').trim() === CODEX_MODEL_ID ? `\nCodex: ${choiceSummary(storedCodexChoice())}` : '';
+    this.panel.post({ type: 'model-info', text: `Chat: ${chat}\nCoding: ${coding}${codex}\n\nClick for API config, and Codex's model and effort` });
   }
 
   /**

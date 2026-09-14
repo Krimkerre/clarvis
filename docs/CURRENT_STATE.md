@@ -61,14 +61,14 @@ break Clarvis planning against its own repo.
 | `src/memory/` | ~1,136 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,052 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~679 | Task/build watching — the walk-away feature. |
-| `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, read from disk at render time. |
+| `src/panels/` | ~360 | The webview host for the avatar. Its stylesheet is `media/chat.css`, and its scripts `media/bowtieMenu.js` (the bowtie's fold-out, since M15 C2b+) and `media/chat.js`, all read from disk at render time. |
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
-| `src/engine/` | ~8,857 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — and gives Unattended's narrow answers while the panel is there; `codex/siteScan.ts` finds the sites a task will likely need before it starts, and `codex/siteAsks.ts` holds the words for asking about them. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, and `gitFacts.ts`. `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
+| `src/engine/` | ~8,955 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — and gives Unattended's narrow answers while the panel is there; `codex/siteScan.ts` finds the sites a task will likely need before it starts, and `codex/siteAsks.ts` holds the words for asking about them. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, and `gitFacts.ts`. `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
 | `src/test/` | ~452 | Host-level smoke tests (`npm run test:host`), not the main suite — six specs, recounted 13 Sep after C3 (this said ~57, then ~378). Beside them, `fakes/` (~2,250) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover; since C2b Codex's real requests from calibration (`calibrationRequests.ts`), held to RAVIS's committed transcripts. |
 
-**69,732 lines of TypeScript across 434 files** (recounted 14 Sep, after M15 C2b) — 43,827 source,
-25,905 test, counting `src/test/fakes/` and the host specs as test. `plan.md` §11 breaks an older count down and is
+**70,644 lines of TypeScript across 440 files** (recounted 14 Sep, after M15 C2b and the bowtie's fold-out) — 44,208 source,
+26,436 test, counting `src/test/fakes/` and the host specs as test. `plan.md` §11 breaks an older count down and is
 re-counted rather than nudged.
 
 ## What's built vs designed
@@ -427,9 +427,20 @@ checked line for line against RAVIS's committed copies whenever the NERVIS-ecosy
 URLs in the brief, by RAVIS's own host rule. `siteAsks.ts` holds the owner's words for asking about them, before a
 task and in one card while it runs. Neither calls RAVIS yet: its site routes are R5's, which phase 2 wires.
 
-**Checked by breaking it:** 29 of 29 guards for approvals and 17 of 17 for the scan. Not verified here:
-`RunSession.askCodex` and the undo copies import `vscode` and were read, not run; nothing has run against a real
-Codex task.
+**The bowtie opens a fold-out** (the owner's decisions of 14 Sep; `media/bowtieMenu.js`). Its first item, **API
+config**, does exactly what the bowtie did — the same `models` message, the same pickers. Under it a **Codex**
+section: the models RAVIS lists, that model's efforts with the default marked, the note that a bigger model or
+higher effort uses the ChatGPT plan's allowance faster, and one line of that allowance (the tightest window's
+percentage left and its reset; the rest in the tooltip). The controls are disabled with one line when the coding
+model isn't `ravis/clarvis-codex`; the allowance shows either way. RAVIS is read when the menu opens, never while
+it's closed, and a pick is kept in the owner's own settings (`clarvis.codex.model`, `clarvis.codex.effort`). The
+section is decided in `src/chat/codexMenu.ts` and wired in `codexMenuHost.ts` — named apart by more than case,
+because this Mac's file system treats `CodexMenu.ts` as the same file. Its test runs the webview's script over a
+stand-in document whose `innerHTML` throws.
+
+**Checked by breaking it:** 29 of 29 guards for approvals, 17 of 17 for the scan and 25 of 25 for the fold-out. Not
+verified here: `RunSession.askCodex`, the undo copies and `codexMenuHost.ts` import `vscode` and were read, not run;
+the fold-out hasn't been seen inside VS Code or code-server; nothing has run against a real Codex task.
 
 ## The complexity budget, and where it stands
 
@@ -492,7 +503,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1851 tests (14 Sep, after M15 C2b)
+npm test               # node's built-in test runner, no framework — 1874 tests (14 Sep, after M15 C2b and the bowtie's fold-out)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

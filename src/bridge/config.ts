@@ -112,7 +112,7 @@ export function settingIds(): Record<string, string> {
  *
  * **Because "search for `clarvis.chat.model` in Settings" is the worst true
  * answer.** Almost none of these are meant to be typed into a settings file:
- * the model has a picker behind the bowtie, the mode is a button above the
+ * the models are under API config in the bowtie's menu, the mode is a button above the
  * prompt, and the theme belongs to VS Code's own switcher. A control plane that
  * may not change a setting (§6.7) is most useful when it can say precisely
  * where the control is.
@@ -128,23 +128,23 @@ export function settingIds(): Record<string, string> {
  */
 export const GUIDANCE: Readonly<Record<string, string>> = {
   'chat.provider':
-    'Click the bowtie to the left of the prompt in the Clarvis panel, then Choose Model ' +
-    'Provider — or run "Clarvis: Choose Model Provider" from the command palette.',
+    'Click the bowtie to the left of the prompt in the Clarvis panel, then API config and the chat ' +
+    "model's provider — or run \"Clarvis: Choose Model Provider\" from the command palette.",
   'chat.model':
-    'Click the bowtie to the left of the prompt in the Clarvis panel to open the models ' +
-    'menu, then pick a chat model — or run "Clarvis: Choose Model".',
+    'Click the bowtie to the left of the prompt in the Clarvis panel, then API config, and pick a ' +
+    'chat model — or run "Clarvis: Choose Model".',
   'chat.mode':
     'The mode button above the prompt (labelled Ask, Auto or Unattended) — it is what ' +
     'Clarvis is allowed to do without asking.',
   'chat.endpoint':
-    'Set with the provider: choose the provider behind the bowtie and Clarvis asks for the ' +
-    'address of your server. It is validated before it is stored.',
+    'Set with the provider: choose the provider under API config, in the bowtie menu, and Clarvis ' +
+    'asks for the address of your server. It is validated before it is stored.',
   'agent.provider':
-    'The same models menu behind the bowtie: the agent role has its own provider, so a ' +
-    'small local model can answer chat while a capable one runs tools.',
+    'Under API config, in the bowtie menu: the agent role has its own provider, so a small local ' +
+    'model can answer chat while a capable one runs tools.',
   'agent.model':
-    'Behind the bowtie, under the agent role — or "Clarvis: Choose Model" and pick the ' +
-    'agent when asked. A tool-capable build is required; Clarvis probes rather than guesses.',
+    'Under API config in the bowtie menu, as the coding model — or "Clarvis: Choose Model" and pick ' +
+    'the agent when asked. A tool-capable build is required; Clarvis probes rather than guesses.',
   'voice.enabled':
     'Settings: `clarvis.voice.enabled`. The Mute button above the prompt silences him for ' +
     'this window only and resets on reload, which is a different thing from turning voice off.',

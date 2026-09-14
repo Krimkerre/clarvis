@@ -705,6 +705,11 @@ export class RunSession {
     if (this.running instanceof RemoteCodexRunner) this.running.panelPinged();
   }
 
+  /** A Codex task is running in this window: the bowtie's Codex section says a change applies to the next task (M15 C2b+). */
+  get codexTaskRunning(): boolean {
+    return this.running instanceof RemoteCodexRunner;
+  }
+
   private async followListed(root: string, access: RavisAccess, sessions: SessionSummary[]): Promise<void> {
     const tokens = new TokenStore();
     await this.takeReattachStep(reattachStep(sessions, (sessionId) => tokens.read(root, sessionId)), root, access);

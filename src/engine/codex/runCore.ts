@@ -119,7 +119,10 @@ export interface CodexCursors {
   set(sessionId: string, eventId: number): void;
 }
 
-export type CodexBranch = { ok: true; branch: string; headCommit: string } | { ok: false; line: string };
+export type CodexBranch =
+  | { ok: true; branch: string; headCommit: string }
+  /** `gitSetup`: only setting git up in the folder is missing, so the chat may offer to (plan.md M15, "Codex offers to set git up"). */
+  | { ok: false; line: string; gitSetup?: boolean };
 export type CodexSave = { ok: true; commit: string; committed: boolean; files: string[] } | { ok: false; line: string };
 
 /** Git, which only Clarvis runs: RAVIS never does (design §3.5.3 "Settle"). */
@@ -305,6 +308,9 @@ export class CodexRunCore {
   readonly approvals: CodexApprovals;
   /** Set when a start was refused because a Codex session already holds the project: follow that one. */
   attachInstead: string | undefined;
+
+  /** Set when a start was refused for want of git alone, in a folder RAVIS would take: the chat offers Set up git here. */
+  private gitSetupWanted = false;
 
   private readonly channel = new EventChannel<AgentEvent>();
   private readonly presence = new PresenceTracker();
@@ -785,6 +791,11 @@ export class CodexRunCore {
     return this.stepCap;
   }
 
+  /** The start was refused because the folder needs git set up, and nothing else stood in the way: offer to set it up. */
+  get needsGitSetup(): boolean {
+    return this.gitSetupWanted;
+  }
+
   /** The turn Codex is in, as far as this window has heard; a steer names it. */
   get activeTurnId(): string | null {
     return this.activeTurn;
@@ -890,10 +901,28 @@ export class CodexRunCore {
   /** The task's branch, then its session. Undefined once created; otherwise the event that ends the run. */
   private async branchAndCreate(task: string, signal: AbortSignal): Promise<AgentEvent | undefined> {
     const branch = signal.aborted ? undefined : await this.options.git.begin(task);
-    if (!branch?.ok) return branch ? this.failure(branch.line) : this.doneEvent(CODEX_LINES.stopped);
+    if (!branch) return this.doneEvent(CODEX_LINES.stopped);
+    if (!branch.ok) return this.branchRefused(branch);
     const refused = await this.create(task, branch);
     if (refused) await this.options.git.abandon();
     return refused;
+  }
+
+  /**
+   * No branch, so no task: the reason, as the event that ends the run. When all that's missing is git set up in the
+   * folder, the chat offers to set it up (plan.md M15, "Codex offers to set git up") — but only once RAVIS has said it
+   * would take this folder at all. RAVIS checks the folder when a session is created, which comes after the branch,
+   * so without asking first git could be set up in a folder Codex refuses anyway: a protected repository, one outside
+   * the allowed roots, a private folder. The session list is a read, and RAVIS applies the same folder rule to it
+   * (`conventions.json`: `WORKSPACE_ROOT_NOT_ALLOWED` on "session create and list"). Refused there, the chat gives
+   * RAVIS's reason instead, and offers nothing.
+   */
+  private async branchRefused(branch: { line: string; gitSetup?: boolean }): Promise<AgentEvent> {
+    if (!branch.gitSetup) return this.failure(branch.line);
+    const listed = await this.options.relay.listSessions(this.options.workspace.root);
+    if (!listed.ok) return this.failure(failureLine(listed.failure, 'start'));
+    this.gitSetupWanted = true;
+    return this.failure(branch.line);
   }
 
   /** Creates the session. Undefined once created; otherwise the event that ends the run. */

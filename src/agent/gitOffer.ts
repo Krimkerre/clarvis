@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import { adviseOnGit, GitProblem } from './branchNames';
 import { probeGitProblem } from './AgentBranch';
-import { runCommand } from './tools/commandTools';
+import { forgetGitOfferDeclined, gitOfferDeclined, rememberGitOfferDeclined } from './gitOfferMemory';
+import { setUpGit, type GitSetupResult } from './gitSetup';
+import { repositoryForFolder, type RootedRepository } from './repositoryForFolder';
 
 /**
  * The actual `git init` offer — asked once, acted on, remembered.
@@ -15,10 +17,11 @@ import { runCommand } from './tools/commandTools';
  * Run *before* the task starts, not after `begin()` has already given up: asking "shall
  * I run `git init`?" only after failing once is a worse experience, and by then the run
  * has already committed to the checkpoint-only path for that attempt.
+ *
+ * **For Clarvis's own engine.** Codex can't work without git at all, so it has an offer of its
+ * own that an earlier "no" here never hides (`chat/codexGitSetup.ts`). Both set git up the same
+ * way, through `setUpGitHere` below. The remembered answer lives in `gitOfferMemory.ts`.
  */
-
-/** Remembered per workspace, so a decline does not ask again next session. */
-const DECLINED_KEY = 'clarvis.agent.gitOfferDeclined';
 
 /**
  * What there is to offer here, if anything — without asking.
@@ -32,7 +35,7 @@ export async function gitOffer(
   context: vscode.ExtensionContext,
   log: (message: string) => void
 ): Promise<{ problem: GitProblem; message: string; action: string } | undefined> {
-  if (context.workspaceState.get<boolean>(DECLINED_KEY)) {
+  if (gitOfferDeclined(context.workspaceState)) {
     log('git offer: already declined, not asking again');
     return undefined;
   }
@@ -52,7 +55,7 @@ export async function declineGitOffer(
   problem: GitProblem,
   log: (message: string) => void
 ): Promise<void> {
-  await context.workspaceState.update(DECLINED_KEY, true);
+  await rememberGitOfferDeclined(context.workspaceState);
   log(`git offer: declined (${problem})`);
 }
 
@@ -96,21 +99,12 @@ export async function offerGitFix(
 
 async function act(problem: GitProblem, root: string | undefined, log: (message: string) => void): Promise<void> {
   if (problem === 'no-repository') {
-    log('git offer: running git init');
-    // Discarded rather than shown: `git init` prints one line ("Initialized empty Git
-    // repository in …") that means nothing to someone who does not know what git is —
-    // success here is the run proceeding normally afterwards, not this sentence.
-    await runCommand(root, 'git init', () => {});
-    // **A first commit, so there is something to branch from and merge back into.**
-    // Found live, 11 September 2026: a repository with no commits has a branch name and
-    // nothing behind it — every run branched from nothing, and "Merge" had nothing to
-    // merge into. Empty on purpose: what is already in the folder is the person's.
-    const first = await runCommand(root, 'git commit --allow-empty -m "Start of the project"', () => {});
-    log(
-      first.exitCode === 0
-        ? 'git offer: made the first, empty commit'
-        : `git offer: the first commit failed — ${first.output.trim().slice(0, 160)}`
-    );
+    log('git offer: setting git up');
+    const result = await setUpGitHere(root, log);
+    // **Said, not only logged.** A first commit that failed used to leave a `.git` with nothing
+    // in it, reported to the log alone, while the run carried on as if git were there.
+    // `setUpGit` now takes a half-made setup back out, and this says why, and what to do.
+    if (!result.ok) void vscode.window.showWarningMessage(result.line);
     return;
   }
 
@@ -122,7 +116,73 @@ async function act(problem: GitProblem, root: string | undefined, log: (message:
   }
 }
 
+/**
+ * `git init` and the first, empty commit in this folder — for both offers, Clarvis's own and Codex's.
+ *
+ * The first commit is there so there is something to branch from and merge back into. Found
+ * live, 11 September 2026: a repository with no commits has a branch name and nothing behind it —
+ * every run branched from nothing, and "Merge" had nothing to merge into. Git's own output
+ * ("Initialized empty Git repository in …") is never shown: it means nothing to someone who does
+ * not know what git is. Success is the task proceeding; failure is a sentence (`gitSetup.ts`).
+ *
+ * **Workspace Trust first.** Restricted Mode means Clarvis runs nothing, and this runs git. Both
+ * offers are already behind it in practice — Codex never reaches a git refusal in an untrusted
+ * folder (`engineChoice.ts`) — and this says so in words rather than throwing if one ever isn't.
+ *
+ * **Then the editor has to see it.** A branch for a run, of either engine, is made through VS Code's
+ * Git extension, which finds a new repository on its own scan, in its own time. Carrying a Codex task
+ * on before it has would meet the very refusal just fixed, so it is asked to open the repository
+ * now, and given a few seconds to see the first commit.
+ */
+export async function setUpGitHere(root: string | undefined, log: (message: string) => void): Promise<GitSetupResult> {
+  if (!root) return { ok: false, reason: 'no-folder', line: 'There is no folder open, so there is nowhere to set git up.' };
+  if (!vscode.workspace.isTrusted) {
+    return {
+      ok: false,
+      reason: 'untrusted',
+      line: 'This folder is open in Restricted Mode, so I can\'t set git up in it. If it is yours and you trust it, use "Workspaces: Manage Workspace Trust" and try again.',
+    };
+  }
+
+  const result = await setUpGit(root, { log });
+  return result.ok ? { ...result, editorCaughtUp: await editorSeesCommit(root, log) } : result;
+}
+
+/** How long the Git extension is given to see a repository just set up, checked every 100 ms. */
+const EDITOR_CATCH_UP_ATTEMPTS = 50;
+
+/** Whether the Git extension sees `root`'s repository with a commit, within a few seconds. */
+async function editorSeesCommit(root: string, log: (message: string) => void): Promise<boolean> {
+  const extension = vscode.extensions.getExtension<GitOpenExports>('vscode.git');
+  const api = extension ? (extension.isActive ? extension.exports : await extension.activate())?.getAPI?.(1) : undefined;
+  if (!api) {
+    log('git offer: the Git extension is not available, so nothing can see the new repository');
+    return false;
+  }
+
+  await api.openRepository?.(vscode.Uri.file(root));
+  for (let attempt = 0; attempt < EDITOR_CATCH_UP_ATTEMPTS; attempt++) {
+    const repository = repositoryForFolder(api.repositories, root);
+    if (repository?.state.HEAD?.commit) return true;
+    // Its state updates on its own schedule; asking for a status read brings that forward.
+    await repository?.status?.();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  log('git offer: the Git extension had not seen the first commit after 5 seconds');
+  return false;
+}
+
+/** The slice of the Git extension's API the catch-up uses. */
+interface GitOpenExports {
+  getAPI(version: 1): { repositories: SeenRepository[]; openRepository?(root: vscode.Uri): Promise<unknown> };
+}
+
+interface SeenRepository extends RootedRepository {
+  state: { HEAD?: { commit?: string } };
+  status?(): Promise<void>;
+}
+
 /** For the command that lets a declined offer be asked again. */
 export async function forgetGitOfferAnswer(context: vscode.ExtensionContext): Promise<void> {
-  await context.workspaceState.update(DECLINED_KEY, undefined);
+  await forgetGitOfferDeclined(context.workspaceState);
 }

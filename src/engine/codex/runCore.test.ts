@@ -69,10 +69,12 @@ class FakeGit implements CodexGit {
   refuseContinuation: string | undefined;
   readonly forSwitch: boolean[] = [];
   abandoned = 0;
+  /** The refusal `begin` answers with, when a test sets one: a folder without git, say. */
+  refuseBegin: CodexBranch | undefined;
 
   async begin(task: string): Promise<CodexBranch> {
     this.begun.push(task);
-    return { ok: true, branch: 'clarvis/add-utc', headCommit: HEAD };
+    return this.refuseBegin ?? { ok: true, branch: 'clarvis/add-utc', headCommit: HEAD };
   }
 
   async continueOn(branch: string, headCommit: string): Promise<CodexBranch> {
@@ -311,6 +313,67 @@ test('a start refused because Codex already holds the project tidies its new bra
     assert.deepEqual(run.events.map((event) => event.text), ['Codex is already working on this project.']);
     assert.equal(h.git.abandoned, 1, 'the branch made for it is tidied');
     assert.equal(core.attachInstead, 'as_01J9ZK4T6Q8M2V7R3N5B1C0D');
+  }));
+
+// ── A folder without git (plan.md M15, "Codex offers to set git up") ──────────
+
+const NEEDS_GIT_LINE =
+  "Codex needs this folder to be a git repository with at least one commit: its work is saved as commits on a branch of its own. This folder isn't a git repository yet.";
+
+test('a start refused for want of git, in a folder RAVIS would take, asks RAVIS first, offers to set git up, and creates nothing', () =>
+  withCodex(async (h) => {
+    h.git.refuseBegin = { ok: false, line: NEEDS_GIT_LINE, gitSetup: true };
+    const core = h.core();
+
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await run.ended();
+
+    assert.deepEqual(run.events.map((event) => event.text), [NEEDS_GIT_LINE]);
+    assert.equal(core.needsGitSetup, true);
+    assert.ok(h.sent.includes('GET /api/v1/agent-sessions'), 'RAVIS was asked whether it takes this folder, with a read');
+    assert.equal(h.machine.all.length, 0, 'no session was created');
+  }));
+
+test("a folder RAVIS refuses — a protected repository, one outside the allowed roots — gets RAVIS's reason, and no offer to set git up", () =>
+  withCodex(async (h) => {
+    h.git.refuseBegin = { ok: false, line: NEEDS_GIT_LINE, gitSetup: true };
+    h.fake.reply('GET /api/v1/agent-sessions', 'a root outside the rule');
+    const core = h.core();
+
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await run.ended();
+
+    assert.deepEqual(run.events.map((event) => event.text), ["That folder can't hold a Codex task."]);
+    assert.equal(core.needsGitSetup, false, 'git is never set up in a folder Codex would refuse anyway');
+    assert.equal(h.machine.all.length, 0);
+  }));
+
+test('a branch refused for a reason git setup does not fix offers nothing, and asks RAVIS nothing more', () =>
+  withCodex(async (h) => {
+    const noGitInstalled = "Codex needs this folder to be a git repository with at least one commit: its work is saved as commits on a branch of its own. Git isn't installed on this machine.";
+    h.git.refuseBegin = { ok: false, line: noGitInstalled };
+    const core = h.core();
+
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await run.ended();
+
+    assert.deepEqual(run.events.map((event) => event.text), [noGitInstalled]);
+    assert.equal(core.needsGitSetup, false);
+    assert.equal(h.sent.includes('GET /api/v1/agent-sessions'), false);
+  }));
+
+test('Codex that may not run is refused before the branch is ever tried, so no offer to set git up comes of it', () =>
+  withCodex(async (h) => {
+    h.git.refuseBegin = { ok: false, line: NEEDS_GIT_LINE, gitSetup: true };
+    h.fake.reply(CODEX_STATE_ROUTE, 'signed out');
+    const core = h.core();
+
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await run.ended();
+
+    assert.match(run.events[0].text, /^Codex can't start\. Codex is signed out/);
+    assert.deepEqual(h.git.begun, [], 'no branch was tried');
+    assert.equal(core.needsGitSetup, false);
   }));
 
 test('a task runs to its settle: the contract’s create, STEP lines that move the progress bar, each file recorded once', () =>

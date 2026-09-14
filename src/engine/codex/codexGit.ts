@@ -29,6 +29,7 @@ import { planCommit } from '../../agent/dirtyAtStart';
 import { workspaceRepository } from '../../agent/gitExtension';
 import type { RootedRepository } from '../../agent/repositoryForFolder';
 import { GitFacts } from '../checkpoint/gitFacts';
+import { codexGitNeed, codexNeedsGitLine, offersGitSetup } from './codexGitNeed';
 import type { CodexBranch, CodexGit, CodexSave } from './runCore';
 
 interface Repository extends RootedRepository {
@@ -78,7 +79,10 @@ export class CodexGitGlue implements CodexGit {
     const head = repository?.state.HEAD?.commit;
     if (isolation.isolated && this.branch.current && head) return { ok: true, branch: this.branch.current, headCommit: head };
     await this.branch.discardIfEmpty();
-    return { ok: false, line: needsGitLine(isolation.advice) };
+    // No branch. When setting git up alone would fix it, the refusal says so plainly and the chat offers
+    // **Set up git here** (`codexGitNeed.ts`; plan.md M15, "Codex offers to set git up").
+    const need = codexGitNeed({ repository: repository !== undefined, headCommit: head, problem: isolation.problem });
+    return { ok: false, line: codexNeedsGitLine(need, isolation.advice), gitSetup: offersGitSetup(need) };
   }
 
   /**
@@ -169,11 +173,6 @@ function commitMessage(task: string, work: { summary: string; stopped: boolean; 
   // Design §6.2 step 4: the commit says the work was stopped to hand the task over, not abandoned.
   const head = work.forSwitch ? `Codex's work on ${subject} (stopped for a switch)` : `${lead}: ${subject}`;
   return task ? `${head}\n\nTask: ${task}` : head;
-}
-
-function needsGitLine(advice: string | undefined): string {
-  const why = "Codex needs this folder to be a git repository with at least one commit: its work is saved as commits on a branch of its own.";
-  return advice ? `${why} ${advice}` : why;
 }
 
 function offBranchLine(expected: string | undefined, head: string | undefined): string {

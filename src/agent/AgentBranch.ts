@@ -19,6 +19,11 @@ export interface Isolation {
    * ahead on snapshots alone — it would carry the task on somewhere other than its work.
    */
   refused?: boolean;
+  /**
+   * Why there was no repository to work in, when there wasn't one. A Codex task can't go ahead without one, and
+   * offers to set git up only for an ordinary folder on a machine that has git (`codexGitNeed.ts`).
+   */
+  problem?: GitProblem;
 }
 
 
@@ -99,7 +104,7 @@ export class AgentBranch {
     if (!repository) {
       const problem = await diagnoseGit();
       this.log(`branch: not isolating — ${problem}`);
-      return { isolated: false, advice: adviseOnGit(problem).message };
+      return { isolated: false, advice: adviseOnGit(problem).message, problem };
     }
 
     const existing: string[] = (await repository.getBranches({ remote: false })).map(

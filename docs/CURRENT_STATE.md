@@ -65,7 +65,7 @@ break Clarvis planning against its own repo.
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
 | `src/engine/` | ~9,726 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b and C2b+, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — gives Unattended's narrow answers while the panel is there, and asks a group of blocked sites as one card; `codex/siteScan.ts` finds the sites a task will likely need, which `runCore.ts` asks about before it starts, and `codex/siteAsks.ts` holds the words for asking about them and for carrying the task on. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, and `gitFacts.ts`. `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
-| `src/test/` | ~656 | Host-level smoke tests (`npm run test:host`), not the main suite — seven specs, recounted 14 Sep after C2b+ (this said ~57, then ~378, then ~452); `codexMenu.spec.ts` runs the bowtie's fold-out and Codex's undo copies in the real host. Beside them, `fakes/` (~2,780) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover; since C2b Codex's real requests from calibration (`calibrationRequests.ts`), held to RAVIS's committed transcripts; since C2b+ the allowed sites (`fakeSites.ts`) and R5 in the session machine — site asks a group per turn, the reopen and a turn waiting for it, a create's model and effort — each held to what RAVIS `bc1a103` does. |
+| `src/test/` | ~656 | Host-level smoke tests (`npm run test:host`), not the main suite — eight specs, recounted 14 Sep after Codex's git setup (this said seven after C2b+, and ~57, then ~378, then ~452 before that); `codexMenu.spec.ts` runs the bowtie's fold-out and Codex's undo copies in the real host, and `codexGitSetup.spec.ts` checks the Git extension sees a repository **Set up git here** made. Beside them, `fakes/` (~2,780) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover; since C2b Codex's real requests from calibration (`calibrationRequests.ts`), held to RAVIS's committed transcripts; since C2b+ the allowed sites (`fakeSites.ts`) and R5 in the session machine — site asks a group per turn, the reopen and a turn waiting for it, a create's model and effort — each held to what RAVIS `bc1a103` does. |
 
 **72,879 lines of TypeScript across 442 files** (recounted 14 Sep, after M15 C2b+'s phase 2) — 44,994 source,
 27,885 test, counting `src/test/fakes/` and the host specs as test. `plan.md` §11 breaks an older count down and is
@@ -78,7 +78,7 @@ per-milestone exit checklists (257 checklist lines, recounted 12 Sep; this said 
 261 until then). M14, the NERVIS Bridge, was signed off on 29 Aug and is built, which the
 list below predates. **M15, Codex tasks through RAVIS, was signed off on 13 Sep; C1, C2a and C3
 are built, and C2b and C2b+ since 14 Sep** — the relay and lock clients, the Codex runner, the engine choice, the project
-lock, the task checkpoint and switching between the engines, since C2b Codex's approvals and the pre-task site scan, and since C2b+ the sites asked about before and during a task and each task's model and effort, in `src/engine/`, and `FakeRavisRelay` with its session state machine in `src/test/fakes/`,
+lock, the task checkpoint and switching between the engines, since C2b Codex's approvals and the pre-task site scan, since C2b+ the sites asked about before and during a task and each task's model and effort, and, also since 14 Sep, the offer to set git up when a Codex task needs it, in `src/engine/`, and `FakeRavisRelay` with its session state machine in `src/test/fakes/`,
 all tested against RAVIS's contract fixtures (copied into `src/test/fixtures/` and checked by
 `src/test/codexContractFixtures.test.ts`). None of it has met a real Codex task: RAVIS's relay is built, but the owner's live
 test hasn't run. C2b was built from calibration's transcripts (run `cal_5a1d6ecc33b4`). **§7 is the authority; this is a copy, and
@@ -462,6 +462,38 @@ with where to choose again; a choice made before Codex has listed its models is 
 verified here: `RunSession.askCodex`, the undo copies and `codexMenuHost.ts` import `vscode` and were read, not run;
 the fold-out hasn't been seen inside VS Code or code-server; nothing has run against a real Codex task.
 
+### What landed on 14 Sep: Codex offers to set git up
+
+**Found live that day.** In a folder without git, where the owner had declined Clarvis's own `git init` offer earlier,
+Codex refused a task because the folder isn't a git repository. The offer stayed silent ("already declined, not asking
+again"), and "git init then" went to Codex as a new task and was refused again: a loop with no way out from the chat.
+`plan.md`'s M15 has the owner's decision, the checks, the choices and the guard proof.
+
+**Now the refusal offers the fix.** Codex's refusal says what's missing in its own words ("This folder isn't a git
+repository yet.") and the chat offers **Set up git here** and **Not now**, with one line saying the button runs `git init`
+and makes a first commit (`src/chat/codexGitSetup.ts`). It is offered even when Clarvis's own offer was declined. Typing
+"git init", "set it up" or "yes" answers it like the button, and never reaches Codex as a task; anything else typed is
+read as the message it is. Once git is set up, the refused task carries on without being typed again. A folder whose
+repository has no commit yet gets the same offer. Git not installed gets how to install it, and no button.
+
+**What still comes first.** Workspace Trust and the engine choice refuse before any run; RAVIS says whether Codex may
+run before any branch is tried; and before offering, `runCore` asks RAVIS about the folder with a read of its session
+list, so a folder RAVIS would refuse (a protected repository, one outside the allowed roots) gets RAVIS's reason and no
+offer. Clarvis's own pre-run `git init` modal is now asked only for Clarvis's own engine.
+
+**Setting git up** is one vscode-free function for both offers (`src/agent/gitSetup.ts`): `git init`, then an empty first
+commit that takes nothing already staged, on the branch name git picks. When `git init` or the commit fails, a `.git` it
+had just made is taken back out, and the line says why; a missing name and email comes with the two commands that fix it,
+and the button comes back. Then the Git extension is given up to 5 s to see the commit (`gitOffer.setUpGitHere`), since
+Codex's branch is made through it. **The remembered decline** (`src/agent/gitOfferMemory.ts`) is forgotten only once git
+is really set up through Codex's offer; Not now, no answer or a failure leave it, and **Ask About Git Setup Again** still
+clears it.
+
+**Checked by breaking it:** 29 of 29 guards, each broken in a scratch copy and caught by a test; the host spec
+`codexGitSetup.spec.ts` saw the real Git extension pick up the new commit. Not verified here: `RunSession.offerGitSetup` and `codexGit.ts`'s wiring import
+`vscode` and were read, not run; the refusal, the button and the carry-on haven't been seen together against a real Codex
+task.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
@@ -523,7 +555,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1917 tests (14 Sep, after M15 C2b+'s phase 2)
+npm test               # node's built-in test runner, no framework — 1952 tests (14 Sep, after Codex's git setup)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

@@ -136,7 +136,7 @@ export interface GitAdvice {
  * how. No action button — this is the one case Clarvis genuinely cannot do for them, and
  * a button that opens something unhelpful is worse than a sentence that is honest.
  */
-function gitInstallHint(platform: NodeJS.Platform): string {
+export function gitInstallHint(platform: NodeJS.Platform): string {
   if (platform === 'darwin') return 'On a Mac, `xcode-select --install` in Terminal is the shortest route.';
   if (platform === 'win32') return 'On Windows, git-scm.com has the installer.';
   return 'On Linux, your package manager has it — `apt install git` or `dnf install git`.';

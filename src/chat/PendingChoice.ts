@@ -23,6 +23,8 @@ export class PendingChoice {
   private offered: string[] = [];
   /** Whether only the offered options answer the question in flight. */
   private strict = false;
+  /** Typed words that mean one of the options without being its label, for the question in flight. */
+  private accepts?: (typed: string) => string | undefined;
   private timer?: ReturnType<typeof setTimeout>;
 
   constructor(
@@ -57,12 +59,19 @@ export class PendingChoice {
      * typed words are far more likely to be a new message than a reply — see
      * `RunSession.offerToLandTheWork`.
      */
-    strict = false
+    strict = false,
+    /**
+     * Typed words that mean one of the options without being its label: "git init" for **Set up git here**
+     * (`codexGitSetup.ts`). Returns the label meant, or undefined. Only a label that was offered counts, and only
+     * for words someone typed — see `supply`.
+     */
+    accepts?: (typed: string) => string | undefined
   ): Promise<string | undefined> {
     // A second question while one is pending would leave the first hanging forever.
     this.cancel();
     this.offered = options.map((option) => option.label);
     this.strict = strict;
+    this.accepts = accepts;
     this.offer(options);
     if (about && this.nudge) this.startNudging(about);
 
@@ -100,12 +109,17 @@ export class PendingChoice {
    *
    * `false` when the message was not an answer to a strict question: the question is
    * dropped as unanswered, and the message is left to be read as whatever it was.
+   *
+   * `typed` is false for an answer Clarvis supplies on its own — the "Do it" a switch to
+   * Unattended presses (`RunSession.modeStoppedAsking`). That may press a button by its
+   * label, but it is never read as words: a mode switch is nobody saying "yes" to
+   * setting git up.
    */
-  supply(answer: string): boolean {
+  supply(answer: string, typed = true): boolean {
     const waiting = this.waiting;
     if (!waiting) return false;
 
-    const matched = this.match(answer);
+    const matched = this.match(answer, typed);
     this.waiting = undefined;
     this.stopNudging();
     this.offer([]);
@@ -140,7 +154,7 @@ export class PendingChoice {
    * people still type "1"; case-insensitive matching because "do it" and "Do it" are
    * the same answer and refusing one of them would be pedantry.
    */
-  private match(answer: string): string | undefined {
+  private match(answer: string, typed: boolean): string | undefined {
     const trimmed = answer.trim();
 
     const byNumber = Number.parseInt(trimmed, 10);
@@ -148,6 +162,11 @@ export class PendingChoice {
       return this.offered[byNumber - 1];
     }
 
-    return this.offered.find((label) => label.toLowerCase() === trimmed.toLowerCase());
+    const label = this.offered.find((candidate) => candidate.toLowerCase() === trimmed.toLowerCase());
+    if (label !== undefined || !typed) return label;
+
+    // The question's own vocabulary, held to its own buttons: a matcher can't invent an answer that wasn't offered.
+    const meant = this.accepts?.(trimmed);
+    return meant !== undefined && this.offered.includes(meant) ? meant : undefined;
   }
 }

@@ -7,7 +7,8 @@ import { AgentTerminal, runCommand } from '../agent/tools/commandTools';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
 import { Busy } from './Busy';
-import { offerGitFix } from '../agent/gitOffer';
+import { offerGitFix, setUpGitHere } from '../agent/gitOffer';
+import { CODEX_GIT_LINES, gitSetupChoice, gitSetupChoices, offerCodexGitSetup } from './codexGitSetup';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
 import { plannedMilestoneOffer, stepCapOffer, unplannedRunOffer } from '../planning/planUpdate';
@@ -48,7 +49,7 @@ import { CODEX_LINES, ravisUnusableLine, tokenLine } from '../engine/codex/trans
 import type { RelayClient } from '../engine/relay/relayClient';
 import type { SessionSummary } from '../engine/relay/relayTypes';
 import { TokenStore } from '../engine/relay/tokenStore';
-import { chatRunDecision, createCodingRun, undeliveredLine } from './codingRunFactory';
+import { asksGitOfferBeforeRun, chatRunDecision, createCodingRun, undeliveredLine, type SiteDecision } from './codingRunFactory';
 import { storedCodexChoice } from './codexMenuHost';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
@@ -234,7 +235,9 @@ export class RunSession {
     if (this.asksNow?.() !== false || !this.pending.isWaiting) return;
 
     this.log('agent: mode no longer asks — releasing the step that was waiting');
-    this.pending.supply('Do it');
+    // Not typed: it presses "Do it" where there is one, and drops any other question as unanswered, never
+    // reading "Do it" as a yes to it — so a mode switch can't set git up (`codexGitSetup.ts`).
+    this.pending.supply('Do it', false);
   }
 
   setStepApproval(on: boolean, live?: () => boolean): void {
@@ -348,23 +351,33 @@ export class RunSession {
     return pending;
   }
 
-  async run(task: string, because: string): Promise<void> {
+  async run(
+    task: string,
+    because: string,
+    /** A task carried on after git was set up for it (`offerGitSetup`): `because` is its opening line as it stands. */
+    carriedOn = false
+  ): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const decision = chatRunDecision(currentEngineChoice(this.models));
 
     // **Before anything else.** Asking "shall I run `git init`?" only after a run has
     // already failed to isolate is a worse offer than asking up front — and it is the
     // reason the offer never fired at all: nothing outside `begin()` ever checked, and
     // `begin()` only runs once a task is already under way.
-    await offerGitFix(this.context, root, this.log);
+    // **For Clarvis's own engine only** (plan.md M15, "Codex offers to set git up"). This offer
+    // says declining is fine, which isn't true of Codex, and it comes before Workspace Trust and
+    // RAVIS have had their say. Codex offers **Set up git here** in the chat once they have.
+    if (asksGitOfferBeforeRun(decision)) await offerGitFix(this.context, root, this.log);
 
     // **Which engine, and what it needs first** (M15 C2a): the project lock for Clarvis's own
     // engine, RAVIS for Codex. Refused here, before the opening line promises work that won't start.
-    const opened = await this.openRun(root, task);
+    const opened = await this.openRun(root, task, decision);
     if ('refusal' in opened) return this.refused(opened);
 
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
-    const opening = (await this.live?.acknowledge(task)) ?? because;
+    // A task carried on after git was set up was asked for a moment ago, and says so instead.
+    const opening = carriedOn ? because : ((await this.live?.acknowledge(task)) ?? because);
 
     // Written, not spoken. The user asked for one line of a run to be read aloud, and
     // that line is the result — "right, on it" is not news.
@@ -498,12 +511,11 @@ export class RunSession {
     if (this.switcher.isSwitching) return;
 
     await this.wrapUp(runner, task, summary, closing);
-    await this.afterRun(runner);
+    await this.afterRun(runner, task);
   }
 
   /** Which engine runs this, and what it needs first; or why nothing runs (M15 C2a; design §5.1, §5.8). */
-  private async openRun(root: string | undefined, task: string): Promise<OpenedRun | RunRefusal> {
-    const decision = chatRunDecision(currentEngineChoice(this.models));
+  private async openRun(root: string | undefined, task: string, decision: SiteDecision): Promise<OpenedRun | RunRefusal> {
     if (decision.run === 'refused') return { refusal: decision.line };
     const guard = await this.guardFor(decision.run, root, task);
     if ('refusal' in guard) return guard;
@@ -662,14 +674,39 @@ export class RunSession {
   }
 
   /**
-   * Nothing typed to a run vanishes; a Codex start refused for a task already running follows it; and a Codex
-   * task RAVIS stopped at its step cap is offered "Carry on".
+   * Nothing typed to a run vanishes; a Codex start refused for a task already running follows it; a Codex
+   * task RAVIS stopped at its step cap is offered "Carry on"; and a Codex task refused for want of git alone
+   * is offered "Set up git here".
    */
-  private async afterRun(runner: CodingRun): Promise<void> {
+  private async afterRun(runner: CodingRun, task: string): Promise<void> {
     const undelivered = undeliveredLine(runner.drainInterjections());
     if (undelivered) await this.note(undelivered);
     if (runner instanceof RemoteCodexRunner && runner.attachInstead) await this.reattachCodexTasks();
     if (runner instanceof RemoteCodexRunner && runner.endedAtStepCap) await this.offerCarryOn(runner);
+    if (runner instanceof RemoteCodexRunner && runner.needsGitSetup) await this.offerGitSetup(task);
+  }
+
+  /**
+   * Codex refused the task because the folder has no git, in a folder RAVIS would otherwise take: **Set up git
+   * here**, in the chat, even after Clarvis's own offer was declined (plan.md M15, "Codex offers to set git up";
+   * the owner's decision of 14 Sep 2026). The rules are `codexGitSetup.ts`'s.
+   *
+   * A typed answer ("git init", "set it up", "yes") reaches it the way every question here is answered:
+   * `ChatService.runTook` hands the message to `answerStep` before anything else could send it to Codex as a
+   * task. Anything else typed is the message it is, and the offer goes away.
+   */
+  private async offerGitSetup(task: string): Promise<void> {
+    const root = workspaceRoot();
+    if (!root) return;
+    await offerCodexGitSetup({
+      ask: () => this.pending.ask(gitSetupChoices(), 'setting git up for Codex', true, gitSetupChoice),
+      note: (line) => this.note(line),
+      setUp: () => setUpGitHere(root, this.log),
+      memory: this.context.workspaceState,
+      // Carried on, not restarted by hand: every check a task meets runs again, and the owner types nothing.
+      carryOn: () => this.run(task, CODEX_GIT_LINES.carryingOn, true),
+      log: this.log,
+    });
   }
 
   /**

@@ -33,6 +33,16 @@ export function chatRunDecision(choice: EngineChoice): SiteDecision {
   return choice.engine === 'refused' ? { run: 'refused', line: choice.line } : { run: choice.engine };
 }
 
+/**
+ * Whether Clarvis's own `git init` offer (`gitOffer.offerGitFix`) is asked before this run: only for Clarvis's own
+ * engine (plan.md M15, "Codex offers to set git up"). That offer says declining is fine, which is untrue of Codex, and
+ * it comes before anything else is checked, so in a Restricted Mode folder it would offer git for a Codex task that is
+ * about to be refused. A Codex task offers **Set up git here** in the chat instead, once every refusal has had its say.
+ */
+export function asksGitOfferBeforeRun(decision: SiteDecision): boolean {
+  return decision.run === 'clarvis';
+}
+
 /** The command palette's run: never Codex. */
 export function paletteRunDecision(choice: EngineChoice): SiteDecision {
   if (choice.engine === 'codex') return { run: 'refused', line: PALETTE_CODEX_LINE };

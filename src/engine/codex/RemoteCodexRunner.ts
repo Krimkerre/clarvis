@@ -118,6 +118,11 @@ export class RemoteCodexRunner implements CodingRun {
     return this.core.endedAtStepCap;
   }
 
+  /** The task was refused because the folder needs git set up, in a folder RAVIS would take (plan.md M15). */
+  get needsGitSetup(): boolean {
+    return this.core.needsGitSetup;
+  }
+
   /** This Codex task as the engine a switch stops (M15 C3; design §6.2). */
   switchSource(place: { workspaceRoot: string; gitDir: string | undefined; saved: TaskCheckpoint | undefined; homeFingerprint?: string }): CodexSource {
     return new CodexSource({ core: this.core, host: windowIdentity().host, ...place });

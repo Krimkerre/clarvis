@@ -2,7 +2,7 @@
   "name": "clarvis",
   "displayName": "Clarvis",
   "description": "Clippy's presence. Jarvis's competence. A butler's disdain.",
-  "version": "0.16.2",
+  "version": "0.17.0",
   "publisher": "Krimkerre",
   "license": "MIT",
   "repository": {
@@ -101,15 +101,15 @@
       },
       {
         "command": "clarvis.debug.voiceCheck",
-        "title": "Clarvis: Debug \u2014 Voice Check"
+        "title": "Clarvis: Debug — Voice Check"
       },
       {
         "command": "clarvis.debug.tools",
-        "title": "Clarvis: Debug \u2014 Try a Tool"
+        "title": "Clarvis: Debug — Try a Tool"
       },
       {
         "command": "clarvis.debug.micProbe",
-        "title": "Clarvis: Debug \u2014 Microphone Probe"
+        "title": "Clarvis: Debug — Microphone Probe"
       },
       {
         "command": "clarvis.configureModels",
@@ -208,7 +208,7 @@
             "Work out what to do and write it down. No edits.",
             "Treat everything as a job, and check before each step that changes anything."
           ],
-          "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all \u2014 the code never calls it, rather than the prompt being asked not to."
+          "description": "How much Clarvis is allowed to do. Chat and Plan cannot reach the agent at all — the code never calls it, rather than the prompt being asked not to."
         },
         "clarvis.chat.provider": {
           "type": "string",
@@ -224,17 +224,17 @@
           "enumDescriptions": [
             "Anthropic API with your own key. Best tool calling.",
             "OpenAI with your own key.",
-            "OpenRouter \u2014 one key, many models. Use \"Clarvis: Choose Model\" for the filtered list.",
+            "OpenRouter — one key, many models. Use \"Clarvis: Choose Model\" for the filtered list.",
             "LM Studio on this machine. No key, nothing leaves it. Models are browsed and loaded in the app.",
             "Ollama on this machine. No key, nothing leaves it. Models are pulled from a terminal.",
-            "Any other OpenAI-compatible server \u2014 llama.cpp, vLLM, LocalAI, or one on your network. Clarvis asks for the address."
+            "Any other OpenAI-compatible server — llama.cpp, vLLM, LocalAI, or one on your network. Clarvis asks for the address."
           ],
           "description": "Which model provider to use. No Claude-subscription option: Anthropic does not permit third-party products to use claude.ai logins without prior approval."
         },
         "clarvis.chat.model": {
           "type": "string",
           "default": "",
-          "description": "Model name. Empty uses the provider's default. Run \"Clarvis: Choose Model\" for a picker \u2014 on OpenRouter it lists only models that can call tools."
+          "description": "Model name. Empty uses the provider's default. Run \"Clarvis: Choose Model\" for a picker — on OpenRouter it lists only models that can call tools."
         },
         "clarvis.agent.provider": {
           "type": "string",
@@ -252,12 +252,12 @@
             "Use the same provider as chat.",
             "Anthropic API with your own key.",
             "OpenAI with your own key.",
-            "OpenRouter \u2014 one key, many models.",
+            "OpenRouter — one key, many models.",
             "LM Studio on this machine.",
             "Ollama on this machine.",
             "Any other OpenAI-compatible server. Clarvis asks for the address."
           ],
-          "description": "Provider for writing code and running the agent. Empty follows the chat provider \u2014 set it to keep a cheap model for chat and a capable one for code."
+          "description": "Provider for writing code and running the agent. Empty follows the chat provider — set it to keep a cheap model for chat and a capable one for code."
         },
         "clarvis.agent.model": {
           "type": "string",
@@ -288,7 +288,7 @@
         "clarvis.voice.enabled": {
           "type": "boolean",
           "default": false,
-          "description": "Speak briefings, task outcomes and chat replies aloud. Off until you ask for it \u2014 a voice that surprises you once is a voice you disable forever. Clarvis offers to set it up once, on first run."
+          "description": "Speak briefings, task outcomes and chat replies aloud. Off until you ask for it — a voice that surprises you once is a voice you disable forever. Clarvis offers to set it up once, on first run."
         },
         "clarvis.voice.selectedVoice": {
           "type": "string",
@@ -320,7 +320,7 @@
           "type": "number",
           "default": 200,
           "minimum": 0,
-          "description": "Fish Audio requests per day before dropping to the system voice. A butler should not run up a bill while you're at lunch. Zero means never \u2014 the system voice does everything."
+          "description": "Fish Audio requests per day before dropping to the system voice. A butler should not run up a bill while you're at lunch. Zero means never — the system voice does everything."
         },
         "clarvis.chat.baseUrl.anthropic": {
           "type": "string",
@@ -338,13 +338,13 @@
           "type": "string",
           "default": "",
           "scope": "machine",
-          "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider \u2014 you should not need to edit it here.",
-          "markdownDescription": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider \u2014 you should not need to edit it here. **Machine-scoped on purpose:** a project you open cannot set this. There is no API key on this provider, but every prompt, and every file the agent has read, travels to whatever address it names."
+          "description": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here.",
+          "markdownDescription": "Address of your own OpenAI-compatible server. Clarvis asks for this when you pick the Custom provider — you should not need to edit it here. **Machine-scoped on purpose:** a project you open cannot set this. There is no API key on this provider, but every prompt, and every file the agent has read, travels to whatever address it names."
         },
         "clarvis.voice.trimLongReplies": {
           "type": "boolean",
           "default": true,
-          "description": "Keep spoken replies under about twenty seconds. A reply that would run longer is read aloud as its opening sentence and Clarvis's own closing line; the panel always shows the whole thing, and nothing is cut mid-sentence. Turn this off to hear every reply in full \u2014 replies of a minute or more have been measured, which is the reason this exists."
+          "description": "Keep spoken replies under about twenty seconds. A reply that would run longer is read aloud as its opening sentence and Clarvis's own closing line; the panel always shows the whole thing, and nothing is cut mid-sentence. Turn this off to hear every reply in full — replies of a minute or more have been measured, which is the reason this exists."
         },
         "clarvis.model.tuneLocalLoads": {
           "type": "boolean",
@@ -355,26 +355,26 @@
           "type": "boolean",
           "default": false,
           "scope": "machine",
-          "markdownDescription": "Let NERVIS see what this window is doing. Off by default, and off means nothing is bound, nothing is registered and no timer runs \u2014 not a socket that refuses. Read-only: NERVIS can never approve a step, run a command or change a setting, because the Bridge has no route that could. **Machine-scoped on purpose:** a project you open cannot turn this on, because it decides which local file gets read and where its contents are sent."
+          "markdownDescription": "Let NERVIS see what this window is doing. Off by default, and off means nothing is bound, nothing is registered and no timer runs — not a socket that refuses. Read-only: NERVIS can never approve a step, run a command or change a setting, because the Bridge has no route that could. **Machine-scoped on purpose:** a project you open cannot turn this on, because it decides which local file gets read and where its contents are sent."
         },
         "clarvis.bridge.nervisUrl": {
           "type": "string",
           "default": "http://127.0.0.1:8790",
           "scope": "machine",
-          "markdownDescription": "Where NERVIS is listening. 8790 is NERVIS's own default and the port its launcher assigns; change it only if you run NERVIS somewhere else. Loopback only for now \u2014 a non-loopback value is refused and the enrollment secret is never sent. **Machine-scoped on purpose:** a project you open cannot redirect the Bridge."
+          "markdownDescription": "Where NERVIS is listening. 8790 is NERVIS's own default and the port its launcher assigns; change it only if you run NERVIS somewhere else. Loopback only for now — a non-loopback value is refused and the enrollment secret is never sent. **Machine-scoped on purpose:** a project you open cannot redirect the Bridge."
         },
         "clarvis.bridge.enrollmentSecretPath": {
           "type": "string",
           "default": "",
           "scope": "machine",
-          "markdownDescription": "Path to NERVIS's enrollment secret \u2014 the file beside its database, named like it with a .enrollment suffix. Reading it is how Clarvis proves it is you; the file's own permissions are the check, and it must be a regular file, mode 0600, not a symlink. Empty means the Bridge binds but never registers, and every read of it is refused. **Machine-scoped on purpose:** a project you open cannot choose which file this is."
+          "markdownDescription": "Path to NERVIS's enrollment secret — the file beside its database, named like it with a .enrollment suffix. Reading it is how Clarvis proves it is you; the file's own permissions are the check, and it must be a regular file, mode 0600, not a symlink. Empty means the Bridge binds but never registers, and every read of it is refused. **Machine-scoped on purpose:** a project you open cannot choose which file this is."
         }
       }
     },
     "themes": [
       {
         "id": "clarvis-nervis",
-        "label": "Clarvis \u2014 NERVIS",
+        "label": "Clarvis — NERVIS",
         "uiTheme": "vs-dark",
         "path": "./themes/clarvis-nervis-color-theme.json"
       }

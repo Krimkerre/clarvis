@@ -94,7 +94,12 @@ const addTurn = (speaker, text) => {
 const renderInto = (row, text) => {
   while (row.childNodes.length > 1) row.removeChild(row.lastChild);
 
-  String(text).split('\\u0060').forEach((part, i) => {
+  // A real backtick. This script used to live inside a TypeScript template literal, where
+  // the backtick had to be escaped with a doubled backslash; when it became a real file
+  // (4f6e33e) the doubled backslash came along, so it split on the six-character text
+  // backslash-u-0-0-6-0, which never appears, and no inline code ever rendered.
+  // src/panels/chatRender.test.ts runs this file and keeps it a real backtick.
+  String(text).split('`').forEach((part, i) => {
     // Odd indices sat between a pair of backticks.
     if (i % 2 === 1) {
       const code = document.createElement('code');

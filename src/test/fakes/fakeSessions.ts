@@ -22,15 +22,19 @@
  *   its sessions can be settled again (`lock-rule-cases.json` adoption_rule "then"); the answer itself is
  *   still the fake's fixture answer.
  *
- * Test controls — `seed`, `openRequest`, `completeItem`, `completeTurn`, `ownerStop`, `restartRavis`,
- * `supersedeLock`, `leaveProcessesOnStop`, `processesGone`, `holdRootForClarvis`, `releaseRootFromClarvis`
- * — stand in for what Codex, the owner and other windows do. Test support only.
+ * - a site ask doesn't make the task wait, and allowing one emits `site.allowed` before its `request.resolved`,
+ *   as RAVIS's `_decide_site` does (C2b).
+ *
+ * Test controls — `seed`, `openRequest`, `openCalibrationRequest`, `narrowRequest`, `completeItem`, `completeTurn`,
+ * `ownerStop`, `restartRavis`, `supersedeLock`, `leaveProcessesOnStop`, `processesGone`, `holdRootForClarvis`,
+ * `releaseRootFromClarvis` — stand in for what Codex, the owner and other windows do. Test support only.
  */
 
 import { randomBytes, randomUUID } from 'crypto';
 import type { IncomingHttpHeaders } from 'http';
 import * as path from 'path';
 import type { CreateSessionBody, DecisionKind, RequestKind, RequestView, SessionState } from '../../engine/relay/relayTypes';
+import type { CalibrationRequest } from './calibrationRequests';
 import { errorAnswer, fixtureAnswer, type FakeAnswer } from './fakeAnswers';
 import type { FakeLocks, SessionTake } from './fakeLocks';
 import type { FakeEventStream } from './FakeRavisRelay';
@@ -192,8 +196,35 @@ export class FakeSessions {
     if (!example) throw new Error(`no ${kind} request in the fixtures`);
     this.counter++;
     const request: RequestView = { ...example, id: `rq_FAKE${this.counter}`, turn_id: session.activeTurn ?? randomUUID(), ...patch };
+    return this.opened(session, request);
+  }
+
+  /** Codex asks what it asked in calibration (`calibrationRequests.ts`), as RAVIS relays it. */
+  openCalibrationRequest(session: MachineSession, asked: CalibrationRequest): RequestView {
+    this.counter++;
+    const request: RequestView = {
+      id: `rq_FAKE${this.counter}`,
+      kind: asked.kind,
+      turn_id: session.activeTurn ?? randomUUID(),
+      item_id: asked.itemId,
+      opened_at: '2026-09-14T14:02:00Z',
+      payload: structuredClone(asked.payload),
+      allowed_decisions: [...asked.allowed_decisions],
+    };
+    return this.opened(session, request);
+  }
+
+  /** RAVIS now offers less for an open request than the window was shown: its next answer outside the list is 422. */
+  narrowRequest(session: MachineSession, requestId: string, allowed: DecisionKind[]): void {
+    const request = session.open.get(requestId);
+    if (request) request.allowed_decisions = allowed;
+    this.sync(session);
+  }
+
+  /** A site ask never makes the task wait: the command it is about has already failed. */
+  private opened(session: MachineSession, request: RequestView): RequestView {
     session.open.set(request.id, request);
-    session.state = 'waiting_on_you';
+    if (request.kind !== 'site') session.state = 'waiting_on_you';
     this.sync(session);
     session.stream.emit('request.opened', { request });
     return request;
@@ -429,6 +460,9 @@ export class FakeSessions {
   }
 
   private resolveRequest(session: MachineSession, requestId: string, kind: string, headers: IncomingHttpHeaders): void {
+    const host = session.open.get(requestId)?.payload.host;
+    // RAVIS adds the site to Codex's list, says so, and only then resolves the ask (`_decide_site`).
+    if (kind === 'allow_site') session.stream.emit('site.allowed', { request_id: requestId, host });
     session.open.delete(requestId);
     session.resolvedBy.set(requestId, 'window');
     const key = headers['idempotency-key'];

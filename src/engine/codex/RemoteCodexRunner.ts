@@ -9,13 +9,15 @@
  * **Presence.** While a run is followed, a timer ticks the core's presence every 5 s, and the chat panel's
  * pings (`panelPinged`) keep the window counted as attached (design §3.5.4).
  *
- * **Approvals, until C2b.** Codex's requests are declined where RAVIS allows declining, and said so; a
- * question stays open, and Stop still ends the task. Rendering them properly, one at a time from RAVIS's
- * allowed decisions, waits on calibration (plan.md M15 C2b).
+ * **Approvals** (C2b). Codex's requests are asked in the chat by `approvals.ts`, one at a time, with RAVIS's
+ * allowed decisions as buttons; the chat's own question mechanism shows them (`RunSession.askCodex`). Before an
+ * approved file change, the files it touches are copied for **Clarvis: Undo Last Agent Run** (`undoCopies`).
  */
 
+import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AgentEvent } from '../../agent/AgentRunner';
+import { Checkpoint } from '../../agent/Checkpoint';
 import type { MissingDependency } from '../../agent/missingDependency';
 import type { AgentTerminal } from '../../agent/tools/commandTools';
 import type { CodingRun } from '../CodingRun';
@@ -28,13 +30,13 @@ import type { LockClient } from '../lock/lockClient';
 import { ownStart } from '../lock/processProbe';
 import { takeProjectLock } from '../lock/projectLock';
 import type { RelayClient } from '../relay/relayClient';
-import type { Decision, RequestView, SessionMode, SessionSummary } from '../relay/relayTypes';
+import type { SessionMode, SessionSummary } from '../relay/relayTypes';
 import { TokenStore } from '../relay/tokenStore';
 import { CodexDestination, CodexSource } from '../transfer/codexSwitch';
 import { checkpointFromCodex } from '../transfer/fromSource';
+import type { PromptShower } from './approvals';
 import { CodexGitGlue } from './codexGit';
 import { CodexRunCore, type CodexCheckpointPort, type CodexCursors, type CodexLockFloor } from './runCore';
-import { declinedLine } from './translate';
 
 const PRESENCE_TICK_MS = 5_000;
 /** Cursors are written to `workspaceState` at most this often: a stream of text deltas each carry an id. */
@@ -49,7 +51,11 @@ export interface RemoteCodexDeps {
   terminal: AgentTerminal;
   log: (line: string) => void;
   mode: SessionMode;
+  /** The chat's mode as it is now, so a switch to Unattended counts from the request on screen (C2b). */
+  modeNow: () => SessionMode;
   maxSteps: number;
+  /** Shows one of Codex's requests in the chat and comes back with the owner's reply (C2b). */
+  ask: PromptShower;
 }
 
 export class RemoteCodexRunner implements CodingRun {
@@ -68,8 +74,10 @@ export class RemoteCodexRunner implements CodingRun {
       window: windowIdentity(),
       workspace: { root: deps.root, gitDir: gitDirForRelay(deps.root, gitDir) },
       mode: deps.mode,
+      modeNow: deps.modeNow,
       maxSteps: deps.maxSteps,
-      ask: (request) => this.declineUntilApprovals(request),
+      ask: deps.ask,
+      capture: undoCopies(deps),
       floor: deps.locks ? checkoutFloor(deps, deps.locks) : undefined,
       // M15 C3: a switch reserves the project with the session's token, and every settle writes the checkpoint first.
       locks: deps.locks,
@@ -132,6 +140,11 @@ export class RemoteCodexRunner implements CodingRun {
     this.core.panelPinged(Date.now());
   }
 
+  /** The chat's mode changed: Unattended may answer the request on screen itself (C2b). */
+  modeChanged(): void {
+    this.core.modeChanged();
+  }
+
   get result(): { commits: string[]; files: string[] } {
     return this.core.result;
   }
@@ -174,11 +187,23 @@ export class RemoteCodexRunner implements CodingRun {
     if (!event.files?.length || !working || !startedFrom) return event;
     return { ...event, closing: `\n\nYour own work on \`${startedFrom}\` is untouched — Codex's changes are on \`${working}\`.` };
   }
+}
 
-  private async declineUntilApprovals(request: RequestView): Promise<Decision | undefined> {
-    this.core.note(declinedLine(request));
-    return request.allowed_decisions.includes('skip') ? { kind: 'skip' } : undefined;
-  }
+/**
+ * Copies each file before an approved Codex change touches it, so **Clarvis: Undo Last Agent Run** can put it back
+ * (M15 C2b; design §5.2). The copies start at the task's first approved change, replacing the last run's the way a
+ * run of Clarvis's own engine does; the task branch stays the undo for everything else, including whatever Codex
+ * changed while no window was attached. `approvals.ts` hands only paths inside the project.
+ */
+function undoCopies(deps: RemoteCodexDeps): (paths: string[]) => Promise<void> {
+  let checkpoint: Checkpoint | undefined;
+  return async (paths) => {
+    if (!checkpoint) {
+      checkpoint = new Checkpoint(deps.context, deps.root, deps.log);
+      await checkpoint.begin('a Codex task');
+    }
+    for (const file of paths) await checkpoint.capture(path.join(deps.root, file));
+  };
 }
 
 /**

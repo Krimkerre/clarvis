@@ -57,6 +57,10 @@ export const CODEX_LINES = {
     "To run or follow Codex tasks from this editor, point Clarvis at RAVIS's key once, in the setting Clarvis › Ravis: Credential File.",
   tasksUnreachable: "RAVIS isn't answering; Codex tasks for this project can't be shown yet. I'll look again shortly.",
   noFolder: 'There is no folder open, so there is nothing for Codex to work on.',
+  answeredElsewhere: 'Answered in the other editor.',
+  decisionNarrowed: "RAVIS no longer offers that answer to Codex's request. Here is what it offers now.",
+  nothingOffered: "RAVIS no longer offers any answer to Codex's request, so it waits.",
+  answerUnsent: "RAVIS isn't answering, so that answer didn't reach Codex. I'll ask again once RAVIS is back.",
 } as const;
 
 /** Why RAVIS can't be used from this window, from `relayEndpoint`'s reason. */
@@ -145,7 +149,7 @@ export function steerRefusedLine(failure: RelayFailure): string {
 /** What an answer RAVIS didn't take means, when it means something to the owner. */
 export function answerRefusedLine(failure: RelayFailure): string | undefined {
   const code = refusalCode(failure);
-  if (code === 'REQUEST_ALREADY_RESOLVED') return 'Answered in the other editor.';
+  if (code === 'REQUEST_ALREADY_RESOLVED') return CODEX_LINES.answeredElsewhere;
   // Stopping: the stop has already said everything there is to say.
   if (code === 'SESSION_STOPPING') return undefined;
   if (code === 'DECISION_NOT_ALLOWED') return "RAVIS no longer offers that choice for Codex's request.";
@@ -164,9 +168,11 @@ export function stoppedByLine(by: unknown): string | undefined {
 }
 
 const RESOLVED_BY = new Map<string, string>([
-  ['window', 'Answered in the other editor.'],
+  ['window', CODEX_LINES.answeredElsewhere],
   ['policy_timeout', CODEX_LINES.pausedUnanswered],
   ['policy_secret', "Codex asked for a secret. Clarvis doesn't pass secrets through the chat."],
+  // RAVIS closes a site ask nobody decided when the task ends (`request.resolved {by: turn_ended}`).
+  ['turn_ended', "That ask closed when Codex's task ended."],
 ]);
 
 /** Why a request on screen went away (design §5.2). A stop's own line covers `stop` and `owner_stop`. */
@@ -213,13 +219,17 @@ export function settleStateLine(state: string): string | undefined {
 }
 
 /**
- * Until approvals arrive (C2b), a request is declined where RAVIS allows declining, and said so. A
- * question can't be declined, so it stays open: the task waits, and Stop still ends it.
+ * A site the owner allowed reached Codex's list (C2b; `site.allowed`). It counts for every task from now on, but a
+ * task already running read the list when Codex loaded it and doesn't see the addition until it is reopened
+ * (calibration runs `cal_ed672bf12c6f`, `cal_85aa0ece0f52` and `cal_5a1d6ecc33b4`), so the line says so.
  */
-export function declinedLine(request: RequestView): string {
-  const pending = 'answering Codex from the chat comes with the approvals step';
-  if (request.kind === 'question') return `Codex asked a question (${questionHeader(request)}). It waits: ${pending}. Stop ends the task.`;
-  return `Codex asked to ${requestedAction(request)}. I declined: ${pending}.`;
+export function siteAllowedLine(host: string): string {
+  return `${host} is allowed for Codex's commands from now on. A task that's already running may still be blocked from it until Codex reconnects.`;
+}
+
+/** `409 SITE_NOT_ADDED`, in RAVIS's words, naming the host. */
+export function siteNotAddedLine(host: string): string {
+  return host ? `Codex didn't add ${host}, so it stays blocked.` : "Codex didn't add that site, so it stays blocked.";
 }
 
 /** An open request as a checkpoint lists it when a switch let it go unanswered (C3). */
@@ -237,6 +247,7 @@ function requestedAction(request: RequestView): string {
   const payload = request.payload;
   if (request.kind === 'command') return `run \`${String(payload.command ?? 'a command')}\``;
   if (request.kind === 'fileChange') return `change ${Array.isArray(payload.files) ? payload.files.length : 'some'} file(s)`;
+  if (request.kind === 'site') return `reach ${typeof payload.host === 'string' ? payload.host : 'a blocked site'}`;
   return 'have more access';
 }
 

@@ -11,7 +11,8 @@ import type { FakeSessions, MachineSession } from '../../test/fakes/fakeSessions
 import { readCheckpoint } from '../checkpoint/checkpointFile';
 import { GitFacts } from '../checkpoint/gitFacts';
 import { newCheckpoint, undeliveredFeedback, type TaskCheckpoint } from '../checkpoint/taskCheckpoint';
-import { CodexRunCore, type CodexBranch, type CodexGit, type CodexRunOptions, type CodexSave, type EngineAsker } from '../codex/runCore';
+import type { PromptShower, RequestPrompt } from '../codex/approvals';
+import { CodexRunCore, type CodexBranch, type CodexGit, type CodexRunOptions, type CodexSave } from '../codex/runCore';
 import { CODEX_LINES } from '../codex/translate';
 import { encodeLockFile, lockFilePath, readLockFile, type LockFileContent } from '../lock/fileLock';
 import type { GroupStop } from '../lock/groupKill';
@@ -19,7 +20,7 @@ import { LockClient } from '../lock/lockClient';
 import { takeProjectLock, type LockOutcome, type ProjectLock, type ProjectLockDeps } from '../lock/projectLock';
 import { RelayClient } from '../relay/relayClient';
 import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
-import type { Decision, RequestView, RunningCommand } from '../relay/relayTypes';
+import type { RunningCommand } from '../relay/relayTypes';
 import { TokenStore } from '../relay/tokenStore';
 import { ClarvisDestination, ClarvisSource, type ClarvisRunHandle } from './clarvisSwitch';
 import { CodexDestination, CodexSource } from './codexSwitch';
@@ -207,9 +208,9 @@ async function waitFor(condition: () => boolean, what: string, timeoutMs = 5_000
   }
 }
 
-function holdingAsker(): { ask: EngineAsker; asked: { request: RequestView; signal: AbortSignal; answer(decision: Decision | undefined): void }[] } {
-  const asked: { request: RequestView; signal: AbortSignal; answer(decision: Decision | undefined): void }[] = [];
-  const ask: EngineAsker = (request, signal) => new Promise((resolve) => asked.push({ request, signal, answer: resolve }));
+function holdingAsker(): { ask: PromptShower; asked: { prompt: RequestPrompt; signal: AbortSignal; answer(reply: string | undefined): void }[] } {
+  const asked: { prompt: RequestPrompt; signal: AbortSignal; answer(reply: string | undefined): void }[] = [];
+  const ask: PromptShower = (prompt, signal) => new Promise((resolve) => asked.push({ prompt, signal, answer: resolve }));
   return { ask, asked };
 }
 

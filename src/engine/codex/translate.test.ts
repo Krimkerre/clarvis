@@ -7,11 +7,13 @@ import {
   answerRefusedLine,
   clockTime,
   CODEX_LINES,
-  declinedLine,
   failureLine,
   feedbackLine,
   leftoverLine,
+  requestSummary,
   resolvedLine,
+  siteAllowedLine,
+  siteNotAddedLine,
   steerRefusedLine,
   stoppedByLine,
   tokenLine,
@@ -108,10 +110,18 @@ test('leftover processes are named, and nothing is said to be saved', () => {
   assert.equal(line, 'Something Codex started is still running: `node` (pid 51310). Nothing is saved until it stops.');
 });
 
-test('until approvals arrive, a command is declined and said so; a question waits', () => {
-  const [command, , , question] = fixture('agent-sessions.json').request_view_examples as RequestView[];
-  assert.match(declinedLine(command), /Codex asked to run `npm install left-pad`\. I declined/);
-  assert.match(declinedLine({ ...question, kind: 'question' }), /It waits/);
+test('an allowed site counts from now on, and a task already running may not see it yet; a site Codex did not add stays blocked', () => {
+  assert.match(siteAllowedLine('pypi.org'), /^pypi\.org is allowed for Codex's commands from now on\. A task that's already running may still be blocked from it/);
+  assert.equal(siteNotAddedLine('pypi.org'), "Codex didn't add pypi.org, so it stays blocked.");
+  assert.equal(siteNotAddedLine(''), "Codex didn't add that site, so it stays blocked.");
+  assert.equal(resolvedLine('turn_ended'), "That ask closed when Codex's task ended.");
+});
+
+test('a request a switch let go is listed by what it asked, a site ask by its host', () => {
+  const examples = fixture('agent-sessions.json').request_view_examples as RequestView[];
+  const site = examples.find((request) => request.kind === 'site') as RequestView;
+  assert.equal(requestSummary(site), 'Codex asked to reach pypi.org');
+  assert.equal(requestSummary(examples[0]), 'Codex asked to run `npm install left-pad`');
 });
 
 test('a missing or unsafe token file, and times that are not times', () => {

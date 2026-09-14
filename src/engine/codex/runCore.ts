@@ -28,7 +28,8 @@
  *   take it. Never dropped.
  * - A completed item is recorded once (`CodexLedger`) however often it arrives, and nothing Codex did
  *   is done again here.
- * - A request is asked once however often it is replayed (`QuestionBoard`).
+ * - Codex's requests are asked once each however often they are replayed, one at a time, and answered only with
+ *   what RAVIS allows, checked again right before the answer is sent (`approvals.ts`, C2b).
  * - Work is committed only by the window holding RAVIS's settle claim, and never once RAVIS says the
  *   project lock was superseded — the fence, for a Codex task. The one way past it: the editor that held
  *   the checkout when RAVIS restarted has closed (`gone` by the shared lock rule). Then this window stops
@@ -42,7 +43,6 @@
 
 import { randomUUID } from 'crypto';
 import type { AgentEvent } from '../../agent/AgentRunner';
-import { engineDecisionAfterAsking } from '../../chat/stopDecision';
 import type { CheckpointStatus, CodexThreadRef, OpenQuestion, TaskCheckpoint, UncertainOperation } from '../checkpoint/taskCheckpoint';
 import type { LockClient } from '../lock/lockClient';
 import { codexReadiness } from '../relay/codexReadiness';
@@ -50,13 +50,12 @@ import { createSessionKey, freshKey, switchCreateKey } from '../relay/idempotenc
 import type { CodexStart } from '../transfer/transferState';
 import { PresenceTracker, type PresenceAction } from '../relay/presence';
 import type { RelayClient } from '../relay/relayClient';
-import type { RelayFailure } from '../relay/relayFailure';
+import type { RelayFailure, RelayOutcome } from '../relay/relayFailure';
 import { abortableSleep, type Sleep } from '../relay/relayHttp';
 import type {
   CreateSessionBody,
   Decision,
   Host,
-  RequestView,
   SessionMode,
   SessionSummary,
   SessionView,
@@ -64,12 +63,11 @@ import type {
 } from '../relay/relayTypes';
 import { RECONNECT_BACKOFF_MS, RelayEventStream, SILENCE_LIMIT_MS, type StreamItem } from '../relay/sseReader';
 import type { TokenRead } from '../relay/tokenStore';
+import { CodexApprovals, type PromptShower } from './approvals';
 import { EventChannel } from './eventChannel';
 import { FeedbackQueue, type FeedbackEntry } from './feedback';
 import { CodexLedger, type CheckRun } from './ledger';
-import { QuestionBoard, type Asking } from './questions';
 import {
-  answerRefusedLine,
   CODEX_LINES,
   failureLine,
   feedbackLine,
@@ -77,7 +75,6 @@ import {
   reattachedLine,
   refusalCode,
   requestSummary,
-  resolvedLine,
   settleStateLine,
   steerRefusedLine,
   stoppedByLine,
@@ -119,9 +116,6 @@ export interface CodexGit {
   /** Tidies a branch made for a session RAVIS then refused. */
   abandon(): Promise<void>;
 }
-
-/** Puts one of Codex's requests to the owner. `signal` aborts when the request no longer wants an answer. */
-export type EngineAsker = (request: RequestView, signal: AbortSignal) => Promise<Decision | undefined>;
 
 /** A checkout lock this window took over, let go of once the run is over. */
 export interface AdoptedCheckout {
@@ -206,8 +200,13 @@ export interface CodexRunOptions {
   /** `git_dir` is the realpath of `<root>/.git` (design §3.5.1). */
   workspace: { root: string; gitDir: string };
   mode: SessionMode;
+  /** The chat's mode as it is now, for Unattended's own answers (C2b); the mode the task started in when absent. */
+  modeNow?: () => SessionMode;
   maxSteps: number;
-  ask: EngineAsker;
+  /** Puts one of Codex's requests to the owner, as `approvals.ts` renders it. */
+  ask: PromptShower;
+  /** Copies project files, by relative path, for undo before an approved file change (C2b; design §5.2). */
+  capture?: (paths: string[]) => Promise<void>;
   /** Absent: a task RAVIS paused for another editor is only followed from here, never saved. */
   floor?: CodexLockFloor;
   /** RAVIS's lock API: a switch reserves the project for Clarvis's own engine with this session's token (C3). */
@@ -242,7 +241,8 @@ type Handler = (data: Record<string, unknown>) => void | Promise<void>;
 export class CodexRunCore {
   readonly ledger = new CodexLedger();
   readonly feedback = new FeedbackQueue();
-  readonly board = new QuestionBoard();
+  /** Codex's requests in this window: asked one at a time, answered with what RAVIS allows (C2b). */
+  readonly approvals: CodexApprovals;
   /** Set when a start was refused because a Codex session already holds the project: follow that one. */
   attachInstead: string | undefined;
 
@@ -299,8 +299,11 @@ export class CodexRunCore {
     ['item.started', (data) => this.ledger.started(data.item)],
     ['agent.delta', (data) => this.terminal(data.text)],
     ['command.output', (data) => this.terminal(data.text)],
-    ['request.opened', (data) => this.openRequest(data.request)],
-    ['request.resolved', (data) => this.onRequestResolved(data)],
+    ['request.opened', (data) => this.approvals.open(data.request)],
+    ['request.resolved', (data) => this.approvals.resolved(data)],
+    // A site ask follows as its own request; the event itself only goes to the log.
+    ['site.blocked', (data) => this.log(`codex: a command was blocked from reaching ${String(data.host)}`)],
+    ['site.allowed', (data) => this.approvals.siteAllowed(data)],
     ['feedback', (data) => this.onFeedback(data)],
     ['model.rerouted', (data) => this.say(`Codex moved from ${String(data.from)} to ${String(data.to)} (${String(data.reason)}).`)],
     ['warning', (data) => this.terminal(`Codex: ${String(data.message)}\n`)],
@@ -310,6 +313,18 @@ export class CodexRunCore {
 
   constructor(private readonly options: CodexRunOptions) {
     this.timing = { ...CODEX_TIMING, ...options.timing };
+    this.approvals = new CodexApprovals({
+      answer: (requestId, decision) => this.answerRequest(requestId, decision),
+      show: (prompt, signal, again) => this.options.ask(prompt, signal, again),
+      steer: (text) => this.interject(text),
+      stopRun: () => this.stop(),
+      stopping: () => this.isStopping(),
+      mode: () => this.options.modeNow?.() ?? this.options.mode,
+      attached: () => this.presence.panelConnected,
+      capture: options.capture,
+      say: (line) => this.say(line),
+      log: (line) => this.log(line),
+    });
   }
 
   /** A new task: refused before anything is touched unless Codex may run (design §5.1). */
@@ -389,7 +404,7 @@ export class CodexRunCore {
     const granted = await locks.transfer(lockId, { token: session.token }, 'clarvis_run', freshKey(), { retry: this.timing.retry });
     if (!granted.ok) return { ok: false, line: failureLine(granted.failure, 'during') };
     this.switching = {};
-    for (const request of this.board.held) this.unanswered.push({ engine: 'codex', summary: requestSummary(request) });
+    for (const request of this.approvals.held) this.unanswered.push({ engine: 'codex', summary: requestSummary(request) });
     this.releaseQuestions();
     this.say(CODEX_LINES.stoppingForSwitch);
     void this.interruptForSwitch(session);
@@ -654,6 +669,11 @@ export class CodexRunCore {
     this.say(line);
   }
 
+  /** The chat's mode changed: Unattended may now answer the request on screen itself (C2b). */
+  modeChanged(): void {
+    this.approvals.modeChanged();
+  }
+
   /** The window is closing: stop following. The task goes on in RAVIS. */
   dispose(): void {
     this.disposer.abort();
@@ -830,6 +850,8 @@ export class CodexRunCore {
     if (this.dropsInARow >= 2) this.say(CODEX_LINES.ravisBack);
     this.dropsInARow = 0;
     void this.deliverKept();
+    // An answer RAVIS never received is asked again now that it answers.
+    this.approvals.reconnected();
   }
 
   private onDisconnected(): void {
@@ -843,7 +865,7 @@ export class CodexRunCore {
 
   private onSnapshot(view: SessionView): void {
     this.noteView(view);
-    for (const request of view.pending_requests ?? []) this.openRequest(request);
+    for (const request of view.pending_requests ?? []) this.approvals.open(request);
     this.afterState(view.state, view.processes);
   }
 
@@ -921,46 +943,15 @@ export class CodexRunCore {
 
   // ── Questions ─────────────────────────────────────────────────────────────
 
-  private openRequest(request: unknown): void {
-    if (!isRequestView(request) || this.isStopping()) return;
-    if (this.board.open(request)) this.askNext();
-  }
-
-  private askNext(): void {
-    const asking = this.board.next();
-    if (asking) void this.ask(asking);
-  }
-
-  private async ask({ request, signal }: Asking): Promise<void> {
-    const answer = await Promise.resolve()
-      .then(() => this.options.ask(request, signal))
-      .catch(() => undefined);
-    // The last check before anything is sent (review M3): has anything ended this question meanwhile?
-    const stopped = this.isStopping() || !this.board.stillAsking(request.id);
-    this.board.answered(request.id);
-    if (engineDecisionAfterAsking(answer, stopped) === 'send') await this.sendAnswer(request.id, answer as Decision);
-    this.askNext();
-  }
-
-  private async sendAnswer(requestId: string, decision: Decision): Promise<void> {
+  /** An answer to one of Codex's requests: keyed `<request id>:<window id>`, and resent with that key when RAVIS didn't answer. */
+  private answerRequest(requestId: string, decision: Decision): Promise<RelayOutcome<unknown>> {
     const session = this.session as Session;
     const { relay, window } = this.options;
-    const answered = await relay.answer(session.id, session.token, requestId, window.id, decision);
-    if (answered.ok) return;
-    this.log(`codex: the answer to ${requestId} was not taken (${answered.failure.kind})`);
-    const line = answerRefusedLine(answered.failure);
-    if (line) this.say(line);
-  }
-
-  private onRequestResolved(data: Record<string, unknown>): void {
-    const where = this.board.resolve(String(data.request_id));
-    const line = where === 'showing' ? resolvedLine(data.by) : undefined;
-    if (line) this.say(line);
-    this.askNext();
+    return relay.answer(session.id, session.token, requestId, window.id, decision, { retry: this.timing.retry });
   }
 
   private releaseQuestions(): void {
-    const released = this.board.releaseAll();
+    const released = this.approvals.releaseAll();
     if (released > 0) this.log(`codex: ${released} question(s) let go`);
   }
 
@@ -1280,11 +1271,6 @@ function codexHolder(failure: RelayFailure): string | undefined {
 function turnRef(data: Record<string, unknown>): { id?: string; status: CodexThreadRef['lastTurnStatus'] } {
   const status = data.status === 'completed' || data.status === 'interrupted' || data.status === 'failed' ? data.status : 'unknown';
   return typeof data.turn_id === 'string' ? { id: data.turn_id, status } : { status };
-}
-
-function isRequestView(value: unknown): value is RequestView {
-  const request = value as Partial<RequestView> | null;
-  return typeof request?.id === 'string' && typeof request.kind === 'string' && Array.isArray(request.allowed_decisions);
 }
 
 function union(first: string[], second: string[]): string[] {

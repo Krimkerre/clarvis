@@ -35,11 +35,17 @@ export type SessionState =
   | 'failed'
   | 'ended';
 
-/** What Codex is asking for. */
-export type RequestKind = 'command' | 'fileChange' | 'permissions' | 'question';
+/**
+ * What a request asks for. The first four are Codex's own; `site` is RAVIS's: a site Codex's network
+ * proxy blocked a command from reaching, asked of the owner (`agent-sessions.json` request_kinds).
+ */
+export type RequestKind = 'command' | 'fileChange' | 'permissions' | 'question' | 'site';
 
-/** How a window may answer a request. RAVIS lists the allowed ones per request. */
-export type DecisionKind = 'once' | 'skip' | 'stop' | 'answer';
+/**
+ * How a window may answer a request. RAVIS lists the allowed ones per request: `once`, `skip` and `stop`
+ * for an approval, `answer` and `stop` for a question, `allow_site` and `keep_blocked` for a site.
+ */
+export type DecisionKind = 'once' | 'skip' | 'stop' | 'answer' | 'allow_site' | 'keep_blocked';
 
 /** Why a new turn starts: an ordinary continue, "carry on" after the step cap, or a catch-up after a switch. */
 export type TurnKind = 'continue' | 'carry_on' | 'catch_up';
@@ -54,8 +60,9 @@ export type SettleNext = 'idle' | 'end' | 'transfer';
 export type HolderKind = 'codex_session' | 'clarvis_run';
 
 /**
- * What `GET /api/v1/codex` says, as far as starting a task needs it (`codex-state.json`). The body has
- * much more — usage, runs, models, sign-in — which the menu bar and the dashboard read; Clarvis doesn't.
+ * What `GET /api/v1/codex` says, as far as Clarvis needs it (`codex-state.json`): whether a task may start,
+ * and which Codex models the owner may choose from. The body has much more — usage, runs, sign-in — which
+ * the menu bar and the dashboard read; Clarvis doesn't.
  */
 export interface CodexState {
   state: string;
@@ -65,6 +72,19 @@ export interface CodexState {
   home?: { fingerprint?: string };
   /** Whether Codex is signed in to the account the owner confirmed (C3: a resume needs it). */
   account?: { fingerprint_matches?: boolean } | null;
+  /** The models Codex offers this account, from Codex's `model/list`. Empty while signed out. */
+  models?: CodexModel[];
+}
+
+/** One Codex model and the efforts it takes (`codex-state.json` → `models`). */
+export interface CodexModel {
+  id: string;
+  display_name: string;
+  is_default: boolean;
+  /** The effort this model uses when none is chosen. */
+  default_effort: string;
+  /** How hard it may think, e.g. `low`, `medium`, `high`: the levels Codex lists for this model. */
+  efforts: string[];
 }
 
 /** A request Codex opened, as RAVIS relays it (`RequestView`). */

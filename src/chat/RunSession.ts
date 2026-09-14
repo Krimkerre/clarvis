@@ -41,6 +41,7 @@ import { findGitDir } from '../engine/lock/gitDir';
 import type { ProjectLock, TakeoverOffer } from '../engine/lock/projectLock';
 import { checkpointFromClarvis } from '../engine/transfer/fromSource';
 import { ChatEngineSwitch, type CurrentRun, type SwitchHost } from './EngineSwitch';
+import type { RequestPrompt } from '../engine/codex/approvals';
 import { reattachStep, type ReattachStep } from '../engine/codex/reattach';
 import { RemoteCodexRunner } from '../engine/codex/RemoteCodexRunner';
 import { CODEX_LINES, ravisUnusableLine, tokenLine } from '../engine/codex/translate';
@@ -226,6 +227,9 @@ export class RunSession {
    * is not a mode setting: `rm -rf` stops and asks in every mode, including this one.
    */
   modeStoppedAsking(): void {
+    // M15 C2b: a Codex task's requests are its runner's. Unattended may answer the one on screen itself — the narrow
+    // kinds only — and a "Do it" typed on its behalf would be words for Codex, not an answer.
+    if (this.running instanceof RemoteCodexRunner) return this.running.modeChanged();
     if (this.asksNow?.() !== false || !this.pending.isWaiting) return;
 
     this.log('agent: mode no longer asks — releasing the step that was waiting');
@@ -612,8 +616,34 @@ export class RunSession {
       terminal: this.terminal,
       log: this.log,
       mode: codexModeFor(chatModeSetting()),
+      modeNow: () => codexModeFor(chatModeSetting()),
       maxSteps: maxStepsSetting(),
+      ask: (prompt, signal, again) => this.askCodex(prompt, signal, again),
     });
+  }
+
+  /**
+   * One of Codex's requests in the chat (M15 C2b; design §5.2): its line and detail written, never spoken — a task
+   * can ask a dozen of these, as a run of Clarvis's own engine can — and RAVIS's choices as buttons. Typing still
+   * works: `approvals.ts` takes typed words as a question's answer, or passes them to Codex and asks again. The
+   * buttons go the moment the request no longer wants an answer — a Stop, another window answering, the policy.
+   */
+  private async askCodex(prompt: RequestPrompt, signal: AbortSignal, again: boolean): Promise<string | undefined> {
+    if (signal.aborted) return undefined;
+    if (!again) await this.note([prompt.line, ...prompt.detail].join('\n'));
+    if (signal.aborted) return undefined;
+    let settled = false;
+    // Only while it is still this question waiting: once answered, the panel may already hold the next one.
+    const letGo = () => {
+      if (!settled) this.pending.cancel();
+    };
+    signal.addEventListener('abort', letGo, { once: true });
+    try {
+      return await this.pending.ask(prompt.options.map(({ label, detail }) => ({ label, detail })), prompt.about);
+    } finally {
+      settled = true;
+      signal.removeEventListener('abort', letGo);
+    }
   }
 
   /** A run that didn't start: why — and the Codex task to follow, when one holds the project. */

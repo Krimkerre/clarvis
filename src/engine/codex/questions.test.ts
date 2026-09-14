@@ -12,6 +12,51 @@ function request(id: string): RequestView {
   return { id, kind: 'command', turn_id: 't1', item_id: `i-${id}`, opened_at: '2026-09-13T01:42:00Z', payload: {}, allowed_decisions: ['once', 'skip', 'stop'] };
 }
 
+function site(id: string): RequestView {
+  return { ...request(id), kind: 'site', payload: { host: 'pypi.org', protocol: 'https' }, allowed_decisions: ['allow_site', 'keep_blocked'] };
+}
+
+test("a site ask waits behind Codex's own requests, each kind in the order it came; one already on screen stays there", () => {
+  const board = new QuestionBoard();
+  board.open(site('rq_site_1'));
+  board.open(request('rq_1'));
+  board.open(site('rq_site_2'));
+  board.open(request('rq_2'));
+  const order: string[] = [];
+  for (let asking = board.next(); asking; asking = board.next()) {
+    order.push(asking.request.id);
+    board.answered(asking.request.id);
+  }
+  assert.deepEqual(order, ['rq_1', 'rq_2', 'rq_site_1', 'rq_site_2']);
+
+  const showingSite = new QuestionBoard();
+  showingSite.open(site('rq_site'));
+  showingSite.next();
+  showingSite.open(request('rq_later'));
+  assert.equal(showingSite.next(), undefined, 'the site ask on screen is not taken away for a later request');
+  assert.equal(showingSite.stillAsking('rq_site'), true);
+});
+
+test('a request put back is asked next, as RAVIS now offers it; one RAVIS resolved, or Stop let go, never comes back', () => {
+  const board = new QuestionBoard();
+  board.open(request('rq_1'));
+  board.open(request('rq_2'));
+  board.next();
+  board.answered('rq_1');
+
+  assert.equal(board.redraw({ ...request('rq_1'), allowed_decisions: ['skip', 'stop'] }), true);
+  const again = board.next();
+  assert.equal(again?.request.id, 'rq_1', 'ahead of rq_2');
+  assert.deepEqual(again?.request.allowed_decisions, ['skip', 'stop']);
+  assert.equal(board.redraw(request('rq_1')), false, 'already held');
+
+  board.resolve('rq_1');
+  assert.equal(board.redraw(request('rq_1')), false, 'RAVIS resolved it');
+  board.releaseAll();
+  assert.equal(board.redraw(request('rq_2')), false, 'Stop let it go');
+  assert.equal(board.size, 0);
+});
+
 test('requests are asked one at a time, first in first out', () => {
   const board = new QuestionBoard();
   board.open(request('rq_1'));

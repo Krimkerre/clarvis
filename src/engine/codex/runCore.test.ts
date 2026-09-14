@@ -15,7 +15,8 @@ import { takeProjectLock } from '../lock/projectLock';
 import { createSessionKey } from '../relay/idempotency';
 import { RelayClient } from '../relay/relayClient';
 import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
-import type { CodexState, CreateSessionBody, Decision, RequestView, RunningCommand, SessionSummary } from '../relay/relayTypes';
+import type { CodexState, CreateSessionBody, RunningCommand, SessionMode, SessionSummary } from '../relay/relayTypes';
+import { K1_FILE_CHANGE, K2_COMMANDS, K11_FOR_THE_SESSION } from '../../test/fakes/calibrationRequests';
 import { TokenStore } from '../relay/tokenStore';
 import {
   CodexRunCore,
@@ -25,8 +26,8 @@ import {
   type CodexLockFloor,
   type CodexRunOptions,
   type CodexSave,
-  type EngineAsker,
 } from './runCore';
+import type { PromptShower, RequestPrompt } from './approvals';
 import { CODEX_LINES } from './translate';
 
 /**
@@ -223,18 +224,21 @@ function keepToken(h: Harness, session: MachineSession): void {
 }
 
 interface Asked {
-  request: RequestView;
+  prompt: RequestPrompt;
   signal: AbortSignal;
-  answer(decision: Decision | undefined): void;
+  /** Shown again after typed words that weren't an answer. */
+  again: boolean;
+  /** The owner's reply: a button's label, typed words, or nothing. */
+  answer(reply: string | undefined): void;
 }
 
-/** An asker that holds each question until the test answers it, noting in `sent` when one is let go. */
-function holdingAsker(sent?: string[]): { ask: EngineAsker; asked: Asked[] } {
+/** An asker that holds each prompt until the test answers it, noting in `sent` when one is let go. */
+function holdingAsker(sent?: string[]): { ask: PromptShower; asked: Asked[] } {
   const asked: Asked[] = [];
-  const ask: EngineAsker = (request, signal) =>
+  const ask: PromptShower = (prompt, signal, again) =>
     new Promise((resolve) => {
       signal.addEventListener('abort', () => sent?.push('question let go'));
-      asked.push({ request, signal, answer: resolve });
+      asked.push({ prompt, signal, again, answer: resolve });
     });
   return { ask, asked };
 }
@@ -367,7 +371,7 @@ test('Stop lets go of the question before any request is made, then interrupts; 
     assert.equal(asked[0].signal.aborted, true, 'let go in the same tick as Stop');
     assert.deepEqual(h.sent.slice(before), ['question let go', `POST /api/v1/agent-sessions/${session.id}/interrupt`], 'let go first, then RAVIS is told');
 
-    asked[0].answer({ kind: 'once' }); // the click that raced the stop
+    asked[0].answer('Run it'); // the click that raced the stop
     const done = await run.next(isDone);
 
     assert.equal(done.text, CODEX_LINES.stopped);
@@ -386,7 +390,7 @@ test('an owner Stop from the dashboard lets go of the question, says where it ca
 
     h.machine.ownerStop(session, 'dashboard');
     await waitFor(() => asked[0].signal.aborted, 'the question to be let go');
-    asked[0].answer({ kind: 'once' });
+    asked[0].answer('Run it');
     const done = await run.next(isDone);
 
     assert.ok(chat(run).includes('Stopped from the dashboard.'), chat(run).join(' | '));
@@ -530,12 +534,12 @@ test('a second window reattaches from its stored cursor and a third from a snaps
     const windowC = { id: 'win-desktop-2b8c1f', host: 'desktop' as const };
     const askedB: string[] = [];
     const askedC: string[] = [];
-    // Each asker comes back at once with no answer, as a question does until C2b renders it. The slot is
-    // then free, so a replayed request would be asked a second time if the window didn't remember it.
+    // Each asker comes back at once with no answer, as a question taken off the panel does. The slot is then
+    // free, so a replayed request would be asked a second time if the window didn't remember it.
     const noAnswer =
-      (asked: string[]): EngineAsker =>
-      async (question) => {
-        asked.push(question.id);
+      (asked: string[]): PromptShower =>
+      async (prompt) => {
+        asked.push(prompt.requestId);
         return undefined;
       };
     const b = h.core({ window: WINDOW_B, ask: noAnswer(askedB), cursors: mapCursors(new Map([[session.id, cursorBefore]])) });
@@ -576,9 +580,9 @@ test('two windows: the first answer wins, the other window’s question goes awa
 
     const request = h.machine.openRequest(session, 'command');
     await waitFor(() => a.asked.length === 1 && b.asked.length === 1, 'both windows to ask');
-    a.asked[0].answer({ kind: 'once' });
+    a.asked[0].answer('Run it');
     await waitFor(() => b.asked[0].signal.aborted, "B's question to go once A answered");
-    b.asked[0].answer({ kind: 'once' }); // too late
+    b.asked[0].answer('Run it'); // too late
 
     h.machine.completeItem(session, fileChange('call_fc_1', ['hello.py', 'add']));
     h.machine.completeTurn(session);
@@ -648,8 +652,8 @@ test('a gap in the stream is recovered from a snapshot: the waiting question is 
     const request = h.machine.openRequest(session, 'question');
     session.stream.expireBefore(session.stream.latestId - 1);
     const asked: string[] = [];
-    const ask: EngineAsker = (question) => {
-      asked.push(question.id);
+    const ask: PromptShower = (prompt) => {
+      asked.push(prompt.requestId);
       return new Promise(() => undefined);
     };
     const core = h.core({ ask, cursors: mapCursors(new Map([[session.id, 1234]])) });
@@ -884,4 +888,199 @@ test('the step cap RAVIS enforces is said in its words, is not a failure, and th
     assert.ok(chat(run).includes('The step cap of 25 was reached. Codex stopped there; its work so far is kept.'));
     assert.equal(core.blocked, false);
     assert.equal(h.git.saves.length, 1);
+  }));
+
+// ── Approvals (C2b), against the fake with Codex's requests from calibration ───
+
+const ANSWER_ROUTE = 'POST /api/v1/agent-sessions/{sid}/requests/{rid}/answer';
+const labelsOf = (asked: Asked) => asked.prompt.options.map((option) => option.label);
+
+test("an approval is asked with RAVIS's decisions only, and answered with the button's, keyed <request id>:<window id>", () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    const request = h.machine.openCalibrationRequest(session, K2_COMMANDS[0]);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    assert.deepEqual(labelsOf(asked[0]), ['Run it', 'Skip it', 'Stop the run']);
+    assert.equal(asked[0].prompt.detail[0], `\`${K2_COMMANDS[0].script}\``, "the script inside Codex's shell wrapper");
+    asked[0].answer('Run it');
+    await waitFor(() => session.answers.length === 1, 'the answer to reach RAVIS');
+    assert.deepEqual(session.answers, [{ requestId: request.id, decision: 'once', key: `${request.id}:${WINDOW_A.id}` }]);
+
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test("Unattended, with this window's panel there, answers calibration's commands and file change itself, in order, copying the file first", () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const core = h.core({ ask, mode: 'unattended', capture: async (paths) => void h.sent.push(`capture ${paths.join(' ')}`) });
+    const { run, session } = await started(h, core);
+    const requests = [...K2_COMMANDS.map((command) => h.machine.openCalibrationRequest(session, command)), h.machine.openCalibrationRequest(session, K1_FILE_CHANGE)];
+    await waitFor(() => session.answers.length === 5, 'every request to be answered');
+
+    assert.equal(asked.length, 0, 'nobody was asked');
+    assert.deepEqual(
+      session.answers.map((answer) => [answer.requestId, answer.decision]),
+      requests.map((request) => [request.id, 'once'])
+    );
+    const change = requests[4];
+    assert.deepEqual(
+      h.sent.filter((line) => line.startsWith('capture') || line.endsWith(`/requests/${change.id}/answer`)),
+      ['capture ravis-cal-k1-cal_5a1d6ecc33b4-untrusted.txt', `POST /api/v1/agent-sessions/${session.id}/requests/${change.id}/answer`],
+      'the file copied for undo before the answer went'
+    );
+
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a switch to Unattended answers the quiet command already on screen, and its buttons go', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    let mode: SessionMode = 'agent';
+    const { run, session, core } = await started(h, h.core({ ask, modeNow: () => mode }));
+    h.machine.openCalibrationRequest(session, K11_FOR_THE_SESSION);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    mode = 'unattended';
+    core.modeChanged();
+    await waitFor(() => session.answers.length === 1, 'Unattended to answer it');
+    assert.equal(asked[0].signal.aborted, true);
+    assert.equal(session.answers[0].decision, 'once');
+
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('with the panel gone, a switch to Unattended answers nothing; once it is back, it does', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    let mode: SessionMode = 'agent';
+    let clock = Date.parse('2026-09-14T14:00:00Z');
+    const core = h.core({ ask, modeNow: () => mode, now: () => new Date(clock) });
+    const { run, session } = await started(h, core);
+    h.machine.openCalibrationRequest(session, K11_FOR_THE_SESSION);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    clock += 30_000;
+    core.presenceTick(clock); // no ping for 30 s: the panel is gone
+    mode = 'unattended';
+    core.modeChanged();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(session.answers.length, 0, 'nothing answered while no panel is attached');
+    assert.equal(asked[0].signal.aborted, false);
+
+    core.panelPinged(clock + 1);
+    await waitFor(() => core.isConnected, 'the stream to reopen');
+    core.modeChanged();
+    await waitFor(() => session.answers.length === 1, 'Unattended to answer it now');
+    assert.equal(session.answers[0].decision, 'once');
+
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test("an answer RAVIS never received is said so, and the request is asked again once RAVIS answers", () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    const request = h.machine.openCalibrationRequest(session, K2_COMMANDS[0]);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    await h.fake.stopListening();
+    asked[0].answer('Run it');
+    await run.next((event) => event.text === CODEX_LINES.answerUnsent);
+    assert.equal(session.answers.length, 0);
+
+    await h.fake.listenAgain();
+    await waitFor(() => asked.length === 2, 'the request to be asked again once RAVIS is back', 10_000);
+    asked[1].answer('Run it');
+    await waitFor(() => session.answers.length === 1, 'the answer to reach RAVIS');
+    assert.deepEqual(session.answers.map((answer) => [answer.requestId, answer.decision]), [[request.id, 'once']]);
+
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a blocked site is asked as Allow or Keep blocked without making the task wait; one Codex did not add is asked again; an allow says a running task may not see it yet', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    const site = h.machine.openRequest(session, 'site');
+    await waitFor(() => asked.length === 1, 'the site to be asked');
+
+    assert.equal(session.state, 'running', "a site ask doesn't make the task wait");
+    assert.equal(asked[0].prompt.line, 'Codex was blocked from reaching pypi.org (https).');
+    assert.deepEqual(labelsOf(asked[0]), ['Allow pypi.org', 'Keep pypi.org blocked']);
+
+    h.fake.reply(ANSWER_ROUTE, "allow a site Codex didn't add");
+    asked[0].answer('Allow pypi.org');
+    await waitFor(() => asked.length === 2, 'the site to be asked again');
+    assert.ok(chat(run).includes("Codex didn't add pypi.org, so it stays blocked."));
+
+    asked[1].answer('Allow pypi.org');
+    await run.next((event) => event.text.startsWith("pypi.org is allowed for Codex's commands from now on."));
+    assert.deepEqual(session.answers.map((answer) => [answer.requestId, answer.decision]), [[site.id, 'allow_site']]);
+
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('RAVIS narrowing a request draws it again from what it offers now, and that is what is sent', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    const request = h.machine.openCalibrationRequest(session, K2_COMMANDS[1]);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    h.machine.narrowRequest(session, request.id, ['skip', 'stop']);
+    asked[0].answer('Run it');
+    await waitFor(() => asked.length === 2, 'the command to be drawn again');
+    assert.deepEqual(labelsOf(asked[1]), ['Skip it', 'Stop the run']);
+    assert.ok(chat(run).includes(CODEX_LINES.decisionNarrowed));
+
+    asked[1].answer('Skip it');
+    await waitFor(() => session.answers.length === 1, 'the answer');
+    assert.deepEqual(session.answers.map((answer) => [answer.requestId, answer.decision]), [[request.id, 'skip']]);
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('words typed while a command waits go to Codex as a steer, and the command is asked again', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    const request = h.machine.openCalibrationRequest(session, K2_COMMANDS[3]);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    asked[0].answer('put it in build/ instead');
+    await waitFor(() => session.steers.length === 1 && asked.length === 2, 'the steer, and the command asked again');
+    assert.equal(session.steers[0].text, 'put it in build/ instead');
+    assert.equal(asked[1].again, true, 'its buttons offered again without repeating its line');
+    assert.equal(session.answers.length, 0, 'nothing answered by the typed words');
+
+    asked[1].answer('Skip it');
+    await waitFor(() => session.answers.length === 1, 'the answer');
+    assert.deepEqual(session.answers.map((answer) => [answer.requestId, answer.decision]), [[request.id, 'skip']]);
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('"Stop the run" stops the task as Stop does: the question let go, RAVIS interrupted, no answer sent', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    h.machine.openCalibrationRequest(session, K11_FOR_THE_SESSION);
+    await waitFor(() => asked.length === 1, 'the command to be asked');
+
+    asked[0].answer('Stop the run');
+    const done = await run.next(isDone);
+
+    assert.equal(done.text, CODEX_LINES.stopped);
+    assert.ok(chat(run).includes(CODEX_LINES.stopping));
+    assert.equal(session.interrupts, 1);
+    assert.deepEqual(session.answers, []);
+    assert.equal(chat(run).some((line) => line.startsWith('Stopped from')), false, "said as this window's own stop");
   }));

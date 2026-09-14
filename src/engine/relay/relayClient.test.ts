@@ -238,6 +238,27 @@ test('signed out is its own failure, and an expired sign-in is told apart from i
     }
   }));
 
+test('the allowed sites are read and added to as the contract shows, with no key; a refusal names each host it would not take', () =>
+  withClient(async (fake, client) => {
+    assert.deepEqual(value(await client.codexSites()), exampleNamed('GET /api/v1/codex/sites', 'the defaults and the sites the owner added').response.body);
+
+    fake.reply('POST /api/v1/codex/sites', 'a host RAVIS never allows: nothing is written');
+    const refused = failure(await client.allowSites(['huggingface.co', '*.hf.co']));
+    assert.equal(refused.kind === 'refused' && refused.code, 'SITES_REFUSED');
+
+    fake.sites();
+    const added = value(await client.allowSites(['Download.PyTorch.org.', 'pypi.org']));
+    assert.deepEqual(added.added, ['download.pytorch.org'], 'as RAVIS keeps it, and a default never added');
+    const posts = fake.seen.filter((seen) => seen.method === 'POST' && seen.path === '/api/v1/codex/sites');
+    assert.deepEqual(
+      posts.map((seen) => [seen.headers['idempotency-key'], seen.body]),
+      [
+        [undefined, { hosts: ['huggingface.co', '*.hf.co'] }],
+        [undefined, { hosts: ['Download.PyTorch.org.', 'pypi.org'] }],
+      ]
+    );
+  }));
+
 test('RAVIS not answering is unreachable: not a refusal, not throttling', async () => {
   const fake = await FakeRavisRelay.start();
   const client = new RelayClient(fakeHttp(fake));

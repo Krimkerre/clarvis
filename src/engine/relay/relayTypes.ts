@@ -118,6 +118,8 @@ export interface RequestView {
   id: string;
   kind: RequestKind;
   turn_id: string;
+  /** A site ask's group (R5): the asks one turn opened share it, and a group's asks are open together. */
+  group_id?: string;
   item_id: string;
   opened_at: string;
   /** Differs per kind (`agent-sessions.json` request_kinds); rendering it is C2b's job. */
@@ -138,7 +140,11 @@ export interface SessionView {
     thread_id: string;
     active_turn_id: string | null;
     model: string;
+    /** The effort the task runs at, fixed for its life (R5); null when it is the model's default. */
+    effort?: string | null;
     runtime_sha256: string;
+    /** While RAVIS reopens Codex's thread so newly allowed sites reach it (R5); null otherwise. */
+    reopening?: CodexReopening | null;
   };
   branch: { name: string; head_commit_at_start: string };
   pending_requests: RequestView[];
@@ -156,6 +162,13 @@ export interface SessionView {
   updated_at: string;
   /** The stream cursor this view is current up to: reconnect with `?after=` this after a snapshot. */
   last_event_id: number;
+}
+
+/** `SessionView` → `codex.reopening` (R5; `agent-sessions.json` → `reopening`): which sites, and since when. */
+export interface CodexReopening {
+  group_id: string | null;
+  hosts: string[];
+  since: string;
 }
 
 /** One row of a workspace's session list: no token, no payloads. */
@@ -176,7 +189,10 @@ export interface CreateSessionBody {
   clarvis_task_id: string;
   window: { id: string; host: Host };
   mode: SessionMode;
+  /** Empty lets Codex choose: its default model. */
   model: string;
+  /** How hard the model thinks (R5): one of that model's efforts; absent for the model's default. */
+  effort?: string;
   branch: { name: string; head_commit: string };
   git_dir: string;
   start: { kind: 'brief'; text: string } | { kind: 'resume'; thread_id: string; catch_up_text: string };
@@ -189,6 +205,14 @@ export interface CreatedSession {
   session: SessionView;
   session_token: string;
   events_url: string;
+}
+
+/** `GET` and `POST /api/v1/codex/sites` (R5; `codex-admin.json`): the sites Codex's commands may reach. */
+export interface SitesView {
+  /** RAVIS's own list, in its order; its wildcard entries are the owner's. */
+  defaults: string[];
+  /** Every other site Codex allows, sorted: the ones the owner added. */
+  added: string[];
 }
 
 /** A window's answer to a request. */

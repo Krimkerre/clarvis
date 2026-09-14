@@ -7,12 +7,13 @@ import type { AgentEvent } from '../../agent/AgentRunner';
 import { matchStep, readStepMarkers } from '../../agent/stepProgress';
 import { CLARVIS_CREDENTIAL, FakeRavisRelay, FIXTURE_LOCK } from '../../test/fakes/FakeRavisRelay';
 import type { FakeSessions, MachineSession } from '../../test/fakes/fakeSessions';
-import { CODEX_STATE_ROUTE, exampleNamed } from '../../test/fakes/relayContract';
+import { errorAnswer } from '../../test/fakes/fakeAnswers';
+import { ALLOW_SITES_ROUTE, CODEX_STATE_ROUTE, exampleNamed } from '../../test/fakes/relayContract';
 import { encodeLockFile, lockFilePath, readLockFile, type LockFileContent } from '../lock/fileLock';
 import { LockClient } from '../lock/lockClient';
 import type { Verdict } from '../lock/lockRule';
 import { takeProjectLock } from '../lock/projectLock';
-import { createSessionKey } from '../relay/idempotency';
+import { createSessionKey, freshKey } from '../relay/idempotency';
 import { RelayClient } from '../relay/relayClient';
 import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
 import type { CodexState, CreateSessionBody, RunningCommand, SessionMode, SessionSummary } from '../relay/relayTypes';
@@ -28,6 +29,7 @@ import {
   type CodexSave,
 } from './runCore';
 import type { PromptShower, RequestPrompt } from './approvals';
+import { SITE_LINES } from './siteAsks';
 import { CODEX_LINES } from './translate';
 
 /**
@@ -1004,28 +1006,527 @@ test("an answer RAVIS never received is said so, and the request is asked again 
     await run.next(isDone);
   }));
 
-test('a blocked site is asked as Allow or Keep blocked without making the task wait; one Codex did not add is asked again; an allow says a running task may not see it yet', () =>
+test('blocked sites are one card; the task carries on once every host is decided and its work is saved, and "Reconnecting" shows only while RAVIS reopens', () =>
   withCodex(async (h) => {
     const { ask, asked } = holdingAsker();
     const { run, session } = await started(h, h.core({ ask }));
-    const site = h.machine.openRequest(session, 'site');
-    await waitFor(() => asked.length === 1, 'the site to be asked');
+    h.machine.blockSites(session, ['download.pytorch.org', 'huggingface.co']);
+    await waitFor(() => asked.length === 1, 'the group to be asked');
 
     assert.equal(session.state, 'running', "a site ask doesn't make the task wait");
-    assert.equal(asked[0].prompt.line, 'Codex was blocked from reaching pypi.org (https).');
-    assert.deepEqual(labelsOf(asked[0]), ['Allow pypi.org', 'Keep pypi.org blocked']);
+    assert.equal(asked[0].prompt.line, 'Codex was blocked from reaching download.pytorch.org and huggingface.co.');
+    assert.deepEqual(labelsOf(asked[0]), [
+      'Allow download.pytorch.org',
+      'Keep download.pytorch.org blocked',
+      'Allow huggingface.co',
+      'Keep huggingface.co blocked',
+      'Allow all',
+    ]);
 
     h.fake.reply(ANSWER_ROUTE, "allow a site Codex didn't add");
-    asked[0].answer('Allow pypi.org');
-    await waitFor(() => asked.length === 2, 'the site to be asked again');
-    assert.ok(chat(run).includes("Codex didn't add pypi.org, so it stays blocked."));
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => asked.length === 2, 'the card to be drawn again');
+    assert.ok(chat(run).includes("Codex didn't add download.pytorch.org, so it stays blocked."));
 
-    asked[1].answer('Allow pypi.org');
-    await run.next((event) => event.text.startsWith("pypi.org is allowed for Codex's commands from now on."));
-    assert.deepEqual(session.answers.map((answer) => [answer.requestId, answer.decision]), [[site.id, 'allow_site']]);
+    // The turn ends with the asks open: RAVIS lets go of the thread, and the work so far is saved meanwhile.
+    h.machine.completeTurn(session);
+    await run.next((event) => event.kind === 'status' && event.text === SITE_LINES.reconnecting);
+    await waitFor(() => session.settles.length === 1 && session.state === 'idle', 'the work so far to be saved');
+    assert.equal(run.events.some(isDone), false, 'the run goes on while the owner decides');
+    assert.equal(session.turns.length, 0, 'nothing carries on before every host is decided');
 
+    asked[1].answer('Keep huggingface.co blocked');
+    await waitFor(() => asked.length === 3, 'the card for the host left');
+    assert.deepEqual(labelsOf(asked[2]), ['Allow download.pytorch.org', 'Keep download.pytorch.org blocked']);
+    asked[2].answer('Allow download.pytorch.org');
+
+    await waitFor(() => session.turns.length === 1, 'the carry-on');
+    assert.deepEqual(session.turns, [{ kind: 'carry_on', text: 'The owner allowed download.pytorch.org; huggingface.co stays blocked. Carry on where you stopped.' }]);
+    assert.ok(chat(run).includes('Allowed download.pytorch.org; huggingface.co stays blocked. Codex carries on where it stopped.'));
+    assert.equal(session.state, 'starting', 'RAVIS holds the turn until the thread is reopened');
+
+    h.machine.finishReopen(session);
+    await run.next((event) => event.kind === 'status' && event.text === '');
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn to begin');
     h.machine.completeTurn(session);
     await run.next(isDone);
+    assert.equal(session.settles.length, 2, 'each turn saved');
+    assert.deepEqual(
+      session.answers.map((answer) => answer.decision),
+      ['keep_blocked', 'allow_site'],
+      "the refused allow was RAVIS's scripted answer, never recorded"
+    );
+  }));
+
+const TURNS_ROUTE = 'POST /api/v1/agent-sessions/{sid}/turns';
+const reconnectingShown = (run: Followed) => run.events.filter((event) => event.kind === 'status' && event.text === SITE_LINES.reconnecting).length;
+const createBodies = (h: Harness) =>
+  h.fake.seen.filter((seen) => seen.method === 'POST' && seen.path === '/api/v1/agent-sessions').map((seen) => seen.body as CreateSessionBody);
+
+/** A task with one blocked host whose turn has ended and whose work is saved, waiting on the owner's decision. */
+async function waitingOnASite(h: Harness) {
+  const { ask, asked } = holdingAsker();
+  const started_ = await started(h, h.core({ ask }));
+  h.machine.blockSites(started_.session, ['download.pytorch.org']);
+  await waitFor(() => asked.length === 1, 'the site to be asked');
+  h.machine.completeTurn(started_.session);
+  await waitFor(() => started_.session.state === 'idle', 'the work so far to be saved');
+  // …and this window has heard so: its cursor is past RAVIS's idle, not only RAVIS's own state.
+  const idleAt = started_.session.stream.latestId;
+  await waitFor(() => (h.cursors.get(started_.session.id) ?? 0) >= idleAt, 'this window to hear the task is idle');
+  return { ...started_, asked };
+}
+
+test('hosts decided while their turn still runs carry the task on only after that turn has ended and its work is saved; a reopen that runs out of time says so', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    h.machine.blockSites(session, ['download.pytorch.org']);
+    await waitFor(() => asked.length === 1, 'the ask');
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => session.answers.length === 1, 'the decision to reach RAVIS');
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    assert.equal(session.turns.length, 0, 'no carry-on while the turn runs');
+    assert.equal(session.reopening, null, "RAVIS doesn't let go of a thread whose turn still runs");
+    assert.ok(chat(run).includes('Allowed download.pytorch.org. Codex carries on where it stopped.'));
+
+    h.machine.completeTurn(session);
+    await waitFor(() => session.turns.length === 1, 'the carry-on');
+    const settleAt = h.sent.findIndex((line) => line.endsWith('/settle'));
+    const turnAt = h.sent.findIndex((line) => line.endsWith('/turns'));
+    assert.ok(settleAt !== -1 && settleAt < turnAt, 'saved first, then carried on');
+    assert.deepEqual(h.machine.get(session.id)?.reopening?.hosts, ['download.pytorch.org'], 'RAVIS reopens for the site allowed since the thread loaded');
+    assert.equal(session.turns[0].text, 'The owner allowed download.pytorch.org. Carry on where you stopped.');
+
+    h.machine.finishReopen(session, 'incomplete');
+    await run.next((event) => event.text === SITE_LINES.reopenIncomplete);
+    assert.equal(run.events.filter((event) => event.kind === 'status').at(-1)?.text, '', 'the reconnecting line is gone');
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a site allowed after Codex reconnected reopens the thread again, shown the same way, and the task carries on again', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    h.machine.blockSites(session, ['download.pytorch.org']);
+    await waitFor(() => asked.length === 1, 'the first ask');
+    h.machine.completeTurn(session);
+    await waitFor(() => reconnectingShown(run) === 1 && session.state === 'idle', 'the first reopen, with the work saved');
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => session.turns.length === 1, 'the first carry-on');
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+
+    h.machine.blockSites(session, ['huggingface.co']);
+    await waitFor(() => asked.length === 2, 'the second ask');
+    asked[1].answer('Allow huggingface.co');
+    await waitFor(() => session.answers.length === 2, 'the second decision');
+    h.machine.completeTurn(session);
+    await waitFor(() => reconnectingShown(run) === 2, 'the second reopen, shown the same way');
+    await waitFor(() => session.turns.length === 2, 'the second carry-on');
+    assert.equal(session.turns[1].text, 'The owner allowed huggingface.co. Carry on where you stopped.');
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the second carry-on turn');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a Stop while the owner decides, with the work saved and nothing running, ends the run at once: nothing interrupted, nothing carried on', () =>
+  withCodex(async (h) => {
+    const { run, core, session, asked } = await waitingOnASite(h);
+    core.stop();
+    const done = await run.next(isDone);
+    assert.equal(done.text, CODEX_LINES.stopped);
+    assert.equal(asked[0].signal.aborted, true, 'the card goes with the Stop');
+    assert.equal(session.interrupts, 0);
+    assert.equal(session.turns.length, 0);
+    assert.equal(session.open.size, 1, 'RAVIS keeps the site ask: it outlives the turn');
+  }));
+
+test('a Stop while the carry-on waits for the reopen drops that turn, and the run ends once the stop is saved', () =>
+  withCodex(async (h) => {
+    const { run, core, session, asked } = await waitingOnASite(h);
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => session.state === 'starting', 'the carry-on waiting for the reopen');
+    core.stop();
+    const done = await run.next(isDone);
+    assert.equal(done.text, CODEX_LINES.stopped);
+    assert.equal(session.interrupts, 1);
+    assert.deepEqual([session.reopening?.queued, session.reopening?.resume], [null, false], 'the waiting turn dropped, the resume skipped');
+    assert.equal(session.activeTurn, null, 'the carry-on never began');
+    assert.equal(session.settles.length, 2);
+    assert.equal(run.events.filter((event) => event.kind === 'status').at(-1)?.text, '', 'the reconnecting line goes with the run');
+  }));
+
+test('RAVIS restarting while the carry-on waits for the reopen leaves the task uncertain: its work is saved and the run ends', () =>
+  withCodex(async (h) => {
+    const { run, session, asked } = await waitingOnASite(h);
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => session.state === 'starting', 'the carry-on waiting for the reopen');
+    h.machine.restartRavis(session);
+    await run.next(isDone);
+    assert.ok(chat(run).includes(CODEX_LINES.uncertain));
+    assert.equal(session.settles.length, 2);
+  }));
+
+test('a carry-on whose answer is lost is sent again with the same key, and RAVIS starts it once', () =>
+  withCodex(async (h) => {
+    const { run, session, asked } = await waitingOnASite(h);
+    h.fake.loseNextResponse(TURNS_ROUTE);
+    asked[0].answer('Keep download.pytorch.org blocked');
+    await waitFor(() => h.fake.seen.filter((seen) => seen.path.endsWith('/turns')).length === 2, 'the carry-on sent again, and received');
+    assert.equal(session.turns.length, 1, 'started once');
+    assert.equal(session.turns[0].text, 'The owner kept download.pytorch.org blocked. Carry on where you stopped.');
+    const keys = h.fake.seen.filter((seen) => seen.path.endsWith('/turns')).map((seen) => seen.headers['idempotency-key']);
+    assert.equal(keys[0], keys[1]);
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a carry-on RAVIS refuses for now is sent again with the same key once this window hears RAVIS again, and starts once', () =>
+  withCodex(async (h) => {
+    const { run, session, asked } = await waitingOnASite(h);
+    const turnsSeen = () => h.fake.seen.filter((seen) => seen.path.endsWith('/turns'));
+    h.fake.reply(TURNS_ROUTE, 'the last turn still needs a settle');
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => turnsSeen().length === 1, 'the carry-on refused for now');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(session.turns.length, 0);
+    session.stream.disconnect();
+    await waitFor(() => turnsSeen().length === 2, 'the carry-on sent again');
+    assert.equal(new Set(turnsSeen().map((seen) => seen.headers['idempotency-key'])).size, 1, 'one key for every try');
+    assert.equal(session.turns.length, 1, 'started once');
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a carry-on RAVIS took though every answer to it was lost is known taken once its turn begins: never sent again, and the run ends', () =>
+  withCodex(async (h) => {
+    const { run, session, asked } = await waitingOnASite(h);
+    const turnsSeen = () => h.fake.seen.filter((seen) => seen.path.endsWith('/turns'));
+    h.fake.loseNextResponse(TURNS_ROUTE);
+    h.fake.loseNextResponse(TURNS_ROUTE);
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => turnsSeen().length === 2 && session.state === 'starting', 'RAVIS took it, and both answers were lost');
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+    assert.equal(turnsSeen().length, 2, 'never sent again');
+    assert.equal(session.turns.length, 1, 'started once');
+  }));
+
+test("after another editor saved the work before the carry-on, this window's own save of the rest is said as its own", () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask }));
+    h.machine.blockSites(session, ['download.pytorch.org']);
+    await waitFor(() => asked.length === 1, 'the ask');
+    h.fake.reply('POST /api/v1/agent-sessions/{sid}/settle-claim', errorAnswer(409, 'SETTLE_CLAIMED', undefined, { window: 'win-other' }));
+    h.machine.completeTurn(session);
+    await run.next((event) => event.text === CODEX_LINES.otherEditorSaving);
+    const other = new RelayClient(h.http);
+    const claim = await other.claimSettle(session.id, session.token, 'win-other');
+    if (!claim.ok) throw new Error('the other editor could not claim');
+    assert.ok((await other.settle(session.id, session.token, { claim_id: claim.value.claim_id, commit: COMMIT, next: 'idle' }, freshKey())).ok);
+
+    asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => session.turns.length === 1, 'the carry-on');
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+    h.machine.completeItem(session, message('msg_rest', 'Done with the rest.'));
+    h.machine.completeTurn(session);
+    const done = await run.next(isDone);
+    assert.equal(done.text, 'Done with the rest.');
+    assert.equal(session.settles.length, 2);
+  }));
+
+test('a carry-on refused because a turn already runs is passed to that turn as a steer', () =>
+  withCodex(async (h) => {
+    const steered = await waitingOnASite(h);
+    h.fake.reply(TURNS_ROUTE, 'a turn is active: steer instead');
+    steered.asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => steered.session.steers.length === 1, 'the decisions passed on');
+    assert.equal(steered.session.steers[0].text, 'The owner allowed download.pytorch.org. Carry on where you stopped.');
+    assert.equal(steered.session.turns.length, 0);
+    steered.core.stop();
+    await steered.run.next(isDone);
+  }));
+
+test('a carry-on RAVIS refuses for good is said, and the run ends', () =>
+  withCodex(async (h) => {
+    const { run, asked } = await waitingOnASite(h);
+    h.fake.reply(TURNS_ROUTE, 'the allowance is used up');
+    asked[0].answer('Allow download.pytorch.org');
+    await run.next(isDone);
+    assert.ok(chat(run).some((line) => line.endsWith('Its work so far is in the project.')), chat(run).join(' | '));
+  }));
+
+test('with two windows following, only the window whose answer decided the last host carries the task on', () =>
+  withCodex(async (h) => {
+    const a = holdingAsker();
+    const { run, session } = await started(h, h.core({ ask: a.ask }));
+    keepToken(h, session);
+    const b = holdingAsker();
+    const coreB = h.core({ window: WINDOW_B, ask: b.ask, cursors: mapCursors(new Map()) });
+    const runB = follow(coreB.attach(summaryOf(session), new AbortController().signal));
+    await waitFor(() => coreB.isConnected, 'B to follow');
+
+    h.machine.blockSites(session, ['download.pytorch.org', 'huggingface.co']);
+    await waitFor(() => a.asked.length === 1 && b.asked.length === 1, 'both windows to ask');
+    a.asked[0].answer('Allow download.pytorch.org');
+    await waitFor(() => b.asked.length === 2 && a.asked.length === 2, 'both cards drawn again for the host left');
+    assert.equal(b.asked[1].prompt.line, 'Codex was blocked from reaching huggingface.co (https).');
+    b.asked[1].answer('Keep huggingface.co blocked');
+    await waitFor(() => a.asked[1].signal.aborted, "A's card withdrawn");
+    assert.ok(chat(run).includes(CODEX_LINES.answeredElsewhere));
+
+    h.machine.completeTurn(session);
+    await waitFor(() => session.turns.length === 1, 'the carry-on');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(session.turns.length, 1, 'carried on once');
+    assert.ok(chat(runB).includes('Allowed download.pytorch.org; huggingface.co stays blocked. Codex carries on where it stopped.'));
+    assert.equal(chat(run).some((line) => line.startsWith('Allowed')), false, 'A did not decide the last host');
+    h.machine.finishReopen(session);
+    await waitFor(() => session.activeTurn !== null, 'the carry-on turn');
+    h.machine.completeTurn(session);
+    await runB.next(isDone);
+  }));
+
+test('a window that picks a task up while RAVIS reopens it shows "Reconnecting" until Codex has let go, and asks the open site', () =>
+  withCodex(async (h) => {
+    const session = h.machine.seed();
+    h.machine.blockSites(session, ['download.pytorch.org']);
+    h.machine.completeTurn(session);
+    keepToken(h, session);
+    const { ask, asked } = holdingAsker();
+    const core = h.core({ ask });
+    const run = follow(core.attach(summaryOf(session), new AbortController().signal));
+    await run.next((event) => event.kind === 'status' && event.text === SITE_LINES.reconnecting);
+    await waitFor(() => asked.length === 1 && session.state === 'idle', 'the open site asked, and the work saved');
+    h.machine.finishReopen(session);
+    await run.next((event) => event.kind === 'status' && event.text === '');
+    core.stop();
+    await run.next(isDone);
+    assert.equal(session.interrupts, 0);
+  }));
+
+// ── The sites a task needs, before it starts (C2b+) ──────────────────────────
+
+test('before a start, the sites the task may need that Codex does not allow yet are asked about once; Allow and start adds them, then the task starts', () =>
+  withCodex(async (h) => {
+    const sites = h.fake.sites();
+    const { ask, asked } = holdingAsker();
+    const found = [
+      { host: 'download.pytorch.org', foundIn: ['requirements.txt'] },
+      { host: 'pypi.org', foundIn: ['requirements.txt'] },
+    ];
+    const core = h.core({ ask, sitesFor: () => found });
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await waitFor(() => asked.length === 1, 'the ask before the start');
+
+    assert.equal(asked[0].prompt.line, 'This task may need download.pytorch.org. Allow it before Codex starts?', 'a default site is never asked about');
+    assert.deepEqual(asked[0].prompt.detail, ['download.pytorch.org: found in requirements.txt']);
+    assert.deepEqual(h.git.begun, [], 'nothing touched while asking');
+    assert.equal(h.machine.all.length, 0);
+
+    asked[0].answer('Allow and start');
+    await waitFor(() => h.machine.all.length === 1 && core.isConnected, 'the task to start');
+    assert.deepEqual([...sites.added], ['download.pytorch.org']);
+    assert.ok(chat(run).includes("Allowed download.pytorch.org for Codex's commands, in this task and every later one."));
+    h.machine.completeTurn(h.machine.all[0]);
+    await run.next(isDone);
+  }));
+
+test('Start without it starts with nothing added', () =>
+  withCodex(async (h) => {
+    const sites = h.fake.sites();
+    const { ask, asked } = holdingAsker();
+    const core = h.core({ ask, sitesFor: () => [{ host: 'download.pytorch.org', foundIn: ['the task'] }] });
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await waitFor(() => asked.length === 1, 'the ask');
+    asked[0].answer('Start without it');
+    await waitFor(() => h.machine.all.length === 1 && core.isConnected, 'the task to start');
+    assert.deepEqual(sites.posts, []);
+    h.machine.completeTurn(h.machine.all[0]);
+    await run.next(isDone);
+  }));
+
+test('Cancel at the ask before a start touches nothing: no branch, no session, and no failure', () =>
+  withCodex(async (h) => {
+    h.fake.sites();
+    const { ask, asked } = holdingAsker();
+    const core = h.core({ ask, sitesFor: () => [{ host: 'download.pytorch.org', foundIn: ['the task'] }] });
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await waitFor(() => asked.length === 1, 'the ask');
+    asked[0].answer('Cancel');
+    const done = await run.next(isDone);
+    assert.equal(done.text, SITE_LINES.cancelled);
+    assert.equal(core.blocked, false);
+    assert.deepEqual(h.git.begun, []);
+    assert.equal(h.machine.all.length, 0);
+  }));
+
+test('a Stop while the sites are asked about ends the ask at once and starts nothing', () =>
+  withCodex(async (h) => {
+    h.fake.sites();
+    const { ask, asked } = holdingAsker();
+    const controller = new AbortController();
+    const core = h.core({ ask, sitesFor: () => [{ host: 'download.pytorch.org', foundIn: ['the task'] }] });
+    const run = follow(core.start(TASK, controller.signal));
+    await waitFor(() => asked.length === 1, 'the ask');
+    controller.abort();
+    const done = await run.next(isDone);
+    assert.equal(done.text, CODEX_LINES.stopped);
+    assert.equal(asked[0].signal.aborted, true);
+    assert.deepEqual(h.git.begun, []);
+  }));
+
+test('allowing before a start: a host RAVIS refuses is dropped and the rest asked again with why; one Codex did not add leaves only Start without and Cancel', () =>
+  withCodex(async (h) => {
+    const sites = h.fake.sites();
+    sites.notAdded = 'overridden';
+    h.fake.reply(ALLOW_SITES_ROUTE, errorAnswer(422, 'SITES_REFUSED', undefined, { refused: [{ host: 'huggingface.co', reason: 'local_name' }] }));
+    const { ask, asked } = holdingAsker();
+    const found = [
+      { host: 'download.pytorch.org', foundIn: ['requirements.txt'] },
+      { host: 'huggingface.co', foundIn: ['the task'] },
+    ];
+    const core = h.core({ ask, sitesFor: () => found });
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await waitFor(() => asked.length === 1, 'the ask');
+    asked[0].answer('Allow and start');
+    await waitFor(() => asked.length === 2, 'the ask again, without the refused host');
+    assert.equal(
+      asked[1].prompt.line,
+      "RAVIS allows only exact public host names, so nothing was added: huggingface.co (a name on this Mac or its network) can't be allowed. This task may need download.pytorch.org. Allow it before Codex starts?"
+    );
+    asked[1].answer('Allow and start');
+    await waitFor(() => asked.length === 3, 'the ask again, without Allow');
+    assert.equal(asked[2].prompt.line, "Codex didn't add download.pytorch.org, so it stays blocked. Start Codex without download.pytorch.org?");
+    assert.deepEqual(labelsOf(asked[2]), ['Start without it', 'Cancel']);
+    asked[2].answer('Start without it');
+    await waitFor(() => h.machine.all.length === 1 && core.isConnected, 'the task to start');
+    assert.deepEqual([...sites.added], []);
+    h.machine.completeTurn(h.machine.all[0]);
+    await run.next(isDone);
+  }));
+
+test('nothing is asked before a start when RAVIS cannot say which sites Codex allows, or when the look through the project fails', () =>
+  withCodex(async (h) => {
+    const sites = h.fake.sites();
+    sites.unreadable = true;
+    const { ask, asked } = holdingAsker();
+    const unreadable = await started(h, h.core({ ask, sitesFor: () => [{ host: 'download.pytorch.org', foundIn: ['the task'] }] }));
+    assert.equal(asked.length, 0);
+    assert.equal(h.sent.filter((line) => line === 'GET /api/v1/codex/sites').length, 1);
+    h.machine.completeTurn(unreadable.session);
+    await unreadable.run.next(isDone);
+  }));
+
+test('a look through the project that fails asks RAVIS nothing about sites, and the task starts', () =>
+  withCodex(async (h) => {
+    const { ask, asked } = holdingAsker();
+    const failing = () => {
+      throw new Error('EACCES');
+    };
+    const { run, session } = await started(h, h.core({ ask, sitesFor: failing }));
+    assert.equal(asked.length, 0);
+    assert.equal(h.sent.some((line) => line.includes('/codex/sites')), false);
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('no more hosts are asked about before a start than one allow takes', () =>
+  withCodex(async (h) => {
+    const sites = h.fake.sites();
+    const { ask, asked } = holdingAsker();
+    const found = Array.from({ length: 25 }, (_, index) => ({ host: `mirror${index}.example.com`, foundIn: ['the task'] }));
+    const core = h.core({ ask, sitesFor: () => found });
+    const run = follow(core.start(TASK, new AbortController().signal));
+    await waitFor(() => asked.length === 1, 'the ask');
+    assert.equal(asked[0].prompt.detail.length, 20);
+    asked[0].answer('Allow and start');
+    await waitFor(() => h.machine.all.length === 1 && core.isConnected, 'the task to start');
+    assert.equal((sites.posts[0] as string[]).length, 20);
+    h.machine.completeTurn(h.machine.all[0]);
+    await run.next(isDone);
+  }));
+
+// ── The model and effort a task runs at (C2b+, R5) ───────────────────────────
+
+test("a new task runs at the owner's chosen model and effort, and the chat says which", () =>
+  withCodex(async (h) => {
+    const { run, session } = await started(h, h.core({ codexChoice: () => ({ model: 'gpt-6-astra', effort: 'high' }) }));
+    const [body] = createBodies(h);
+    assert.deepEqual([body.model, body.effort], ['gpt-6-astra', 'high']);
+    assert.equal(session.effort, 'high');
+    await run.next((event) => event.text === 'Codex is using gpt-6-astra, at high effort.');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('with nothing chosen, a task leaves the model and effort to Codex, and says what Codex runs', () =>
+  withCodex(async (h) => {
+    const { run, session } = await started(h, h.core({ codexChoice: () => ({}) }));
+    const [body] = createBodies(h);
+    assert.equal(body.model, '');
+    assert.equal('effort' in body, false);
+    await run.next((event) => event.text === 'Codex is using gpt-6-astra, at its default effort.');
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a chosen model Codex no longer offers becomes the default, at its default effort, and the chat says so', () =>
+  withCodex(async (h) => {
+    const { run, session } = await started(h, h.core({ codexChoice: () => ({ model: 'gpt-5-gone', effort: 'high' }) }));
+    const [body] = createBodies(h);
+    assert.deepEqual([body.model, body.effort], ['gpt-6-astra', 'low']);
+    await run.next((event) => event.text.startsWith('Codex no longer offers gpt-5-gone, so this task uses gpt-6-astra at low effort.'));
+    h.machine.completeTurn(session);
+    await run.next(isDone);
+  }));
+
+test('a model or an effort RAVIS refuses at the start is said plainly, with where to choose again, and the branch is tidied away', () =>
+  withCodex(async (h) => {
+    const listed = { id: 'gpt-6-astra', display_name: 'gpt-6-astra', is_default: true, default_effort: 'low', efforts: ['low', 'medium'] };
+    h.machine.models = [listed];
+    const effort = h.core({ codexChoice: () => ({ model: 'gpt-6-astra', effort: 'high' }) });
+    const effortDone = await follow(effort.start(TASK, new AbortController().signal)).next(isDone);
+    assert.equal(effortDone.text, "gpt-6-astra doesn't offer high effort (it offers low and medium). Choose another under Codex in the bowtie menu by the prompt.");
+    assert.equal(effort.blocked, true);
+
+    h.machine.models = [{ ...listed, id: 'gpt-7', display_name: 'gpt-7' }];
+    const model = h.core({ codexChoice: () => ({ model: 'gpt-6-astra', effort: 'low' }) });
+    const modelDone = await follow(model.start(TASK, new AbortController().signal)).next(isDone);
+    assert.equal(modelDone.text, "Codex doesn't offer gpt-6-astra to this ChatGPT account (it offers gpt-7). Choose another under Codex in the bowtie menu by the prompt.");
+    assert.equal(h.git.abandoned, 2);
+    assert.equal(h.machine.all.length, 0);
+  }));
+
+test("a chosen model before Codex has listed its models isn't an error: Codex isn't ready yet", () =>
+  withCodex(async (h) => {
+    const signedIn = exampleNamed(CODEX_STATE_ROUTE, 'signed in, three projects busy, read by a named caller').response.body as CodexState;
+    h.fake.reply(CODEX_STATE_ROUTE, { status: 200, body: { ...signedIn, models: [] } });
+    const early = h.core({ codexChoice: () => ({ model: 'gpt-6-astra', effort: 'high' }) });
+    const earlyDone = await follow(early.start(TASK, new AbortController().signal)).next(isDone);
+    assert.equal(earlyDone.text, CODEX_LINES.modelsNotListed);
+    assert.equal(early.blocked, false);
+    assert.deepEqual(h.git.begun, [], 'nothing touched');
+
+    // Listed when read, not yet when the session is created: RAVIS's 503 says the same.
+    h.machine.models = [];
+    const race = h.core({ codexChoice: () => ({ model: 'gpt-6-astra', effort: 'high' }) });
+    const raceDone = await follow(race.start(TASK, new AbortController().signal)).next(isDone);
+    assert.equal(raceDone.text, CODEX_LINES.modelsNotListed);
+    assert.equal(race.blocked, false);
+    assert.equal(h.git.abandoned, 1);
   }));
 
 test('RAVIS narrowing a request draws it again from what it offers now, and that is what is sent', () =>

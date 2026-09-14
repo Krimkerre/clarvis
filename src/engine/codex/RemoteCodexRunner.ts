@@ -34,9 +34,11 @@ import type { SessionMode, SessionSummary } from '../relay/relayTypes';
 import { TokenStore } from '../relay/tokenStore';
 import { CodexDestination, CodexSource } from '../transfer/codexSwitch';
 import { checkpointFromCodex } from '../transfer/fromSource';
+import type { StoredCodexChoice } from '../codexChoice';
 import type { PromptShower } from './approvals';
 import { CodexGitGlue } from './codexGit';
 import { CodexRunCore, type CodexCheckpointPort, type CodexCursors, type CodexLockFloor } from './runCore';
+import { projectFiles, scanSites } from './siteScan';
 
 const PRESENCE_TICK_MS = 5_000;
 /** Cursors are written to `workspaceState` at most this often: a stream of text deltas each carry an id. */
@@ -56,6 +58,8 @@ export interface RemoteCodexDeps {
   maxSteps: number;
   /** Shows one of Codex's requests in the chat and comes back with the owner's reply (C2b). */
   ask: PromptShower;
+  /** The Codex model and effort the owner chose in the bowtie menu, read when a task starts (C2b+). */
+  codexChoice: () => StoredCodexChoice;
 }
 
 export class RemoteCodexRunner implements CodingRun {
@@ -78,6 +82,9 @@ export class RemoteCodexRunner implements CodingRun {
       maxSteps: deps.maxSteps,
       ask: deps.ask,
       capture: undoCopies(deps),
+      // C2b+: the sites a task will likely need, asked about before it starts; and the owner's model and effort.
+      sitesFor: (task) => scanSites(projectFiles(deps.root), task),
+      codexChoice: deps.codexChoice,
       floor: deps.locks ? checkoutFloor(deps, deps.locks) : undefined,
       // M15 C3: a switch reserves the project with the session's token, and every settle writes the checkpoint first.
       locks: deps.locks,
@@ -195,7 +202,7 @@ export class RemoteCodexRunner implements CodingRun {
  * run of Clarvis's own engine does; the task branch stays the undo for everything else, including whatever Codex
  * changed while no window was attached. `approvals.ts` hands only paths inside the project.
  */
-function undoCopies(deps: RemoteCodexDeps): (paths: string[]) => Promise<void> {
+export function undoCopies(deps: Pick<RemoteCodexDeps, 'context' | 'root' | 'log'>): (paths: string[]) => Promise<void> {
   let checkpoint: Checkpoint | undefined;
   return async (paths) => {
     if (!checkpoint) {

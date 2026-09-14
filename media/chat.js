@@ -255,6 +255,15 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  // A passing state of a run (M15 C2b+), such as "Reconnecting Codex..." while RAVIS reopens a Codex task: shown
+  // above the prompt until the next one replaces it, and cleared by empty text. Text only, never markup.
+  if (msg.type === 'run-status') {
+    var runStatus = document.getElementById('clarvis-run-status');
+    runStatus.textContent = String(msg.text || '');
+    runStatus.hidden = !msg.text;
+    return;
+  }
+
   if (msg.type === 'choices-clear') {
     clearChoices();
     return;

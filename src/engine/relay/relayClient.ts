@@ -35,11 +35,14 @@ import type {
   SessionSummary,
   SessionView,
   SettleNext,
+  SitesView,
   TurnKind,
 } from './relayTypes';
 import { SESSION_TOKEN_FORMAT } from './tokenStore';
 
 const SESSIONS = '/api/v1/agent-sessions';
+/** The sites Codex's commands may reach (R5; `codex-admin.json`). */
+const SITES = '/api/v1/codex/sites';
 
 /**
  * How long `GET /api/v1/codex` gets before RAVIS counts as not answering (design §9). RAVIS answers it
@@ -122,6 +125,20 @@ export class RelayClient {
   codexState(options: CallOptions = { timeoutMs: CODEX_STATE_TIMEOUT_MS }): Promise<RelayOutcome<CodexState>> {
     const guard = shaped({ state: 'string', reason: 'string', runtime: 'object' });
     return this.call({ method: 'GET', path: '/api/v1/codex' }, guard, options);
+  }
+
+  /** RAVIS's default sites and the ones the owner added (R5), read before a task starts. */
+  codexSites(options?: CallOptions): Promise<RelayOutcome<SitesView>> {
+    return this.call({ method: 'GET', path: SITES }, isSitesView, options);
+  }
+
+  /**
+   * Allows `hosts` — at most 20 — for every Codex task from now on (R5): the owner's "Allow and start". RAVIS checks
+   * every host before it writes any (`422 SITES_REFUSED` names the ones it won't take), and allowing a host twice
+   * changes nothing, so a retry needs no key.
+   */
+  allowSites(hosts: string[], options?: CallOptions): Promise<RelayOutcome<SitesView>> {
+    return this.call({ method: 'POST', path: SITES, body: { hosts } }, isSitesView, options);
   }
 
   /** Starts a task. `key` is `createSessionKey(taskId, windowId, attempt)`. */
@@ -265,6 +282,7 @@ function sessionPath(sessionId: string): string {
 }
 
 const isSessionView = shaped({ id: 'string', state: 'string', pending_requests: 'array', last_event_id: 'number' });
+const isSitesView = shaped({ defaults: 'array', added: 'array' });
 
 function isCreatedSession(value: unknown): boolean {
   if (!shaped({ session: 'object', session_token: 'string', events_url: 'string' })(value)) return false;

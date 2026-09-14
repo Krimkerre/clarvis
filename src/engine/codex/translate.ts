@@ -19,6 +19,7 @@
 import type { RelayFailure } from '../relay/relayFailure';
 import type { RequestView, SessionSummary } from '../relay/relayTypes';
 import type { TokenRead } from '../relay/tokenStore';
+import { joinHosts } from './siteAsks';
 
 export const CODEX_LINES = {
   ravisDownAtStart: "RAVIS isn't answering, so Codex can't start. Clarvis's own engine still works.",
@@ -61,6 +62,8 @@ export const CODEX_LINES = {
   decisionNarrowed: "RAVIS no longer offers that answer to Codex's request. Here is what it offers now.",
   nothingOffered: "RAVIS no longer offers any answer to Codex's request, so it waits.",
   answerUnsent: "RAVIS isn't answering, so that answer didn't reach Codex. I'll ask again once RAVIS is back.",
+  /** A chosen model or effort before Codex has listed its models, so RAVIS can't check it yet (R5): not an error. */
+  modelsNotListed: "Codex isn't ready yet: it hasn't listed its models. Try again in a moment.",
 } as const;
 
 /** Why RAVIS can't be used from this window, from `relayEndpoint`'s reason. */
@@ -121,7 +124,31 @@ const REFUSAL_LINES = new Map<string, (failure: AnyFailure) => string>([
   ['LOCK_SUPERSEDED', () => CODEX_LINES.superseded],
   ['SESSION_STOPPING', () => 'This Codex task is stopping.'],
   ['AGENT_SESSION_NOT_FOUND', () => CODEX_LINES.tokenRefused],
+  ['MODEL_NOT_OFFERED', (failure) => modelNotOfferedLine(failure.details)],
+  ['EFFORT_NOT_OFFERED', (failure) => effortNotOfferedLine(failure.details)],
 ]);
+
+/** Where the owner picks Codex's model and effort: the bowtie's fold-out (M15 C2b+). */
+const CHOOSE_ANOTHER = 'Choose another under Codex in the bowtie menu by the prompt.';
+
+/** `422 MODEL_NOT_OFFERED` at a start (R5): the model asked for, and the ones Codex offers this account. */
+function modelNotOfferedLine(details: Record<string, unknown>): string {
+  const model = typeof details.model === 'string' && details.model !== '' ? details.model : 'that model';
+  return `Codex doesn't offer ${model} to this ChatGPT account${offering(details.models)}. ${CHOOSE_ANOTHER}`;
+}
+
+/** `422 EFFORT_NOT_OFFERED` at a start (R5): the effort asked for, and the ones that model takes. */
+function effortNotOfferedLine(details: Record<string, unknown>): string {
+  const model = typeof details.model === 'string' && details.model !== '' ? details.model : 'That model';
+  const effort = typeof details.effort === 'string' && details.effort !== '' ? `${details.effort} effort` : 'that effort';
+  return `${model} doesn't offer ${effort}${offering(details.efforts)}. ${CHOOSE_ANOTHER}`;
+}
+
+/** " (it offers a, b and c)", or nothing when the list is empty. */
+function offering(values: unknown): string {
+  const listed = Array.isArray(values) ? values.filter((value): value is string => typeof value === 'string') : [];
+  return listed.length > 0 ? ` (it offers ${joinHosts(listed)})` : '';
+}
 
 function refusedLine(failure: Extract<RelayFailure, { kind: 'refused' }>): string {
   const line = failure.code === null ? undefined : REFUSAL_LINES.get(failure.code);
@@ -218,13 +245,16 @@ export function settleStateLine(state: string): string | undefined {
   return SETTLE_STATE_LINES.get(state);
 }
 
-/**
- * A site the owner allowed reached Codex's list (C2b; `site.allowed`). It counts for every task from now on, but a
- * task already running read the list when Codex loaded it and doesn't see the addition until it is reopened
- * (calibration runs `cal_ed672bf12c6f`, `cal_85aa0ece0f52` and `cal_5a1d6ecc33b4`), so the line says so.
- */
-export function siteAllowedLine(host: string): string {
-  return `${host} is allowed for Codex's commands from now on. A task that's already running may still be blocked from it until Codex reconnects.`;
+/** Which model a task this window started runs, and how hard it thinks (R5; `SessionView` → `codex.model`, `codex.effort`). */
+export function codexModelLine(model: unknown, effort: unknown): string | undefined {
+  if (typeof model !== 'string' || model === '') return undefined;
+  const how = typeof effort === 'string' && effort !== '' ? `${effort} effort` : 'its default effort';
+  return `Codex is using ${model}, at ${how}.`;
+}
+
+/** The owner's chosen model is no longer one Codex offers: the task runs on the default, and says so (C2b+). */
+export function modelFellBackLine(chosen: string, model: string, effort: string): string {
+  return `Codex no longer offers ${chosen}, so this task uses ${model} at ${effort} effort. ${CHOOSE_ANOTHER}`;
 }
 
 /** `409 SITE_NOT_ADDED`, in RAVIS's words, naming the host. */

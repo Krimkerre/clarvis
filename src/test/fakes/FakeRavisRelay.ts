@@ -33,9 +33,12 @@ import { RelayHttp, relayEndpoint } from '../../engine/relay/relayHttp';
 import { errorAnswer, firstSuccess, fixtureAnswer, type FakeAnswer } from './fakeAnswers';
 import { FakeLocks } from './fakeLocks';
 import { FakeSessions } from './fakeSessions';
+import { FakeSites } from './fakeSites';
 import {
   CODEX_STATE_ROUTE,
   EVENTS_ROUTE,
+  REMOVE_SITE_ROUTE,
+  SITES_ROUTE,
   fixture,
   fixtureMessage,
   frameProblems,
@@ -107,6 +110,7 @@ export class FakeRavisRelay {
   private readonly streams = new Map<string, FakeEventStream>();
   private machine: FakeSessions | undefined;
   private lockMachine: FakeLocks | undefined;
+  private siteMachine: FakeSites | undefined;
   private readonly instance = randomBytes(8).toString('hex');
   private port = 0;
 
@@ -186,10 +190,20 @@ export class FakeRavisRelay {
     return this.lockMachine;
   }
 
+  /**
+   * The allowed sites (C2b+; R5): read, and added to before a task starts. Until a test asks for it, the sites routes
+   * answer their fixture examples.
+   */
+  sites(): FakeSites {
+    this.siteMachine ??= new FakeSites();
+    return this.siteMachine;
+  }
+
   /** Forgets scripts, keys, leases, tokens, streams and what it saw: a fresh fake on the same port. */
   reset(): void {
     this.machine = undefined;
     this.lockMachine = undefined;
+    this.siteMachine = undefined;
     for (const stream of this.streams.values()) stream.disconnect();
     for (const map of [this.scripts, this.losses, this.delays, this.remembered, this.revoked, this.streams, this.tokens]) map.clear();
     this.tokens.set(FIXTURE_SESSION.id, FIXTURE_SESSION.token);
@@ -251,10 +265,8 @@ export class FakeRavisRelay {
     response: http.ServerResponse
   ): FakeAnswer | undefined {
     const headers = request.headers;
-    // `GET /api/v1/codex` is read by any caller, anonymous and NERVIS included (`codex-state.json` route).
-    const identity = route.key === CODEX_STATE_ROUTE ? undefined : this.identityRefusal(headers);
     const refusal =
-      identity ??
+      this.callerRefusal(route, headers) ??
       this.tokenRefusal(route, url.pathname, headers) ??
       this.keyRefusal(route, headers) ??
       this.replayed(route, url.pathname, headers, body) ??
@@ -271,9 +283,25 @@ export class FakeRavisRelay {
     return firstSuccess(route);
   }
 
-  /** The lock machine's answer, then the session machine's — whichever a test turned on. */
+  /** The lock machine's answer, then the session machine's, then the sites' — whichever a test turned on. */
   private machineAnswer(route: FixtureRoute, url: URL, headers: http.IncomingHttpHeaders, body: unknown): FakeAnswer | undefined {
-    return this.lockMachine?.answer(route, url, headers, body) ?? this.machine?.answer(route, url, headers, body);
+    return this.lockMachine?.answer(route, url, headers, body) ?? this.machine?.answer(route, url, headers, body) ?? this.siteMachine?.answer(route, body);
+  }
+
+  /**
+   * Who may call a route. `GET /api/v1/codex`: any caller, anonymous and NERVIS included (`codex-state.json` route). The
+   * allowed sites as `codex-admin.json` says (R5): read by Clarvis, NERVIS or an admin; added to by Clarvis alone,
+   * through the identity rule (`require_agent_client`); removed by an admin. Every other route: the identity rule.
+   */
+  private callerRefusal(route: FixtureRoute, headers: http.IncomingHttpHeaders): FakeAnswer | undefined {
+    if (route.key === CODEX_STATE_ROUTE) return undefined;
+    const caller = callerFrom(headers.authorization);
+    if (route.key === SITES_ROUTE) {
+      const reads = caller === 'client.clarvis' || caller === 'client.nervis' || caller.startsWith('admin.');
+      return reads ? undefined : fixtureAnswer(SITES_ROUTE, 'anonymous');
+    }
+    if (route.key === REMOVE_SITE_ROUTE) return caller.startsWith('admin.') ? undefined : fixtureAnswer(REMOVE_SITE_ROUTE, 'a client credential');
+    return this.identityRefusal(headers);
   }
 
   private identityRefusal(headers: http.IncomingHttpHeaders): FakeAnswer | undefined {
@@ -422,6 +450,11 @@ export class FakeEventStream {
 
   get latestId(): number {
     return this.lastId;
+  }
+
+  /** Every event kept, oldest first, for a test to read the order RAVIS would have sent them in. */
+  emitted(): LoggedEvent[] {
+    return structuredClone(this.log);
   }
 
   get connections(): number {

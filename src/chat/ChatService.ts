@@ -993,7 +993,8 @@ export class ChatService {
       (text) => this.note(text),
       (text) => this.remark(text),
       (purpose, fallback, keep) => this.phrase(purpose, fallback, keep),
-      (frame) => panel.post({ type: 'progress', ...frame }),
+      // A run's passing status (M15 C2b+) has its own line under the chat; steps move the progress bar.
+      (frame) => panel.post('status' in frame ? { type: 'run-status', text: frame.status } : { type: 'progress', ...frame }),
       (items) => panel.post(items.length ? { type: 'choices', items } : { type: 'choices-clear' }),
       log
     );

@@ -25,6 +25,12 @@ export function fixtureAnswer(routeKey: string, name: string): FakeAnswer {
 }
 
 /** A route's first success example: what it answers when nothing else is scripted. */
+/** A fixture's error answer with other details, as RAVIS fills them in for the case at hand. */
+export function withDetails(answer: FakeAnswer, details: Record<string, unknown>): FakeAnswer {
+  (answer.body as { error: { details: Record<string, unknown> } }).error.details = details;
+  return answer;
+}
+
 export function firstSuccess(route: FixtureRoute): FakeAnswer {
   const example = route.examples.find((candidate) => candidate.response.status < 300);
   if (!example) throw new Error(`${route.key} has no success example`);

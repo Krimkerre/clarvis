@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CLARVIS_CREDENTIAL, FAKE_CREDENTIALS, FakeRavisRelay, FIXTURE_SESSION } from './FakeRavisRelay';
+import { freshKey } from '../../engine/relay/idempotency';
+import { RelayClient } from '../../engine/relay/relayClient';
+import type { CreateSessionBody, RequestView } from '../../engine/relay/relayTypes';
+import { CLARVIS_CREDENTIAL, FAKE_CREDENTIALS, fakeHttp, FakeRavisRelay, FIXTURE_SESSION } from './FakeRavisRelay';
 import {
   contractRoutes,
   EVENTS_ROUTE,
@@ -61,6 +64,170 @@ test('every fixture example is answered exactly as the fixture shows, and passes
         assert.equal(fake.violations.some((violation) => violation.startsWith('request:')), wrongOnPurpose, `${label}: ${fake.violations.join('; ')}`);
       }
     }
+  } finally {
+    await fake.close();
+  }
+});
+
+// ── R5, held to RAVIS bc1a103 ─────────────────────────────────────────────────
+
+test("the sites fake checks every host as RAVIS's site_refusal does before it adds any, and reads back what it added", async () => {
+  const fake = await FakeRavisRelay.start();
+  try {
+    const client = new RelayClient(fakeHttp(fake));
+    const sites = fake.sites();
+    const refused = await client.allowSites(['ok.example.com', '*.hf.co', '[::1]', '192.168.1.20', 'printer.local', 'localhost', 'https://example.com/x', 'bad_host']);
+    assert.deepEqual(!refused.ok && refused.failure.kind === 'refused' && refused.failure.details.refused, [
+      { host: '*.hf.co', reason: 'wildcard' },
+      { host: '[::1]', reason: 'ip_address' },
+      { host: '192.168.1.20', reason: 'ip_address' },
+      { host: 'printer.local', reason: 'local_name' },
+      { host: 'localhost', reason: 'local_name' },
+      { host: 'https://example.com/x', reason: 'not_a_host_name' },
+      { host: 'bad_host', reason: 'not_a_host_name' },
+    ]);
+    assert.deepEqual([...sites.added], [], 'nothing written');
+
+    const tooMany = await client.allowSites(Array.from({ length: 21 }, (_, index) => `h${index}.example.com`));
+    assert.equal(!tooMany.ok && tooMany.failure.kind === 'refused' && tooMany.failure.code, 'INVALID_REQUEST_BODY');
+
+    sites.notAdded = 'overridden';
+    const notAdded = await client.allowSites(['HuggingFace.co']);
+    assert.deepEqual(!notAdded.ok && notAdded.failure.kind === 'refused' && notAdded.failure.details, { hosts: ['huggingface.co'], reason: 'overridden' });
+
+    const added = await client.allowSites(['HuggingFace.co.', 'pypi.org']);
+    assert.deepEqual(added.ok && added.value.added, ['huggingface.co']);
+    const read = await client.codexSites();
+    assert.deepEqual(read.ok && read.value.added, ['huggingface.co']);
+
+    sites.unreadable = true;
+    const unreadable = await client.codexSites();
+    assert.equal(!unreadable.ok && unreadable.failure.kind, 'runtime_unavailable', 'never an empty list');
+    assert.deepEqual(fake.violations, []);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("the session fake holds a create's model and effort to Codex's models as RAVIS's _offered does, and shows the effort in the view", async () => {
+  const fake = await FakeRavisRelay.start();
+  try {
+    const client = new RelayClient(fakeHttp(fake));
+    const machine = fake.sessions();
+    const base = exampleNamed('POST /api/v1/agent-sessions', 'created').request.body as CreateSessionBody;
+    let attempt = 0;
+    const create = (patch: Partial<CreateSessionBody>) => {
+      attempt++;
+      return client.createSession({ ...base, clarvis_task_id: `task-${attempt}`, ...patch }, `create-${attempt}`);
+    };
+
+    const chosen = await create({ model: 'gpt-6-astra', effort: 'medium' });
+    assert.equal(chosen.ok && chosen.value.session.codex.effort, 'medium');
+    const plain = await create({ model: '', effort: undefined });
+    assert.deepEqual(plain.ok && [plain.value.session.codex.model, plain.value.session.codex.effort], ['gpt-6-astra', null]);
+
+    const model = await create({ model: 'gpt-4.1', effort: undefined });
+    assert.deepEqual(!model.ok && model.failure.kind === 'refused' && [model.failure.code, model.failure.details], [
+      'MODEL_NOT_OFFERED',
+      { model: 'gpt-4.1', models: ['gpt-6-astra'] },
+    ]);
+    const effort = await create({ model: '', effort: 'xhigh' });
+    assert.deepEqual(!effort.ok && effort.failure.kind === 'refused' && [effort.failure.code, effort.failure.details], [
+      'EFFORT_NOT_OFFERED',
+      { model: 'gpt-6-astra', effort: 'xhigh', efforts: ['low', 'medium', 'high'] },
+    ]);
+
+    machine.models = [];
+    const early = await create({ model: 'gpt-6-astra', effort: undefined });
+    assert.equal(!early.ok && early.failure.kind, 'runtime_unavailable');
+    const unchecked = await create({ model: '', effort: undefined });
+    assert.equal(unchecked.ok, true, 'nothing named, nothing to check');
+    assert.deepEqual(fake.violations, []);
+  } finally {
+    await fake.close();
+  }
+});
+
+test("the session fake does R5's sites as RAVIS does: a group per turn, a reopen when a turn ends with asks open, a turn that waits for it, a later group that waits its turn, and a Stop that drops the waiting turn", async () => {
+  const fake = await FakeRavisRelay.start();
+  try {
+    const client = new RelayClient(fakeHttp(fake));
+    const machine = fake.sessions();
+    machine.stepMs = 1;
+    const settle = async (session: { id: string; token: string }) => {
+      const claim = await client.claimSettle(session.id, session.token, 'win-1');
+      if (!claim.ok) throw new Error('no claim');
+      return client.settle(session.id, session.token, { claim_id: claim.value.claim_id, commit: 'c'.repeat(40), next: 'idle' }, freshKey());
+    };
+
+    const session = machine.seed();
+    const events = () => session.stream.emitted().map((entry) => entry.event);
+    const asks = machine.blockSites(session, ['download.pytorch.org', 'huggingface.co', 'download.pytorch.org']);
+    assert.equal(asks.length, 2, 'each host once');
+    assert.equal(new Set(asks.map((ask) => ask.group_id)).size, 1, "one turn's asks share a group");
+    assert.match(String(asks[0].group_id), /^sg_/);
+    assert.deepEqual(events().slice(-4), ['site.blocked', 'site.blocked', 'request.opened', 'request.opened'], 'open together');
+    assert.equal(session.state, 'running', 'a site ask never makes the task wait');
+
+    machine.completeTurn(session);
+    assert.deepEqual(events().slice(-3), ['turn.completed', 'site.reopening', 'session.state']);
+    assert.deepEqual((session.stream.view().codex as { reopening: unknown }).reopening, {
+      group_id: asks[0].group_id,
+      hosts: ['download.pytorch.org', 'huggingface.co'],
+      since: '2026-09-14T14:03:00Z',
+    });
+
+    assert.equal((await settle(session)).ok, true);
+    assert.equal(session.reopening?.resume, false, 'a settle skips the resume, never the wait');
+    const turn = await client.startTurn(session.id, session.token, { text: 'Carry on where you stopped.', kind: 'carry_on' }, freshKey());
+    assert.deepEqual(turn.ok && turn.value, { turn: { state: 'starting' } });
+    assert.deepEqual([session.state, session.activeTurn], ['starting', null], 'it waits for the reopen');
+    const again = await client.startTurn(session.id, session.token, { text: 'again', kind: 'continue' }, freshKey());
+    assert.equal(!again.ok && again.failure.kind === 'refused' && again.failure.code, 'TURN_ACTIVE');
+
+    machine.finishReopen(session);
+    assert.deepEqual(events().slice(-3), ['site.reopened', 'session.state', 'turn.started'], 'resumed on demand, then begun');
+    assert.equal(session.threadLoaded, true);
+
+    assert.deepEqual(machine.blockSites(session, ['files.example.com']), [], "a later turn's asks wait for the open group");
+    await client.answer(session.id, session.token, asks[0].id, 'win-1', { kind: 'allow_site' });
+    await client.answer(session.id, session.token, asks[1].id, 'win-1', { kind: 'keep_blocked' });
+    const opened = session.stream.emitted().filter((entry) => entry.event === 'request.opened').map((entry) => (entry.data.request as RequestView).payload.host);
+    assert.deepEqual(opened, ['download.pytorch.org', 'huggingface.co', 'files.example.com']);
+    assert.equal(session.open.size, 1);
+    machine.completeTurn(session);
+    assert.deepEqual(session.reopening?.hosts, ['files.example.com', 'download.pytorch.org'], "the group still asking, and the site allowed since the thread loaded");
+
+    // A Stop skips the resume by itself — before any settle, and with no turn to stop (`stop` → `_skip_resume`).
+    const unsettled = machine.seed();
+    machine.blockSites(unsettled, ['cdn.example.net']);
+    machine.completeTurn(unsettled);
+    const noTurn = await client.interrupt(unsettled.id, unsettled.token, 'stop');
+    assert.deepEqual(noTurn.ok && noTurn.value, { state: 'completed_needs_review' });
+    assert.equal(unsettled.reopening?.resume, false, 'the resume skipped by the Stop alone');
+    machine.finishReopen(unsettled);
+    assert.equal(unsettled.threadLoaded, false, 'the next turn resumes the thread');
+
+    const stopped = machine.seed();
+    machine.blockSites(stopped, ['mirror.example.org']);
+    machine.completeTurn(stopped);
+    assert.equal((await settle(stopped)).ok, true);
+    await client.startTurn(stopped.id, stopped.token, { text: 'Carry on where you stopped.', kind: 'carry_on' }, freshKey());
+    const interrupted = await client.interrupt(stopped.id, stopped.token, 'stop');
+    assert.deepEqual(interrupted.ok && interrupted.value, { state: 'stopping' });
+    assert.deepEqual([stopped.reopening?.queued, stopped.reopening?.resume], [null, false]);
+    assert.equal(stopped.open.size, 1, 'a Stop never resolves a site ask');
+    machine.finishReopen(stopped);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual([stopped.activeTurn, stopped.threadLoaded], [null, false], 'the dropped turn never begins, and the next turn resumes the thread');
+
+    const idle = machine.seed({ state: 'idle', turnActive: false });
+    const quiet = await client.interrupt(idle.id, idle.token, 'stop');
+    assert.deepEqual([quiet.ok && quiet.value, idle.stream.emitted()], [{ state: 'idle' }, []], 'no turn, nothing to stop');
+    const [ask] = machine.blockSites(idle, ['mirror.example.org']);
+    await client.answer(idle.id, idle.token, ask.id, 'win-1', { kind: 'allow_site' });
+    assert.deepEqual(idle.stream.emitted().map((entry) => entry.event).slice(-3), ['site.allowed', 'request.resolved', 'site.reopening'], 'allowed while no turn runs: reopened at once');
+    assert.deepEqual(fake.violations, []);
   } finally {
     await fake.close();
   }

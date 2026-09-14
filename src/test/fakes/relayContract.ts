@@ -64,6 +64,11 @@ export const EVENTS_ROUTE = 'GET /api/v1/agent-sessions/{sid}/events';
 /** Codex's state (`codex-state.json`), which a runner reads before it starts a task (C2a). Any caller may read it. */
 export const CODEX_STATE_ROUTE = 'GET /api/v1/codex';
 
+/** The allowed sites (R5; `codex-admin.json`): read and added to by a window before a task, removed by NERVIS. */
+export const SITES_ROUTE = 'GET /api/v1/codex/sites';
+export const ALLOW_SITES_ROUTE = 'POST /api/v1/codex/sites';
+export const REMOVE_SITE_ROUTE = 'DELETE /api/v1/codex/sites/{host}';
+
 const parsed = new Map<string, any>();
 
 /** A fixture file — a name in `relay-contract/`, or `lock-rule-cases.json` — as a fresh copy. */
@@ -71,7 +76,7 @@ export function fixture<T = any>(name: string): T {
   return structuredClone(raw(name)) as T;
 }
 
-/** The relay and lock routes the fixtures describe, the event stream included. */
+/** The relay and lock routes the fixtures describe, the event stream and the allowed sites included. */
 export function contractRoutes(): FixtureRoute[] {
   if (!parsed.has('routes')) {
     const stream = raw('event-stream.json');
@@ -82,6 +87,10 @@ export function contractRoutes(): FixtureRoute[] {
       routeFrom({ ...stream.route, examples: stream.examples }),
       // Its route names who may read it in prose ("any caller, including anonymous"); `needs` says the same.
       routeFrom({ method: state.route.method, path: state.route.path, needs: ['any caller'], examples: state.examples }),
+      // The allowed sites (R5); the rest of `codex-admin.json` is sign-in and re-testing, which no window calls.
+      ...raw('codex-admin.json')
+        .routes.filter((route: { path: string }) => route.path.startsWith('/api/v1/codex/sites'))
+        .map(routeFrom),
     ]);
   }
   return parsed.get('routes');

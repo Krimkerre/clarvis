@@ -55,7 +55,7 @@ test('the panel stylesheet still carries the rules the panel depends on', () => 
 
   // A stylesheet that exists but has been emptied or half-moved is the failure this
   // catches; these four are the structural rules the layout cannot render without.
-  for (const selector of ['.clarvis-chat', '#clarvis-transcript', '.clarvis-choice', '.clarvis-progress', '.clarvis-menu']) {
+  for (const selector of ['.clarvis-chat', '#clarvis-transcript', '.clarvis-choice', '.clarvis-progress', '.clarvis-run-status', '.clarvis-menu']) {
     assert.ok(css.includes(selector), `${selector} missing from media/chat.css`);
   }
 });

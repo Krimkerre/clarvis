@@ -75,7 +75,11 @@ import { mayCommitNow, mayWriteNow, TAKEN_OVER_LINE, TAKEN_OVER_TOOL_RESULT } fr
 
 /** Reported as the run goes, so the panel can show work rather than a spinner. */
 export interface AgentEvent {
-  kind: 'text' | 'tool' | 'gate' | 'done' | 'error';
+  /**
+   * `status` is a passing state of a run, shown under the chat until the next one replaces it (empty text clears it)
+   * and never written to the transcript or kept: "Reconnecting Codex…" while RAVIS reopens a Codex task (M15 C2b+).
+   */
+  kind: 'text' | 'tool' | 'gate' | 'done' | 'error' | 'status';
   /**
    * True when this step is Clarvis reading rather than changing something.
    *

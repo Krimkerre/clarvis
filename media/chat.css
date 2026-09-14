@@ -114,6 +114,10 @@ svg.butler { width: clamp(130px, 62vw, 260px); height: auto; }
   background: var(--vscode-widget-border, var(--vscode-descriptionForeground)); }
 .clarvis-progress .bar i { display:block; height:100%; border-radius:2px;
   background: var(--vscode-focusBorder); transition: width .3s ease; }
+/* A passing state of a run, such as "Reconnecting Codex…" while RAVIS reopens a Codex task: one quiet line, gone
+   once the run moves on. */
+.clarvis-run-status { flex:0 0 auto; padding:2px 8px; font-size:11px; opacity:.75; }
+.clarvis-run-status[hidden] { display:none; }
 
 /* The prompt row: bowtie on the left, input taking the rest. Aligned to the
    bottom so the icon stays level with the first line as the box grows. */
@@ -135,7 +139,7 @@ svg.butler { width: clamp(130px, 62vw, 260px); height: auto; }
   border:1px solid var(--vscode-input-border, transparent); }
 #clarvis-input:focus { outline:1px solid var(--vscode-focusBorder); }
 
-/* The bowtie's fold-out menu (M15 C2b+): Change API, then a Codex section. Anchored to the prompt row and opening
+/* The bowtie's fold-out menu (M15 C2b+): API config, then a Codex section. Anchored to the prompt row and opening
    upwards over the transcript, so it never pushes the input away from where the hand is. */
 .clarvis-prompt { position: relative; }
 .clarvis-menu { position:absolute; left:0; bottom:calc(100% + 6px); z-index:20; box-sizing:border-box;

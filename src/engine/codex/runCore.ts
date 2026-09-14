@@ -37,6 +37,11 @@
  *   and only then claims, saves and settles — letting the lock go once the run is over (final check F-A9).
  * - "Carry on" after RAVIS's step cap is a new `carry_on` turn on the same session, followed like the
  *   first, never a new task on a new branch (design §5.5).
+ * - Before a start, the sites the task will likely need are asked about once, and Cancel starts nothing; a model and
+ *   effort the owner chose are held to what Codex lists (C2b+, R5).
+ * - After blocked sites the task carries on (`carry_on`) only from the window whose answer decided the group's last
+ *   host, only once its work is saved and no turn runs, and never after a Stop; RAVIS holds that turn until Codex's
+ *   thread is reopened (R5).
  * - A panel that stops pinging is reported detached and its stream closed; when it pings again, presence
  *   is posted at once and the stream reopens from its cursor (review AH2, final check F-A8).
  */
@@ -49,10 +54,11 @@ import { codexReadiness } from '../relay/codexReadiness';
 import { createSessionKey, freshKey, switchCreateKey } from '../relay/idempotency';
 import type { CodexStart } from '../transfer/transferState';
 import { PresenceTracker, type PresenceAction } from '../relay/presence';
-import type { RelayClient } from '../relay/relayClient';
+import type { RelayClient, TurnRequest } from '../relay/relayClient';
 import type { RelayFailure, RelayOutcome } from '../relay/relayFailure';
 import { abortableSleep, type Sleep } from '../relay/relayHttp';
 import type {
+  CodexState,
   CreateSessionBody,
   Decision,
   Host,
@@ -63,15 +69,33 @@ import type {
 } from '../relay/relayTypes';
 import { RECONNECT_BACKOFF_MS, RelayEventStream, SILENCE_LIMIT_MS, type StreamItem } from '../relay/sseReader';
 import type { TokenRead } from '../relay/tokenStore';
-import { CodexApprovals, type PromptShower } from './approvals';
+import { effectiveCodexChoice, type StoredCodexChoice } from '../codexChoice';
+import { CodexApprovals, type PromptShower, type SitesDecided } from './approvals';
 import { EventChannel } from './eventChannel';
 import { FeedbackQueue, type FeedbackEntry } from './feedback';
 import { CodexLedger, type CheckRun } from './ledger';
 import {
+  carryOnText,
+  MOST_SITES,
+  preTaskAsk,
+  preTaskChoice,
+  refusedSites,
+  SITE_LINES,
+  siteDecisionsLine,
+  sitesAllowedLine,
+  sitesNotAddedLine,
+  sitesNotAllowedLine,
+  sitesRefusedLine,
+  type PreTaskChoice,
+} from './siteAsks';
+import { notYetAllowed, type FoundSite } from './siteScan';
+import {
   CODEX_LINES,
+  codexModelLine,
   failureLine,
   feedbackLine,
   leftoverLine,
+  modelFellBackLine,
   reattachedLine,
   refusalCode,
   requestSummary,
@@ -207,6 +231,13 @@ export interface CodexRunOptions {
   ask: PromptShower;
   /** Copies project files, by relative path, for undo before an approved file change (C2b; design §5.2). */
   capture?: (paths: string[]) => Promise<void>;
+  /**
+   * The hosts a new task will likely need, found in the project and the brief (C2b+; `siteScan.ts`), asked about once
+   * before anything is touched. Absent: nothing is asked before a start.
+   */
+  sitesFor?: (task: string) => FoundSite[] | Promise<FoundSite[]>;
+  /** The Codex model and effort the owner chose in the bowtie menu (C2b+). Absent or empty: Codex's own default. */
+  codexChoice?: () => StoredCodexChoice;
   /** Absent: a task RAVIS paused for another editor is only followed from here, never saved. */
   floor?: CodexLockFloor;
   /** RAVIS's lock API: a switch reserves the project for Clarvis's own engine with this session's token (C3). */
@@ -228,6 +259,11 @@ const NEEDS_SETTLE = new Set(['stopped', 'completed_needs_review', 'paused_unans
 const ENDED = new Set(['idle', 'ended', 'failed']);
 /** States a steer can reach: a turn is running, or about to. */
 const STEERABLE = new Set(['starting', 'running', 'waiting_on_you']);
+/**
+ * How long reading or adding the allowed sites gets before a start goes on without them (C2b+): RAVIS asks Codex each
+ * time, and site writes wait for one another, so longer than the state's 1.5 s, and never long enough to stall a start.
+ */
+const SITES_TIMEOUT_MS = 10_000;
 
 interface Session {
   id: string;
@@ -237,6 +273,30 @@ interface Session {
 }
 
 type Handler = (data: Record<string, unknown>) => void | Promise<void>;
+
+/** How the ask before a start ended: start, cancelled by the owner, or taken away by a Stop. */
+type StartChoice = 'start' | 'cancel' | 'stopped';
+
+/** The ask before a start, as it goes (C2b+). */
+interface SitesAsking {
+  /** The hosts still asked about. */
+  found: FoundSite[];
+  /** Whether "Allow and start" is still offered: not once allowing has failed. */
+  allowOffered: boolean;
+  /** Shown again after words that weren't a choice. */
+  again: boolean;
+  /** Said in front of the question when it is asked again: why allowing didn't go through. */
+  before: string;
+  /** Said once the ask is over. */
+  said: string[];
+}
+
+/** A carry-on owed after blocked sites (R5): what the owner decided, and — once sent — the turn and key its retries reuse. */
+interface PendingCarryOn {
+  allowed: string[];
+  kept: string[];
+  sent?: { turn: TurnRequest; key: string; delivered: string[] };
+}
 
 export class CodexRunCore {
   readonly ledger = new CodexLedger();
@@ -289,6 +349,15 @@ export class CodexRunCore {
   private lastTurn: { id?: string; status: CodexThreadRef['lastTurnStatus'] } = { status: 'unknown' };
   /** Clarvis's own engine → Codex: resolved once Codex's first turn begins. */
   private switchStart: { promise: Promise<SwitchResult<void>>; resolve: (result: SwitchResult<void>) => void; done: boolean } | undefined;
+  /** What `GET /api/v1/codex` said before the start: the models a chosen model and effort are held to (C2b+). */
+  private codexState: CodexState | undefined;
+  /** The carry-on this window owes once the site asks it decided can go on (R5). */
+  private owedCarryOn: PendingCarryOn | undefined;
+  private carryOnSending = false;
+  /** RAVIS took the carry-on and hasn't begun its turn yet: the run follows on until it does. */
+  private carryOnSent = false;
+  /** "Reconnecting Codex…" is showing under the chat (R5). */
+  private reconnecting = false;
 
   private readonly handlers = new Map<string, Handler>([
     ['snapshot', (data) => this.onSnapshot(data as unknown as SessionView)],
@@ -303,7 +372,12 @@ export class CodexRunCore {
     ['request.resolved', (data) => this.approvals.resolved(data)],
     // A site ask follows as its own request; the event itself only goes to the log.
     ['site.blocked', (data) => this.log(`codex: a command was blocked from reaching ${String(data.host)}`)],
-    ['site.allowed', (data) => this.approvals.siteAllowed(data)],
+    ['site.allowed', (data) => this.log(`codex: ${String(data.host)} was added to Codex's allowed sites`)],
+    // RAVIS reopens Codex's thread so an allowed site reaches it (R5), as often as it needs to: "Reconnecting Codex…"
+    // shows until Codex has let go of the thread, the moment an allowed site works.
+    ['site.reopening', (data) => this.onReopening(data)],
+    ['site.reopened', () => this.onReopened(false)],
+    ['site.reopen_incomplete', () => this.onReopened(true)],
     ['feedback', (data) => this.onFeedback(data)],
     ['model.rerouted', (data) => this.say(`Codex moved from ${String(data.from)} to ${String(data.to)} (${String(data.reason)}).`)],
     ['warning', (data) => this.terminal(`Codex: ${String(data.message)}\n`)],
@@ -324,25 +398,21 @@ export class CodexRunCore {
       capture: options.capture,
       say: (line) => this.say(line),
       log: (line) => this.log(line),
+      sitesDecided: (decided) => this.sitesDecided(decided),
     });
   }
 
-  /** A new task: refused before anything is touched unless Codex may run (design §5.1). */
+  /**
+   * A new task: refused before anything is touched unless Codex may run (design §5.1), the sites it will likely need
+   * asked about first (C2b+), then the branch, the session, and the run followed.
+   */
   async *start(task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
-    const refusal = await this.refusal();
-    if (refusal) {
-      yield this.failure(refusal);
-      return;
-    }
-    const branch = signal.aborted ? undefined : await this.options.git.begin(task);
-    if (!branch?.ok) {
-      yield branch ? this.failure(branch.line) : this.doneEvent(CODEX_LINES.stopped);
-      return;
-    }
-    const refused = await this.create(task, branch);
-    if (refused) {
-      await this.options.git.abandon();
-      yield this.failure(refused);
+    const said: string[] = [];
+    const notStarted = await this.beforeStart(task, signal, said);
+    for (const line of said) yield { kind: 'text', text: line, toChat: true };
+    const ended = notStarted ?? (await this.branchAndCreate(task, signal));
+    if (ended) {
+      yield ended;
       return;
     }
     yield* this.follow(signal, null);
@@ -533,7 +603,9 @@ export class CodexRunCore {
   private async createForSwitch(into: SwitchIntoCodex, branch: { branch: string; headCommit: string }): Promise<{ cursor: number } | { line: string }> {
     const taskId = into.checkpoint.taskId;
     const start = into.start.kind === 'resume' ? { kind: 'resume' as const, thread_id: into.start.threadId, catch_up_text: into.catchUp } : { kind: 'brief' as const, text: into.brief };
-    const body: CreateSessionBody = { ...this.createBody(into.brief, taskId, branch), start, lock: { transfer_token: into.transferToken ?? null } };
+    // The owner's model and effort, held to what Codex lists now (C2b+); unread, Codex's own default is used.
+    if (this.hasChoice() && !this.codexState) this.codexState = await this.readCodexState();
+    const body: CreateSessionBody ={ ...this.createBody(into.brief, taskId, branch), start, lock: { transfer_token: into.transferToken ?? null } };
     const attempt = into.transferToken ?? `checkpoint:${into.checkpoint.savedAt}`;
     const created = await this.options.relay.createSession(body, switchCreateKey(taskId, this.options.window.id, attempt), { retry: this.timing.retry });
     if (!created.ok) return { line: switchStartLine(created.failure) };
@@ -541,6 +613,7 @@ export class CodexRunCore {
     this.session = { id: session.id, token, taskId };
     this.keepToken(session.id, token, taskId);
     this.noteView(session);
+    this.sayModel(session);
     // From the created session's own cursor, not a snapshot: Codex's first `turn.started` may come before the
     // stream opens, and a snapshot would never replay it — the switch would wait for a start that already happened.
     return { cursor: session.last_event_id };
@@ -623,6 +696,8 @@ export class CodexRunCore {
     // Before anything is sent: the question on screen must not outlive the Stop that ended it.
     this.releaseQuestions();
     this.say(CODEX_LINES.stopping);
+    // Saved and idle, waiting only on the owner's site decisions: nothing runs in RAVIS to stop (R5).
+    if (this.state === 'idle' && !this.carryOnSent && !this.carryOnSending) return this.finishWith(this.doneEvent(CODEX_LINES.stopped));
     void this.interrupt();
   }
 
@@ -717,24 +792,122 @@ export class CodexRunCore {
 
   // ── Starting ──────────────────────────────────────────────────────────────
 
+  /** Why a new task doesn't start, as the event that ends its run, or undefined to go on. `said` collects the ask's last word. */
+  private async beforeStart(task: string, signal: AbortSignal, said: string[]): Promise<AgentEvent | undefined> {
+    const refusal = await this.refusal();
+    if (refusal) return this.failure(refusal);
+    // A model or effort chosen before Codex has listed its models can't be checked yet (R5): a moment too early.
+    if (this.hasChoice() && (this.codexState?.models ?? []).length === 0) return this.doneEvent(CODEX_LINES.modelsNotListed);
+    const sites = await this.sitesBeforeStart(task, signal, said);
+    if (sites === 'start') return undefined;
+    return this.doneEvent(sites === 'cancel' ? SITE_LINES.cancelled : CODEX_LINES.stopped);
+  }
+
   private async refusal(): Promise<string | undefined> {
     const state = await this.options.relay.codexState();
     if (!state.ok) return failureLine(state.failure, 'start');
+    this.codexState = state.value;
     const failure = codexReadiness(state.value);
     return failure && failureLine(failure, 'start');
   }
 
-  /** Creates the session. Undefined once created; otherwise why not. */
-  private async create(task: string, branch: { branch: string; headCommit: string }): Promise<string | undefined> {
+  private async readCodexState(): Promise<CodexState | undefined> {
+    const state = await this.options.relay.codexState();
+    return state.ok ? state.value : undefined;
+  }
+
+  // ── The sites a task needs, before it starts (C2b+; the owner's option 1) ────
+
+  /**
+   * The sites a new task will likely need, asked about once before anything is touched: found in the project and the
+   * brief, less those Codex already allows. Nothing is asked when nothing is found, or when RAVIS can't say which
+   * sites it allows: Codex then asks about a blocked site as it meets one.
+   */
+  private async sitesBeforeStart(task: string, signal: AbortSignal, said: string[]): Promise<StartChoice> {
+    const asking: SitesAsking = { found: await this.sitesToAsk(task), allowOffered: true, again: false, before: '', said };
+    while (asking.found.length > 0) {
+      const prompt = preTaskAsk(asking.found, asking.allowOffered, asking.before);
+      const reply = await untilAborted(this.options.ask(prompt, signal, asking.again), signal);
+      if (signal.aborted || reply === undefined) return 'stopped';
+      const next = await this.afterSitesReply(asking, preTaskChoice(prompt, reply));
+      if (next !== 'ask') return next;
+    }
+    return 'start';
+  }
+
+  /** The hosts to ask about: found, not yet allowed, and no more than one allow takes. */
+  private async sitesToAsk(task: string): Promise<FoundSite[]> {
+    const found = await this.sitesFound(task);
+    if (found.length === 0) return [];
+    const listed = await this.options.relay.codexSites({ timeoutMs: SITES_TIMEOUT_MS });
+    if (!listed.ok) {
+      this.log(`codex: the allowed sites couldn't be read, so none were asked about before the start (${listed.failure.kind})`);
+      return [];
+    }
+    return notYetAllowed(found, [...listed.value.defaults, ...listed.value.added]).slice(0, MOST_SITES);
+  }
+
+  /** What the look through the project found; nothing when it couldn't look, since a task never waits on it. */
+  private async sitesFound(task: string): Promise<FoundSite[]> {
+    try {
+      return (await this.options.sitesFor?.(task)) ?? [];
+    } catch (error) {
+      this.log(`codex: the project wasn't looked through for sites (${String(error)})`);
+      return [];
+    }
+  }
+
+  private async afterSitesReply(asking: SitesAsking, choice: PreTaskChoice | undefined): Promise<StartChoice | 'ask'> {
+    asking.again = choice === undefined;
+    if (choice === 'cancel') return 'cancel';
+    if (choice === 'start_without') return 'start';
+    return choice === 'allow_and_start' ? this.allowBeforeStart(asking) : 'ask';
+  }
+
+  /** "Allow and start": every host added — or the owner asked again, told why not, about what is left. */
+  private async allowBeforeStart(asking: SitesAsking): Promise<StartChoice | 'ask'> {
+    const hosts = asking.found.map((site) => site.host);
+    const allowed = await this.options.relay.allowSites(hosts, { timeoutMs: SITES_TIMEOUT_MS, retry: this.timing.retry });
+    if (allowed.ok) {
+      asking.said.push(sitesAllowedLine(hosts));
+      return 'start';
+    }
+    const refused = allowed.failure.kind === 'refused' && allowed.failure.code === 'SITES_REFUSED' ? refusedSites(allowed.failure.details) : [];
+    if (refused.length > 0) {
+      // Nothing was added: the hosts RAVIS would take are asked about again, without the ones it won't.
+      asking.found = asking.found.filter((site) => !refused.some((entry) => entry.host === site.host));
+      asking.before = sitesRefusedLine(refused);
+      if (asking.found.length === 0) asking.said.push(asking.before);
+      return 'ask';
+    }
+    asking.before = refusalCode(allowed.failure) === 'SITE_NOT_ADDED' ? sitesNotAddedLine(hosts) : sitesNotAllowedLine(hosts);
+    asking.allowOffered = false;
+    return 'ask';
+  }
+
+  // ── The session ─────────────────────────────────────────────────────────────
+
+  /** The task's branch, then its session. Undefined once created; otherwise the event that ends the run. */
+  private async branchAndCreate(task: string, signal: AbortSignal): Promise<AgentEvent | undefined> {
+    const branch = signal.aborted ? undefined : await this.options.git.begin(task);
+    if (!branch?.ok) return branch ? this.failure(branch.line) : this.doneEvent(CODEX_LINES.stopped);
+    const refused = await this.create(task, branch);
+    if (refused) await this.options.git.abandon();
+    return refused;
+  }
+
+  /** Creates the session. Undefined once created; otherwise the event that ends the run. */
+  private async create(task: string, branch: { branch: string; headCommit: string }): Promise<AgentEvent | undefined> {
     const taskId = (this.options.newTaskId ?? randomUUID)();
     const key = createSessionKey(taskId, this.options.window.id, 1);
     const body = this.createBody(task, taskId, branch);
     const created = await this.options.relay.createSession(body, key, { retry: this.timing.retry });
-    if (!created.ok) return this.createRefused(created.failure);
+    if (!created.ok) return this.createRefused(created.failure, body);
     const { session, session_token: token } = created.value;
     this.session = { id: session.id, token, taskId };
     this.keepToken(session.id, token, taskId);
     this.noteView(session);
+    this.sayModel(session);
     return undefined;
   }
 
@@ -745,7 +918,7 @@ export class CodexRunCore {
       clarvis_task_id: taskId,
       window: { id: window.id, host: window.host },
       mode,
-      model: '',
+      ...this.modelAndEffort(),
       branch: { name: branch.branch, head_commit: branch.headCommit },
       git_dir: workspace.gitDir,
       start: { kind: 'brief', text: task },
@@ -754,9 +927,40 @@ export class CodexRunCore {
     };
   }
 
-  private createRefused(failure: RelayFailure): string {
+  /**
+   * The model and effort a new session runs at (C2b+, R5): the owner's choice held to the models Codex listed — a model
+   * no longer offered becomes the default, said once — or Codex's own default when nothing is chosen or listed.
+   */
+  private modelAndEffort(): { model: string; effort?: string } {
+    const stored = this.storedChoice();
+    const choice = this.hasChoice() ? effectiveCodexChoice(this.codexState?.models ?? [], stored) : undefined;
+    if (!choice) return { model: '' };
+    if (stored.model !== undefined && stored.model !== choice.model.id) {
+      this.sayOnce('model-fell-back', modelFellBackLine(stored.model, choice.model.id, choice.effort));
+    }
+    return { model: choice.model.id, effort: choice.effort };
+  }
+
+  private storedChoice(): StoredCodexChoice {
+    return this.options.codexChoice?.() ?? {};
+  }
+
+  private hasChoice(): boolean {
+    const stored = this.storedChoice();
+    return stored.model !== undefined || stored.effort !== undefined;
+  }
+
+  /** Which model and effort a session this window created runs at, from its view (R5). */
+  private sayModel(view: SessionView): void {
+    const line = codexModelLine(view.codex?.model, view.codex?.effort);
+    if (line) this.sayOnce('model', line);
+  }
+
+  private createRefused(failure: RelayFailure, body: CreateSessionBody): AgentEvent {
     this.attachInstead = codexHolder(failure);
-    return failureLine(failure, 'start');
+    // Codex hadn't listed its models, so RAVIS couldn't check the chosen one: a moment too early, not an error (R5).
+    const tooEarly = failure.kind === 'runtime_unavailable' && (body.model !== '' || body.effort !== undefined);
+    return tooEarly ? this.doneEvent(CODEX_LINES.modelsNotListed) : this.failure(failureLine(failure, 'start'));
   }
 
   private keepToken(sessionId: string, token: string, taskId: string): void {
@@ -850,8 +1054,9 @@ export class CodexRunCore {
     if (this.dropsInARow >= 2) this.say(CODEX_LINES.ravisBack);
     this.dropsInARow = 0;
     void this.deliverKept();
-    // An answer RAVIS never received is asked again now that it answers.
+    // An answer RAVIS never received is asked again now that it answers; a carry-on it never took is sent again.
     this.approvals.reconnected();
+    void this.sendCarryOn();
   }
 
   private onDisconnected(): void {
@@ -865,6 +1070,7 @@ export class CodexRunCore {
 
   private onSnapshot(view: SessionView): void {
     this.noteView(view);
+    this.showReconnecting(Boolean(view.codex?.reopening));
     for (const request of view.pending_requests ?? []) this.approvals.open(request);
     this.afterState(view.state, view.processes);
   }
@@ -908,12 +1114,15 @@ export class CodexRunCore {
     if (NEEDS_SETTLE.has(state)) return this.toSettle(state);
     if (state === 'leftover') return this.sayOnce(`leftover`, leftoverLine(processes));
     if (state === 'failed') this.failed = true;
+    if (state === 'idle') return this.endOrCarryOn();
     if (ENDED.has(state)) return this.finishWith(this.closingEvent());
     if (STEERABLE.has(state)) void this.deliverKept();
   }
 
   private toSettle(state: string): void {
     this.workWaited = true;
+    // A carry-on's turn that ended, or never began — cut off by a Stop or a restart — is over (R5).
+    this.carryOnSent = false;
     const line = settleStateLine(state);
     if (line) this.sayOnce(`state:${state}`, line);
     void this.settle();
@@ -921,6 +1130,12 @@ export class CodexRunCore {
 
   private onTurnStarted(data: Record<string, unknown>): void {
     if (typeof data.turn_id === 'string') this.activeTurn = data.turn_id;
+    // A turn that begins after this window tried its carry-on is that carry-on, even when every answer to it was lost (R5).
+    if (this.owedCarryOn?.sent) this.carryOnTaken(this.owedCarryOn);
+    // A new turn is new work to save, whoever saved the last — as when a carry-on's turn begins after blocked sites (R5).
+    this.workWaited = false;
+    this.savedHere = false;
+    this.claimedElsewhere = false;
     // A switch into Codex has started once Codex's turn has begun (design §6.2 step 7).
     this.resolveSwitchStart({ ok: true, value: undefined });
     void this.deliverKept();
@@ -939,6 +1154,104 @@ export class CodexRunCore {
     if (data.state !== 'superseded') return;
     this.superseded = true;
     this.sayOnce('superseded', CODEX_LINES.superseded);
+  }
+
+  // ── Blocked sites during a task (R5) ──────────────────────────────────────
+
+  /** RAVIS let go of Codex's thread to reopen it, as often as it does: "Reconnecting Codex…" until Codex has let go. */
+  private onReopening(data: Record<string, unknown>): void {
+    this.log(`codex: reopening the thread for ${Array.isArray(data.hosts) ? data.hosts.join(', ') : 'the allowed sites'}`);
+    this.showReconnecting(true);
+  }
+
+  /** Codex let go of the thread, so an allowed site reaches its next turn — or it still held it at RAVIS's two-minute cap. */
+  private onReopened(incomplete: boolean): void {
+    this.showReconnecting(false);
+    if (incomplete) this.say(SITE_LINES.reopenIncomplete);
+  }
+
+  private showReconnecting(on: boolean): void {
+    if (this.reconnecting === on || this.finished) return;
+    this.reconnecting = on;
+    this.channel.push({ kind: 'status', text: on ? SITE_LINES.reconnecting : '' });
+  }
+
+  /**
+   * Every host of a group of site asks is decided (R5). The window whose answer decided the last host carries the task
+   * on, once no turn runs and the work so far is saved; RAVIS holds that turn until Codex's thread is reopened. Another
+   * group decided before the carry-on went joins it.
+   */
+  private sitesDecided(decided: SitesDecided): void {
+    if (!decided.here || this.isStopping() || !this.session) return;
+    this.say(siteDecisionsLine(decided.allowed, decided.kept));
+    const owed = this.owedCarryOn;
+    this.owedCarryOn = { allowed: [...(owed?.allowed ?? []), ...decided.allowed], kept: [...(owed?.kept ?? []), ...decided.kept] };
+    void this.sendCarryOn();
+  }
+
+  /** Sends the carry-on once a turn may start: nothing running, the work saved, and not stopping (R5). */
+  private async sendCarryOn(): Promise<void> {
+    const carryOn = this.owedCarryOn;
+    const session = this.session;
+    if (!carryOn || !session || this.carryOnSending || !this.turnMayStart()) return;
+    this.carryOnSending = true;
+    try {
+      carryOn.sent ??= this.composeCarryOn(carryOn);
+      const { turn, key } = carryOn.sent;
+      const started = await this.options.relay.startTurn(session.id, session.token, turn, key, { retry: this.timing.retry });
+      if (started.ok) this.carriedOn(carryOn);
+      else this.carryOnRefused(carryOn, started.failure);
+    } finally {
+      this.carryOnSending = false;
+    }
+  }
+
+  private turnMayStart(): boolean {
+    return this.state === 'idle' && this.activeTurn === null && !this.isStopping();
+  }
+
+  /** The carry-on turn, with anything typed meanwhile in front of it, and the key every retry of it reuses. */
+  private composeCarryOn(carryOn: PendingCarryOn): NonNullable<PendingCarryOn['sent']> {
+    const delivered = this.feedback.pending;
+    const turn = { text: this.feedback.turnText(carryOnText(carryOn.allowed, carryOn.kept)), kind: 'carry_on' as const };
+    return { turn, key: freshKey(), delivered };
+  }
+
+  private carriedOn(carryOn: PendingCarryOn): void {
+    this.carryOnTaken(carryOn);
+    this.carryOnSent = true;
+    this.log('codex: the task carries on after its blocked sites');
+  }
+
+  /** RAVIS took the carry-on, as its reply or its turn's start says: what was typed went with it, and it is owed no more. */
+  private carryOnTaken(carryOn: PendingCarryOn): void {
+    for (const said of carryOn.sent?.delivered ?? []) this.feedback.markDelivered(said);
+    this.owedCarryOn = this.owedCarryOn === carryOn ? undefined : stillToSay(this.owedCarryOn, carryOn);
+  }
+
+  /** Not taken: sent again when it can be, passed to a turn that already runs, or said and let go. */
+  private carryOnRefused(carryOn: PendingCarryOn, failure: RelayFailure): void {
+    if (carryOnWaits(failure)) return this.log(`codex: the carry-on waits (${refusalCode(failure) ?? failure.kind})`);
+    if (this.owedCarryOn === carryOn) this.owedCarryOn = undefined;
+    const code = refusalCode(failure);
+    // Another window started a turn meanwhile: Codex hears the decisions in it.
+    if (code === 'TURN_ACTIVE') {
+      void this.steer(carryOnText(carryOn.allowed, carryOn.kept));
+      return;
+    }
+    if (code === 'SESSION_STOPPING') return;
+    this.say(code === 'PROJECT_LOCKED' ? CODEX_LINES.lockedForTurns : failureLine(failure, 'during'));
+    this.endOrCarryOn();
+  }
+
+  /** The task is saved and idle: the run ends — unless site asks are still being decided, or a carry-on is owed or on its way. */
+  private endOrCarryOn(): void {
+    if (!this.waitingOnSites()) return this.finishWith(this.closingEvent());
+    void this.sendCarryOn();
+  }
+
+  private waitingOnSites(): boolean {
+    return !this.isStopping() && (this.approvals.decidingSites || this.owedCarryOn !== undefined || this.carryOnSent);
   }
 
   // ── Questions ─────────────────────────────────────────────────────────────
@@ -1108,7 +1421,7 @@ export class CodexRunCore {
    */
   private savedElsewhere(code: string): void {
     this.claimedElsewhere = true;
-    if (code === 'NOTHING_TO_SETTLE') return this.finishWith(this.closingEvent());
+    if (code === 'NOTHING_TO_SETTLE') return this.endOrCarryOn();
     this.sayOnce('claimed', CODEX_LINES.otherEditorSaving);
   }
 
@@ -1125,8 +1438,13 @@ export class CodexRunCore {
     // A new key for each settle attempt; its retries reuse it, so a lost answer replays the settled view.
     const body = { claim_id: claimId, commit: saved.commit, next: 'idle' as const };
     const settled = await this.options.relay.settle(session.id, session.token, body, freshKey(), { retry: this.timing.retry });
-    if (!settled.ok) this.say(failureLine(settled.failure, 'during'));
-    this.finishWith(this.closingEvent());
+    if (!settled.ok) {
+      this.say(failureLine(settled.failure, 'during'));
+      return this.finishWith(this.closingEvent());
+    }
+    // Saved: the run ends, unless the owner is still deciding blocked sites and the task carries on after them (R5).
+    this.noteView(settled.value);
+    this.endOrCarryOn();
   }
 
   /** The checkpoint for an ordinary settle: what was typed stays with the run too, so its closing can still say so. */
@@ -1238,6 +1556,7 @@ export class CodexRunCore {
     if (this.finished) return;
     this.finished = true;
     this.releaseQuestions();
+    if (this.reconnecting) this.channel.push({ kind: 'status', text: '' });
     this.stream?.close();
     this.whenAttached?.();
     this.channel.close();
@@ -1275,4 +1594,27 @@ function turnRef(data: Record<string, unknown>): { id?: string; status: CodexThr
 
 function union(first: string[], second: string[]): string[] {
   return [...new Set([...first, ...second])];
+}
+
+/** What a carry-on decided meanwhile still has to tell Codex, once an earlier carry-on went (R5). */
+function stillToSay(current: PendingCarryOn | undefined, went: PendingCarryOn): PendingCarryOn | undefined {
+  if (!current) return undefined;
+  const allowed = current.allowed.filter((host) => !went.allowed.includes(host));
+  const kept = current.kept.filter((host) => !went.kept.includes(host));
+  return allowed.length + kept.length > 0 ? { allowed, kept } : undefined;
+}
+
+/** The owner's reply, or nothing the moment `signal` aborts: a Stop ends the ask whatever the chat does with its buttons. */
+function untilAborted<T>(asked: Promise<T>, signal: AbortSignal): Promise<T | undefined> {
+  if (signal.aborted) return Promise.resolve(undefined);
+  return new Promise((resolve) => {
+    const letGo = () => resolve(undefined);
+    signal.addEventListener('abort', letGo, { once: true });
+    asked.then(resolve, () => resolve(undefined)).finally(() => signal.removeEventListener('abort', letGo));
+  });
+}
+
+/** A carry-on refused for now: the work still waits to be saved, or RAVIS is out of reach. */
+function carryOnWaits(failure: RelayFailure): boolean {
+  return refusalCode(failure) === 'SETTLE_FIRST' || failure.kind === 'unreachable';
 }

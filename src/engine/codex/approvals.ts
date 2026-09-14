@@ -20,6 +20,11 @@
  *   `SESSION_STOPPING` clears it silently; `DECISION_NOT_ALLOWED` draws it again from the list RAVIS returns;
  *   `SITE_NOT_ADDED` says the site stays blocked and asks again, because RAVIS keeps that ask open; an answer that
  *   never reached RAVIS is asked again once RAVIS is back.
+ * - **Site asks are asked a group at a time** (R5). The hosts one turn was blocked from share a `group_id` and are one
+ *   card — each host with Allow or Keep blocked, plus Allow all — which a host opening later joins, and from which a
+ *   host another window decides drops. A decision RAVIS reports while this window's own answer is on its way counts as
+ *   that answer's; once every host is decided, the window whose answer decided the last one is told (`sitesDecided`),
+ *   and only that window carries the task on.
  * - **Unattended answers on its own only the narrowest things, and only while this window's panel is there.** A
  *   command with no gate category, no network and no escalation, or a file change wholly inside the project, when
  *   RAVIS offers `once`. Everything else asks; with no panel attached nothing is answered here, and RAVIS never
@@ -41,8 +46,8 @@ import { engineDecisionAfterAsking } from '../../chat/stopDecision';
 import type { RelayFailure, RelayOutcome } from '../relay/relayFailure';
 import type { Decision, DecisionKind, RequestKind, RequestView, SessionMode } from '../relay/relayTypes';
 import { QuestionBoard, type Asking } from './questions';
-import { SiteGroupCard, siteAskFrom } from './siteAsks';
-import { answerRefusedLine, CODEX_LINES, refusalCode, resolvedLine, siteAllowedLine, siteNotAddedLine } from './translate';
+import { SiteGroupCard, siteAskFrom, type CardOption, type SiteAsk, type SiteDecision } from './siteAsks';
+import { answerRefusedLine, CODEX_LINES, refusalCode, resolvedLine, siteNotAddedLine } from './translate';
 
 /** A button, and the decision it sends. */
 export interface PromptOption {
@@ -101,6 +106,17 @@ export interface ApprovalPorts {
   capture?(paths: string[]): Promise<void>;
   say(line: string): void;
   log(line: string): void;
+  /** Every host of a group of site asks is decided (R5). */
+  sitesDecided?(decided: SitesDecided): void;
+}
+
+/** A group of site asks with every host decided (R5). */
+export interface SitesDecided {
+  groupId: string;
+  allowed: string[];
+  kept: string[];
+  /** This window's answer decided the group's last host: only this window carries the task on. */
+  here: boolean;
 }
 
 /** How deep shell wrappers are unwrapped: `sh -c "bash -c '…'"` is two. */
@@ -123,7 +139,7 @@ const RENDERERS: Partial<Record<RequestKind, (request: RequestView) => RequestPr
   fileChange: (request) => [fileChangePrompt(request)],
   permissions: (request) => [permissionsPrompt(request)],
   question: questionPrompts,
-  site: sitePrompts,
+  // A site ask is drawn with the rest of its group, as one card (`cardPrompt`).
 };
 
 function commandPrompt(request: RequestView): RequestPrompt {
@@ -214,17 +230,6 @@ function questionPrompts(request: RequestView): RequestPrompt[] {
     typedAnswer: answering && question.allowOther ? question.id : undefined,
     about: question.header ? `Codex's question, ${question.header}` : "Codex's question",
   }));
-}
-
-/** A site ask, as a card of one host (`siteAsks.ts`). RAVIS's grouped asks draw the same card with more hosts. */
-function sitePrompts(request: RequestView): RequestPrompt[] {
-  const ask = siteAskFrom(request);
-  if (!ask) return [];
-  const card = new SiteGroupCard([ask]).view();
-  const options = card.options
-    .map((option) => ({ label: option.label, detail: option.detail, decision: { kind: option.decides[0].decision } as Decision }))
-    .filter((option) => request.allowed_decisions.includes(option.decision.kind));
-  return [{ requestId: request.id, line: card.line, detail: card.detail, options, about: card.about }];
 }
 
 /** Buttons for the decisions RAVIS allows, in the order the design lists them. */
@@ -494,38 +499,49 @@ export class CodexApprovals {
   private showing: { request: RequestView; answerForMode(decision: Decision): void } | undefined;
   /** Answers RAVIS never received, asked again once it answers. */
   private readonly unsent = new Map<string, RequestView>();
+  /** Site asks by group, and each ask's group by its request id (R5). */
+  private readonly groups = new Map<string, SiteGroup>();
+  private readonly groupOf = new Map<string, SiteGroup>();
 
   constructor(private readonly ports: ApprovalPorts) {}
 
   /** A request RAVIS opened, from `request.opened` or a snapshot. Ignored once the task is stopping. */
   open(request: unknown): void {
     if (!isRequestView(request) || this.ports.stopping()) return;
+    if (request.kind === 'site') return this.openSite(request);
     if (this.board.open(request)) this.askNext();
   }
 
   /** `request.resolved`: another window, a stop, the unanswered policy or RAVIS's own answer ended it. */
   resolved(data: Record<string, unknown>): void {
     const id = String(data.request_id);
+    const group = this.groupOf.get(id);
+    if (group) return this.siteResolved(group, id, data);
     this.unsent.delete(id);
     const line = this.board.resolve(id) === 'showing' ? resolvedLine(data.by) : undefined;
     if (line) this.ports.say(line);
     this.askNext();
   }
 
-  /** `site.allowed`: the owner's allow reached Codex's list. */
-  siteAllowed(data: Record<string, unknown>): void {
-    if (typeof data.host === 'string') this.ports.say(siteAllowedLine(data.host));
-  }
-
   /** Stop: every request let go at once. Returns how many there were. */
   releaseAll(): number {
     this.unsent.clear();
+    for (const group of this.groups.values()) group.over = true;
     return this.board.releaseAll();
   }
 
-  /** Every request held, the one on screen first. */
+  /** Every request held, the one on screen first; a group of site asks as its hosts still open. */
   get held(): RequestView[] {
-    return this.board.held;
+    return this.board.held.flatMap((request) => {
+      const group = this.groupOf.get(request.id);
+      if (!group) return [request];
+      return group.card.open.flatMap((ask) => group.requests.get(ask.requestId) ?? []);
+    });
+  }
+
+  /** A group of site asks is still being decided in this window (R5): the task carries on only after it. */
+  get decidingSites(): boolean {
+    return [...this.groups.values()].some((group) => !group.over);
   }
 
   /** The chat's mode changed: a request on screen that Unattended answers on its own is answered now. */
@@ -549,6 +565,8 @@ export class CodexApprovals {
   }
 
   private async handle({ request, signal }: Asking): Promise<void> {
+    const group = this.groupOf.get(request.id);
+    if (group) return this.handleGroup(group, signal);
     const decision = this.autoDecision(request) ?? (await this.askPerson(request, signal));
     // "Stop the run" is Stop, whatever became of the question meanwhile: stopping is never a step Codex takes.
     if (decision?.kind === 'stop') return this.stopRun(request);
@@ -616,26 +634,199 @@ export class CodexApprovals {
    * longer wants an answer, or when a switch to Unattended answers it while it is on screen.
    */
   private async showOnce(request: RequestView, prompt: RequestPrompt, signal: AbortSignal, again: boolean): Promise<ReplyReading> {
+    try {
+      return await this.showUntil(prompt, signal, again, (reply) => readReply(prompt, reply), (end) => {
+        this.showing = { request, answerForMode: (decision) => end({ decision }) };
+      });
+    } finally {
+      this.showing = undefined;
+    }
+  }
+
+  /**
+   * Shows `prompt` until the owner replies — the reply as `read` takes it — or ends it at once, its buttons withdrawn,
+   * when `signal` aborts or the `end` handed to `hold` is called.
+   */
+  private async showUntil<T>(
+    prompt: RequestPrompt,
+    signal: AbortSignal,
+    again: boolean,
+    read: (reply: string | undefined) => T | undefined,
+    hold: (end: (value: T | undefined) => void) => void
+  ): Promise<T | undefined> {
     const shown = new AbortController();
-    let settle: (reading: ReplyReading) => void = () => undefined;
-    const settled = new Promise<ReplyReading>((resolve) => (settle = resolve));
-    const end = (reading: ReplyReading) => {
-      settle(reading);
+    let settle: (value: T | undefined) => void = () => undefined;
+    const settled = new Promise<T | undefined>((resolve) => (settle = resolve));
+    const end = (value: T | undefined) => {
+      settle(value);
       shown.abort();
     };
     const letGo = () => end(undefined);
     signal.addEventListener('abort', letGo, { once: true });
-    this.showing = { request, answerForMode: (decision) => end({ decision }) };
+    hold(end);
     try {
       if (signal.aborted) return undefined;
       void Promise.resolve()
         .then(() => this.ports.show(prompt, shown.signal, again))
-        .then((reply) => settle(readReply(prompt, reply)), () => settle(undefined));
+        .then((reply) => settle(read(reply)), () => settle(undefined));
       return await settled;
     } finally {
-      this.showing = undefined;
       signal.removeEventListener('abort', letGo);
     }
+  }
+
+  // ── Site asks, a group at a time (R5) ───────────────────────────────────────
+
+  /** A site ask: the first of its group holds the group's place in the queue, and a later one joins its card. */
+  private openSite(request: RequestView): void {
+    const ask = siteAskFrom(request);
+    if (!ask || this.groupOf.has(request.id)) return;
+    const id = request.group_id ?? request.id;
+    const known = this.groups.get(id);
+    // A host the same turn was blocked from after its group was decided is asked afresh.
+    if (known && !known.over) return this.joinGroup(known, request, ask);
+    const group: SiteGroup = {
+      id,
+      card: new SiteGroupCard([ask]),
+      requests: new Map([[request.id, request]]),
+      placeholder: request,
+      sending: new Set(),
+      heard: new Map(),
+      over: false,
+      parked: false,
+    };
+    this.groups.set(id, group);
+    this.groupOf.set(request.id, group);
+    if (this.board.open(request)) this.askNext();
+  }
+
+  private joinGroup(group: SiteGroup, request: RequestView, ask: SiteAsk): void {
+    group.card.add(ask);
+    group.requests.set(request.id, request);
+    this.groupOf.set(request.id, group);
+    group.redraw?.();
+  }
+
+  /** A group's card, drawn again as hosts join or are decided, until every host is decided or the card is taken away. */
+  private async handleGroup(group: SiteGroup, signal: AbortSignal): Promise<void> {
+    group.parked = false;
+    // RAVIS opens a group's asks together: the ones in the same burst join before the card is first drawn, so the
+    // chat says "blocked from reaching a and b" once rather than drawing a card of one host and taking it back.
+    await new Promise((resolve) => setImmediate(resolve));
+    for (let again = false; this.groupWantsAnswers(group, signal); ) {
+      const reading = await this.showCard(group, signal, again);
+      if (reading === undefined) break;
+      again = reading !== 'redraw' && 'typed' in reading;
+      if (reading === 'redraw') continue;
+      if ('typed' in reading) this.ports.steer(reading.typed);
+      else await this.decideSites(group, reading.decides);
+    }
+    this.board.answered(group.placeholder.id);
+    this.askNext();
+  }
+
+  private groupWantsAnswers(group: SiteGroup, signal: AbortSignal): boolean {
+    return !group.over && !group.parked && !group.card.complete && !signal.aborted && !this.ports.stopping();
+  }
+
+  private async showCard(group: SiteGroup, signal: AbortSignal, again: boolean): Promise<CardReading | undefined> {
+    const read = (reply: string | undefined) => readCard(group.card, reply);
+    try {
+      return await this.showUntil<CardReading>(cardPrompt(group), signal, again, read, (end) => {
+        group.redraw = () => end('redraw');
+      });
+    } finally {
+      group.redraw = undefined;
+    }
+  }
+
+  /** What a button decided, sent host by host: a host decided meanwhile is skipped, and a refusal can end the round. */
+  private async decideSites(group: SiteGroup, decides: CardOption['decides']): Promise<void> {
+    for (const { requestId, decision } of decides) {
+      if (!this.stillOpen(group, requestId)) continue;
+      if (!(await this.sendSite(group, requestId, decision))) return;
+    }
+  }
+
+  private stillOpen(group: SiteGroup, requestId: string): boolean {
+    return !group.over && !this.ports.stopping() && group.card.open.some((ask) => ask.requestId === requestId);
+  }
+
+  /** One host's decision to RAVIS. False when the round ends here: RAVIS is stopping the task, or can't be reached. */
+  private async sendSite(group: SiteGroup, requestId: string, decision: SiteDecision): Promise<boolean> {
+    group.sending.add(requestId);
+    let outcome: RelayOutcome<unknown>;
+    try {
+      outcome = await this.ports.answer(requestId, { kind: decision });
+    } finally {
+      group.sending.delete(requestId);
+    }
+    const heard = group.heard.get(requestId);
+    group.heard.delete(requestId);
+    if (outcome.ok) {
+      this.ports.log(`codex: answered ${requestId} with ${decision}`);
+      this.recordSite(group, requestId, decision, true);
+      return true;
+    }
+    this.ports.log(`codex: the answer to ${requestId} was not taken (${refusalCode(outcome.failure) ?? outcome.failure.kind})`);
+    return this.siteRefused(group, requestId, outcome.failure, heard);
+  }
+
+  /** A host decided: the card drawn again for the rest, or — every host decided — the group over, and said so. */
+  private recordSite(group: SiteGroup, requestId: string, decision: SiteDecision, here: boolean): void {
+    group.card.record(requestId, decision);
+    if (!group.card.complete) return group.redraw?.();
+    group.over = true;
+    this.ports.sitesDecided?.({ groupId: group.id, allowed: group.card.allowed, kept: group.card.kept, here });
+  }
+
+  /** RAVIS didn't take a host's decision. True to go on with the round; the host stays open on the card. */
+  private siteRefused(group: SiteGroup, requestId: string, failure: RelayFailure, heard: Record<string, unknown> | undefined): boolean {
+    const code = refusalCode(failure);
+    if (code === 'SESSION_STOPPING') return false;
+    if (failure.kind === 'unreachable') return this.parkGroup(group);
+    // Another window decided it first: what RAVIS said about it, when already heard, counts now.
+    if (code === 'REQUEST_ALREADY_RESOLVED') {
+      if (heard) this.siteResolvedElsewhere(group, requestId, heard);
+      return true;
+    }
+    this.ports.say(siteRefusalLine(failure, hostIn(group, requestId)));
+    return true;
+  }
+
+  /** A decision that never reached RAVIS: the card waits, and comes back once RAVIS answers again. */
+  private parkGroup(group: SiteGroup): boolean {
+    this.ports.say(CODEX_LINES.answerUnsent);
+    group.parked = true;
+    this.unsent.set(group.placeholder.id, group.placeholder);
+    return false;
+  }
+
+  /** `request.resolved` for a site ask. Heard while this window's own answer is on its way, it waits for that answer's reply. */
+  private siteResolved(group: SiteGroup, id: string, data: Record<string, unknown>): void {
+    // A host already decided here — its own answer's echo, heard after the reply — changes nothing on the card.
+    if (!this.stillOpen(group, id)) return;
+    if (group.sending.has(id)) {
+      group.heard.set(id, data);
+      return;
+    }
+    this.siteResolvedElsewhere(group, id, data);
+  }
+
+  /** Another window decided a host — or the ask ended some other way, the task's end, which ends the group. */
+  private siteResolvedElsewhere(group: SiteGroup, id: string, data: Record<string, unknown>): void {
+    const decision = data.decision_kind;
+    if (decision === 'allow_site' || decision === 'keep_blocked') this.recordSite(group, id, decision, false);
+    else group.over = true;
+    if (group.over) this.withdrawGroup(group, data.by);
+  }
+
+  /** A group over while this window still holds its card: withdrawn, saying why when it was on screen. */
+  private withdrawGroup(group: SiteGroup, by: unknown): void {
+    this.unsent.delete(group.placeholder.id);
+    const line = this.board.resolve(group.placeholder.id) === 'showing' ? resolvedLine(by) : undefined;
+    if (line) this.ports.say(line);
+    this.askNext();
   }
 
   private async capture(request: RequestView): Promise<void> {
@@ -685,6 +876,51 @@ export class CodexApprovals {
     this.ports.say(CODEX_LINES.answerUnsent);
     this.unsent.set(request.id, request);
   }
+}
+
+/** One group of site asks (R5): the hosts one turn was blocked from, asked as one card. */
+interface SiteGroup {
+  id: string;
+  card: SiteGroupCard;
+  /** Each host's request, by id. */
+  requests: Map<string, RequestView>;
+  /** The group's first ask, which holds the group's place in the queue. */
+  placeholder: RequestView;
+  /** Decisions on their way to RAVIS, and what RAVIS's stream said about those meanwhile. */
+  sending: Set<string>;
+  heard: Map<string, Record<string, unknown>>;
+  /** Draws the card again, while it is on screen. */
+  redraw?: () => void;
+  /** Every host decided, or the group let go: nothing more is asked or sent for it. */
+  over: boolean;
+  /** A decision didn't reach RAVIS: the card waits until RAVIS answers again. */
+  parked: boolean;
+}
+
+/** A reply to a group's card: decisions, words for Codex, or the card to draw again. */
+type CardReading = { decides: CardOption['decides'] } | { typed: string } | 'redraw';
+
+/** A group's card as the chat draws it: its line, the note under it, and a button per choice. */
+function cardPrompt(group: SiteGroup): RequestPrompt {
+  const view = group.card.view();
+  const options = view.options.map((option) => ({ label: option.label, detail: option.detail, decision: { kind: option.decides[0].decision } }));
+  return { requestId: group.placeholder.id, line: view.line, detail: view.detail, options, about: view.about };
+}
+
+function readCard(card: SiteGroupCard, reply: string | undefined): CardReading | undefined {
+  const said = reply?.trim() ?? '';
+  const decides = card.read(said);
+  if (decides) return { decides };
+  return said === '' ? undefined : { typed: said };
+}
+
+function hostIn(group: SiteGroup, requestId: string): string {
+  return group.card.asks.find((ask) => ask.requestId === requestId)?.host ?? '';
+}
+
+/** What a site decision RAVIS didn't take means: Codex didn't add the site, or RAVIS's own words. */
+function siteRefusalLine(failure: RelayFailure, host: string): string {
+  return refusalCode(failure) === 'SITE_NOT_ADDED' ? siteNotAddedLine(host) : (answerRefusedLine(failure) ?? failure.kind);
 }
 
 /** The files a change touches, and where renames go, relative to the project: what undo copies first. */

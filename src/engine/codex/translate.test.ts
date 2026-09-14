@@ -7,12 +7,13 @@ import {
   answerRefusedLine,
   clockTime,
   CODEX_LINES,
+  codexModelLine,
   failureLine,
   feedbackLine,
   leftoverLine,
+  modelFellBackLine,
   requestSummary,
   resolvedLine,
-  siteAllowedLine,
   siteNotAddedLine,
   steerRefusedLine,
   stoppedByLine,
@@ -110,8 +111,28 @@ test('leftover processes are named, and nothing is said to be saved', () => {
   assert.equal(line, 'Something Codex started is still running: `node` (pid 51310). Nothing is saved until it stops.');
 });
 
-test('an allowed site counts from now on, and a task already running may not see it yet; a site Codex did not add stays blocked', () => {
-  assert.match(siteAllowedLine('pypi.org'), /^pypi\.org is allowed for Codex's commands from now on\. A task that's already running may still be blocked from it/);
+test("a model or an effort Codex doesn't offer is said plainly at the start, with what it offers and where to choose again", () => {
+  const model = refusal('POST /api/v1/agent-sessions', "a model Codex doesn't offer");
+  assert.equal(
+    failureLine(model, 'start'),
+    "Codex doesn't offer gpt-4.1 to this ChatGPT account (it offers gpt-6-astra). Choose another under Codex in the bowtie menu by the prompt."
+  );
+  const effort = refusal('POST /api/v1/agent-sessions', "an effort that model doesn't offer");
+  assert.equal(
+    failureLine(effort, 'start'),
+    "gpt-6-astra doesn't offer xhigh effort (it offers low, medium and high). Choose another under Codex in the bowtie menu by the prompt."
+  );
+  assert.equal(codexModelLine('gpt-6-astra', 'medium'), 'Codex is using gpt-6-astra, at medium effort.');
+  assert.equal(codexModelLine('gpt-6-astra', null), 'Codex is using gpt-6-astra, at its default effort.');
+  assert.equal(codexModelLine('', 'medium'), undefined);
+  assert.equal(
+    modelFellBackLine('gpt-5-old', 'gpt-6-astra', 'low'),
+    'Codex no longer offers gpt-5-old, so this task uses gpt-6-astra at low effort. Choose another under Codex in the bowtie menu by the prompt.'
+  );
+  assert.equal(CODEX_LINES.modelsNotListed, "Codex isn't ready yet: it hasn't listed its models. Try again in a moment.");
+});
+
+test('a site Codex did not add stays blocked, and an ask closed with its task says so', () => {
   assert.equal(siteNotAddedLine('pypi.org'), "Codex didn't add pypi.org, so it stays blocked.");
   assert.equal(siteNotAddedLine(''), "Codex didn't add that site, so it stays blocked.");
   assert.equal(resolvedLine('turn_ended'), "That ask closed when Codex's task ended.");

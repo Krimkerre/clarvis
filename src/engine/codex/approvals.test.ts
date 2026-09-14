@@ -16,6 +16,7 @@ import {
   readReply,
   shownCommand,
   type RequestPrompt,
+  type SitesDecided,
 } from './approvals';
 import { CODEX_LINES } from './translate';
 
@@ -92,7 +93,7 @@ test('a file change lists each file; one reaching outside the project says Clarv
   assert.deepEqual(labels(inside), ['Apply', "Don't apply", 'Stop the run']);
 });
 
-test('more access, a question and a blocked site are each drawn in their own words', () => {
+test('more access and a question are each drawn in their own words; a blocked site is drawn with its group', () => {
   const [access] = promptsFor(example('permissions'));
   assert.equal(access.line, 'Codex asks for more access.');
   assert.deepEqual(access.detail, ['read: /Users/owner/.ssh/config (outside this project, denied)', 'Why: Read the SSH configuration.']);
@@ -106,10 +107,7 @@ test('more access, a question and a blocked site are each drawn in their own wor
   assert.deepEqual(question.options[0].decision, { kind: 'answer', answers: { q1: 'Yes' } });
   assert.equal(question.typedAnswer, 'q1', 'it takes typed answers');
 
-  const [site] = promptsFor(example('site'));
-  assert.equal(site.line, 'Codex was blocked from reaching pypi.org (https).');
-  assert.deepEqual(labels(site), ['Allow pypi.org', 'Keep pypi.org blocked']);
-  assert.deepEqual(site.options.map((option) => option.decision.kind), ['allow_site', 'keep_blocked']);
+  assert.deepEqual(promptsFor(example('site')), [], 'a site ask is drawn with the rest of its group, as one card');
 });
 
 test('nothing is ever offered as "don\'t ask again", and a decision this Clarvis does not know is never drawn', () => {
@@ -223,7 +221,7 @@ interface Shown {
 }
 
 /** CodexApprovals with everything around it recorded: what was shown, sent, said, steered, copied and stopped. */
-function desk(options: { mode?: SessionMode; attached?: boolean; capture?: (paths: string[]) => Promise<void> } = {}) {
+function desk(options: { mode?: SessionMode; attached?: boolean; capture?: (paths: string[]) => Promise<void>; holdAnswers?: boolean } = {}) {
   const state: { mode: SessionMode; attached: boolean; stopping: boolean } = { mode: options.mode ?? 'agent', attached: options.attached ?? true, stopping: false };
   const shown: Shown[] = [];
   const events: string[] = [];
@@ -231,9 +229,13 @@ function desk(options: { mode?: SessionMode; attached?: boolean; capture?: (path
   const steered: string[] = [];
   const outcomes: RelayOutcome<unknown>[] = [];
   const stops: number[] = [];
+  const decided: SitesDecided[] = [];
+  /** Answers on their way, let through one at a time by the test when `holdAnswers` is set. */
+  const held: (() => void)[] = [];
   const approvals: CodexApprovals = new CodexApprovals({
     answer: async (requestId, decision) => {
       events.push(`answer ${requestId} ${JSON.stringify(decision)}`);
+      if (options.holdAnswers) await new Promise<void>((resolve) => held.push(resolve));
       return outcomes.shift() ?? { ok: true, status: 200, value: { resolved: true, decision_kind: decision.kind } };
     },
     show: (prompt, signal, again) =>
@@ -252,8 +254,9 @@ function desk(options: { mode?: SessionMode; attached?: boolean; capture?: (path
     capture: options.capture ?? (async (paths) => void events.push(`capture ${paths.join(' ')}`)),
     say: (line) => said.push(line),
     log: () => undefined,
+    sitesDecided: (entry) => decided.push(entry),
   });
-  return { approvals, state, shown, events, said, steered, outcomes, stops };
+  return { approvals, state, shown, events, said, steered, outcomes, stops, decided, held };
 }
 
 /** Lets every promise the asking started run to its next wait. */
@@ -414,6 +417,182 @@ test("RAVIS's refusals: already resolved says who, stopping is silent, a narrowe
   site.shown[1].reply('Keep pypi.org blocked');
   await settle();
   assert.ok(site.events.includes('answer rq_site {"kind":"keep_blocked"}'));
+});
+
+// ── Site asks, a group at a time (R5) ────────────────────────────────────────
+
+function siteRequest(id: string, host: string, groupId = 'sg_1'): RequestView {
+  return { ...example('site'), id, group_id: groupId, payload: { host, protocol: 'https' } };
+}
+
+test("a group's asks opened together are one card drawn once; a host opening later joins it; Allow all sends each host's allow, and this window is told it decided", async () => {
+  const d = desk();
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  d.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  assert.equal(d.shown.length, 1, 'drawn once, with both hosts');
+  assert.equal(d.shown[0].prompt.line, 'Codex was blocked from reaching a.com and b.org.');
+  assert.equal(d.approvals.decidingSites, true);
+  assert.deepEqual(d.approvals.held.map((request) => request.id), ['rq_a', 'rq_b'], 'a switch records every host still open');
+
+  d.approvals.open(siteRequest('rq_c', 'c.net'));
+  await settle();
+  assert.equal(d.shown[0].signal.aborted, true, 'the card on screen is withdrawn');
+  assert.equal(d.shown[1].prompt.line, 'Codex was blocked from reaching a.com, b.org and c.net.');
+  assert.equal(d.shown[1].again, false, 'drawn with its new line');
+
+  d.shown[1].reply('Allow all');
+  await settle();
+  assert.deepEqual(sent(d.events), ['answer rq_a {"kind":"allow_site"}', 'answer rq_b {"kind":"allow_site"}', 'answer rq_c {"kind":"allow_site"}']);
+  assert.deepEqual(d.decided, [{ groupId: 'sg_1', allowed: ['a.com', 'b.org', 'c.net'], kept: [], here: true }]);
+  assert.equal(d.approvals.decidingSites, false);
+  assert.equal(d.shown.length, 2, 'nothing more is asked');
+});
+
+test('a host decided in another window leaves the card; the last one decided there withdraws it, says so, and this window does not carry on', async () => {
+  const d = desk();
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  d.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  d.approvals.resolved({ request_id: 'rq_a', by: 'window', decision_kind: 'keep_blocked' });
+  await settle();
+  assert.equal(d.shown[0].signal.aborted, true);
+  assert.equal(d.shown[1].prompt.line, 'Codex was blocked from reaching b.org (https).');
+
+  d.approvals.resolved({ request_id: 'rq_b', by: 'window', decision_kind: 'allow_site' });
+  await settle();
+  assert.equal(d.shown[1].signal.aborted, true);
+  assert.deepEqual(d.said, [CODEX_LINES.answeredElsewhere]);
+  assert.deepEqual(d.decided, [{ groupId: 'sg_1', allowed: ['b.org'], kept: ['a.com'], here: false }]);
+  assert.deepEqual(sent(d.events), []);
+  assert.equal(d.shown.length, 2);
+});
+
+test("a decision RAVIS reports while this window's own answer is on its way is this window's; one another window made first is theirs", async () => {
+  const own = desk({ holdAnswers: true });
+  own.approvals.open(siteRequest('rq_a', 'a.com'));
+  await settle();
+  own.shown[0].reply('Allow a.com');
+  await settle();
+  own.approvals.resolved({ request_id: 'rq_a', by: 'window', decision_kind: 'allow_site' });
+  own.held.shift()?.();
+  await settle();
+  assert.deepEqual(own.decided, [{ groupId: 'sg_1', allowed: ['a.com'], kept: [], here: true }]);
+  assert.deepEqual(own.said, []);
+
+  const other = desk({ holdAnswers: true });
+  other.outcomes.push(refusedWith('the other window answered first'));
+  other.approvals.open(siteRequest('rq_a', 'a.com'));
+  await settle();
+  other.shown[0].reply('Allow a.com');
+  await settle();
+  other.approvals.resolved({ request_id: 'rq_a', by: 'window', decision_kind: 'keep_blocked' });
+  other.held.shift()?.();
+  await settle();
+  assert.deepEqual(other.decided, [{ groupId: 'sg_1', allowed: [], kept: ['a.com'], here: false }]);
+  assert.deepEqual(other.said, [CODEX_LINES.answeredElsewhere]);
+});
+
+test("the task's end closing a group's asks withdraws its card and says so; an ask ended without a decision ends its group; nothing carries on", async () => {
+  const ended = desk();
+  ended.approvals.open(siteRequest('rq_a', 'a.com'));
+  ended.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  // RAVIS's `end`: every open site ask resolved as kept blocked, by `turn_ended`.
+  ended.approvals.resolved({ request_id: 'rq_a', by: 'turn_ended', decision_kind: 'keep_blocked' });
+  ended.approvals.resolved({ request_id: 'rq_b', by: 'turn_ended', decision_kind: 'keep_blocked' });
+  await settle();
+  assert.equal(ended.shown.every((entry) => entry.signal.aborted), true);
+  assert.deepEqual(ended.said, ["That ask closed when Codex's task ended."]);
+  assert.equal(ended.decided.every((entry) => !entry.here), true);
+  assert.equal(ended.approvals.decidingSites, false);
+
+  const stopped = desk();
+  stopped.approvals.open(siteRequest('rq_a', 'a.com'));
+  stopped.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  stopped.approvals.resolved({ request_id: 'rq_a', by: 'stop', decision_kind: 'stop' });
+  await settle();
+  assert.equal(stopped.shown[0].signal.aborted, true);
+  assert.deepEqual([stopped.decided, stopped.approvals.decidingSites, stopped.said], [[], false, []]);
+});
+
+test('typed words at a card go to Codex and the card comes back with its buttons; a decision that never reached RAVIS waits, with the rest of Allow all, until RAVIS is back', async () => {
+  const d = desk();
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  d.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  d.shown[0].reply('use the mirror at files.example.com');
+  await settle();
+  assert.deepEqual(d.steered, ['use the mirror at files.example.com']);
+  assert.equal(d.shown[1].again, true);
+
+  d.outcomes.push({ ok: false, failure: { kind: 'unreachable', detail: 'ECONNREFUSED' } });
+  d.shown[1].reply('Allow all');
+  await settle();
+  assert.deepEqual(d.said, [CODEX_LINES.answerUnsent]);
+  assert.deepEqual(sent(d.events), ['answer rq_a {"kind":"allow_site"}'], 'the rest of Allow all waits too');
+  assert.equal(d.shown.length, 2, 'not asked again while RAVIS is away');
+  assert.equal(d.approvals.decidingSites, true);
+
+  d.approvals.reconnected();
+  await settle();
+  assert.equal(d.shown[2].prompt.line, 'Codex was blocked from reaching a.com and b.org.');
+  d.shown[2].reply('Keep b.org blocked');
+  await settle();
+  d.shown[3].reply('Allow a.com');
+  await settle();
+  assert.deepEqual(d.decided, [{ groupId: 'sg_1', allowed: ['a.com'], kept: ['b.org'], here: true }]);
+});
+
+test('Allow all skips a host another window decides while the first allow is on its way', async () => {
+  const d = desk({ holdAnswers: true });
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  d.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  d.shown[0].reply('Allow all');
+  await settle();
+  d.approvals.resolved({ request_id: 'rq_b', by: 'window', decision_kind: 'keep_blocked' });
+  d.held.shift()?.();
+  await settle();
+  assert.deepEqual(sent(d.events), ['answer rq_a {"kind":"allow_site"}'], 'b.org, decided elsewhere meanwhile, is not sent');
+  assert.deepEqual(d.decided, [{ groupId: 'sg_1', allowed: ['a.com'], kept: ['b.org'], here: true }]);
+});
+
+test('Stop lets a group go at once: its card is withdrawn, a late click sends nothing, and the task no longer waits on it', async () => {
+  const d = desk();
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  await settle();
+  assert.equal(d.approvals.releaseAll(), 1);
+  assert.equal(d.shown[0].signal.aborted, true);
+  assert.equal(d.approvals.decidingSites, false);
+  d.shown[0].reply('Allow a.com');
+  await settle();
+  assert.deepEqual(sent(d.events), []);
+});
+
+test('a host the same turn was blocked from after its group was decided is asked afresh; a decided ask replayed is never asked again', async () => {
+  const d = desk();
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  await settle();
+  d.shown[0].reply('Allow a.com');
+  await settle();
+  d.approvals.open(siteRequest('rq_b', 'b.org'));
+  await settle();
+  assert.equal(d.shown[1].prompt.line, 'Codex was blocked from reaching b.org (https).');
+  d.shown[1].reply('Keep b.org blocked');
+  await settle();
+  assert.deepEqual(
+    d.decided.map((entry) => [entry.allowed, entry.kept, entry.here]),
+    [
+      [['a.com'], [], true],
+      [[], ['b.org'], true],
+    ]
+  );
+
+  d.approvals.open(siteRequest('rq_a', 'a.com'));
+  await settle();
+  assert.equal(d.shown.length, 2, 'a replay is never asked again');
 });
 
 test('an answer that never reached RAVIS is asked again once RAVIS is back — unless RAVIS resolved it meanwhile', async () => {

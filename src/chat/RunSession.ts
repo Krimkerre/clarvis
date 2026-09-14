@@ -49,6 +49,7 @@ import type { RelayClient } from '../engine/relay/relayClient';
 import type { SessionSummary } from '../engine/relay/relayTypes';
 import { TokenStore } from '../engine/relay/tokenStore';
 import { chatRunDecision, createCodingRun, undeliveredLine } from './codingRunFactory';
+import { storedCodexChoice } from './codexMenuHost';
 
 /** The lines a model writes for a run: one to open with, one to close on. */
 interface LiveLines {
@@ -115,9 +116,9 @@ export class RunSession {
     private readonly note: (text: string) => Promise<void>,
     private readonly remark: (text: string) => Promise<void>,
     private readonly phrase: (purpose: 'report' | 'warn' | 'ask' | 'aside', fallback: string, keep?: string[]) => Promise<string>,
-    /** Shows where the run has got to. A function rather than the panel itself: this
-     * class needs one frame, not a view. */
-    private readonly showProgress: (frame: { current: number; total: number; label: string }) => void,
+    /** Shows where the run has got to: a step, or a passing status (M15 C2b+). A function rather than the panel
+     * itself: this class needs one frame, not a view. */
+    private readonly showProgress: (frame: { current: number; total: number; label: string } | { status: string }) => void,
     /** Puts the answers in the panel as buttons. Typing still works regardless. */
     private readonly offer: (items: { label: string; detail?: string }[]) => void,
     private readonly log: (message: string) => void
@@ -432,6 +433,12 @@ export class RunSession {
     let ended: 'ok' | 'failed' = 'failed';
     try {
       for await (const event of events(controller.signal)) {
+        // A passing state (M15 C2b+), such as "Reconnecting Codex…": shown under the chat until replaced or cleared,
+        // and never written to the terminal, the transcript or the run's record.
+        if (event.kind === 'status') {
+          this.showProgress({ status: event.text });
+          continue;
+        }
         if (!event.text) continue;
         if (event.kind === 'done') {
           // **Same stripping the terminal stream already gets, applied to the summary
@@ -476,6 +483,7 @@ export class RunSession {
       // longer happening. Cleared here rather than on success, so a stopped or
       // failed run clears it too.
       this.showProgress({ current: 0, total: 0, label: '' });
+      this.showProgress({ status: '' });
       // Only now, with the run's loop over and its commands with it (design §6.3: release after).
       await this.endRun(runner, opened);
     }
@@ -619,6 +627,7 @@ export class RunSession {
       modeNow: () => codexModeFor(chatModeSetting()),
       maxSteps: maxStepsSetting(),
       ask: (prompt, signal, again) => this.askCodex(prompt, signal, again),
+      codexChoice: storedCodexChoice,
     });
   }
 

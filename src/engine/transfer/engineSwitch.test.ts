@@ -439,9 +439,9 @@ async function clarvisTaskToSwitch(h: Harness): Promise<ClarvisTask> {
   return { lock: taken.lock, lockId: h.locks.rowFor(h.root)?.id ?? '', base, mainHead, earlier, run };
 }
 
-function codexDestination(h: Harness, followed: { run?: Followed }): CodexDestination {
+function codexDestination(h: Harness, followed: { run?: Followed }, options: Partial<CodexRunOptions> = {}): CodexDestination {
   return new CodexDestination({
-    core: h.core(),
+    core: h.core(options),
     relay: h.relay,
     git: new GitFacts(h.root),
     workspaceRoot: h.root,
@@ -539,7 +539,9 @@ test('Codex takes a task back on a new session resuming its thread when the Code
       };
       const followed: { run?: Followed } = {};
 
-      const started = await within(codexDestination(h, followed).start(checkpoint, reserved.token), 'Codex to start');
+      // The owner's Codex model and effort go with a switch too, held to what Codex lists (M15 C2b+).
+      const choice = { codexChoice: () => ({ model: 'gpt-6-astra', effort: 'medium' }) };
+      const started = await within(codexDestination(h, followed, choice).start(checkpoint, reserved.token), 'Codex to start');
 
       assert.deepEqual(started, { ok: true, value: undefined }, kind);
       const create = h.fake.seen.find((request) => request.method === 'POST' && request.path === '/api/v1/agent-sessions')?.body as {
@@ -547,8 +549,12 @@ test('Codex takes a task back on a new session resuming its thread when the Code
         lock: { transfer_token: string };
         clarvis_task_id: string;
         branch: { name: string };
+        model: string;
+        effort?: string;
       };
       assert.deepEqual([create.start.kind, create.lock.transfer_token, create.clarvis_task_id, create.branch.name], [kind, reserved.token, TASK_ID, 'clarvis/add-utc']);
+      assert.deepEqual([create.model, create.effort], ['gpt-6-astra', 'medium'], `${kind}: the chosen model and effort`);
+      await within(followed.run?.next((event) => event.text === 'Codex is using gpt-6-astra, at medium effort.') ?? Promise.reject(new Error('not followed')), 'the model and effort said');
       if (kind === 'resume') {
         assert.equal(create.start.thread_id, 'thread-9');
         assert.match(create.start.catch_up_text ?? '', /^While you were stopped, another engine worked on this project\./);

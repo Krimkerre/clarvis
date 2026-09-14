@@ -325,6 +325,7 @@ ${fs.readFileSync(vscode.Uri.joinPath(extensionUri, 'media', 'chat.css').fsPath,
         <span class="count"></span><span class="step"></span>
         <span class="bar"><i style="width:0%"></i></span>
       </div>
+      <div id="clarvis-run-status" class="clarvis-run-status" role="status" aria-live="polite" hidden></div>
       <div class="clarvis-chat-head">
         <button id="clarvis-mode" class="clarvis-mute clarvis-mode"
                 title="What Clarvis is allowed to do">Auto</button>

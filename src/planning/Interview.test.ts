@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runInterview } from './Interview';
+import { IDEA_TIMEOUT_MS, runInterview } from './Interview';
 import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { ModelService } from '../model/ModelService';
 import { InterviewState } from './interviewTopics';
@@ -278,4 +278,45 @@ test('a stop at the name picker pauses planning rather than skipping the name (M
 
   await assert.rejects(runInterview(models, io, () => {}, {}), PlanningPaused);
   assert.equal(asked.length, 1, 'nothing after the first question was asked');
+});
+
+test('ideas that cannot be had ask what you are building, instead of ending the interview', async () => {
+  // Found live on 14 Sep 2026: the idea request came back with nothing that parsed, the interview
+  // returned as though its first question had been cancelled, and the next "I don't know" went to
+  // ordinary chat.
+  const { io, asked } = sitting(["I don't know", 'a houseplant that texts you when it is thirsty']);
+  const logged: string[] = [];
+  const models = streamingModel(['Here are a few thoughts, though not in any particular format.']);
+
+  const result = await runInterview(models, io, (message) => logged.push(message), {});
+
+  assert.equal(
+    asked[1],
+    'No ideas are coming to me just now, which is a first. What are you building? One sentence is plenty.'
+  );
+  assert.equal(result?.state.answers[0]?.text, 'a houseplant that texts you when it is thirsty');
+  assert.ok(
+    logged.some((line) => line.includes('planning: seed — idea response did not parse')),
+    logged.join('\n')
+  );
+});
+
+test('the idea list waits longer than a phrased question does', async () => {
+  // Four ideas a sentence each is the longest reply the interview asks for; under the phrasing
+  // deadline it was cut off before a single complete idea arrived.
+  const requested: number[] = [];
+  const models = {
+    ...streamingModel([
+      'Plant Diplomat | negotiates watering between housemates\nCommute Critic | reviews your journey home like a restaurant',
+    ]),
+    deadline: (ms: number) => {
+      requested.push(ms);
+      return ms;
+    },
+  } as unknown as ModelService;
+  const { io } = sitting(["I don't know"]);
+
+  await runInterview(models, io, () => {}, {});
+
+  assert.ok(requested.includes(IDEA_TIMEOUT_MS), `deadlines asked for: ${requested.join(', ')}`);
 });

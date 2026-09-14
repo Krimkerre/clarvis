@@ -30,6 +30,14 @@ import { describeWorkspaceSignals, WorkspaceSignals } from './workspaceSignals';
 
 /** How long the model gets to phrase a question before the written fallback wins. */
 const PHRASE_TIMEOUT_MS = 6000;
+/**
+ * The idea list's own deadline, longer than a phrased question's. Four ideas a sentence each is
+ * the longest reply the interview asks for, and it is the one reply that runs past a few seconds
+ * on an ordinary hosted model. Under the phrasing deadline it came back with no complete idea,
+ * twice, on 14 Sep 2026 ("idea response did not parse" after exactly six seconds), and the
+ * interview then ended instead of carrying on. Exported for the test that keeps the two apart.
+ */
+export const IDEA_TIMEOUT_MS = 20_000;
 
 /** Same "I don't know"-family answers the rest of the interview recognises. */
 /**
@@ -45,11 +53,20 @@ const PHRASE_TIMEOUT_MS = 6000;
  * `onAbort`. Every caller here already treats an empty or unparseable reply as "use the
  * written fallback", which is why none of them needs to know which happened.
  */
-function promptModel(models: ModelService, prompt: string, limit: number): Promise<string> {
+function promptModel(
+  models: ModelService,
+  prompt: string,
+  limit: number,
+  /** The written deadline to stretch: a phrased question's, unless the caller's reply is longer. */
+  timeoutMs = PHRASE_TIMEOUT_MS,
+  /** Told when the deadline passes, so a caller can tell "too slow" from "answered wrongly". */
+  onTimeout?: () => void
+): Promise<string> {
   return withDeadline(
-    models.deadline(PHRASE_TIMEOUT_MS),
+    models.deadline(timeoutMs),
     (signal) => collect(models, { system: interviewSystemPrompt(), messages: [{ role: 'user', content: prompt }], signal }, limit),
-    () => ''
+    () => '',
+    onTimeout
   );
 }
 
@@ -421,8 +438,9 @@ async function seedHint(): Promise<string> {
  *
  * Not asked for automatically — only once the user has actually said they don't
  * know, same as everywhere else in this interview "I don't know" is a real, welcome
- * answer rather than something to route around. No model, no ideas: there is no
- * honest written fallback for "make something up that's funny".
+ * answer rather than something to route around. With no model, or no ideas in time,
+ * the seed question is asked again (`askInstead`): there is no honest written fallback
+ * for "make something up that's funny", but there is one for the question itself.
  */
 async function offerIdeas(
   models: ModelService,
@@ -431,16 +449,25 @@ async function offerIdeas(
 ): Promise<{ seed: string; name?: string } | undefined> {
   if (!(await models.isReady('chat'))) {
     log('planning: seed — no model configured, could not suggest ideas');
-    return undefined;
+    return askInstead(io);
   }
 
   try {
-    const text = await promptModel(models, ideaPrompt(), 800);
+    let timedOut = false;
+    const started = Date.now();
+    const text = await promptModel(models, ideaPrompt(), 800, IDEA_TIMEOUT_MS, () => {
+      timedOut = true;
+    });
 
     const ideas = parseIdeaResult(text);
     if (ideas.length === 0) {
-      log('planning: seed — idea response did not parse');
-      return undefined;
+      // Which one it was, and with how much: "did not parse" alone could not tell a model
+      // that was too slow from one that answered in the wrong shape.
+      const why = timedOut
+        ? `ran out of time after ${Math.round((Date.now() - started) / 1000)} s with ${text.length} characters`
+        : `did not parse (${text.length} characters)`;
+      log(`planning: seed — idea response ${why}`);
+      return askInstead(io);
     }
 
     const SOMETHING_ELSE = 'Something else…';
@@ -468,8 +495,23 @@ async function offerIdeas(
     // A stop while the ideas are on screen is not an idea generation that failed (M9i).
     if (error instanceof PlanningPaused) throw error;
     log(`planning: seed — idea generation failed (${String(error)})`);
-    return undefined;
+    return askInstead(io);
   }
+}
+
+/**
+ * The seed question once more, when no ideas could be had.
+ *
+ * **A failed idea request used to end the interview.** It returned nothing, and nothing is
+ * also what a cancelled first question returns, so planning stopped without a word and the
+ * next "I don't know" went to ordinary chat — found live on 14 Sep 2026. Asking again keeps
+ * "I don't know" the welcome answer the question says it is. Cancelling this one still stops.
+ */
+async function askInstead(io: PlanningIO): Promise<{ seed: string } | undefined> {
+  const typed = await io.askText(
+    await phrase('ask', 'No ideas are coming to me just now, which is a first. What are you building? One sentence is plenty.', [])
+  );
+  return typed?.trim() ? { seed: typed.trim() } : undefined;
 }
 
 /**

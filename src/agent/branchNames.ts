@@ -64,6 +64,41 @@ export interface BranchContinuation {
   theirs: string[];
   /** A takeover: the old holder's uncommitted edits are committed first, with this message. */
   leftoversMessage?: string;
+  /**
+   * The branch the work counts as started from, when the caller knows it: a **Build on** names the branch its question
+   * offered to start fresh from (plan.md M15). Used when it exists and isn't a `clarvis/*` branch; otherwise the
+   * remembered base is. It is what the landing question offers to merge into, and it is never written as the remembered
+   * base.
+   */
+  base?: string;
+}
+
+/**
+ * Why a **Start fresh** can't go ahead, or undefined when it can (plan.md M15, "Build on Clarvis's own earlier work").
+ *
+ * **Start fresh means fresh.** When a new branch can't be made at the starting branch, `AgentBranch.begin` falls back to
+ * starting where the checkout is. From a `clarvis/*` branch that stacks the new task on that run's work. That is the
+ * history found live as eight `clarvis/*` branches in a straight line (`RunSession.close`), and after the owner chose to
+ * start fresh it would build on the very work they turned down. So it is refused instead, and nothing is done.
+ */
+/**
+ * The branch a continued task counts as started from (`AgentBranch.continueOn`): what undo returns to, and what the landing
+ * question offers to merge into.
+ *
+ * **The base a Build on names**, when it is a real branch here and not a `clarvis/*` one (plan.md M15): the branch its
+ * question offered to start fresh from. Otherwise, as before, the remembered base, else main, master or develop. The
+ * remembered base is kept per editor, so without the named one the other editor would fall back to a guess, and a
+ * project whose trunk is none of those three would get no landing question at all.
+ */
+export function continuationBase(named: string | undefined, existing: readonly string[], remembered: string | undefined): string | undefined {
+  if (named && existing.includes(named) && !isAgentBranch(named)) return named;
+  return startingBase(undefined, false, remembered, existing);
+}
+
+export function freshStartRefusal(fresh: boolean, head: string | undefined, base: string | undefined): string | undefined {
+  if (!fresh || !head || !isAgentBranch(head)) return undefined;
+  const from = base ? `from \`${base}\`` : 'from the starting branch';
+  return `I couldn't start fresh ${from}, and starting on \`${head}\` instead would build on that work, which you chose not to. Nothing was done. If something in the folder needs committing or putting aside, doing that lets a fresh start work.`;
 }
 
 export type ContinuationDecision =

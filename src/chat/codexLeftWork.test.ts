@@ -5,7 +5,7 @@ import * as path from 'node:path';
 import { test } from 'node:test';
 import type { AgentEvent } from '../agent/AgentRunner';
 import { continuationDecision } from '../agent/branchNames';
-import { GitFacts } from '../engine/checkpoint/gitFacts';
+import { GitFacts, type WorkingTree } from '../engine/checkpoint/gitFacts';
 import { findLeftWork, type LeftTask, type LeftWork } from '../engine/codex/leftTasks';
 import { CodexRunCore, type CodexBranch, type CodexGit, type CodexSave } from '../engine/codex/runCore';
 import { leftWorkProject } from '../test/fakes/leftWorkProject';
@@ -45,7 +45,7 @@ interface Asking {
   offered: string[][];
   said: string[];
   logged: string[];
-  dirtyReads: number;
+  treeReads: number;
 }
 
 function leftTask(branch: string, patch: Partial<LeftTask> = {}): LeftTask {
@@ -56,20 +56,24 @@ function work(tasks: LeftTask[], headBranch = 'master'): LeftWork {
   return { startsFrom: 'master', trunk: 'master', headBranch, tasks };
 }
 
-/** As `RunSession.whereCodexWorks` wires it: its own buttons and words only. */
-function asking(find: () => Promise<LeftWork>, options: { unattended?: boolean; dirty?: string[] } = {}): Asking {
+/**
+ * As `RunSession.whereCodexWorks` wires it: its own buttons and words only. `tree` stands in for the checkout's changes
+ * (`GitFacts.workingTree`) and `onTarget` for the files on the branch a switch goes to (`GitFacts.filesOn`).
+ */
+function asking(find: () => Promise<LeftWork>, options: { unattended?: boolean; tree?: Partial<WorkingTree>; onTarget?: string[] } = {}): Asking {
   const offered: string[][] = [];
   const pending = new PendingChoice((items) => offered.push(items.map((item) => item.label)));
-  const h: Asking = { host: undefined as unknown as LeftWorkHost, pending, offered, said: [], logged: [], dirtyReads: 0 };
+  const h: Asking = { host: undefined as unknown as LeftWorkHost, pending, offered, said: [], logged: [], treeReads: 0 };
   h.host = {
     find,
     unattended: () => options.unattended ?? false,
     ask: (choices, accepts) => pending.ask(choices, 'where Codex should work', true, accepts),
     note: async (line) => void h.said.push(line),
-    dirty: async () => {
-      h.dirtyReads++;
-      return options.dirty ?? [];
+    tree: async () => {
+      h.treeReads++;
+      return { changed: [], untracked: [], shown: [], ...options.tree };
     },
+    filesOn: async () => options.onTarget ?? [],
     log: (line) => void h.logged.push(line),
   };
   return h;
@@ -149,7 +153,7 @@ test('Start fresh, clicked, numbered or typed ("fresh", "start fresh", "new bran
 
     assert.equal(h.pending.supply(typed), true, typed);
     assert.deepEqual(await flow, { kind: 'fresh' }, typed);
-    assert.equal(h.dirtyReads, 0, typed);
+    assert.equal(h.treeReads, 0, typed);
   }
 });
 
@@ -215,8 +219,8 @@ test("Unattended starts fresh when the window isn't on a left branch, and says s
   assert.deepEqual(h.offered, []);
 });
 
-test('Build on a branch the window is not on, with uncommitted changes, is refused in plain words and nothing runs; on the branch itself it goes ahead', async () => {
-  const h = asking(async () => work([leftTask(GREETER)]), { dirty: ['README.md', 'notes.txt'] });
+test('Build on a branch the window is not on, with uncommitted changes to tracked files, is refused in plain words and nothing runs; on the branch itself it goes ahead', async () => {
+  const h = asking(async () => work([leftTask(GREETER)]), { tree: { changed: ['README.md', 'notes.txt'] } });
   const { flow } = await asked(h);
   h.pending.supply('build on it');
 
@@ -224,11 +228,55 @@ test('Build on a branch the window is not on, with uncommitted changes, is refus
   assert.match(h.said[1], /^You have changes on `master` that aren't committed yet \(`README\.md`, `notes\.txt`\)\. Switching to `clarvis\/build-the-greeter/);
 
   const here = leftTask(GREETER, { onBranch: true });
-  const onIt = asking(async () => work([here], GREETER), { dirty: ['README.md'] });
+  const onIt = asking(async () => work([here], GREETER), { tree: { changed: ['README.md'] } });
   const again = await asked(onIt);
   onIt.pending.supply('build on it');
   assert.deepEqual(await again.flow, { kind: 'build_on', task: here });
-  assert.equal(onIt.dirtyReads, 0, 'no switch, so nothing of the owner’s moves');
+  assert.equal(onIt.treeReads, 0, 'no switch, so nothing of the owner’s moves');
+});
+
+// ── Changed from 0.17.3: the switch rule both engines share (plan.md M15, the owner's rule of 15 Sep 2026) ──────────
+
+test("changed from 0.17.3: untracked files the branch doesn't have no longer refuse a Build on; they come along, named in a line of their own", async () => {
+  const task = leftTask(GREETER);
+  const h = asking(async () => work([task]), { tree: { untracked: ['README.md', '__pycache__/greet.cpython-312.pyc'], shown: ['README.md', '__pycache__/'] }, onTarget: ['greet.py'] });
+  const { flow } = await asked(h);
+  h.pending.supply('build on it');
+
+  assert.deepEqual(await flow, { kind: 'build_on', task });
+  assert.deepEqual(h.said.slice(1), ['These come along, not committed anywhere: `README.md`, `__pycache__/`.']);
+});
+
+test('an untracked file the branch has a file of the same name for refuses the switch, naming it', async () => {
+  const h = asking(async () => work([leftTask(GREETER)]), { tree: { untracked: ['greet.py'], shown: ['greet.py'] }, onTarget: ['README.md', 'greet.py'] });
+  const { flow } = await asked(h);
+  h.pending.supply('build on it');
+
+  assert.deepEqual(await flow, { kind: 'nothing' });
+  assert.equal(
+    h.said[1],
+    `\`greet.py\` isn't in git, and \`${GREETER}\` has a file of the same name. Switching to \`${GREETER}\` would clash with it, so Codex didn't start. Commit it or put it aside, then ask again.`
+  );
+});
+
+test("changed from 0.17.3: Start fresh from a clarvis branch the window is on is checked the same way; git that can't say refuses too", async () => {
+  const here = leftTask(GREETER, { onBranch: true });
+  const h = asking(async () => work([leftTask('clarvis/other'), here], GREETER), { tree: { changed: ['greet.py'] } });
+  const { flow } = await asked(h);
+  h.pending.supply('start fresh');
+
+  assert.deepEqual(await flow, { kind: 'nothing' });
+  assert.equal(
+    h.said[1],
+    `You have changes on \`${GREETER}\` that aren't committed yet (\`greet.py\`). Starting fresh from \`master\` would carry them along, so Codex didn't start. Commit them or put them aside, then ask again.`
+  );
+
+  const blind = asking(async () => work([leftTask('clarvis/other')]));
+  blind.host.tree = async () => undefined;
+  const again = await asked(blind);
+  blind.pending.supply('build on it');
+  assert.deepEqual(await again.flow, { kind: 'nothing' });
+  assert.equal(blind.said[1], "I couldn't tell which files in this folder have changes, so Codex didn't start. Ask again in a moment.");
 });
 
 test('typed answers: the question’s own words, short; the shared yes, questions and sentences are not answers', () => {

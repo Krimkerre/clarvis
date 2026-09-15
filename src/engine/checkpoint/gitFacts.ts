@@ -64,6 +64,36 @@ export class GitFacts {
     return status.code === 0 ? parsePorcelain(status.stdout) : [];
   }
 
+  /**
+   * The checkout's changes as a branch switch sees them (plan.md M15, "Build on earlier work"). `changed`: tracked files
+   * with uncommitted or staged changes. `untracked`: every file git doesn't track. `shown`: the same untracked files the
+   * way git shows them, with a folder that holds nothing tracked shown once as `folder/`. Ignored files are in none of
+   * them. Undefined when git can't say, because not knowing is not "nothing changed".
+   */
+  async workingTree(): Promise<WorkingTree | undefined> {
+    const [all, shown] = await Promise.all([this.status('all'), this.status('normal')]);
+    if (all === undefined || shown === undefined) return undefined;
+    const untracked = (entries: PorcelainEntry[]) => entries.filter((entry) => entry.xy === '??').map((entry) => entry.path);
+    return { changed: all.filter((entry) => entry.xy !== '??').map((entry) => entry.path), untracked: untracked(all), shown: untracked(shown) };
+  }
+
+  /** Every file on a local branch, relative to the root; undefined when git can't list them. */
+  async filesOn(branch: string): Promise<string[] | undefined> {
+    const listed = await this.run(['ls-tree', '-r', '-z', '--name-only', `refs/heads/${branch}`], this.root);
+    return listed.code === 0 ? listed.stdout.split('\0').filter(Boolean) : undefined;
+  }
+
+  /** The subjects of the commits on local branch `to` that aren't on `from`, newest first, at most `limit`. */
+  async commitSubjects(from: string, to: string, limit = 10): Promise<string[]> {
+    const listed = await this.run(['log', '-z', `-n${limit}`, '--format=%s', `refs/heads/${from}..refs/heads/${to}`], this.root);
+    return listed.code === 0 ? listed.stdout.split('\0').map((subject) => subject.trim()).filter(Boolean) : [];
+  }
+
+  private async status(untracked: 'all' | 'normal'): Promise<PorcelainEntry[] | undefined> {
+    const status = await this.run(['status', '--porcelain=v1', '-z', `--untracked-files=${untracked}`], this.root);
+    return status.code === 0 ? parsePorcelainEntries(status.stdout) : undefined;
+  }
+
   /** Commits `paths` on `branch`, and only while HEAD is that branch. The new commit, or why not. */
   async commitOnBranch(branch: string, paths: string[], message: string): Promise<{ ok: true; commit: string } | { ok: false; detail: string }> {
     const head = await this.head();
@@ -91,17 +121,37 @@ export function parseNumstat(text: string): DiffStat[] {
     .map(([, added, removed, file]) => ({ path: file, added: Number(added) || 0, removed: Number(removed) || 0 }));
 }
 
+/** The checkout's changes, sorted for a branch switch (`GitFacts.workingTree`). */
+export interface WorkingTree {
+  /** Tracked files with uncommitted or staged changes. */
+  changed: string[];
+  /** Every untracked file. */
+  untracked: string[];
+  /** The untracked files as git shows them: a folder holding nothing tracked appears once, as `folder/`. */
+  shown: string[];
+}
+
+/** One line of `git status --porcelain=v1`: its two status letters (`??` for untracked) and its path. */
+export interface PorcelainEntry {
+  xy: string;
+  path: string;
+}
+
 /** `git status --porcelain=v1 -z`: `XY path`, NUL-separated; a rename or copy is followed by its old path. */
-export function parsePorcelain(text: string): string[] {
+export function parsePorcelainEntries(text: string): PorcelainEntry[] {
   const entries = text.split('\0');
-  const paths: string[] = [];
+  const parsed: PorcelainEntry[] = [];
   for (let index = 0; index < entries.length; index++) {
     const entry = entries[index];
     if (entry.length < 4) continue;
-    paths.push(entry.slice(3));
+    parsed.push({ xy: entry.slice(0, 2), path: entry.slice(3) });
     if (/[RC]/.test(entry.slice(0, 2))) index++;
   }
-  return paths;
+  return parsed;
+}
+
+export function parsePorcelain(text: string): string[] {
+  return parsePorcelainEntries(text).map((entry) => entry.path);
 }
 
 function runGit(args: string[], cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {

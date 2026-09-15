@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import * as os from 'os';
 import * as path from 'path';
 import { continuationDecision } from '../../agent/branchNames';
-import { GitFacts, parseNumstat, parsePorcelain } from './gitFacts';
+import { GitFacts, parseNumstat, parsePorcelain, parsePorcelainEntries } from './gitFacts';
 
 /**
  * Git facts a switch relies on, read from real repositories in a temporary folder — and branch continuation
@@ -115,4 +115,51 @@ test('the parsers: numstat with a binary file, porcelain with a rename and a cop
     { path: 'logo.png', added: 0, removed: 0 },
   ]);
   assert.deepEqual(parsePorcelain('R  new.txt\0old.txt\0 M hello.py\0C  copy.txt\0orig.txt\0?? notes.md\0'), ['new.txt', 'hello.py', 'copy.txt', 'notes.md']);
+  assert.deepEqual(parsePorcelainEntries('?? notes.md\0 M hello.py\0R  new.txt\0old.txt\0'), [
+    { xy: '??', path: 'notes.md' },
+    { xy: ' M', path: 'hello.py' },
+    { xy: 'R ', path: 'new.txt' },
+  ]);
 });
+
+// ── A branch switch with files in flight (plan.md M15, "Build on earlier work"; the owner's rule of 15 Sep 2026) ──────
+
+test('the working tree as a switch sees it: tracked changes, untracked files one by one and as git shows them, and ignored files nowhere', () =>
+  withRepo(async (root, facts) => {
+    fs.writeFileSync(path.join(root, '.gitignore'), 'build/\n');
+    commitFile(root, '.gitignore', 'build/\n', 'ignore build');
+    commitFile(root, 'staged.txt', 'first\n', 'staged base');
+    fs.writeFileSync(path.join(root, 'hello.py'), 'changed\n');
+    fs.writeFileSync(path.join(root, 'staged.txt'), 'staged\n');
+    git(root, 'add', 'staged.txt');
+    fs.writeFileSync(path.join(root, 'README.md'), 'untracked\n');
+    fs.mkdirSync(path.join(root, '__pycache__'));
+    fs.writeFileSync(path.join(root, '__pycache__', 'hello.cpython-312.pyc'), 'bytes');
+    fs.writeFileSync(path.join(root, '__pycache__', 'other.pyc'), 'bytes');
+    fs.mkdirSync(path.join(root, 'build'));
+    fs.writeFileSync(path.join(root, 'build', 'out.txt'), 'ignored\n');
+
+    const tree = await facts.workingTree();
+
+    assert.deepEqual(tree && { changed: [...tree.changed].sort(), untracked: [...tree.untracked].sort(), shown: [...tree.shown].sort() }, {
+      changed: ['hello.py', 'staged.txt'],
+      untracked: ['README.md', '__pycache__/hello.cpython-312.pyc', '__pycache__/other.pyc'],
+      shown: ['README.md', '__pycache__/'],
+    });
+    assert.equal(await new GitFacts(path.join(root, 'no-such-folder')).workingTree(), undefined, 'not knowing is not "nothing changed"');
+  }));
+
+test("a branch's files, and the subjects of the commits one branch has that another hasn't; a missing branch has none to list", () =>
+  withRepo(async (root, facts) => {
+    git(root, 'checkout', '--quiet', '-b', 'clarvis/greeter');
+    fs.mkdirSync(path.join(root, 'src'));
+    commitFile(root, 'src/greet.py', 'print("hi")\n', 'Build the greeter');
+    commitFile(root, 'README.md', 'docs\n', 'Document it');
+
+    assert.deepEqual((await facts.filesOn('clarvis/greeter'))?.sort(), ['README.md', 'hello.py', 'src/greet.py']);
+    assert.deepEqual(await facts.filesOn('main'), ['hello.py']);
+    assert.equal(await facts.filesOn('clarvis/missing'), undefined);
+    assert.deepEqual(await facts.commitSubjects('main', 'clarvis/greeter'), ['Document it', 'Build the greeter']);
+    assert.deepEqual(await facts.commitSubjects('main', 'clarvis/greeter', 1), ['Document it']);
+    assert.deepEqual(await facts.commitSubjects('main', 'clarvis/missing'), []);
+  }));

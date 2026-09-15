@@ -10,7 +10,11 @@ import { Busy } from './Busy';
 import { offerGitFix, setUpGitHere } from '../agent/gitOffer';
 import { CODEX_GIT_LINES, gitSetupChoice, gitSetupChoices, offerCodexGitSetup } from './codexGitSetup';
 import { whereCodexWorks, type CodexWhere } from './codexLeftWork';
+import { whereClarvisWorks, type ClarvisWhere } from './clarvisLeftWork';
 import { BASE_BRANCH_KEY } from '../agent/AgentBranch';
+import { isAgentBranch } from '../agent/branchNames';
+import type { LeftWorkFound } from '../agent/leftBranches';
+import { earlierRunPort, findLeftRuns, placedRunOptions, rememberLeftRun, type LeftRunTask } from '../agent/leftRuns';
 import { findLeftWork } from '../engine/codex/leftTasks';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
@@ -69,6 +73,8 @@ interface OpenedRun {
   lock?: ProjectLock;
   taskId?: string;
   base?: TaskCheckpoint;
+  /** The run carries on a task it inherited on its branch (a takeover, or a closed window's): nothing is asked about left work. */
+  continuing?: boolean;
 }
 
 /** What a run needs before it is built: Clarvis's engine its fence, Codex its RAVIS. */
@@ -232,10 +238,11 @@ export class RunSession {
    * is not a mode setting: `rm -rf` stops and asks in every mode, including this one.
    */
   modeStoppedAsking(): void {
-    // **Build on or start fresh** (plan.md M15): a mode switch while that question shows drops it, whichever mode it
-    // is, and never presses a button. The answer depended on the mode it was asked in (Unattended doesn't ask at all).
+    // **Build on or start fresh** (plan.md M15), for either engine: a mode switch while that question shows drops it,
+    // whichever mode it is, and never presses a button. The answer depended on the mode it was asked in (Unattended
+    // doesn't ask at all).
     if (this.leftWorkAskedIn !== undefined && this.pending.isWaiting && chatModeSetting() !== this.leftWorkAskedIn) {
-      this.log('codex left work: the mode changed while asking, so the question is dropped and nothing runs');
+      this.log('left work: the mode changed while asking, so the question is dropped and nothing runs');
       this.pending.supply('Do it', false);
       return;
     }
@@ -392,6 +399,11 @@ export class RunSession {
     // Codex's readiness have had their say. Unanswered, stopped or dropped: nothing runs, and nothing was promised yet.
     const where = await this.whereCodexWorks(opened.runner, root);
     if (where.kind === 'nothing') return opened.release();
+    // **Build on Clarvis's own earlier work, or start fresh** (plan.md M15; the owner's decision of 15 Sep 2026): the same
+    // question for Clarvis's own engine, once its own git offer has been made and its project lock is held. The run is
+    // rebuilt on the answer. Unanswered, stopped, dropped or refused: nothing runs, and nothing was promised yet.
+    const placed = await this.whereClarvisWorks(opened, root, task);
+    if (!placed) return opened.release();
 
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
@@ -403,13 +415,13 @@ export class RunSession {
     await this.note(opening);
     this.avatar.setState('thinking', 'chat');
 
-    await this.follow(opened, task, (signal) => this.startOrBuildOn(opened.runner, where, task, signal));
+    await this.follow(placed, task, (signal) => this.startOrBuildOn(placed.runner, where, task, signal));
   }
 
   /**
    * Where a Codex task goes when Codex left earlier work on its branch: the question, its answer, and the checks around
-   * it are `codexLeftWork.ts`'s and `leftTasks.ts`'s. Clarvis's own engine, and a window without RAVIS, start fresh as
-   * they always have (a Codex task without RAVIS was already refused by `openRun`).
+   * it are `codexLeftWork.ts`'s, `leftWork.ts`'s and `leftTasks.ts`'s. Clarvis's own engine asks its own question
+   * (`whereClarvisWorks`); a Codex task without RAVIS was already refused by `openRun`.
    */
   private async whereCodexWorks(runner: CodingRun, root: string | undefined): Promise<CodexWhere> {
     const ravis = ravisAccess(this.models);
@@ -421,18 +433,71 @@ export class RunSession {
       return await whereCodexWorks({
         find: () => findLeftWork({ relay, tokens: new TokenStore(), git, root: folder, rememberedBase: this.context.workspaceState.get<string>(BASE_BRANCH_KEY), log: this.log }),
         unattended: () => codexModeFor(chatModeSetting()) === 'unattended',
-        ask: (choices, accepts) => {
-          // Only its own buttons and words answer it; anything else typed is the message it is (`ChatService.runTook`).
-          this.leftWorkAskedIn = chatModeSetting();
-          return this.pending.ask(choices, 'where Codex should work', true, accepts);
-        },
+        ask: (choices, accepts) => this.askWhere(choices, accepts, 'where Codex should work'),
         note: (line) => this.note(line),
-        dirty: () => git.dirty(),
+        tree: () => git.workingTree(),
+        filesOn: (branch) => git.filesOn(branch),
         log: this.log,
       });
     } finally {
       this.leftWorkAskedIn = undefined;
     }
+  }
+
+  /**
+   * The build-on-or-start-fresh question on screen, for either engine. Remembered with the chat's mode now, so a mode
+   * switch drops it (`modeStoppedAsking`). Only its own buttons and words answer it; anything else typed is the message
+   * it is (`ChatService.runTook`).
+   */
+  private askWhere(choices: { label: string; detail?: string }[], accepts: (typed: string) => string | undefined, about: string): Promise<string | undefined> {
+    this.leftWorkAskedIn = chatModeSetting();
+    return this.pending.ask(choices, about, true, accepts);
+  }
+
+  /**
+   * Where a task of Clarvis's own engine goes when a run of that engine left work on its branch. The question and its rules
+   * are `clarvisLeftWork.ts`'s and `leftWork.ts`'s; the finding and the save of the earlier run's files are `leftRuns.ts`'s.
+   * Asked only for a new task holding the project lock in a git folder: a task carried on from a takeover or a closed
+   * window already knows its branch, and Codex asks its own question.
+   *
+   * With nothing left, the run is today's, untouched. Otherwise it is rebuilt on the answer, and its starting checkpoint
+   * is read again after any commit the question made:
+   * - **Build on**: on that branch, with the earlier run in the model's instructions;
+   * - **Start fresh**: never stacked on a `clarvis/*` branch.
+   * Undefined: nothing runs.
+   */
+  private async whereClarvisWorks(opened: OpenedRun, root: string | undefined, task: string): Promise<OpenedRun | undefined> {
+    const gitDir = root ? findGitDir(root) : undefined;
+    const lock = opened.lock;
+    if (!(opened.runner instanceof AgentRunner) || !root || !gitDir || !lock || opened.continuing) return opened;
+    const git = new GitFacts(root);
+    let found: LeftWorkFound<LeftRunTask> = { tasks: [] };
+    try {
+      const where = await whereClarvisWorks({
+        find: async () =>
+          (found = await findLeftRuns({ git, root, gitDir, rememberedBase: this.context.workspaceState.get<string>(BASE_BRANCH_KEY), stillHolds: () => lock.stillHolds('commit'), log: this.log })),
+        unattended: () => chatModeSetting() === 'unattended',
+        ask: (choices, accepts) => this.askWhere(choices, accepts, 'where I should work'),
+        note: (line) => this.note(line),
+        tree: () => git.workingTree(),
+        filesOn: (branch) => git.filesOn(branch),
+        earlier: earlierRunPort({ git, root, found: () => found.tasks, log: this.log }),
+        log: this.log,
+      });
+      if (where.kind === 'nothing') return undefined;
+      return found.tasks.length === 0 ? opened : await this.placedRun(opened, root, task, where, found.startsFrom);
+    } finally {
+      this.leftWorkAskedIn = undefined;
+    }
+  }
+
+  /** The run of Clarvis's own engine as the answer places it: built on the left branch, or fresh (plan.md M15). */
+  private async placedRun(opened: OpenedRun, root: string, task: string, where: Exclude<ClarvisWhere, { kind: 'nothing' }>, startsFrom: string | undefined): Promise<OpenedRun> {
+    // After any commit the question made: what is still uncommitted is the owner's (`leftRuns.placedRunOptions`).
+    const { engine, theirs } = await placedRunOptions(new GitFacts(root), where, startsFrom);
+    const runner = this.clarvisRunner(root, opened.lock, engine);
+    const base = await this.baseCheckpoint(root, opened.taskId ?? randomUUID(), task, theirs);
+    return { ...opened, runner, base };
   }
 
   /** A new task; or, when the owner chose Build on, the request as a new turn on Codex's earlier task, on its branch. */
@@ -552,7 +617,7 @@ export class RunSession {
       this.showProgress({ current: 0, total: 0, label: '' });
       this.showProgress({ status: '' });
       // Only now, with the run's loop over and its commands with it (design §6.3: release after).
-      await this.endRun(runner, opened);
+      await this.endRun(runner, opened, summary);
     }
 
     // **Persisted whether or not anything changed.** A run that did nothing is exactly
@@ -577,7 +642,7 @@ export class RunSession {
       clarvis: () => this.clarvisRunner(root, guard.fence, guard.engine),
       codex: () => this.codexRunner(root as string, guard.relay as RelayClient, guard.locks),
     });
-    return { runner, release: guard.release, lock: guard.lock, taskId: guard.taskId, base: guard.base };
+    return { runner, release: guard.release, lock: guard.lock, taskId: guard.taskId, base: guard.base, continuing: guard.engine?.continueOn !== undefined };
   }
 
   /**
@@ -639,9 +704,28 @@ export class RunSession {
    * carry it on (M15 C3), then the lock is let go. During a switch the checkpoint is the switch's to write, and the
    * lock too: `release` answers `held_for_transfer` (review N2).
    */
-  private async endRun(runner: CodingRun, opened: OpenedRun): Promise<void> {
-    if (opened.lock && opened.base && !this.switcher.isSwitching) await this.saveRunEnd(runner, opened.lock, opened.base);
+  private async endRun(runner: CodingRun, opened: OpenedRun, summary: string): Promise<void> {
+    if (opened.lock && opened.base && !this.switcher.isSwitching) {
+      await this.saveRunEnd(runner, opened.lock, opened.base);
+      await this.recordLeftRun(runner, opened.lock, opened.base, summary);
+    }
     await opened.release();
+  }
+
+  /**
+   * A run of Clarvis's own engine ended on its own branch: written into the record of left work while its lock is still
+   * held, so the next task can be asked whether to build on it (plan.md M15, "Build on Clarvis's own earlier work"). A run
+   * stopped for a switch isn't, since its task moved to the other engine (`endRun`).
+   */
+  private async recordLeftRun(runner: CodingRun, lock: ProjectLock, base: TaskCheckpoint, summary: string): Promise<void> {
+    const branch = runner.branches.working;
+    const gitDir = findGitDir(base.workspaceRoot);
+    if (!(runner instanceof AgentRunner) || !branch || !isAgentBranch(branch) || !gitDir) return;
+    const written = await rememberLeftRun(
+      { git: new GitFacts(base.workspaceRoot), root: base.workspaceRoot, gitDir, stillHolds: () => lock.stillHolds('commit') },
+      { branch, taskId: base.taskId, task: base.task, summary, startedFrom: runner.branches.startedFrom, files: runner.result.files, inFlightAtStart: base.git.dirty, host: windowIdentity().host, now: new Date() }
+    );
+    if (written !== 'saved') this.log(`agent: the run left on ${branch} wasn't recorded (${written})`);
   }
 
   /** The task's checkpoint when a run of Clarvis's own engine ends, written while its lock is still held (M15 C3). */

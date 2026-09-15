@@ -1258,6 +1258,10 @@ scenario that turns one bad run into a bad afternoon. So every run gets its own 
 - When the task finishes it **stays on the branch** and tells you how to take it
   (`git merge`, a diff view, or `Clarvis: Undo Last Agent Run` to bin it and switch
   back). Merging into your branch is your call — it's an outward-facing decision.
+- **When a run's work was left on its branch**, the next task first asks **Build on `<branch>`** (it runs on that
+  branch, on top of that work) or **Start fresh from `<trunk>`** (a new branch as above, never stacked on the branch
+  the window is on). What counts as left, and what happens to that run's uncommitted files, is M15's "Build on
+  Clarvis's own earlier work". A Codex task asks the same about Codex's own work.
 - `git push` remains gated. Being on his own branch makes committing safe; it does not
   make publishing safe.
 
@@ -5007,7 +5011,9 @@ RAVIS's long-lived process; Codex on this ecosystem's own repositories.
 - **Undo.** The task branch, plus a capture before each accepted file change while a window is
   attached; while detached, the branch is the undo.
 - **Branch isolation.** A switch continues on the existing task branch (`AgentBranch.continueOn`);
-  Codex's work is committed at settle, by Clarvis — never by RAVIS, which runs no git.
+  Codex's work is committed at settle, by Clarvis — never by RAVIS, which runs no git. When either engine left
+  earlier work on its branch, a new task of that engine first asks **Build on** that branch or **Start fresh**
+  ("Build on Codex's earlier work" and "Build on Clarvis's own earlier work", below).
 - **Privacy.** Code and prompts go to OpenAI; the key and password files are denied to Codex's
   commands once that is proven; relayed content passes through RAVIS's memory, never its disk;
   Codex's own history is kept in RAVIS's folder for 90 days after it was last used.
@@ -5038,6 +5044,9 @@ RAVIS's long-lived process; Codex on this ecosystem's own repositories.
   committed; `<root>/.clarvis/task-checkpoint.json` without git) — because `workspaceState` is per
   host. Written atomically, only while holding the project lock, at most 64 KB, no secrets, never
   sent to NERVIS or the Bridge.
+- **The record of left work lives beside it**: `<git_dir>/clarvis-left-work.json`, kept the same way (0600, written
+  whole, only while holding the project lock, never committed). Each run of Clarvis's own engine that ends on its own
+  branch writes what the next task's question and brief need ("Build on Clarvis's own earlier work", below).
 - **One writer per project.** RAVIS's project lock, with `<git_dir>/clarvis-engine.lock` as the
   floor when RAVIS is down, judged by the shared lock rule — `alive`, `unresponsive` or `gone`, and a
   stale heartbeat after a sleep never makes a live holder dead — against `lock-rule-cases.json`.
@@ -5189,8 +5198,98 @@ source and of tests.
     - Two first came back uncaught. With "not asked" or "Unattended asks nothing" broken, the flow waited for an answer and those tests timed out, which the proof's script counted as cancelled, not failed. Those tests now fail within 2 s instead of waiting, and the script counts a timeout
     - Not proved by breaking: `RunSession`'s wiring (it imports `vscode`); `leftTasks.placeOf`'s early returns for no commit and an unreadable tip, since the check after each refuses in the same cases; and `findLeftWork`'s second look at the view's state, since the fake keeps its list and its views in step
   - Gates: `npm run check` — types and lint clean, 1,983 tests pass, 31 of them new; `npm run test:host` — 26 passing
-  - **Clarvis's own engine has the same gap, unchanged:** `AgentBranch.begin` starts every new task from `startingBase` (from a Codex or Clarvis branch left by "Leave it there", that is the remembered base or `master`), so a follow-up there never sees the earlier run's work either. Its runs keep no conversation to continue; building on its branch would be a separate decision
+  - **Clarvis's own engine had the same gap:** `AgentBranch.begin` starts every new task from `startingBase`, so a follow-up there never saw the earlier run's work either. Closed the same day by the owner's decision "Give Clarvis's own engine the same question" (below, "Build on Clarvis's own earlier work"). That change also moved two of this section's rules for Codex: an untracked file the other branch doesn't have no longer refuses a Build on, and a Start fresh from a `clarvis/*` branch is checked the same way
   - Not verified: `RunSession.whereCodexWorks`, `startOrBuildOn`, the release when nothing runs and `modeStoppedAsking`'s drop import `vscode` and were read, not run; nothing has run against a real RAVIS or Codex, so a `continue` turn carrying a new request on a long-idle session, and `POST …/mode` on an idle one, are as the fixtures say, not as seen; an idle task that a switch settled with `next: 'transfer'` is offered like any other, and its turn is refused while Clarvis's own engine holds the project
+
+**Build on Clarvis's own earlier work** (15 Sep; built to the owner's decision of the same day, "Give Clarvis's own engine the same question")
+- [x] When a run of Clarvis's own engine left work on its branch, a task of that engine first asks **Build on `<branch>`** or **Start fresh from `<branch>`**, and Build on runs the new task on that branch, on top of the earlier work
+  - The gap: Clarvis's own engine started every new task on a new branch from the trunk (`AgentBranch.begin`), so after "Leave it there" a follow-up never saw the earlier run's work, the gap Codex had until 0.17.3 (above). The harder half was seen live on 13 Sep and reported by the peer session: "Leave it there" left `clarvis/start-building-…` with no commit and all of the run's files uncommitted. Why that run committed nothing isn't established here (a run's `finish` commits its files when it ends or is stopped), so the case is handled whatever the cause
+  - The owner's decision, "Give Clarvis's own engine the same question": when a task of Clarvis's own engine is asked for in a project where earlier work by that engine was left on its branch (the branch still exists and isn't merged into the trunk), ask **Build on `<branch>`** (the new task runs on that branch, on top of that work) or **Start fresh from `<trunk>`** (today's behaviour); otherwise like the Codex question
+  - Built:
+    - `src/chat/leftWork.ts`, vscode-free: the question for both engines. Its buttons, typed answers, what happens when it goes unanswered, is stopped or is dropped by a mode switch, Unattended's pick, the switch check, and the save of the earlier run's files. `codexLeftWork.ts` is now Codex's words over it, with every string as 0.17.3 shipped it; `clarvisLeftWork.ts` has the own engine's words
+    - `src/agent/leftBranches.ts`, vscode-free: what both engines share on the git side. `placeOf`, `mergedInto` and `offeredTasks` (moved out of `leftTasks.ts`), and the switch rule with its lines
+    - `src/agent/leftRuns.ts`, vscode-free: the own engine's finder, the save of the earlier run's own files, the record written when a run ends, the brief, and `placedRunOptions` (how the run starts on the answer)
+    - `src/engine/checkpoint/leftWorkFile.ts`: the record's file. `GitFacts.workingTree`, `filesOn` and `commitSubjects`
+    - `branchNames.freshStartRefusal` and `continuationBase`; `AgentBranch.begin(task, { fresh })`; `BranchContinuation.base`; `AgentEngineOptions.earlierWork` and `startFresh`
+    - `RunSession.whereClarvisWorks`, `placedRun` and `recordLeftRun`, and `askWhere`, shared by both questions
+    - the test project's `leaveClarvisRun`
+  - Where the brief left a choice, decided here:
+    - **Where "left work" comes from: a new record, `<git dir>/clarvis-left-work.json`**, beside the checkpoint and kept the same way: 0600, written whole, only while the run holds the project lock, never committed. Both editors on this Mac (code-server and desktop VS Code) read the same file, across window reloads. `LAST_RUN_KEY` couldn't serve: it is `workspaceState`, one editor's only
+      - **Written at the end of every run** of Clarvis's own engine that ends on its own `clarvis/*` branch (`RunSession.endRun`, beside the checkpoint), not when a run is stopped for an engine switch
+      - One entry per branch, the most recent first, at most twenty. Fields: `branch`, `taskId`, `task`, `summary` (redacted), `startedFrom`, `headCommit` (the tip it left), `files` (what the run wrote: its own touched files minus `inFlightAtStart`), `inFlightAtStart` (the owner's files already changed when it started), `uncommitted` (each of its own files it left uncommitted, with a SHA-256 of the content then, `null` for a deleted file), `endedAt`, `host`
+    - **Whether work was left is judged from git when the next task asks, not from the landing answer.** "Merge into …" merges it, so it isn't offered; "Leave it there", no answer, and "Show me what changed" all leave it. Left means:
+      - the branch isn't the trunk, still exists, and still holds the tip the run left, or a commit after it;
+      - and either it has commits in neither the trunk nor the starting branch, or the window is on it with some of the run's own uncommitted files still as the run left them.
+      A run that fails this is dropped from the record, while the lock is held. A missing or unreadable record offers nothing
+    - **Order.** Workspace Trust, Clarvis's own pre-run git offer, the engine refusals and the project lock come first; then the question; then the opening line. Asked only for a new task holding the lock in a git folder: a takeover's or a closed window's task already continues its own branch. a29c45a's wrap-up rule is untouched. A Build on run ends like any run on that branch, and its landing question names the base the question named
+    - **Cross-engine.** Codex's branches are never offered to Clarvis's own engine, since they aren't in its record, and runs in the record are never offered to Codex. **A branch both engines left is offered by both questions**, each from its own finding. Moving a task between engines stays **Clarvis: Switch Coding Engine**
+    - **What the agent gets on Build on:** the earlier run's task as it was asked, what it said when it ended, and the subjects of the branch's commits since the starting branch (at most ten). They go in its instructions (`AgentEngineOptions.earlierWork`), never in the task, so the commit's `Task:` line stays the new request
+    - **The earlier run's own files** (the lead's rule, from the peer session, 15 Sep). When the window is on the branch that run left, its own uncommitted files are committed onto that branch first, with a line in the chat. That happens whether the answer builds on that branch ("… so this run builds on them"), starts fresh ("… before starting fresh") or builds on another branch ("… before switching to `x`")
+      - The files come from the record, never from `git status`, and the owner's files in flight at the run's start are never among them
+      - A file whose content no longer matches the record was changed since. It refuses a switch; on the window's own branch it stays the owner's, named in the line as not committed. A file that can't be read counts as changed
+      - A commit that fails says why, and nothing runs
+    - **The switch rule, for both engines** (the lead's rule, 15 Sep). Whenever an answer moves the checkout (Build on a branch the window isn't on, or Start fresh from a `clarvis/*` branch):
+      - ignored files don't count;
+      - untracked files the target doesn't have come along, in a line of their own that names them the way git shows them (`__pycache__/`), three names then "and N more";
+      - tracked changes, and untracked files the target has a file of the same name for, refuse, named. So does git that can't say what is in flight
+    - **Codex behaviour changed from 0.17.3** by that rule, and nothing else of Codex's did:
+      - an untracked file the target branch doesn't have no longer refuses a Build on; it comes along, named;
+      - a Codex Start fresh from a `clarvis/*` branch is now checked the same way (0.17.3 checked nothing there);
+      - git that can't read the tree now refuses.
+      With tracked changes alone, the refusal is word for word 0.17.3's
+    - **Start fresh means fresh.** After Start fresh, a run that can't make its branch at the starting branch is refused (`freshStartRefusal`) rather than stacked on the `clarvis/*` branch the window is on. Stacking is how the eight `clarvis/*` branches in a straight line in `RunSession.close` came about. The old fallback is unchanged when nothing was asked, and for Codex (`CodexGitGlue.begin`)
+    - **The remembered base is never overwritten with a `clarvis/*` branch.** `continueOn` doesn't write it, and a Build on names the base its question offered (`BranchContinuation.base`, `continuationBase`), so the landing question offers the project's trunk in either editor. A Build on uses `continueOn`, so "… sits on top of …" is never said with it
+  - [x] Check: `clarvisLeftWork.test.ts`, through the real `PendingChoice`:
+    - asked with one left run (the line, **Build on `<branch>`**, **Start fresh from master**) and with several (the window's branch first, then the most recent, three at most);
+    - not asked with nothing left, nor with no record, a branch only Codex left, a merged run or a deleted branch;
+    - typed answers build on or start fresh and are consumed, so they never reach the model; anything else typed runs nothing;
+    - Stop and a mode switch run nothing;
+    - Unattended builds on the window's branch or starts fresh, with one line;
+    - a switch with tracked changes is refused in the engine's own words, and a failed save runs nothing.
+    End to end with real git and the record:
+    - Build on from `master` gets the branch at its tip, `master` as base, and the earlier task and summary, with no branch made and nothing committed;
+    - the 13 Sep case, Build on the window's branch with the run's files uncommitted, commits them there first and says so, and the owner's files in flight stay theirs;
+    - a file changed since is named as not committed;
+    - Start fresh from that branch commits the run's files, names `__pycache__/` as coming along, and starts fresh;
+    - Start fresh is refused, with nothing committed, for a tracked change, an untracked file `master` also has, or a run file changed since;
+    - Build on another left branch commits the run's files before switching;
+    - Start fresh from `master` is today's;
+    - Unattended on the left branch saves and builds on;
+    - a record written from code-server is asked about by a fresh window
+  - [x] Check: `leftRuns.test.ts`, real git:
+    - one left run is found from the record by a fresh reader;
+    - the 13 Sep uncommitted-only run is found on its branch and not from `master`;
+    - merged, deleted, moved-away and on-the-trunk runs aren't offered and are dropped from the record, and the drop is fenced by the lock;
+    - an unreadable or other-folder record offers nothing and is left as it is;
+    - a branch both engines left is offered by both;
+    - the run's files are sorted as left, changed since, unreadable, or no longer uncommitted, and never outside the folder;
+    - the save commits only them, with its message and its line, and the owner's files stay uncommitted;
+    - each reason's line, and a failed commit;
+    - a run is recorded with only its own uncommitted files and their hashes, none off its branch, one per branch, and not for a gone branch or a lost lock;
+    - the brief;
+    - `placedRunOptions`
+  - [x] Check: `leftWorkFile.test.ts` (0600 and whole in the git folder; one run per branch, twenty at most; fenced; other folders; unreadable and malformed; redaction, clipping, size), `leftBranches.test.ts` (which answers switch; the rule; clashes; the lines), `gitFacts.test.ts` (`workingTree` with ignored files invisible and `__pycache__/` shown once; `filesOn`; `commitSubjects`), `branchNames.test.ts` (`freshStartRefusal`, `continuationBase`)
+  - [x] Check: `codexLeftWork.test.ts` and `leftTasks.test.ts`: 0.17.3's tests kept, with the refusal tests updated to the new rule on real git (an untracked `__pycache__/` and `notes.txt` don't refuse, an ignored `build/` is invisible, a modified `README.md` refuses word for word, a clashing `greet.py` refuses) and three new ones (untracked files come along with a line; a clash refuses; Start fresh from a `clarvis/*` branch is checked, and git that can't say refuses)
+  - [x] Check: host spec, two tests added to `src/test/branchContinuation.spec.ts` (its repository uses `main`; `master` is the node tests'):
+    - the real `AgentRunner`, started with `placedRunOptions`' Build on and a stand-in model, moves the window from `main` to the branch its earlier run left through the real Git extension. It makes no branch, the model's instructions carry that run's task and summary, and its change is committed on top under the new request. `runner.branches` names `main`, the remembered base stays `main`, and nothing says "sits on top of";
+    - after Start fresh, when git refuses the checkout of `main`, `AgentBranch.begin` and a real `AgentRunner` with `startFresh` do nothing, and without it the fallback stacks as before
+  - Guard proof: every new guard was broken in a scratch copy's compiled code, one at a time, and a test failed each time, then restored: 75 of 75.
+    - Seventeen for the shared git side: which answers move the checkout (three); tracked changes; clashing untracked files; the earlier run's files being committed; a run file changed since; scratch space (two); both folder clashes; the window's branch first; three at most; most recent next; merged work; the declared trunk; and 0.17.3's refusal words
+    - Fourteen for the question: not asked with nothing left; Unattended asks nothing; Unattended builds only on the window's branch; unanswered runs nothing; the shared yes; five words; the switch checked; changes read and named only when switching; git that can't say; a failed save; the save's reason; the files that come along named; the save before the run; and the own engine's words
+    - Twenty-three for the finder, the save and the brief: the trunk itself; a deleted branch; a moved branch; unmerged work; uncommitted-only work; only on its branch; the tidy; only files still uncommitted; a changed file; outside the folder; nothing to commit; a failed commit; changed files named; the owner's files in flight; uncommitted files only on the run's branch; a gone branch not recorded; Start fresh never stacks; the named base; the owner's files after the save; the tip after the save; and the brief's task, summary and commits
+    - Nine for the record: a malformed run; another folder's record read; the lock; one run per branch; another folder's runs; another folder's record written; redaction; size; a file's hash
+    - Five for branch names: Start fresh refuses (two) and the continuation's base (three). Four for git facts: untracked told from changed, git that can't say, a missing branch's files, and folders shown once
+    - Three in the extension host, each with a host run of its own after a green baseline (28 passing): the earlier run reaches the model; `AgentBranch.begin` refuses a stacked Start fresh; and the run hands Start fresh to its branch
+    - Two first came back uncaught. `moveFor`'s test used a starting branch equal to HEAD, which can't tell the rule apart from one without its `clarvis/*` check; and no test had git name a scratch file on its own. Both tests were tightened, and both guards then failed them
+    - Not proved by breaking:
+      - `RunSession`'s wiring (`whereClarvisWorks`, `placedRun`, `recordLeftRun`, `askWhere`, the `continuing` flag), which imports `vscode`;
+      - `AgentBranch`'s call to `continuationBase`: the host suite's repository uses `main`, where the named and remembered bases agree;
+      - `contentOf` telling an unreadable file from a deleted one
+  - Gates: `npm run check` — types and lint clean; 2,030 tests, 47 of them new. The run on the committed tree passed 2,029 of 2,030. The one failure is `codexContractFixtures.test.ts` comparing Clarvis's fixture copy with RAVIS's live fixtures, which another session was editing in the NERVIS-ecosystem checkout for RAVIS 0.27.0; this change touches neither side, and the same gate had passed 2,030 of 2,030 before those edits. `npm run test:host` — 28 passing, 2 of them new
+  - Not verified:
+    - `RunSession`'s wiring imports `vscode` and was read, not run: the question's place after the lock, the rebuilt run, the record written at a run's end, and the mode-switch drop for this engine. No task of Clarvis's own engine has gone through the question in VS Code or code-server
+    - the host test's model is a stand-in, so no real model has been given the brief
+    - the 13 Sep case was reported by the peer session, not reproduced here
 
 **C3 — the checkpoint, switching and branch continuation** (about 1,110 / 1,330)
 - [ ] The checkpoint file; `transfer` both ways through the lock API; `EngineSwitch`; `AgentBranch.continueOn` with `created` and `previousBranch`; `continuationDecision`; the Wait reminder; reusing the idle Codex session on a switch back; a takeover continuing the same task

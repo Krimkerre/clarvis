@@ -3,8 +3,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import type { TestContext } from 'node:test';
+import { rememberLeftRun } from '../../agent/leftRuns';
 import { GitFacts } from '../../engine/checkpoint/gitFacts';
 import type { LeftWorkDeps } from '../../engine/codex/leftTasks';
+import type { Host } from '../../engine/relay/relayTypes';
 import { RelayClient } from '../../engine/relay/relayClient';
 import { RelayHttp, relayEndpoint } from '../../engine/relay/relayHttp';
 import type { SessionState } from '../../engine/relay/relayTypes';
@@ -34,6 +36,27 @@ export interface LeftWorkProject {
   git(...args: string[]): string;
   deps(extra?: Partial<LeftWorkDeps>): LeftWorkDeps;
   leaveCodexWork(branch: string, options?: { file?: string; updatedAt?: string; storeKey?: boolean; state?: SessionState }): MachineSession;
+  /**
+   * Leaves a run of Clarvis's own engine the way "Leave it there" does: its commits on `clarvis/<task>` off the trunk, the
+   * files it wrote and didn't commit left in the checkout (so the window stays on its branch), and its entry in the record
+   * of left work, written by the real `rememberLeftRun` (plan.md M15, "Build on Clarvis's own earlier work").
+   */
+  leaveClarvisRun(branch: string, options?: LeftRunOptions): Promise<void>;
+}
+
+export interface LeftRunOptions {
+  /** Files the run committed on its branch, with their content. */
+  committed?: Record<string, string>;
+  /** Files the run wrote and left uncommitted. The window stays on its branch. */
+  uncommitted?: Record<string, string>;
+  /** Files the owner already had in flight when the run started, written before its branch and left uncommitted. */
+  inFlight?: Record<string, string>;
+  task?: string;
+  summary?: string;
+  endedAt?: string;
+  /** Stays on the run's branch although it left nothing uncommitted. */
+  stay?: boolean;
+  host?: Host;
 }
 
 export async function leftWorkProject(t: TestContext, trunk = 'master'): Promise<LeftWorkProject> {
@@ -76,6 +99,45 @@ export async function leftWorkProject(t: TestContext, trunk = 'master'): Promise
     return session;
   };
 
+  const write = (files: Record<string, string>) => {
+    for (const [file, content] of Object.entries(files)) {
+      fs.mkdirSync(path.dirname(path.join(root, file)), { recursive: true });
+      fs.writeFileSync(path.join(root, file), content);
+    }
+  };
+
+  const leaveClarvisRun: LeftWorkProject['leaveClarvisRun'] = async (branch, options = {}) => {
+    const back = git('symbolic-ref', '--short', 'HEAD');
+    const [committed, uncommitted, inFlight] = [options.committed ?? {}, options.uncommitted ?? {}, options.inFlight ?? {}];
+    const task = options.task ?? `Work on ${branch}`;
+    const summary = options.summary ?? `Did the work on ${branch}.`;
+    write(inFlight);
+    git('checkout', '--quiet', '-b', branch, trunk);
+    if (Object.keys(committed).length > 0) {
+      write(committed);
+      git('add', '--', ...Object.keys(committed));
+      git('commit', '--quiet', '-m', `${summary}\n\nTask: ${task}`, '--', ...Object.keys(committed));
+    }
+    write(uncommitted);
+    const written = await rememberLeftRun(
+      { git: new GitFacts(root), root, gitDir: path.join(root, '.git'), stillHolds: async () => true },
+      {
+        branch,
+        taskId: `task-${branch}`,
+        task,
+        summary,
+        startedFrom: trunk,
+        files: [...Object.keys(committed), ...Object.keys(uncommitted), ...Object.keys(inFlight)],
+        inFlightAtStart: Object.keys(inFlight),
+        host: options.host ?? 'code-server',
+        now: new Date(options.endedAt ?? '2026-09-15T16:00:00Z'),
+      }
+    );
+    if (written !== 'saved') throw new Error(`the left run on ${branch} wasn't recorded: ${written}`);
+    const staysOn = options.stay === true || Object.keys(uncommitted).length > 0 || Object.keys(inFlight).length > 0;
+    if (!staysOn) git('checkout', '--quiet', back);
+  };
+
   return {
     root,
     trunk,
@@ -86,6 +148,7 @@ export async function leftWorkProject(t: TestContext, trunk = 'master'): Promise
     git,
     deps: (extra = {}) => ({ relay, tokens, git: new GitFacts(root), root, ...extra }),
     leaveCodexWork,
+    leaveClarvisRun,
   };
 }
 

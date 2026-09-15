@@ -5,7 +5,13 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentBranch } from '../agent/AgentBranch';
+import { AgentRunner, type AgentEvent } from '../agent/AgentRunner';
+import { placedRunOptions, type LeftRunTask } from '../agent/leftRuns';
+import type { AgentTerminal } from '../agent/tools/commandTools';
+import { GitFacts } from '../engine/checkpoint/gitFacts';
+import type { LeftRun } from '../engine/checkpoint/leftWorkFile';
 import { CodexGitGlue } from '../engine/codex/codexGit';
+import type { ModelService } from '../model/ModelService';
 
 /**
  * Branch continuation against the real Git extension (plan.md M15 C3; review B2). After Codex commits on `clarvis/x`,
@@ -116,7 +122,147 @@ suite('branch continuation in the extension host (M15 C3)', () => {
       fs.rmSync(storage, { recursive: true, force: true });
     }
   });
+
+  // Clarvis's own engine building on its earlier run, and Start fresh never stacking (plan.md M15, "Build on Clarvis's own
+  // earlier work"): in this suite, on its repository, for the same reason as the Codex test above. The bodies are below.
+  test("Build on (Clarvis's own engine): the run moves from main to the branch its earlier run left, with no new branch, is told that run's task and summary, and commits on top; the remembered base stays main", async function () {
+    this.timeout(60_000);
+    await ownEngineBuildsOn(root, git);
+  });
+
+  test("Start fresh from a clarvis branch never stacks on it: when the branch can't be made at main, nothing is done; without Start fresh the fallback stacks as before", async function () {
+    this.timeout(30_000);
+    await freshStartNeverStacks(root, git);
+  });
 });
+
+/**
+ * **Build on Clarvis's own earlier work** (plan.md M15, "Build on Clarvis's own earlier work"; the owner's decision of 15 Sep
+ * 2026). The question, the record and the save of the earlier run's files are tested with real git (`leftRuns.test.ts`,
+ * `clarvisLeftWork.test.ts`). This checks what only an extension host has: the real `AgentRunner`, started with the options
+ * the question produces (`placedRunOptions`), moves the window from main to the branch its earlier run left through the
+ * real Git extension, makes no new branch, gives the model that run's task and summary, and commits the model's change on
+ * top of that work under the new request. No model is called: a stand-in writes one file and says it is done.
+ */
+async function ownEngineBuildsOn(root: string, git: (...args: string[]) => string): Promise<void> {
+  const left = 'clarvis/add-a-farewell-script';
+  const request = 'Also add a --shout option to farewell.py';
+  git('checkout', '--quiet', '-b', left, 'main');
+  fs.writeFileSync(path.join(root, 'farewell.py'), 'print("bye")\n');
+  git('add', 'farewell.py');
+  git('commit', '--quiet', '-m', 'Added farewell.py, which prints bye.\n\nTask: Add a farewell script');
+  git('checkout', '--quiet', 'main');
+  const tip = git('rev-parse', left);
+  const branchesBefore = git('for-each-ref', '--format=%(refname:short)', 'refs/heads');
+  const run: LeftRun = {
+    branch: left,
+    taskId: 'task-farewell',
+    task: 'Add a farewell script',
+    summary: 'Added farewell.py, which prints bye.',
+    startedFrom: 'main',
+    headCommit: tip,
+    files: ['farewell.py'],
+    inFlightAtStart: [],
+    uncommitted: [],
+    endedAt: '2026-09-15T18:00:00.000Z',
+    host: 'desktop',
+  };
+  const found: LeftRunTask = { branch: left, tip, updatedAt: run.endedAt, onBranch: false, run };
+  await gitCaughtUp(root, () => true);
+  const { engine } = await placedRunOptions(new GitFacts(root), { kind: 'build_on', task: found }, 'main');
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-own-build-on-storage-'));
+  const workspaceState = memento();
+  await workspaceState.update('clarvis.agent.baseBranch', 'main');
+  const context = { workspaceState, globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const model = standInModel('farewell.py', 'import sys\nprint("BYE" if "--shout" in sys.argv else "bye")\n', 'Added --shout to farewell.py.');
+  const runner = new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, undefined, undefined, engine);
+  const events: AgentEvent[] = [];
+
+  try {
+    for await (const event of runner.run(request, new AbortController().signal)) events.push(event);
+
+    assert.strictEqual(git('symbolic-ref', '--short', 'HEAD'), left, `the checkout is on the branch the earlier run left: ${JSON.stringify(events)}`);
+    assert.strictEqual(git('for-each-ref', '--format=%(refname:short)', 'refs/heads'), branchesBefore, 'no new branch');
+    assert.strictEqual(git('rev-parse', `${left}~1`), tip, "the new commit sits on the earlier run's work");
+    assert.ok(git('log', '-1', '--format=%B', left).includes(`Task: ${request}`), 'the commit names the new request, not the brief');
+    assert.match(model.systems[0] ?? '', /The earlier task, as it was asked: Add a farewell script/);
+    assert.match(model.systems[0] ?? '', /What you said when it ended: Added farewell\.py, which prints bye\./);
+    assert.deepStrictEqual(runner.branches, { working: left, startedFrom: 'main' }, 'the landing question offers main');
+    assert.strictEqual(workspaceState.get('clarvis.agent.baseBranch'), 'main', 'never overwritten with the clarvis branch');
+    assert.ok(!events.some((event) => /sits on top of/.test(event.text)), `no stacked-run line: ${JSON.stringify(events)}`);
+  } finally {
+    git('checkout', '--quiet', 'main');
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+}
+
+/**
+ * **Start fresh means fresh** (plan.md M15, "Build on Clarvis's own earlier work"): once the owner chose it, a task that
+ * can't start at main never falls back to stacking on the `clarvis/*` branch the window is on. Provoked for real: a change
+ * to a file only that branch has makes git refuse the checkout of main.
+ */
+async function freshStartNeverStacks(root: string, git: (...args: string[]) => string): Promise<void> {
+  const left = 'clarvis/only-here';
+  const branches = () => git('for-each-ref', '--format=%(refname:short)', 'refs/heads');
+  git('checkout', '--quiet', '-b', left, 'main');
+  fs.writeFileSync(path.join(root, 'only-here.py'), 'x = 1\n');
+  git('add', 'only-here.py');
+  git('commit', '--quiet', '-m', 'A file only this branch has');
+  fs.writeFileSync(path.join(root, 'only-here.py'), 'x = 2\n');
+  await gitCaughtUp(root, (state) => state.workingTreeChanges.some((change) => change.uri.fsPath === path.join(root, 'only-here.py')));
+  const before = branches();
+  const memory = new Map<string, string>([['clarvis.agent.baseBranch', 'main']]);
+  const remembered = { get: (key: string) => memory.get(key), update: async (key: string, value: string) => void memory.set(key, value) };
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-fresh-storage-'));
+  const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+
+  try {
+    const fresh = await new AgentBranch(() => undefined, remembered).begin('Start something new', { fresh: true });
+
+    assert.deepStrictEqual([fresh.isolated, fresh.refused], [false, true]);
+    assert.match(fresh.advice ?? '', /^I couldn't start fresh from `main`, and starting on `clarvis\/only-here` instead would build on that work/);
+    assert.strictEqual(git('symbolic-ref', '--short', 'HEAD'), left, 'still where it was');
+    assert.strictEqual(branches(), before, 'no branch made');
+
+    // The run the question starts after Start fresh (`placedRunOptions` → `startFresh`) is refused the same way, before the model is asked anything.
+    const model = standInModel('never.py', 'x = 0\n', 'This should never be said.');
+    const events: AgentEvent[] = [];
+    const run = new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, undefined, undefined, { startFresh: true });
+    for await (const event of run.run('Start something new', new AbortController().signal)) events.push(event);
+    assert.ok(events.some((event) => /^I couldn't start fresh from `main`/.test(event.text)), JSON.stringify(events));
+    assert.deepStrictEqual([model.systems.length, git('symbolic-ref', '--short', 'HEAD'), branches()], [0, left, before], 'the run did nothing');
+
+    const stacked = await new AgentBranch(() => undefined, remembered).begin('Start something new');
+    assert.strictEqual(stacked.isolated, true, "without Start fresh, today's fallback");
+    assert.match(stacked.advice ?? '', /sits on top of `clarvis\/only-here`/);
+  } finally {
+    git('checkout', '--quiet', '--force', 'main');
+    fs.rmSync(storage, { recursive: true, force: true });
+    for (const branch of branches().split('\n').filter((name) => name.startsWith('clarvis/start-something-new'))) git('branch', '-D', branch);
+  }
+}
+
+/** A coding model that writes one file, then says it is done, keeping each turn's instructions. No model is called. */
+function standInModel(file: string, contents: string, summary: string): { models: ModelService; systems: string[] } {
+  const systems: string[] = [];
+  async function* streamWithTools(request: { system: string }) {
+    systems.push(request.system);
+    if (systems.length === 1) {
+      yield { type: 'toolCall' as const, call: { id: 'call_write', name: 'writeFile', args: { path: file, contents } } };
+      yield { type: 'stop' as const, reason: 'tools' as const };
+      return;
+    }
+    yield { type: 'text' as const, text: summary };
+    yield { type: 'stop' as const, reason: 'end' as const };
+  }
+  const models = { isReady: async () => true, spec: () => ({ label: 'a stand-in model' }), streamWithTools };
+  return { models: models as unknown as ModelService, systems };
+}
+
+/** The Clarvis terminal, with nothing to show. */
+function standInTerminal(): AgentTerminal {
+  return { write: () => undefined, announce: () => undefined } as unknown as AgentTerminal;
+}
 
 /** Only what `CodexGitGlue` reads of the extension's context: the two mementos and a storage folder for undo copies. */
 function standInContext(storage: string): vscode.ExtensionContext {

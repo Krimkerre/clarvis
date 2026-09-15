@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { workspaceFolderPath } from './gitExtension';
 import { repositoryForFolder } from './repositoryForFolder';
 import { join } from 'path';
-import { branchNameFor, adviseOnGit, continuationDecision, GitProblem, isAgentBranch, stackedAdvice, startingBase, type BranchContinuation } from './branchNames';
+import { branchNameFor, adviseOnGit, continuationBase, continuationDecision, freshStartRefusal, GitProblem, isAgentBranch, stackedAdvice, startingBase, type BranchContinuation } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
 import { atRiskPaths } from './atRisk';
@@ -15,8 +15,9 @@ export interface Isolation {
   /** Said before any work happens, when the arrangement is not the usual one. */
   advice?: string;
   /**
-   * `continueOn` refused (M15 C3): the saved branch is missing or moved away. Unlike `begin`, the run must not go
-   * ahead on snapshots alone — it would carry the task on somewhere other than its work.
+   * `continueOn` refused (M15 C3): the saved branch is missing or moved away. Or `begin` for a **Start fresh** couldn't
+   * start at the starting branch and would have stacked on a `clarvis/*` branch (plan.md M15). The run must not go ahead
+   * on snapshots alone: it would work somewhere other than where it was asked to.
    */
   refused?: boolean;
   /**
@@ -101,7 +102,11 @@ export class AgentBranch {
     return repository ? atRiskPaths(repository.state) : [];
   }
 
-  async begin(task: string): Promise<Isolation> {
+  async begin(
+    task: string,
+    /** `fresh`: the owner chose **Start fresh**, so this never falls back to stacking on a `clarvis/*` branch. */
+    options: { fresh?: boolean } = {}
+  ): Promise<Isolation> {
     const repository = this.repository();
 
     if (!repository) {
@@ -126,6 +131,14 @@ export class AgentBranch {
     // First choice: start at the base, whatever we are standing on now.
     if (base && head && base !== head && (await this.startAt(repository, name, base, base))) {
       return { isolated: true, branch: name };
+    }
+
+    // **Start fresh means fresh** (plan.md M15, "Build on Clarvis's own earlier work"): once the owner has chosen it, a
+    // task never falls back to stacking on the `clarvis/*` branch the window is on.
+    const notFresh = freshStartRefusal(options.fresh === true, head, base);
+    if (notFresh) {
+      this.log(`branch: not starting fresh — couldn't start from ${base ?? 'the starting branch'}, and ${head} is an agent branch`);
+      return { isolated: false, refused: true, advice: notFresh };
     }
 
     // Second: start here. Fine from an ordinary branch, and a stacked run from an
@@ -182,8 +195,9 @@ export class AgentBranch {
     const existing = (await repository.getBranches({ remote: false })).map((branch) => branch.name ?? '');
     this.theirsAtStart = continuation.theirs;
     this.created = continuation.branch;
-    // The base stays the branch the owner started from, so undo and "fold it back" still mean that branch.
-    this.previousBranch = this.rememberedBase(existing);
+    // The base stays the branch the owner started from, so undo and "fold it back" still mean that branch. A Build on
+    // names the branch its question offered (plan.md M15); the remembered base is never overwritten with anything.
+    this.previousBranch = this.baseOfContinuation(continuation, existing);
     this.log(`branch: continuing ${continuation.branch} at ${continuation.headCommit.slice(0, 7)}, based on ${this.previousBranch ?? 'nothing remembered'}`);
     if (continuation.leftoversMessage) await this.commitLeftovers(repository, continuation.leftoversMessage);
     return { isolated: true, branch: continuation.branch };
@@ -407,9 +421,10 @@ export class AgentBranch {
    * on an agent branch with nothing remembered is a rare state, and branching from a
    * plausible base beats branching from the previous task's work.
    */
-  private rememberedBase(existing: string[]): string | undefined {
-    // `startingBase` without a HEAD to start from: the remembered base, then main, master or develop.
-    return startingBase(undefined, false, this.memento?.get(BASE_BRANCH_KEY), existing);
+  private baseOfContinuation(continuation: BranchContinuation, existing: string[]): string | undefined {
+    // The base a Build on names, else `startingBase` without a HEAD to start from: the remembered base, then main,
+    // master or develop (`continuationBase`).
+    return continuationBase(continuation.base, existing, this.memento?.get(BASE_BRANCH_KEY));
   }
 
   private repository(): GitRepository | undefined {

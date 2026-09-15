@@ -52,8 +52,8 @@ break Clarvis planning against its own repo.
 
 | Directory | Lines | What it owns |
 |---|---|---|
-| `src/agent/` | ~9,616 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`). |
-| `src/chat/` | ~6,876 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`. |
+| `src/agent/` | ~9,616 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`), and earlier work left on a branch (`leftBranches.ts`, shared by both engines, with the rule for what a branch switch may carry; `leftRuns.ts`, Clarvis's own engine's runs). |
+| `src/chat/` | ~6,876 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`, and `leftWork.ts`, the build-on-or-start-fresh question both engines ask, with each engine's words beside it. |
 | `src/planning/` | ~6,832 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
 | `src/personality/` | ~3,324 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
 | `src/model/` | ~3,743 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
@@ -64,7 +64,7 @@ break Clarvis planning against its own repo.
 | `src/panels/` | ~389 | The webview host for the avatar. Its stylesheet is `media/chat.css`, and its scripts `media/bowtieMenu.js` (the bowtie's fold-out, since M15 C2b+) and `media/chat.js`, all read from disk at render time. Above the prompt row, a run's passing status (`run-status`, since C2b+ phase 2: "Reconnecting Codex…"). |
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
-| `src/engine/` | ~9,726 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b and C2b+, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — gives Unattended's narrow answers while the panel is there, and asks a group of blocked sites as one card; `codex/siteScan.ts` finds the sites a task will likely need, which `runCore.ts` asks about before it starts, and `codex/siteAsks.ts` holds the words for asking about them and for carrying the task on. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, and `gitFacts.ts`. `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
+| `src/engine/` | ~9,726 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b and C2b+, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — gives Unattended's narrow answers while the panel is there, and asks a group of blocked sites as one card; `codex/siteScan.ts` finds the sites a task will likely need, which `runCore.ts` asks about before it starts, and `codex/siteAsks.ts` holds the words for asking about them and for carrying the task on. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, `gitFacts.ts`, and beside it the record of runs Clarvis's own engine left on their branches (`leftWorkFile.ts`, `clarvis-left-work.json`). `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
 | `src/test/` | ~656 | Host-level smoke tests (`npm run test:host`), not the main suite — eight specs, recounted 14 Sep after Codex's git setup (this said seven after C2b+, and ~57, then ~378, then ~452 before that); `codexMenu.spec.ts` runs the bowtie's fold-out and Codex's undo copies in the real host, and `codexGitSetup.spec.ts` checks the Git extension sees a repository **Set up git here** made. Beside them, `fakes/` (~2,780) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover; since C2b Codex's real requests from calibration (`calibrationRequests.ts`), held to RAVIS's committed transcripts; since C2b+ the allowed sites (`fakeSites.ts`) and R5 in the session machine — site asks a group per turn, the reopen and a turn waiting for it, a create's model and effort — each held to what RAVIS `bc1a103` does. |
 
 **72,879 lines of TypeScript across 442 files** (recounted 14 Sep, after M15 C2b+'s phase 2) — 44,994 source,
@@ -516,14 +516,57 @@ token file holds its key and RAVIS accepts it for a view naming its branch (a ta
 and no key is reissued to find out); the branch exists and isn't merged into the project's trunk. The trunk is the plan's
 declared one, else the branch a fresh task starts from (`branchNames.startingBase`, now shared with `AgentBranch.begin`),
 so a `master` project is asked about `master`, never `main`. **Refused in plain words:** switching to another branch while
-the owner has uncommitted or untracked files, since the switch would carry them along. The earlier task is given the
+the owner has uncommitted or untracked files, since the switch would carry them along (narrowed the same day, below:
+untracked files the other branch doesn't have now come along, named). The earlier task is given the
 chat's mode before its turn, and starts nothing if RAVIS won't.
 
-**Clarvis's own engine** still starts every new task from the trunk; it has the same gap, left as it is.
+**Clarvis's own engine** had the same gap; it asks the same question since the change below.
 
 **Checked by breaking it:** 34 of 34 new guards, each broken in a scratch copy and caught by a test. A host test in `branchContinuation.spec.ts` moved a checkout from the trunk to the
 branch Codex left through the real Git extension and committed the next change there (26 host tests passing). Not verified here: `RunSession`'s wiring
 imports `vscode` and was read, not run; nothing has run against a real RAVIS or Codex task.
+
+### What landed on 15 Sep: Clarvis's own engine builds on its earlier work, or starts fresh
+
+**The gap.** Clarvis's own engine started every task on a new branch from the trunk. So after "Leave it there" a
+follow-up never saw the earlier run's work: the gap Codex had until the change above. `plan.md`'s M15 has the owner's
+decision ("Give Clarvis's own engine the same question"), every choice made building it, the checks and the guard proof.
+
+**Now its tasks ask first, with the same question as Codex's**, from one module for both engines
+(`src/chat/leftWork.ts`; the words are `clarvisLeftWork.ts`'s and `codexLeftWork.ts`'s).
+- **Build on `<branch>`** runs the new task on that branch, on top of the earlier work. The model is told what that run
+  was asked and said, and the branch's commits.
+- **Start fresh from `<branch>`** is today's start, and it never stacks on the `clarvis/*` branch the window is on: a
+  fresh start that can't begin at the trunk does nothing instead.
+- Typed answers, nothing running when unanswered, stopped or dropped by a mode switch, and Unattended's pick all work as
+  in the Codex question.
+
+**What counts as left** (`src/agent/leftRuns.ts`). Every run of this engine that ends on its own branch writes a record,
+`<git dir>/clarvis-left-work.json`, beside the checkpoint: 0600, written whole while the lock is held, and read by both
+editors. Its branch must still exist and still hold that run's work, and either have commits not in the trunk, or be the
+window's branch with the run's own files still uncommitted as it left them (the 13 Sep live case). Merged, deleted or
+moved-away runs are dropped from the record. Branches Codex left are the Codex question's; a branch both engines left is
+offered by both.
+
+**The earlier run's own files.** When the window is on that run's branch, its own uncommitted files are committed there
+first, with a line saying so: before building on it, before starting fresh, or before switching to another branch. They
+come from the record, never `git status`, and are never the owner's files in flight. A file changed since refuses a
+switch; on the window's branch it stays the owner's, and the line says it wasn't committed.
+
+**Changed for both engines: what a branch switch may carry.** Ignored files don't count. Untracked files the other branch
+doesn't have come along, named in a line of their own (`__pycache__/`). Tracked changes, and untracked files the other
+branch also has, refuse, named. For Codex that changes 0.17.3: an untracked file no longer refuses a Build on, and a
+Start fresh from a `clarvis/*` branch is now checked too.
+
+**Checked by breaking it:** 75 of 75 new guards, each broken in a scratch copy and caught by a test. Three of them were
+in the extension host, where two tests added to `branchContinuation.spec.ts` ran the real own engine with a stand-in
+model (28 host tests passing):
+- a Build on moved the window to the earlier run's branch through the real Git extension, told the model that run's task
+  and summary, and committed on top;
+- a Start fresh that git couldn't begin at `main` did nothing.
+
+Not verified here: `RunSession`'s wiring imports `vscode` and was read, not run. No task of Clarvis's own engine has gone
+through the question in VS Code or code-server.
 
 ## The complexity budget, and where it stands
 

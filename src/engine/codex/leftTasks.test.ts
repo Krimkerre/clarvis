@@ -6,7 +6,8 @@ import { test } from 'node:test';
 import { leftWorkProject } from '../../test/fakes/leftWorkProject';
 import { CODEX_STATE_ROUTE } from '../../test/fakes/relayContract';
 import { GitFacts } from '../checkpoint/gitFacts';
-import { buildOnRefusal, findLeftWork, MOST_OFFERED, offeredTasks } from './leftTasks';
+import { moveFor, switchRefusal, switchRefusalLine } from '../../agent/leftBranches';
+import { findLeftWork, MOST_OFFERED, offeredTasks } from './leftTasks';
 
 /**
  * Which Codex work counts as left on its branch, so a new request is asked whether to build on it (plan.md M15, "Build
@@ -169,20 +170,43 @@ test('one task per branch: two idle tasks on the same branch offer only the most
   assert.deepEqual(found.tasks.map((task) => task.sessionId), [later.id]);
 });
 
-test("building on another branch is refused, in plain words, while the owner has uncommitted work; on the branch itself, or with a clean tree, it isn't", async (t) => {
+test("building on another branch is refused, in plain words, for changes to tracked files or an untracked file that branch also has; untracked files it doesn't have, ignored files, the branch itself and a clean tree don't refuse", async (t) => {
   const p = await leftWorkProject(t);
   p.leaveCodexWork(GREETER, { file: 'greet.py' });
   const facts = new GitFacts(p.root);
-  assert.equal(buildOnRefusal('master', GREETER, await facts.dirty()), undefined, 'a clean tree switches');
+  // As the question checks it (`leftWork.ts`), on real git: the checkout's changes against the files on the branch.
+  const refusal = async (headBranch: string) => {
+    const move = moveFor(GREETER, headBranch, 'master');
+    const tree = await facts.workingTree();
+    if (!tree) throw new Error("git couldn't read the working tree");
+    const refused = move.switching ? switchRefusal(tree, (await facts.filesOn(GREETER)) ?? []) : undefined;
+    return refused && switchRefusalLine('Codex', headBranch, move, refused);
+  };
+  assert.equal(await refusal('master'), undefined, 'a clean tree switches');
+
+  fs.writeFileSync(path.join(p.root, '.gitignore'), 'build/\n');
+  fs.mkdirSync(path.join(p.root, 'build'));
+  fs.writeFileSync(path.join(p.root, 'build', 'greet.bin'), 'ignored\n');
+  fs.writeFileSync(path.join(p.root, 'notes.txt'), 'mine\n');
+  fs.mkdirSync(path.join(p.root, '__pycache__'));
+  fs.writeFileSync(path.join(p.root, '__pycache__', 'greet.cpython-312.pyc'), 'bytes');
+  assert.equal(await refusal('master'), undefined, "changed from 0.17.3: untracked files the greeter's branch doesn't have, and ignored ones, don't refuse");
 
   fs.writeFileSync(path.join(p.root, 'README.md'), '# Greeter, edited by the owner\n');
-  fs.writeFileSync(path.join(p.root, 'notes.txt'), 'mine\n');
-
   assert.equal(
-    buildOnRefusal('master', GREETER, await facts.dirty()),
-    `You have changes on \`master\` that aren't committed yet (\`README.md\`, \`notes.txt\`). Switching to \`${GREETER}\` would carry them along, so Codex didn't start. Commit them or put them aside, then ask again.`
+    await refusal('master'),
+    `You have changes on \`master\` that aren't committed yet (\`README.md\`). Switching to \`${GREETER}\` would carry them along, so Codex didn't start. Commit them or put them aside, then ask again.`
   );
-  assert.equal(buildOnRefusal(GREETER, GREETER, await facts.dirty()), undefined, "no switch on the branch itself: files in flight stay the owner's");
-  assert.equal(buildOnRefusal('master', GREETER, ['.clarvis/tmp/scratch.log']), undefined, "Codex's scratch space isn't the owner's work");
-  assert.match(buildOnRefusal(undefined, GREETER, ['a', 'b', 'c', 'd', 'e']) ?? '', /^You have changes that aren't committed yet \(`a`, `b`, `c` and 2 more\)\./);
+
+  fs.writeFileSync(path.join(p.root, 'greet.py'), 'print("the owner’s own greeter")\n');
+  assert.equal(
+    await refusal('master'),
+    `You have changes on \`master\` that aren't committed yet (\`README.md\`), and \`greet.py\` isn't in git while \`${GREETER}\` has a file of the same name. Switching to \`${GREETER}\` would carry the changes along and clash with the rest, so Codex didn't start. Commit them or put them aside, then ask again.`
+  );
+  assert.equal(await refusal(GREETER), undefined, "no switch on the branch itself: files in flight stay the owner's");
+  assert.equal(switchRefusal({ changed: ['.clarvis/tmp/scratch.log'], untracked: ['.clarvis/tmp/out.txt'], shown: ['.clarvis/'] }, ['.clarvis/tmp/out.txt']), undefined, "Codex's scratch space isn't the owner's work");
+  assert.match(
+    switchRefusalLine('Codex', undefined, moveFor(GREETER, undefined, 'master'), { changed: ['a', 'b', 'c', 'd', 'e'], colliding: [] }),
+    /^You have changes that aren't committed yet \(`a`, `b`, `c` and 2 more\)\./
+  );
 });

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { continuationDecision, isRealBase, startingBase } from './branchNames';
+import { continuationBase, continuationDecision, freshStartRefusal, isRealBase, startingBase } from './branchNames';
 
 // Where a new task's branch starts, shared by `AgentBranch.begin` and the build-on-or-start-fresh question before a Codex
 // task (plan.md M15), so the question's **Start fresh from …** names the branch the task really starts from.
@@ -54,4 +54,27 @@ test('a branch moved away from the saved work, a missing branch, or nothing save
     assert.equal(decision.kind === 'refuse' && decision.reason, reason, JSON.stringify(args));
     assert.match(decision.kind === 'refuse' ? decision.advice : '', advice);
   }
+});
+
+// **Start fresh means fresh** (plan.md M15, "Build on Clarvis's own earlier work"): after the owner chose it, a task that
+// can't start at the starting branch never falls back to stacking on the `clarvis/*` branch the window is on.
+test("after Start fresh, a task that can't start at the starting branch is refused rather than stacked on a clarvis branch; otherwise nothing changes", () => {
+  assert.equal(
+    freshStartRefusal(true, 'clarvis/greeter', 'master'),
+    "I couldn't start fresh from `master`, and starting on `clarvis/greeter` instead would build on that work, which you chose not to. Nothing was done. If something in the folder needs committing or putting aside, doing that lets a fresh start work."
+  );
+  assert.match(freshStartRefusal(true, 'clarvis/greeter', undefined) ?? '', /^I couldn't start fresh from the starting branch, and starting on `clarvis\/greeter`/);
+  assert.equal(freshStartRefusal(false, 'clarvis/greeter', 'master'), undefined, "without Start fresh, today's fallback stays");
+  assert.equal(freshStartRefusal(true, 'feature', 'master'), undefined, 'from a real branch there is no earlier run to stack on');
+  assert.equal(freshStartRefusal(true, undefined, 'master'), undefined, 'nor from a detached HEAD');
+});
+
+// A Build on of Clarvis's own engine names the base its question offered (plan.md M15), so the landing question offers the
+// project's own trunk in either editor, whatever each editor remembers.
+test('a continued task counts as started from the base a Build on names, when that is a real branch here; otherwise the remembered base, as before', () => {
+  assert.equal(continuationBase('production', ['production', 'main', 'clarvis/x'], 'main'), 'production');
+  assert.equal(continuationBase('production', ['production', 'clarvis/x'], undefined), 'production', 'a trunk none of main, master or develop');
+  assert.equal(continuationBase('clarvis/x', ['main', 'clarvis/x'], undefined), 'main', 'never a clarvis branch');
+  assert.equal(continuationBase('gone', ['master'], undefined), 'master', 'a branch that no longer exists');
+  assert.equal(continuationBase(undefined, ['develop', 'release'], 'release'), 'release', 'without one named, the remembered base');
 });

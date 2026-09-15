@@ -59,6 +59,14 @@ export interface AgentEngineOptions {
   continueOn?: BranchContinuation;
   /** Told once the branch is in place, right before the first model call: a switch counts the run started then. */
   onStarted?: () => void;
+  /**
+   * **Build on** Clarvis's own earlier run (plan.md M15): what that run was asked and said, and the commits on its branch
+   * (`leftRuns.earlierWorkBrief`), told to the model after its instructions. Never part of the task, so the commit's
+   * `Task:` line stays the owner's request.
+   */
+  earlierWork?: string;
+  /** The owner chose **Start fresh**: never stacked on the `clarvis/*` branch the window is on (`freshStartRefusal`). */
+  startFresh?: boolean;
 }
 import { describeProcess } from '../engine/lock/processProbe';
 import { mayCommitNow, mayWriteNow, TAKEN_OVER_LINE, TAKEN_OVER_TOOL_RESULT } from './lockFence';
@@ -313,7 +321,8 @@ export class AgentRunner implements CodingRun {
   }
 
   async *run(task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
-    yield* this.loop(task, this.haltable(signal), { readOnly: false, addendum: '' });
+    // A Build on's earlier run rides in the instructions, never in the task (plan.md M15).
+    yield* this.loop(task, this.haltable(signal), { readOnly: false, addendum: this.engineOptions.earlierWork ?? '' });
   }
 
   /**
@@ -363,7 +372,7 @@ export class AgentRunner implements CodingRun {
     // **A task carried on from another engine continues on its own branch** (M15 C3, review B2), at the commit
     // that engine saved — never a new branch beside that work.
     const continuation = this.engineOptions.continueOn;
-    const isolation = continuation ? await branch.continueOn(continuation) : await branch.begin(task);
+    const isolation = continuation ? await branch.continueOn(continuation) : await branch.begin(task, { fresh: this.engineOptions.startFresh });
 
     // Where to put the user back if they undo. Recorded after branching, because that is
     // when it is known — and recorded even when isolation failed, since the branch they

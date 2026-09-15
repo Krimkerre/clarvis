@@ -70,7 +70,11 @@ export async function writeCheckpoint(
   return writeWhole(checkpointPath(workspaceRoot, gitDir), text, bytes);
 }
 
-function writeWhole(file: string, text: string, bytes: number): CheckpointWrite {
+/**
+ * A new temporary file beside `file`, created exclusively with mode 0600, flushed, then renamed over it. Shared with the
+ * record of left work (`leftWorkFile.ts`), which lives beside the checkpoint and is written the same way.
+ */
+export function writeWhole(file: string, text: string, bytes: number): CheckpointWrite {
   const temporary = path.join(path.dirname(file), `.${path.basename(file)}.${randomBytes(6).toString('hex')}.tmp`);
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });

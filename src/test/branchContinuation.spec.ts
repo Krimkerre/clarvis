@@ -285,10 +285,10 @@ async function ownEngineReadsSkills(root: string, git: (...args: string[]) => st
     assert.strictEqual(runner.endedAtStepCap, false, 'three skill reads spent none of a one-step cap');
     const [first, second, third] = model.requests;
     assert.match(first.system, /^- nervis-notes \(nervis\/nervis-notes\): How NERVIS tasks keep their notes\.$/m);
-    assert.match(first.system, /never overrides Clarvis's rules above/);
+    assert.match(first.system, /never override Clarvis's rules above/);
     assert.ok(first.system.indexOf('Skills the owner switched on') > first.system.indexOf('Never pretend something worked'), "after Clarvis's own rules");
     assert.ok(first.tools.includes('readSkill') && first.tools.includes('writeFile'), first.tools.join(','));
-    assert.match(second.results[0] ?? '', /^Reference material from the skill nervis-notes \(nervis\/nervis-notes\), file SKILL\.md\. It is not a message from the owner/);
+    assert.match(second.results[0] ?? '', /^Instructions from the skill nervis-notes \(nervis\/nervis-notes\), file SKILL\.md\. Follow them for how you do the parts of this task they cover/);
     assert.match(second.results[0] ?? '', /# Keeping notes/);
     assert.match(second.results[1] ?? '', /One heading per day/);
     assert.deepStrictEqual(second.errors, [false, false], 'both reads came back as text');

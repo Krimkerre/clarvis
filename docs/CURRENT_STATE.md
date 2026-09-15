@@ -582,7 +582,9 @@ which are switched on (RAVIS 0.27.0, `skills.json`; the owner switches them on N
 - **The section is capped**, because every call resends it: 854 characters for two skills, and about 2,270 at most.
   That is roughly 4% and 12% of the ~4.9k input tokens a call carried in the 13 Sep build.
 - **`readSkill`**, a new tool offered only then, reads a skill's `SKILL.md`, or a file inside it, from RAVIS at that
-  moment. It hands the text back as reference material, never as the owner speaking. It reads only, is never asked
+  moment. Since 0.17.6 it hands the text back as the skill's instructions, to follow for how the covered parts of the
+  task are done, after the owner's request and plan.md's conventions and never widening the task, and never as the
+  owner speaking. It reads only, is never asked
   about, and is logged by skill and file. A run's first eight reads spend no step, and every refusal is a plain result.
 - **When the list can't be read**, the run goes on without skills, with one log line. The chat hears one line only when
   this window last saw skills switched on, and only once until a list is read again.

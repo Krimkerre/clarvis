@@ -118,6 +118,21 @@ test('a model that answers the probe supports tools', async () => {
   assert.equal(supported, true);
 });
 
+test('the one-token tool check is a background call: it offers its own probe tool, never readSkill or a skill', async () => {
+  // plan.md §4.6, "Skills": skills go to a run of Clarvis's own engine and to nothing else.
+  let sent = '';
+  await withFetch(
+    async (_url: unknown, init?: RequestInit) => {
+      sent = String(init?.body ?? '');
+      return new Response('{"choices":[{"message":{"content":"ok"}}]}', { status: 200 });
+    },
+    async () => provider().supportsTools('some-model')
+  );
+
+  assert.match(sent, /"tools"/);
+  assert.doesNotMatch(sent, /readSkill|skill/i);
+});
+
 // ------------------- one slow readiness check is not "no model configured"
 
 import { REACHABLE_GRACE_MS, stillReachable } from './OpenAiCompatibleProvider';

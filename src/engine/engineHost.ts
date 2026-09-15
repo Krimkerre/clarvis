@@ -20,6 +20,7 @@ import { readCredentialFile } from './relay/credentialFile';
 import { RelayClient } from './relay/relayClient';
 import { RelayHttp, relayEndpoint } from './relay/relayHttp';
 import type { Host } from './relay/relayTypes';
+import { skillsLookupFor, type SkillsLookup } from '../agent/tools/skillTools';
 
 export interface RavisAccess {
   relay: RelayClient;
@@ -76,6 +77,14 @@ export function ravisAccess(models: ModelService): RavisLookup {
   if (!endpoint.ok) return endpoint.reason === 'no_credential' ? { kind: 'no_credential' } : { kind: 'unusable', reason: endpoint.reason };
   const http = new RelayHttp(endpoint.endpoint);
   return { kind: 'ready', access: { relay: new RelayClient(http), locks: new LockClient(http) } };
+}
+
+/**
+ * Where a run of Clarvis's own engine reads the owner's skills: RAVIS, when the coding model goes through it (plan.md
+ * §4.6, "Skills"; `skillsLookupFor` decides). Asked at each run's start, so a settings change counts from the next run.
+ */
+export function runSkillsLookup(models: ModelService): SkillsLookup {
+  return skillsLookupFor(models.model('agent'), () => ravisAccess(models));
 }
 
 /**

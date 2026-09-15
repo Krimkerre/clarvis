@@ -20,7 +20,8 @@ export type ToolName =
   | 'runCommand'
   | 'readDiagnostics'
   | 'gitStatus'
-  | 'gitDiff';
+  | 'gitDiff'
+  | 'readSkill';
 
 export interface ToolSchema {
   name: ToolName;
@@ -33,6 +34,11 @@ export interface ToolSchema {
   };
   /** True for anything that changes the workspace — drives checkpointing and gating. */
   mutates: boolean;
+  /**
+   * True for a tool offered only to a run whose instructions list the owner's skills (plan.md §4.6, "Skills"): never to an
+   * answer, a background call, or a run with none, where it would be a schema resent with every call for nothing.
+   */
+  skills?: boolean;
 }
 
 export const TOOLS: ToolSchema[] = [
@@ -137,6 +143,21 @@ export const TOOLS: ToolSchema[] = [
     },
     mutates: false,
   },
+  {
+    name: 'readSkill',
+    description:
+      'Read a skill the owner switched on, by its id from the skills list in your instructions: its SKILL.md, or a file inside it. Runs in the editor, through Clarvis, not as a command.',
+    parameters: {
+      type: 'object',
+      properties: {
+        skill: { type: 'string', description: "The skill's id, as the list gives it" },
+        file: { type: 'string', description: "A path inside the skill's folder; SKILL.md when left out" },
+      },
+      required: ['skill'],
+    },
+    mutates: false,
+    skills: true,
+  },
 ];
 
 const BY_NAME = new Map(TOOLS.map((tool) => [tool.name, tool]));
@@ -223,11 +244,20 @@ export function validateArgs(name: ToolName, args: unknown): { ok: true } | { ok
  * forgotten: it has to be marked non-mutating to get there.
  */
 export function readOnlyTools(): ToolSchema[] {
-  return TOOLS.filter((tool) => !tool.mutates);
+  // Nor a skills tool: an answer is given no skills list, so it has nothing to read one by (plan.md §4.6, "Skills").
+  return TOOLS.filter((tool) => !tool.mutates && !tool.skills);
 }
 
-/** The registry in Anthropic's shape. */
-export function anthropicTools(only: ToolSchema[] = TOOLS): unknown[] {
+/**
+ * The tools a run is offered: all of them, with `readSkill` only when the run's instructions list skills (plan.md §4.6,
+ * "Skills"). Without skills it would be a schema resent with every call, naming a list the model was never given.
+ */
+export function runTools(withSkills: boolean): ToolSchema[] {
+  return TOOLS.filter((tool) => withSkills || !tool.skills);
+}
+
+/** The registry in Anthropic's shape. A caller that names no tools gets a run's tools, without skills. */
+export function anthropicTools(only: ToolSchema[] = runTools(false)): unknown[] {
   return only.map((tool) => ({
     name: tool.name,
     description: tool.description,
@@ -236,7 +266,7 @@ export function anthropicTools(only: ToolSchema[] = TOOLS): unknown[] {
 }
 
 /** The registry in OpenAI's shape. */
-export function openAiTools(only: ToolSchema[] = TOOLS): unknown[] {
+export function openAiTools(only: ToolSchema[] = runTools(false)): unknown[] {
   return only.map((tool) => ({
     type: 'function',
     function: { name: tool.name, description: tool.description, parameters: tool.parameters },

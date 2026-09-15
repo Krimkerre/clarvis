@@ -79,8 +79,8 @@ test('non-object arguments are refused rather than crashing a tool', () => {
 test('both dialects describe every tool exactly once', () => {
   // Drift between the two shapes is how a tool becomes available to one provider and
   // silently missing from the other.
-  assert.equal(anthropicTools().length, TOOLS.length);
-  assert.equal(openAiTools().length, TOOLS.length);
+  assert.equal(anthropicTools(TOOLS).length, TOOLS.length);
+  assert.equal(openAiTools(TOOLS).length, TOOLS.length);
 });
 
 test('every tool has a description that says what it is for', () => {
@@ -209,4 +209,48 @@ test('reading steps are marked so they can be collapsed', () => {
   assert.equal(isLookingAround('writeFile', { path: 'a.ts' }), false);
   assert.equal(isLookingAround('runCommand', { command: 'npm test' }), false);
   assert.equal(isLookingAround('runCommand', { command: 'git branch new-thing' }), false);
+});
+
+// ── readSkill (plan.md §4.6, "Skills") ─────────────────────────────────────────
+
+import { runTools, toolSchema } from '../toolRegistry';
+import { explainStep } from '../stepExplanation';
+
+test("readSkill is a tool that reads only, and its skill id is required and can't be empty", () => {
+  // The peer session's rule, 15 Sep: `MAY_BE_EMPTY` (bee3e1b) lets an empty file and an empty replacement through; a
+  // skill's id is neither, so an empty one is refused like a missing one.
+  assert.equal(isToolName('readSkill'), true);
+  assert.equal(mutates('readSkill'), false);
+  assert.equal(validateArgs('readSkill', { skill: 'nervis/nervis-notes' }).ok, true);
+  assert.equal(validateArgs('readSkill', { skill: 'nervis/nervis-notes', file: 'references/guide.md' }).ok, true);
+  assert.deepEqual(validateArgs('readSkill', { skill: '' }), { ok: false, error: 'readSkill needs "skill".' });
+  assert.deepEqual(validateArgs('readSkill', {}), { ok: false, error: 'readSkill needs "skill".' });
+  assert.deepEqual(validateArgs('readSkill', { file: 'SKILL.md' }), { ok: false, error: 'readSkill needs "skill".' });
+  assert.equal(validateArgs('readSkill', { skill: 'nervis/nervis-notes', file: 3 }).ok, false);
+});
+
+test('readSkill is offered only to a run with skills listed: never to an answer, a run with none, or a caller that names no tools', () => {
+  const names = (tools: { name: string }[]) => tools.map((tool) => tool.name);
+
+  assert.ok(!names(readOnlyTools()).includes('readSkill'), 'an answer');
+  assert.ok(!names(runTools(false)).includes('readSkill'), 'a run with none');
+  assert.equal(names(runTools(true)).filter((name) => name === 'readSkill').length, 1, 'a run with skills, once');
+  assert.deepEqual(names(runTools(false)), names(TOOLS).filter((name) => name !== 'readSkill'), 'every other tool still offered');
+  assert.doesNotMatch(JSON.stringify(anthropicTools()), /readSkill/, "Anthropic's shape, by default");
+  assert.doesNotMatch(JSON.stringify(openAiTools()), /readSkill/, "OpenAI's shape, by default");
+});
+
+test('readSkill says it reads through the editor, is narrated as looking around, and never stops to ask', () => {
+  assert.match(toolSchema('readSkill').description, /Runs in the editor, through Clarvis, not as a command/);
+  assert.equal(isLookingAround('readSkill', { skill: 'nervis/nervis-notes' }), true);
+  assert.equal(narrateTool('readSkill', { skill: 'nervis/nervis-notes' }), 'Reading the skill nervis/nervis-notes');
+  assert.equal(
+    narrateTool('readSkill', { skill: 'nervis/nervis-notes', file: 'references/guide.md' }),
+    'Reading references/guide.md from the skill nervis/nervis-notes'
+  );
+  assert.deepEqual(explainStep('readSkill', { skill: 'nervis/nervis-notes' }), {
+    title: 'Read a skill',
+    what: 'Reads only. Nothing changes.',
+    exact: 'nervis/nervis-notes',
+  });
 });

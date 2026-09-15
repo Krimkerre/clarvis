@@ -215,6 +215,27 @@ export interface SitesView {
   added: string[];
 }
 
+/**
+ * One skill switched on for the models that aren't Codex, as `GET /api/v1/skills/models` lists it (RAVIS 0.27.0;
+ * `skills.json`). `id` is `<source>/<the skill's folder relative to its root>`, never a full path.
+ */
+export interface SkillListing {
+  id: string;
+  name: string;
+  /** One line, at most 300 characters. */
+  description: string;
+}
+
+/** A skill's file as `GET /api/v1/skills/models/read` serves it: UTF-8 text of at most 64 KB, a SKILL.md's front matter included. */
+export interface SkillFile {
+  skill: string;
+  name: string;
+  /** The path inside the skill's folder: `SKILL.md` when none was asked for. */
+  file: string;
+  bytes: number;
+  text: string;
+}
+
 /** A window's answer to a request. */
 export interface Decision {
   kind: DecisionKind;

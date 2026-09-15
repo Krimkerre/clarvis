@@ -69,6 +69,13 @@ export const SITES_ROUTE = 'GET /api/v1/codex/sites';
 export const ALLOW_SITES_ROUTE = 'POST /api/v1/codex/sites';
 export const REMOVE_SITE_ROUTE = 'DELETE /api/v1/codex/sites/{host}';
 
+/**
+ * Skills for the models that aren't Codex (RAVIS 0.27.0; `skills.json`): the list a run of Clarvis's own engine reads at its
+ * start, and the read of one skill's file. Clarvis's or NERVIS's client credential; anyone else is `403 FORBIDDEN`.
+ */
+export const SKILLS_LIST_ROUTE = 'GET /api/v1/skills/models';
+export const SKILL_READ_ROUTE = 'GET /api/v1/skills/models/read';
+
 const parsed = new Map<string, any>();
 
 /** A fixture file — a name in `relay-contract/`, or `lock-rule-cases.json` — as a fresh copy. */
@@ -76,7 +83,7 @@ export function fixture<T = any>(name: string): T {
   return structuredClone(raw(name)) as T;
 }
 
-/** The relay and lock routes the fixtures describe, the event stream and the allowed sites included. */
+/** The relay and lock routes the fixtures describe, the event stream, the allowed sites and the skills for the other models included. */
 export function contractRoutes(): FixtureRoute[] {
   if (!parsed.has('routes')) {
     const stream = raw('event-stream.json');
@@ -90,6 +97,10 @@ export function contractRoutes(): FixtureRoute[] {
       // The allowed sites (R5); the rest of `codex-admin.json` is sign-in and re-testing, which no window calls.
       ...raw('codex-admin.json')
         .routes.filter((route: { path: string }) => route.path.startsWith('/api/v1/codex/sites'))
+        .map(routeFrom),
+      // Skills for the other models (RAVIS 0.27.0): the two routes a window reads. The rest of `skills.json` is NERVIS's Skills page.
+      ...raw('skills.json')
+        .routes.filter((route: { path: string }) => route.path.startsWith('/api/v1/skills/models'))
         .map(routeFrom),
     ]);
   }

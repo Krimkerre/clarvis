@@ -14,7 +14,8 @@
  * `404`; `Idempotency-Key` replay and reuse; revoked leases; and one event stream per session, with a
  * replay log and a floor below which cursors have expired. It is not RAVIS: it runs no Codex and holds
  * no real lock, and the state machine behind turns, answers and settles is for a later increment to add
- * when its tests need one.
+ * when its tests need one. Since RAVIS 0.27.0 it also serves the skills for the models that aren't Codex, the list and
+ * the read a run of Clarvis's own engine makes (`fakeSkills.ts`).
  *
  * **Failure modes** (runbook §7): scripted errors (`reply`); delays (`delayResponses`); a response
  * lost after the work was done (`loseNextResponse`); RAVIS going away and coming back
@@ -34,11 +35,14 @@ import { errorAnswer, firstSuccess, fixtureAnswer, type FakeAnswer } from './fak
 import { FakeLocks } from './fakeLocks';
 import { FakeSessions } from './fakeSessions';
 import { FakeSites } from './fakeSites';
+import { FakeSkills } from './fakeSkills';
 import {
   CODEX_STATE_ROUTE,
   EVENTS_ROUTE,
   REMOVE_SITE_ROUTE,
   SITES_ROUTE,
+  SKILL_READ_ROUTE,
+  SKILLS_LIST_ROUTE,
   fixture,
   fixtureMessage,
   frameProblems,
@@ -111,6 +115,7 @@ export class FakeRavisRelay {
   private machine: FakeSessions | undefined;
   private lockMachine: FakeLocks | undefined;
   private siteMachine: FakeSites | undefined;
+  private skillMachine: FakeSkills | undefined;
   private readonly instance = randomBytes(8).toString('hex');
   private port = 0;
 
@@ -199,11 +204,21 @@ export class FakeRavisRelay {
     return this.siteMachine;
   }
 
+  /**
+   * The skills for the models that aren't Codex (RAVIS 0.27.0; `skills.json`): listed and read as its route rules say. Until
+   * a test asks for it, the two skills routes answer their fixture examples.
+   */
+  skills(): FakeSkills {
+    this.skillMachine ??= new FakeSkills();
+    return this.skillMachine;
+  }
+
   /** Forgets scripts, keys, leases, tokens, streams and what it saw: a fresh fake on the same port. */
   reset(): void {
     this.machine = undefined;
     this.lockMachine = undefined;
     this.siteMachine = undefined;
+    this.skillMachine = undefined;
     for (const stream of this.streams.values()) stream.disconnect();
     for (const map of [this.scripts, this.losses, this.delays, this.remembered, this.revoked, this.streams, this.tokens]) map.clear();
     this.tokens.set(FIXTURE_SESSION.id, FIXTURE_SESSION.token);
@@ -283,15 +298,21 @@ export class FakeRavisRelay {
     return firstSuccess(route);
   }
 
-  /** The lock machine's answer, then the session machine's, then the sites' — whichever a test turned on. */
+  /** The lock machine's answer, then the session machine's, then the sites', then the skills' — whichever a test turned on. */
   private machineAnswer(route: FixtureRoute, url: URL, headers: http.IncomingHttpHeaders, body: unknown): FakeAnswer | undefined {
-    return this.lockMachine?.answer(route, url, headers, body) ?? this.machine?.answer(route, url, headers, body) ?? this.siteMachine?.answer(route, body);
+    return (
+      this.lockMachine?.answer(route, url, headers, body) ??
+      this.machine?.answer(route, url, headers, body) ??
+      this.siteMachine?.answer(route, body) ??
+      this.skillMachine?.answer(route, url)
+    );
   }
 
   /**
    * Who may call a route. `GET /api/v1/codex`: any caller, anonymous and NERVIS included (`codex-state.json` route). The
    * allowed sites as `codex-admin.json` says (R5): read by Clarvis, NERVIS or an admin; added to by Clarvis alone,
-   * through the identity rule (`require_agent_client`); removed by an admin. Every other route: the identity rule.
+   * through the identity rule (`require_agent_client`); removed by an admin. The skills for the other models as
+   * `skills.json`'s access says: Clarvis's or NERVIS's client credential. Every other route: the identity rule.
    */
   private callerRefusal(route: FixtureRoute, headers: http.IncomingHttpHeaders): FakeAnswer | undefined {
     if (route.key === CODEX_STATE_ROUTE) return undefined;
@@ -301,7 +322,16 @@ export class FakeRavisRelay {
       return reads ? undefined : fixtureAnswer(SITES_ROUTE, 'anonymous');
     }
     if (route.key === REMOVE_SITE_ROUTE) return caller.startsWith('admin.') ? undefined : fixtureAnswer(REMOVE_SITE_ROUTE, 'a client credential');
+    if (route.key === SKILLS_LIST_ROUTE || route.key === SKILL_READ_ROUTE) return this.skillsRefusal(route.key, caller);
     return this.identityRefusal(headers);
+  }
+
+  /** `403 FORBIDDEN` for anyone but Clarvis's or NERVIS's client credential: anonymous, another client and admin credentials alike. */
+  private skillsRefusal(routeKey: string, caller: Caller): FakeAnswer | undefined {
+    if (caller === 'client.clarvis' || caller === 'client.nervis') return undefined;
+    const refused = fixtureAnswer(SKILLS_LIST_ROUTE, 'an admin credential');
+    if (routeKey === SKILLS_LIST_ROUTE) return refused;
+    return { ...refused, offContract: "skills.json's access refuses /read with 403 FORBIDDEN too, but only the list's examples show that answer" };
   }
 
   private identityRefusal(headers: http.IncomingHttpHeaders): FakeAnswer | undefined {

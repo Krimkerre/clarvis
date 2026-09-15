@@ -52,7 +52,7 @@ break Clarvis planning against its own repo.
 
 | Directory | Lines | What it owns |
 |---|---|---|
-| `src/agent/` | ~9,616 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`), and earlier work left on a branch (`leftBranches.ts`, shared by both engines, with the rule for what a branch switch may carry; `leftRuns.ts`, Clarvis's own engine's runs). |
+| `src/agent/` | ~9,616 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`), and earlier work left on a branch (`leftBranches.ts`, shared by both engines, with the rule for what a branch switch may carry; `leftRuns.ts`, Clarvis's own engine's runs). Since 15 Sep, the owner's skills for a run of the own engine: `tools/skillTools.ts` reads the list from RAVIS at a run's start, holds `readSkill` and says when the list couldn't be read; the section's words are `agentPrompt.ts`'s. |
 | `src/chat/` | ~6,876 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`, and `leftWork.ts`, the build-on-or-start-fresh question both engines ask, with each engine's words beside it. |
 | `src/planning/` | ~6,832 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
 | `src/personality/` | ~3,324 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
@@ -65,7 +65,7 @@ break Clarvis planning against its own repo.
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
 | `src/engine/` | ~9,726 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b and C2b+, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — gives Unattended's narrow answers while the panel is there, and asks a group of blocked sites as one card; `codex/siteScan.ts` finds the sites a task will likely need, which `runCore.ts` asks about before it starts, and `codex/siteAsks.ts` holds the words for asking about them and for carrying the task on. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, `gitFacts.ts`, and beside it the record of runs Clarvis's own engine left on their branches (`leftWorkFile.ts`, `clarvis-left-work.json`). `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
-| `src/test/` | ~656 | Host-level smoke tests (`npm run test:host`), not the main suite — eight specs, recounted 14 Sep after Codex's git setup (this said seven after C2b+, and ~57, then ~378, then ~452 before that); `codexMenu.spec.ts` runs the bowtie's fold-out and Codex's undo copies in the real host, and `codexGitSetup.spec.ts` checks the Git extension sees a repository **Set up git here** made. Beside them, `fakes/` (~2,780) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover; since C2b Codex's real requests from calibration (`calibrationRequests.ts`), held to RAVIS's committed transcripts; since C2b+ the allowed sites (`fakeSites.ts`) and R5 in the session machine — site asks a group per turn, the reopen and a turn waiting for it, a create's model and effort — each held to what RAVIS `bc1a103` does. |
+| `src/test/` | ~656 | Host-level smoke tests (`npm run test:host`), not the main suite — eight specs, recounted 14 Sep after Codex's git setup (this said seven after C2b+, and ~57, then ~378, then ~452 before that); `codexMenu.spec.ts` runs the bowtie's fold-out and Codex's undo copies in the real host, and `codexGitSetup.spec.ts` checks the Git extension sees a repository **Set up git here** made. Beside them, `fakes/` (~2,780) holds `FakeRavisRelay`, the labelled test double of RAVIS's relay, which checks every answer it gives against the contract fixtures, and since C2a its session state machine (`fakeSessions.ts`), which takes a Codex task through turns, answers, steers, stops and settles; since C3 an opt-in project-lock machine (`fakeLocks.ts`) with transfer and takeover; since C2b Codex's real requests from calibration (`calibrationRequests.ts`), held to RAVIS's committed transcripts; since C2b+ the allowed sites (`fakeSites.ts`) and R5 in the session machine — site asks a group per turn, the reopen and a turn waiting for it, a create's model and effort — each held to what RAVIS `bc1a103` does; since 15 Sep the skills for the models that aren't Codex (`fakeSkills.ts`), the list and the read of a skill's files with every refusal, held to RAVIS 0.27.0's `skills.json`. |
 
 **72,879 lines of TypeScript across 442 files** (recounted 14 Sep, after M15 C2b+'s phase 2) — 44,994 source,
 27,885 test, counting `src/test/fakes/` and the host specs as test. `plan.md` §11 breaks an older count down and is
@@ -568,6 +568,38 @@ model (28 host tests passing):
 Not verified here: `RunSession`'s wiring imports `vscode` and was read, not run. No task of Clarvis's own engine has gone
 through the question in VS Code or code-server.
 
+### What landed on 15 Sep: Clarvis's own engine uses the owner's skills
+
+**The owner's decision.** Skills are for the models that aren't Codex too, and RAVIS alone knows which skills exist and
+which are switched on (RAVIS 0.27.0, `skills.json`; the owner switches them on NERVIS's Skills page). `plan.md` §4.6,
+"Skills", has the design, every choice made building it, and the checks.
+
+**What a run does now** (`src/agent/tools/skillTools.ts`, with the section's words in `agentPrompt.ts`):
+- **At its start**, when the coding model goes through RAVIS, the run reads the list of skills switched on, once, with a
+  5-second timeout. It adds a short section to its instructions: one line per skill, how to use one, that `readSkill`
+  works through the editor even though commands have no network, and that a skill never overrides Clarvis's rules.
+  Nothing is added when no skill is on, or when RAVIS isn't the provider.
+- **The section is capped**, because every call resends it: 854 characters for two skills, and about 2,270 at most.
+  That is roughly 4% and 12% of the ~4.9k input tokens a call carried in the 13 Sep build.
+- **`readSkill`**, a new tool offered only then, reads a skill's `SKILL.md`, or a file inside it, from RAVIS at that
+  moment. It hands the text back as reference material, never as the owner speaking. It reads only, is never asked
+  about, and is logged by skill and file. A run's first eight reads spend no step, and every refusal is a plain result.
+- **When the list can't be read**, the run goes on without skills, with one log line. The chat hears one line only when
+  this window last saw skills switched on, and only once until a list is read again.
+- **Not for** answers, plain chat, the tool check or any background call. Not for Codex either: RAVIS gives Codex its
+  skills itself.
+
+**The fixtures** were copied again from NERVIS-ecosystem 6eb9149 (NERVIS 0.32.0), which changed `codex-admin.json` and the
+manifest after the b5bed2c sync.
+
+**Checked by breaking it:** 66 of 66 new guards, each broken in a scratch copy and caught by a test. Nine of them were in
+the extension host, where a test added to `branchContinuation.spec.ts` ran the real own engine with a stand-in model and
+the fake RAVIS (29 host tests passing). There are 31 new tests in the fast suite (2061 passing).
+
+Not verified here: the glue that hands a run its skills (`engineHost.runSkillsLookup`, `RunSession.clarvisRunner`,
+`clarvis.runTask`) imports `vscode` and was read, not run. No run has read a skill from the live RAVIS, in VS Code or in
+code-server.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
@@ -629,7 +661,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 1952 tests (14 Sep, after Codex's git setup)
+npm test               # node's built-in test runner, no framework — 2061 tests (15 Sep, after skills for Clarvis's own engine)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

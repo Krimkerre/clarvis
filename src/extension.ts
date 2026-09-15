@@ -24,7 +24,7 @@ import { Checkpoint } from './agent/Checkpoint';
 import { AgentRunner } from './agent/AgentRunner';
 import { randomUUID } from 'crypto';
 import { paletteRunDecision } from './chat/codingRunFactory';
-import { currentEngineChoice, takeRunLock } from './engine/engineHost';
+import { currentEngineChoice, runSkillsLookup, takeRunLock } from './engine/engineHost';
 import { gather, reviewRun } from './agent/reviewWizard';
 import { describeRun, ReviewAction } from './agent/runReview';
 import { LAST_RUN_KEY, renderRunSummary, RunRecord } from './agent/runLedger';
@@ -1032,7 +1032,10 @@ async function runTaskFromPalette(
     // fire-and-watch-the-notification — but its gates are the same gates.
     undefined,
     runState.activity,
-    fence
+    fence,
+    {},
+    // The owner's skills, as the chat's runs read them (plan.md §4.6, "Skills").
+    () => runSkillsLookup(models)
   );
 
   // Set last, read in the `finally` — the loop leaves by three routes and from in

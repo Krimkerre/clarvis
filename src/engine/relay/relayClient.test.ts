@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { CLARVIS_CREDENTIAL, FakeRavisRelay, FIXTURE_SESSION, fakeHttp } from '../../test/fakes/FakeRavisRelay';
-import { exampleNamed, type FixtureExample } from '../../test/fakes/relayContract';
+import { exampleNamed, SKILL_READ_ROUTE, SKILLS_LIST_ROUTE, type FixtureExample } from '../../test/fakes/relayContract';
 import { createSessionKey, freshKey } from './idempotency';
 import { RelayClient, type SettleRequest, type SteerRequest, type TurnRequest } from './relayClient';
 import type { RelayFailure, RelayOutcome } from './relayFailure';
@@ -258,6 +258,43 @@ test('the allowed sites are read and added to as the contract shows, with no key
       ]
     );
   }));
+
+test("the skills for the other models are listed and read as the contract shows: no file sent means SKILL.md, and a refusal keeps RAVIS's code and reason", () =>
+  withClient(async (fake, client) => {
+    const listed = exampleNamed(SKILLS_LIST_ROUTE, 'the skills switched on for other models').response.body as { skills: unknown[] };
+    assert.deepEqual(value(await client.skillsForModels()), listed.skills);
+    assert.deepEqual(value(await client.readSkill('nervis/nervis-notes')), exampleNamed(SKILL_READ_ROUTE, "a skill's SKILL.md").response.body);
+
+    fake.reply(SKILL_READ_ROUTE, 'a path out of the skill');
+    const refused = failure(await client.readSkill('nervis/nervis-notes', '../../../.ssh/id_ed25519'));
+    assert.deepEqual(refused.kind === 'refused' && [refused.status, refused.code, refused.details], [422, 'SKILL_FILE_REFUSED', { reason: 'outside_skill' }]);
+
+    const reads = fake.seen.filter((seen) => seen.path === '/api/v1/skills/models/read').map((seen) => seen.query);
+    assert.deepEqual(reads, [{ skill: 'nervis/nervis-notes' }, { skill: 'nervis/nervis-notes', file: '../../../.ssh/id_ed25519' }]);
+  }));
+
+test('a skills list with an entry lacking what the instructions name is malformed, never half a list; so is a read without its text', () =>
+  withClient(async (fake, client) => {
+    fake.reply(SKILLS_LIST_ROUTE, { status: 200, body: { skills: [{ id: 'nervis/nervis-notes', name: 'nervis-notes' }] }, offContract: 'no description, on purpose' });
+    assert.equal(failure(await client.skillsForModels()).kind, 'malformed');
+
+    fake.reply(SKILL_READ_ROUTE, { status: 200, body: { skill: 'nervis/nervis-notes', name: 'nervis-notes', file: 'SKILL.md', bytes: 0 }, offContract: 'no text, on purpose' });
+    assert.equal(failure(await client.readSkill('nervis/nervis-notes')).kind, 'malformed');
+  }));
+
+test("an admin credential can't read the skills for the other models: 403 FORBIDDEN", async () => {
+  const fake = await FakeRavisRelay.start();
+  try {
+    const admin = new RelayClient(fakeHttp(fake, 'fixture-admin-launcher-not-a-secret'));
+
+    const refused = failure(await admin.skillsForModels());
+
+    assert.deepEqual(refused.kind === 'refused' && [refused.status, refused.code], [403, 'FORBIDDEN']);
+    assert.deepEqual(fake.violations, []);
+  } finally {
+    await fake.close();
+  }
+});
 
 test('RAVIS not answering is unreachable: not a refusal, not throttling', async () => {
   const fake = await FakeRavisRelay.start();

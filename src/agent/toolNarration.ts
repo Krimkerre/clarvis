@@ -28,6 +28,7 @@ const NARRATION: Record<ToolName, (parts: Parts) => string> = {
   readDiagnostics: () => 'Checking what the editor is complaining about',
   gitStatus: () => 'Checking where things stand in git',
   gitDiff: () => 'Reading the current diff',
+  readSkill: ({ skill, file }) => (file ? `Reading ${file} from the skill ${skill ?? ''}` : `Reading the skill ${skill ?? ''}`).trim(),
 };
 
 /** The arguments worth naming, already narrowed to strings. */
@@ -36,6 +37,8 @@ interface Parts {
   command?: string;
   pattern?: string;
   directory?: string;
+  skill?: string;
+  file?: string;
 }
 
 export function narrateTool(name: ToolName, args: Record<string, unknown>): string {
@@ -45,6 +48,8 @@ export function narrateTool(name: ToolName, args: Record<string, unknown>): stri
     command: text(args.command),
     pattern: text(args.pattern),
     directory: text(args.directory),
+    skill: text(args.skill),
+    file: text(args.file),
   };
 
   // The name itself, for a tool that somehow has no entry — better than an empty line.
@@ -121,5 +126,5 @@ export function isLookingAround(name: ToolName, args: Record<string, unknown>): 
     return listsBranches || reads;
   }
 
-  return ['readFile', 'listFiles', 'search', 'readDiagnostics', 'gitStatus', 'gitDiff'].includes(name);
+  return ['readFile', 'listFiles', 'search', 'readDiagnostics', 'gitStatus', 'gitDiff', 'readSkill'].includes(name);
 }

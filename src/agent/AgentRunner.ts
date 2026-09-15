@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ModelService } from '../model/ModelService';
 import { ModelMessage, ToolCall, ToolResult } from '../model/ModelProvider';
-import { isToolName, mutates, validateArgs, readOnlyTools, ToolName } from './toolRegistry';
+import { isToolName, mutates, validateArgs, readOnlyTools, runTools, ToolName, type ToolSchema } from './toolRegistry';
 import { explainStep, StepExplanation } from './stepExplanation';
 import { agentSystemPrompt } from './agentPrompt';
 import { changesAFile, isLookingAround, narrateTool } from './toolNarration';
@@ -28,6 +28,7 @@ import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, CommandResult, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { mayRunUnconfined, spawnFor } from './tools/sandbox';
 import { confinementNote } from './tools/confinement';
+import { NO_SKILLS, readSkillFor, skillCallDetail, spendsAStep, startRunSkills, type RunSkills, type SkillsLookup } from './tools/skillTools';
 import {
   activeBlocker,
   BLOCKER_KEY,
@@ -145,7 +146,14 @@ export class AgentRunner implements CodingRun {
    * Undefined once said — or never said at all, for a run that changed nothing.
    */
   private pendingIsolation: string | undefined;
+  /** Calls that spent a step, against the cap. A run's first skill reads spend none (`spendsAStep`). */
   private steps = 0;
+  /** Every tool call so far: the step numbers the transcript and the ledger show. */
+  private calls = 0;
+  /** `readSkill` calls so far, free or not. */
+  private skillReads = 0;
+  /** The owner's skills for this run, read at its start. None for an answer (plan.md §4.6, "Skills"). */
+  private runSkills: RunSkills = NO_SKILLS;
   /** Whether the run ended because it used every step it was allowed. See `endedAtStepCap`. */
   private stepCapped = false;
 
@@ -186,7 +194,12 @@ export class AgentRunner implements CodingRun {
      */
     private readonly fence?: RunFence,
     /** How this run starts when it carries a task on from another engine (M15 C3). */
-    private readonly engineOptions: AgentEngineOptions = {}
+    private readonly engineOptions: AgentEngineOptions = {},
+    /**
+     * Where a run reads the owner's skills (plan.md §4.6, "Skills"), asked at the run's start. Absent means none: the
+     * answer path, and every other runner built without it, gets no skills.
+     */
+    private readonly skills?: () => SkillsLookup
   ) {}
 
   /** The tool call a stop cut off, if one was (M15 C3). */
@@ -411,10 +424,49 @@ export class AgentRunner implements CodingRun {
    * arrive.
    */
   private systemFor(options: { readOnly: boolean; addendum: string }): string {
-    const base = this.systemPrompt(options.readOnly) + options.addendum;
-    if (!options.readOnly) return base;
+    // A run's skills section follows Clarvis's own rules and comes before a Build on's earlier work (plan.md §4.6,
+    // "Skills"). An answer has none: `openSkills` is never called for one.
+    if (!options.readOnly) return this.systemPrompt(false) + this.runSkills.section + options.addendum;
 
-    return `${base}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`;
+    return `${this.systemPrompt(true) + options.addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`;
+  }
+
+  /**
+   * The owner's skills for this run, read once at its start (plan.md §4.6, "Skills"). Nothing when no lookup was handed
+   * over or the run is already stopping. One log line, and a chat line only when a failed list hid skills the owner had on
+   * (`startRunSkills` decides both).
+   */
+  private async *openSkills(signal: AbortSignal): AsyncGenerator<AgentEvent> {
+    if (!this.skills || signal.aborted) return;
+    const start = await startRunSkills(this.skills(), signal);
+    this.runSkills = start.skills;
+    if (start.log) this.log(start.log);
+    if (start.chat) yield this.record({ kind: 'text', toChat: true, text: start.chat });
+  }
+
+  /** A turn's tools: the reading tools for an answer; for a run every tool, with `readSkill` only when skills are listed. */
+  private toolsFor(readOnly: boolean): ToolSchema[] {
+    return readOnly ? readOnlyTools() : runTools(this.runSkills.offered);
+  }
+
+  /**
+   * One more call: numbered for the transcript and the ledger, and counted against the cap unless it is one of the run's
+   * free skill reads (`spendsAStep`; plan.md §4.6, "Skills").
+   */
+  private countCall(name: string): void {
+    if (spendsAStep(name, this.skillReads)) this.steps++;
+    if (name === 'readSkill') this.skillReads++;
+    this.calls++;
+  }
+
+  /**
+   * `readSkill`: a skill the owner switched on, read from RAVIS now. `readSkillFor` never throws; a refusal is thrown here
+   * so `dispatch` logs it and hands it back as the tool result, the way every tool's failure goes back.
+   */
+  private async readSkill(skill: string, file: string | undefined, signal: AbortSignal): Promise<string> {
+    const read = await readSkillFor(this.runSkills, skill, file, signal);
+    if (!read.ok) throw new Error(read.content);
+    return read.content;
   }
 
   /**
@@ -537,7 +589,9 @@ export class AgentRunner implements CodingRun {
     for (const call of calls) {
       if (signal.aborted) break;
 
-      this.steps++;
+      // **A skill read within the run's free reads spends no step** (plan.md §4.6, "Skills"), though every call is still
+      // numbered, so the transcript and the ledger stay in order.
+      this.countCall(call.name);
       const args = (call.args ?? {}) as Record<string, unknown>;
 
       yield this.record({
@@ -551,7 +605,7 @@ export class AgentRunner implements CodingRun {
         // it changes. Reads, searches and `git status` stay in the terminal, or the
         // transcript becomes the log it was split away from.
         toChat: isToolName(call.name) && changesAFile(call.name),
-        step: this.steps,
+        step: this.calls,
       });
 
       // **Asked before it happens, not reported after.** The narration above says
@@ -646,7 +700,11 @@ export class AgentRunner implements CodingRun {
     // by the time "shall I fold this back in?" is worth asking.
     this.lastBranch = branch;
 
-    if (!options.readOnly) yield* this.protect(checkpoint, branch, task);
+    if (!options.readOnly) {
+      yield* this.protect(checkpoint, branch, task);
+      // With the branch in place and before the first model call: the list is read once, for this run alone.
+      yield* this.openSkills(signal);
+    }
     return { checkpoint, branch };
   }
 
@@ -703,7 +761,7 @@ export class AgentRunner implements CodingRun {
             system: this.systemFor(options),
             messages,
             signal,
-            tools: options.readOnly ? readOnlyTools() : undefined,
+            tools: this.toolsFor(options.readOnly),
             traceId,
           },
           role
@@ -850,6 +908,8 @@ export class AgentRunner implements CodingRun {
 
       gitStatus: () => gitStatus(),
       gitDiff: async () => (await gitDiff(args.staged === true)) || '(no changes)',
+
+      readSkill: () => this.readSkill(args.skill, args.file, signal),
     };
 
     return tools[name]?.() ?? 'Nothing happened.';
@@ -1325,7 +1385,7 @@ export class AgentRunner implements CodingRun {
 /** One readable line per tool call, for the panel. */
 function describe(call: ToolCall): string {
   const args = (call.args ?? {}) as Record<string, unknown>;
-  const detail = args.path ?? args.command ?? args.pattern ?? args.directory ?? '';
+  const detail = args.path ?? args.command ?? args.pattern ?? args.directory ?? skillCallDetail(args);
 
   return detail ? `${call.name}: ${String(detail)}` : call.name;
 }

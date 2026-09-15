@@ -13,6 +13,7 @@ import {
   requestProblems,
   responseProblems,
   routeByKey,
+  SKILL_READ_ROUTE,
   type FixtureExample,
 } from './relayContract';
 
@@ -406,6 +407,70 @@ test('it says it is a test double, and can advertise a capability version a clie
 
     assert.equal(identity.test_double, true);
     assert.equal(listed.capabilities.find((capability) => capability.id === 'ravis.agent_sessions')?.version, '2.0.0');
+  } finally {
+    await fake.close();
+  }
+});
+
+// ── Skills for the other models, held to skills.json's route rules (RAVIS 0.27.0) ──
+
+test("the skills fake lists what is on in RAVIS's order, and reads a skill's files as skills.json's rules say, every refusal included", async () => {
+  const fake = await FakeRavisRelay.start();
+  try {
+    const client = new RelayClient(fakeHttp(fake));
+    const skills = fake.skills();
+    const answer = async (skill: string, file?: string) => {
+      const outcome = await client.readSkill(skill, file);
+      if (outcome.ok) return 'ok';
+      if (outcome.failure.kind !== 'refused') return outcome.failure.kind;
+      const reason = outcome.failure.details.reason;
+      return typeof reason === 'string' ? `${outcome.failure.code}:${reason}` : String(outcome.failure.code);
+    };
+
+    const listed = await client.skillsForModels();
+    assert.deepEqual(listed.ok && listed.value.map((skill) => skill.id), ['nervis/nervis-notes', 'personal/graphify']);
+    const guide = await client.readSkill('nervis/nervis-notes', 'references/guide.md');
+    assert.deepEqual(guide.ok && guide.value, exampleNamed(SKILL_READ_ROUTE, 'another file of the skill').response.body);
+
+    assert.equal(await answer('nervis/nervis-notes'), 'ok');
+    assert.equal(await answer('nervis/unknown'), 'SKILL_NOT_FOUND');
+    assert.equal(await answer('nervis/nervis-notes', '../../../.ssh/id_ed25519'), 'SKILL_FILE_REFUSED:outside_skill');
+    assert.equal(await answer('nervis/nervis-notes', '/etc/passwd'), 'SKILL_FILE_REFUSED:outside_skill');
+    assert.equal(await answer('nervis/nervis-notes', 'references\\guide.md'), 'SKILL_FILE_REFUSED:outside_skill');
+    assert.equal(await answer('nervis/nervis-notes', 'references//guide.md'), 'SKILL_FILE_REFUSED:outside_skill');
+    assert.equal(await answer('nervis/nervis-notes', '.env'), 'SKILL_FILE_REFUSED:hidden');
+    assert.equal(await answer('nervis/nervis-notes', 'references/.secret/guide.md'), 'SKILL_FILE_REFUSED:hidden');
+    assert.equal(await answer('nervis/nervis-notes', 'references/all-notes.md'), 'SKILL_FILE_REFUSED:too_large');
+    assert.equal(await answer('nervis/nervis-notes', 'assets/diagram.png'), 'SKILL_FILE_REFUSED:not_text');
+    assert.equal(await answer('nervis/nervis-notes', 'references/missing.md'), 'SKILL_FILE_NOT_FOUND');
+    assert.equal(await answer('nervis/nervis-notes', 'references'), 'SKILL_FILE_NOT_FOUND', 'a folder');
+
+    skills.on.delete('personal/graphify');
+    assert.equal(await answer('personal/graphify'), 'SKILL_NOT_FOUND', 'switched off reads as unknown');
+    assert.equal(await answer('personal/graphify', '../x'), 'SKILL_NOT_FOUND', 'a skill that is off tells nothing about its paths');
+    const after = await client.skillsForModels();
+    assert.deepEqual(after.ok && after.value.map((skill) => skill.id), ['nervis/nervis-notes'], 'a switch counts from the next list');
+    assert.ok(skills.reads.every((read) => !read.includes('Keeping notes')), 'reads are kept by skill and file, never text');
+    assert.deepEqual(fake.violations, []);
+  } finally {
+    await fake.close();
+  }
+});
+
+test('a NERVIS credential reads the skills as Clarvis does; anyone else is 403 FORBIDDEN, admin credentials included', async () => {
+  const fake = await FakeRavisRelay.start();
+  try {
+    const status = async (path: string, credential?: string) =>
+      (await fetch(`${fake.url}${path}`, { headers: credential ? { Authorization: `Bearer ${credential}` } : {} })).status;
+
+    for (const path of ['/api/v1/skills/models', '/api/v1/skills/models/read?skill=nervis%2Fnervis-notes']) {
+      assert.equal(await status(path, CLARVIS_CREDENTIAL), 200, path);
+      assert.equal(await status(path, 'fixture-client-nervis-not-a-secret'), 200, path);
+      for (const other of [undefined, 'fixture-client-other-not-a-secret', 'fixture-admin-launcher-not-a-secret']) {
+        assert.equal(await status(path, other), 403, `${path} as ${other ?? 'anonymous'}`);
+      }
+    }
+    assert.deepEqual(fake.violations.filter((violation) => violation.startsWith('response:')), []);
   } finally {
     await fake.close();
   }

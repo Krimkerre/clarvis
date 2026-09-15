@@ -34,6 +34,7 @@ import {
   currentEngineChoice,
   maxStepsSetting,
   ravisAccess,
+  runSkillsLookup,
   takeRunLock,
   windowIdentity,
   workspaceRoot,
@@ -761,7 +762,9 @@ export class RunSession {
       // The project lock this run holds: a run another window took over writes nothing more.
       fence,
       // M15 C3: a task carried on from another engine, or inherited from another window, continues on its branch.
-      engine
+      engine,
+      // The owner's skills, when the coding model goes through RAVIS: read at the run's start (plan.md §4.6, "Skills").
+      () => runSkillsLookup(models)
     );
   }
 

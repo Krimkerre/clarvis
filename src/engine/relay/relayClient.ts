@@ -36,6 +36,8 @@ import type {
   SessionView,
   SettleNext,
   SitesView,
+  SkillFile,
+  SkillListing,
   TurnKind,
 } from './relayTypes';
 import { SESSION_TOKEN_FORMAT } from './tokenStore';
@@ -43,6 +45,8 @@ import { SESSION_TOKEN_FORMAT } from './tokenStore';
 const SESSIONS = '/api/v1/agent-sessions';
 /** The sites Codex's commands may reach (R5; `codex-admin.json`). */
 const SITES = '/api/v1/codex/sites';
+/** The skills switched on for the models that aren't Codex, and the read of one (RAVIS 0.27.0; `skills.json`). */
+const SKILLS_FOR_MODELS = '/api/v1/skills/models';
 
 /**
  * How long `GET /api/v1/codex` gets before RAVIS counts as not answering (design §9). RAVIS answers it
@@ -139,6 +143,22 @@ export class RelayClient {
    */
   allowSites(hosts: string[], options?: CallOptions): Promise<RelayOutcome<SitesView>> {
     return this.call({ method: 'POST', path: SITES, body: { hosts } }, isSitesView, options);
+  }
+
+  /**
+   * The skills the owner switched on for the models that aren't Codex, the NERVIS folder's first (plan.md §4.6, "Skills").
+   * RAVIS reads the folders and the switches on every call, so a run of Clarvis's own engine reads this at its start
+   * rather than keeping it. A list with an entry lacking an id, a name or a description is `malformed`, never half a list.
+   */
+  async skillsForModels(options?: CallOptions): Promise<RelayOutcome<SkillListing[]>> {
+    const outcome = await this.call<{ skills: SkillListing[] }>({ method: 'GET', path: SKILLS_FOR_MODELS }, isSkillsList, options);
+    return outcome.ok ? { ...outcome, value: outcome.value.skills } : outcome;
+  }
+
+  /** A switched-on skill's `SKILL.md`, or `file` inside its folder. A refusal keeps RAVIS's code and reason. */
+  readSkill(skill: string, file?: string, options?: CallOptions): Promise<RelayOutcome<SkillFile>> {
+    const request: RelayRequest = { method: 'GET', path: `${SKILLS_FOR_MODELS}/read`, query: { skill, file } };
+    return this.call(request, isSkillFile, options);
   }
 
   /** Starts a task. `key` is `createSessionKey(taskId, windowId, attempt)`. */
@@ -292,4 +312,12 @@ function isCreatedSession(value: unknown): boolean {
 
 function isReissuedToken(value: unknown): boolean {
   return shaped({ session_token: 'string' })(value) && SESSION_TOKEN_FORMAT.test((value as ReissuedToken).session_token);
+}
+
+const isSkillListing = shaped({ id: 'string', name: 'string', description: 'string' });
+const isSkillFile = shaped({ skill: 'string', name: 'string', file: 'string', bytes: 'number', text: 'string' });
+
+/** A list whose every entry carries what a run's instructions name. */
+function isSkillsList(value: unknown): boolean {
+  return shaped({ skills: 'array' })(value) && (value as { skills: unknown[] }).skills.every(isSkillListing);
 }

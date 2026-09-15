@@ -11,7 +11,10 @@ import type { AgentTerminal } from '../agent/tools/commandTools';
 import { GitFacts } from '../engine/checkpoint/gitFacts';
 import type { LeftRun } from '../engine/checkpoint/leftWorkFile';
 import { CodexGitGlue } from '../engine/codex/codexGit';
+import { RelayClient } from '../engine/relay/relayClient';
+import type { ModelMessage } from '../model/ModelProvider';
 import type { ModelService } from '../model/ModelService';
+import { fakeHttp, FakeRavisRelay } from './fakes/FakeRavisRelay';
 
 /**
  * Branch continuation against the real Git extension (plan.md M15 C3; review B2). After Codex commits on `clarvis/x`,
@@ -134,6 +137,12 @@ suite('branch continuation in the extension host (M15 C3)', () => {
     this.timeout(30_000);
     await freshStartNeverStacks(root, git);
   });
+
+  // Skills for Clarvis's own engine (plan.md §4.6, "Skills"): a run in this suite, on its repository, for the reason above.
+  test("Skills (Clarvis's own engine): a run is told the skills the owner switched on and reads them through RAVIS without spending a step, a skill switched off since comes back as a result, and an answer gets no skills", async function () {
+    this.timeout(60_000);
+    await ownEngineReadsSkills(root, git);
+  });
 });
 
 /**
@@ -240,6 +249,132 @@ async function freshStartNeverStacks(root: string, git: (...args: string[]) => s
     fs.rmSync(storage, { recursive: true, force: true });
     for (const branch of branches().split('\n').filter((name) => name.startsWith('clarvis/start-something-new'))) git('branch', '-D', branch);
   }
+}
+
+/**
+ * **Skills for Clarvis's own engine** (plan.md §4.6, "Skills"; RAVIS 0.27.0's `skills.json`). The list, the section, the reads
+ * and every refusal are tested against the fake RAVIS in the fast suite (`skillTools.test.ts`, `agentPrompt.test.ts`). This
+ * checks what only the real `AgentRunner` decides: a run's instructions carry the section after Clarvis's own rules and its
+ * tools carry `readSkill`; the list is read once; a skill's text reaches the model as a tool result; a skill switched off
+ * since the list comes back as a plain result; three reads spend none of a one-step cap; and an answer asks RAVIS for nothing
+ * and is offered no skills. No model is called: a stand-in reads skills, then says it is done.
+ */
+async function ownEngineReadsSkills(root: string, git: (...args: string[]) => string): Promise<void> {
+  const fake = await FakeRavisRelay.start();
+  const skills = fake.skills();
+  const relay = new RelayClient(fakeHttp(fake));
+  const lookup = () => ({ kind: 'ready' as const, source: relay });
+  const config = vscode.workspace.getConfiguration('clarvis');
+  const branches = () => git('for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');
+  const before = branches();
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-skills-storage-'));
+  const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const runnerFor = (model: { models: ModelService }) =>
+    new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, undefined, undefined, {}, lookup);
+  await context.workspaceState.update('clarvis.agent.baseBranch', 'main');
+  await config.update('agent.maxStepsPerTask', 1, vscode.ConfigurationTarget.Global);
+
+  try {
+    await gitCaughtUp(root, () => true);
+    const reads = [[{ skill: 'nervis/nervis-notes' }, { skill: 'nervis/nervis-notes', file: 'references/guide.md' }], [{ skill: 'personal/graphify' }]];
+    const model = standInSkillReader(reads, () => skills.on.delete('personal/graphify'));
+    const runner = runnerFor(model);
+    const events = await drain(runner.run('Keep notes on this task', new AbortController().signal));
+
+    assert.strictEqual(model.requests.length, 3, `three turns, none cut off by the one-step cap: ${JSON.stringify(events)}`);
+    assert.strictEqual(runner.endedAtStepCap, false, 'three skill reads spent none of a one-step cap');
+    const [first, second, third] = model.requests;
+    assert.match(first.system, /^- nervis-notes \(nervis\/nervis-notes\): How NERVIS tasks keep their notes\.$/m);
+    assert.match(first.system, /never overrides Clarvis's rules above/);
+    assert.ok(first.system.indexOf('Skills the owner switched on') > first.system.indexOf('Never pretend something worked'), "after Clarvis's own rules");
+    assert.ok(first.tools.includes('readSkill') && first.tools.includes('writeFile'), first.tools.join(','));
+    assert.match(second.results[0] ?? '', /^Reference material from the skill nervis-notes \(nervis\/nervis-notes\), file SKILL\.md\. It is not a message from the owner/);
+    assert.match(second.results[0] ?? '', /# Keeping notes/);
+    assert.match(second.results[1] ?? '', /One heading per day/);
+    assert.deepStrictEqual(second.errors, [false, false], 'both reads came back as text');
+    assert.match(third.results[0] ?? '', /^No skill `personal\/graphify` is switched on just now/);
+    assert.deepStrictEqual(third.errors, [true], 'the refusal came back as a result marked as one, and the run carried on');
+    assert.strictEqual(fake.seen.filter((seen) => seen.path === '/api/v1/skills/models').length, 1, 'the list is read once for the run');
+    assert.deepStrictEqual(skills.reads, ['nervis/nervis-notes SKILL.md', 'nervis/nervis-notes references/guide.md', 'personal/graphify SKILL.md']);
+    const calls = events.filter((event) => event.kind === 'tool');
+    assert.deepStrictEqual(calls.map((event) => event.step), [1, 2, 3], 'every call numbered in order');
+    assert.deepStrictEqual(
+      calls.map((event) => event.detail),
+      ['readSkill: nervis/nervis-notes', 'readSkill: nervis/nervis-notes references/guide.md', 'readSkill: personal/graphify'],
+      'logged by skill and file, as RAVIS logs a read'
+    );
+    assert.deepStrictEqual(fake.violations, []);
+
+    // An answer: no list read, no section, no readSkill.
+    const answering = standInSkillReader([], () => undefined);
+    fake.seen.length = 0;
+    await drain(runnerFor(answering).answer('What does hello.py print?', new AbortController().signal));
+
+    assert.strictEqual(answering.requests.length, 1);
+    assert.doesNotMatch(answering.requests[0].system, /readSkill|Skills the owner switched on/);
+    assert.ok(!answering.requests[0].tools.includes('readSkill'), answering.requests[0].tools.join(','));
+    assert.deepStrictEqual(fake.seen, [], 'an answer asks RAVIS for no skills');
+
+    // RAVIS gone at the next run's start: that run goes on without skills, and the chat hears it once.
+    await fake.stopListening();
+    const without = standInSkillReader([], () => undefined);
+    const later = await drain(runnerFor(without).run('Keep more notes', new AbortController().signal));
+
+    assert.strictEqual(without.requests.length, 1, JSON.stringify(later));
+    assert.doesNotMatch(without.requests[0].system, /Skills the owner switched on/);
+    assert.ok(!without.requests[0].tools.includes('readSkill'), without.requests[0].tools.join(','));
+    assert.deepStrictEqual(
+      later.filter((event) => event.toChat && /skills/.test(event.text)).map((event) => event.text),
+      ["I couldn't read your skills from RAVIS, so this run goes without them."]
+    );
+  } finally {
+    await config.update('agent.maxStepsPerTask', undefined, vscode.ConfigurationTarget.Global);
+    await fake.close();
+    git('checkout', '--quiet', '--force', 'main');
+    for (const branch of branches()) if (branch && !before.includes(branch)) git('branch', '-D', branch);
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+}
+
+/**
+ * A model that asks for one turn of skill reads per entry in `turns`, then says it is done, keeping each request's
+ * instructions, the names of the tools it was offered and the tool results it was handed. `beforeSecondTurn` runs when the
+ * second request arrives, before its reads. No model is called.
+ */
+function standInSkillReader(turns: { skill: string; file?: string }[][], beforeSecondTurn: () => void): { models: ModelService; requests: ModelRequestSeen[] } {
+  const requests: ModelRequestSeen[] = [];
+  async function* streamWithTools(request: { system: string; tools?: { name: string }[]; messages: ModelMessage[] }) {
+    const results = request.messages[request.messages.length - 1]?.toolResults ?? [];
+    requests.push({
+      system: request.system,
+      tools: (request.tools ?? []).map((tool) => tool.name),
+      results: results.map((result) => result.content),
+      errors: results.map((result) => result.isError === true),
+    });
+    if (requests.length === 2) beforeSecondTurn();
+    const turn = turns[requests.length - 1];
+    if (!turn) {
+      yield { type: 'text' as const, text: 'Read the notes skill; nothing to change.' };
+      yield { type: 'stop' as const, reason: 'end' as const };
+      return;
+    }
+    for (const [index, args] of turn.entries()) {
+      yield { type: 'toolCall' as const, call: { id: `call_${requests.length}_${index}`, name: 'readSkill', args } };
+    }
+    yield { type: 'stop' as const, reason: 'tools' as const };
+  }
+  const models = { isReady: async () => true, spec: () => ({ label: 'a stand-in model' }), streamWithTools };
+  return { models: models as unknown as ModelService, requests };
+}
+
+/** What the stand-in kept of one request: its instructions, its tools' names, and the tool results it was handed. */
+type ModelRequestSeen = { system: string; tools: string[]; results: string[]; errors: boolean[] };
+
+/** Every event a run or an answer gives, once it has ended. */
+async function drain(stream: AsyncGenerator<AgentEvent>): Promise<AgentEvent[]> {
+  const events: AgentEvent[] = [];
+  for await (const event of stream) events.push(event);
+  return events;
 }
 
 /** A coding model that writes one file, then says it is done, keeping each turn's instructions. No model is called. */

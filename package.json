@@ -171,7 +171,7 @@
         "clarvis.agent.maxStepsPerTask": {
           "type": "number",
           "default": 25,
-          "description": "Tool calls before the agent stops and asks whether to carry on. A loop that never converges should not run up a bill unattended."
+          "description": "Tool calls before the agent stops and asks whether to carry on. A run's first eight reads of the owner's skills don't count. A loop that never converges should not run up a bill unattended."
         },
         "clarvis.ravis.credentialFile": {
           "type": "string",

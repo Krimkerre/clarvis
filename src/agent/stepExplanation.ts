@@ -66,6 +66,8 @@ const EXPLAIN: Record<ToolName, (args: Args) => StepExplanation> = {
   readDiagnostics: () => reading('Read the editor problems'),
   gitStatus: () => reading('Check git status'),
   gitDiff: () => reading('Read the current diff'),
+  // A skill the owner switched on, read from RAVIS: reading, like the rest, and never asked about.
+  readSkill: ({ skill }) => reading('Read a skill', skill),
 };
 
 function reading(title: string, exact?: string): StepExplanation {
@@ -77,6 +79,7 @@ interface Args {
   command?: string;
   pattern?: string;
   directory?: string;
+  skill?: string;
 }
 
 /** The explanation for one call, or an honest placeholder for a tool with no entry. */
@@ -87,6 +90,7 @@ export function explainStep(name: string, args: Record<string, unknown>): StepEx
     command: text(args.command),
     pattern: text(args.pattern),
     directory: text(args.directory),
+    skill: text(args.skill),
   };
 
   const explain = EXPLAIN[name as ToolName];

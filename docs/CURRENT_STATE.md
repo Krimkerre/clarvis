@@ -53,7 +53,7 @@ break Clarvis planning against its own repo.
 | Directory | Lines | What it owns |
 |---|---|---|
 | `src/agent/` | ~9,616 | The agentic loop: `AgentRunner` (the tool-calling loop) and the sibling `streamNarration.ts` (the per-fragment strip that keeps a `[[state]]` tag off screen — split out `vscode`-free so it is unit-testable, after a fix that lived inside `AgentRunner.ts` shipped broken and untested), the OS-level command sandbox (`tools/sandbox*.ts`), the deny-list gate (`Gate.ts`), the sensitive-file read gate (`sensitivePath.ts`), branch isolation (`AgentBranch.ts`), undo (`Checkpoint.ts`), the run ledger (`runLedger.ts`), and earlier work left on a branch (`leftBranches.ts`, shared by both engines, with the rule for what a branch switch may carry; `leftRuns.ts`, Clarvis's own engine's runs). Since 15 Sep, the owner's skills for a run of the own engine: `tools/skillTools.ts` reads the list from RAVIS at a run's start, holds `readSkill` and says when the list couldn't be read; the section's words are `agentPrompt.ts`'s. |
-| `src/chat/` | ~6,876 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`, and `leftWork.ts`, the build-on-or-start-fresh question both engines ask, with each engine's words beside it. |
+| `src/chat/` | ~6,876 | The chat panel: routing (`routing.ts` — question vs job), `ChatService` (the top-level dispatcher), `RunSession` (runs a task, offers what to do with the result), local free-form answers (`localAnswer.ts`). Its decisions live in pure modules beside it — `pendingOffers.ts`, `jobDecision.ts`, `offerAnswer.ts`, and `leftWork.ts`, the build-on-or-start-fresh question both engines ask, with each engine's words beside it. Since 15 Sep, skills as slash commands: `chatCommands.ts` holds every built-in's one-line description and the first-word parse, `skillCommands.ts` decides what `/x …` asks for and writes `/help` and the pop-up's rows, and `slashSkills.ts` reads RAVIS for the pop-up. |
 | `src/planning/` | ~6,832 | Project planning (§4.9): the interview, gap analysis, the generated `plan.md`, milestone builds. Almost entirely pure functions. Rejected findings now travel to the milestone planner with their reasoning (`verdictSummary.ts`'s `rejectionNote`) rather than being filtered out before it — see F5 in `docs/verification.md`. |
 | `src/personality/` | ~3,324 | The character. One shared prompt block (`character.ts`) every surface draws from — this is the fix for the one mistake this project made twice: a second, third, fourth place writing its own voice. `grounded.ts` (new) rejects a rewritten line whose numbers the facts it was given cannot account for — the guard behind F19, catching a small model re-filing a number under a different noun rather than inventing one outright. `asides.ts` (new) is the written-line bank for things the user clicks rather than events the product notices, deliberately separate from §5's dev-event quip table. |
 | `src/model/` | ~3,743 | Multi-provider model access — Anthropic, OpenAI, OpenRouter, and three local rows (LM Studio, Ollama, and a Custom OpenAI-compatible one that asks for its address, `needsUrl`, rather than shipping a guessed default). BYO-key; no Clarvis account, ever. |
@@ -61,7 +61,7 @@ break Clarvis planning against its own repo.
 | `src/memory/` | ~1,136 | Pattern memory (repeat-error detection) and the lingering-error notice. |
 | `src/briefing/` | ~1,052 | The on-launch "where you left off" summary. |
 | `src/watch/` | ~679 | Task/build watching — the walk-away feature. |
-| `src/panels/` | ~389 | The webview host for the avatar. Its stylesheet is `media/chat.css`, and its scripts `media/bowtieMenu.js` (the bowtie's fold-out, since M15 C2b+) and `media/chat.js`, all read from disk at render time. Above the prompt row, a run's passing status (`run-status`, since C2b+ phase 2: "Reconnecting Codex…"). |
+| `src/panels/` | ~389 | The webview host for the avatar. Its stylesheet is `media/chat.css`, and its scripts `media/bowtieMenu.js` (the bowtie's fold-out, since M15 C2b+) and `media/chat.js`, all read from disk at render time. Above the prompt row, a run's passing status (`run-status`, since C2b+ phase 2: "Reconnecting Codex…"). Since 15 Sep, the slash pop-up (`clarvis-slash`, a listbox `chat.js` fills from the host's `slash-list` rows) opens over the transcript while the box's first word starts with `/`. |
 | `src/bridge/` | ~3,900 | The NERVIS Bridge (M14): identity, the MEP surface, a bounded event stream, the HTTP server, registration and the lease. Seven of its eight modules import nothing from `vscode`, so the fast suite starts real servers on real ports — `wire.ts` is the only one that knows the host, and it is deliberately about eighty lines. `activity.ts`'s `snapshot()` is flat primitives with nothing to call: that is the structural half of `CLARVIS.md` §6.7, since the Bridge is handed a copy of the state rather than the controllers that hold it, and `ExtensionContext` (whose `.secrets` is the credential store) is a field on five of those controllers. |
 | `src/logtailing/` | ~128 | Tailing of VS Code logs into the workspace. |
 | `src/engine/` | ~9,726 | The Codex engine (M15 C1, C2a and C3, 13 Sep; C2b and C2b+, 14 Sep). `codex/approvals.ts` asks Codex's requests in the chat — one at a time, with only the decisions RAVIS allows, checked again right before an answer is sent — gives Unattended's narrow answers while the panel is there, and asks a group of blocked sites as one card; `codex/siteScan.ts` finds the sites a task will likely need, which `runCore.ts` asks about before it starts, and `codex/siteAsks.ts` holds the words for asking about them and for carrying the task on. `checkpoint/` is the task's record in the git folder (`clarvis-task-checkpoint.json`, 0600, under 64 KB, written only while the lock is held), the brief and catch-up text built from it, `gitFacts.ts`, and beside it the record of runs Clarvis's own engine left on their branches (`leftWorkFile.ts`, `clarvis-left-work.json`). `transfer/` switches an unfinished task between the engines in either direction (`engineSwitch.ts`, with an adapter per engine). `lock/takeover.ts` takes a project over from a window the lock rule allows, after the owner's yes. `relay/` talks to RAVIS's agent-session relay: idempotent HTTP, the event stream that resumes from its cursor, typed failures (an exhausted allowance, throttling, signed out, an untested version and RAVIS not answering stay apart), the 0600 session-token file, the desktop credential file, panel presence, and whether Codex may start (`codexReadiness.ts`). `lock/` is the one-writer rule: RAVIS's project-lock API with the fence, the checkout lock file, the lock rule shared with RAVIS through `lock-rule-cases.json`, and `projectLock.ts`, which every writing run of Clarvis's own engine now takes. `codex/` follows a Codex task: `runCore.ts` holds Stop, steering, questions, the settle, presence and reattaching, tested against `FakeRavisRelay`, with `RemoteCodexRunner.ts` and `codexGit.ts` as its glue. `engineChoice.ts` decides which engine runs a task; `engineHost.ts` reads the settings it decides from. vscode-free except `engineHost.ts`, `RemoteCodexRunner.ts` and `codexGit.ts`; complexity limit 8. |
@@ -602,6 +602,44 @@ Not verified here: the glue that hands a run its skills (`engineHost.runSkillsLo
 `clarvis.runTask`) imports `vscode` and was read, not run. No run has read a skill from the live RAVIS, in VS Code or in
 code-server.
 
+### What landed on 15 Sep: skills as slash commands, and the chat box's suggestions
+
+**The owner's decisions**, with the peer session's rules the same day. `plan.md` §4.6, "Skills as slash commands, and the
+chat box's suggestions", has the design, every choice made building it, and the checks.
+
+**What the chat does now** (`src/chat/skillCommands.ts` decides, `ChatService` carries it out):
+- **`/skill-name …` uses a switched-on skill by its name**, and `/skill <name or id> …` always reaches one. A built-in
+  command wins over a skill of the same name, every alias counted. When two skills share a name, the short form names
+  both full ids and runs nothing.
+- **Nothing typed by mistake reaches a model.** Each of these gets one plain line: an unknown command, a skill named
+  without a request, a list RAVIS couldn't give, and a skill typed while planning, while a run is going or while a
+  question waits. A path, or a slash mid-sentence, routes as before.
+- **The skill is checked against RAVIS's list as the message is sent**, never the pop-up's copy.
+- **The request goes where it would without the slash.** A job for Clarvis's own engine has the skill's `SKILL.md` read
+  first, then loaded into the run's instructions, framed as `readSkill` frames a skill, and capped at 6,000 characters.
+  An answer gets it too. A failed read runs nothing. Each logs what the skill adds to every call: 669 characters (~167
+  tokens) for the fixture's skill, about 6,560 (~1,640 tokens) at the cap.
+- **A Codex job is sent Codex's own mention**, `$name request`, with one line that Codex uses it if it's switched on for
+  Codex on the Skills page. Codex 0.154 collects `$name` from a turn's text, as its documentation, its binary and its
+  source all show.
+- **`/help` lists** the built-in commands with their descriptions, then the skills and how to type each. `/manual` opens
+  the manual.
+- **The suggestions pop-up** (`media/chat.js`, rows from the host):
+  - It shows while the box's first word starts with `/`.
+  - Up and Down move, Enter or Tab completes, Escape closes, and a click completes too.
+  - It is a listbox with `aria-activedescendant`, and RAVIS's words are text nodes.
+  - Its skills are read when the panel opens, when the window regains focus, when the settings change, and while typing
+    at most once a minute (`src/chat/slashSkills.ts`).
+  - Enter while an input method composes is left to the input method.
+
+**Checked:** 46 new tests in the fast suite (2108 passing), and one in the extension host, where the real own engine ran
+with the invoked skill in a run and an answer (30 host tests passing). **Checked by breaking it:** 124 of 124 new guards,
+each broken in a scratch copy and caught by a test, 118 in the fast suite and 6 in the extension host.
+
+Not verified here: `ChatService`'s routing of a skill command, `RunSession.run`'s hand-off, `Replier`'s answers and the
+panel's refresh events import `vscode`, and were read, not run. No skill command has run in VS Code or code-server,
+against the live RAVIS or against Codex.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and
@@ -663,7 +701,7 @@ adding a branch anywhere:
 
 ```bash
 npm run check-types   # tsc --noEmit
-npm test               # node's built-in test runner, no framework — 2061 tests (15 Sep, after skills for Clarvis's own engine)
+npm test               # node's built-in test runner, no framework — 2108 tests (15 Sep, after skills as slash commands)
 npm run lint            # eslint
 npm run package         # esbuild bundle + vsce package -> clarvis.vsix
 npm run test:host       # @vscode/test-electron, needs a display — see below

@@ -13,7 +13,12 @@ import { Replier } from './Replier';
 import { RunSession } from './RunSession';
 import { factsBlock, localAnswer } from './localAnswer';
 import { WorkspaceFactsReader } from './WorkspaceFactsReader';
-import { chatAction, isContinueRequest, isStopRequest } from './chatCommands';
+import { chatAction, isContinueRequest, isStopRequest, slashAttempt } from './chatCommands';
+import { codexSkillNote, codexSkillTask, commandsHelp, notForAnswersLine, planSkillCommand, type SkillCommandState, type SkillUse } from './skillCommands';
+import { SlashSkills } from './slashSkills';
+import { loadInvokedSkill, type InvokedSkill } from '../agent/tools/skillTools';
+import { currentEngineChoice, runSkillsLookup } from '../engine/engineHost';
+import { chatRunDecision } from './codingRunFactory';
 import { ChatActions } from './ChatActions';
 import { CodexMenu } from './codexMenuHost';
 import { ModelService } from '../model/ModelService';
@@ -169,6 +174,9 @@ export class ChatService {
   private readonly actions: ChatActions;
   /** The Codex section of the bowtie's fold-out (M15 C2b+). */
   private readonly codexMenu: CodexMenu;
+
+  /** The skills behind the chat box's suggestions pop-up, and the fresh list a slash command is checked against. */
+  private readonly slashSkills: SlashSkills;
 
   /** Present only while a planning interview is running in the panel. */
   private planningIO?: PlanningChatIO;
@@ -636,6 +644,11 @@ export class ChatService {
   private async inferredActionTook(question: string): Promise<boolean> {
     const inferred = await this.actions.offerInferred(question);
 
+    if (inferred === 'listCommands') {
+      await this.listCommands();
+      return true;
+    }
+
     if (inferred === 'planProject') {
       await this.startPlanning();
       return true;
@@ -677,7 +690,7 @@ export class ChatService {
    * off. Unless they changed it themselves during the run, in which case the newer
    * choice is theirs and stands — the same rule planning already follows on handoff.
    */
-  private async offerToBorrowAgent(question: string, mode: ChatMode): Promise<boolean> {
+  private async offerToBorrowAgent(question: string, mode: ChatMode, use?: SkillUse): Promise<boolean> {
     this.log(`chat: job blocked by ${mode} mode, offering to borrow Agent`);
 
     await this.note(
@@ -708,7 +721,7 @@ export class ChatService {
     this.runs.setFromPlan(false);
 
     try {
-      await this.runs.run(question, 'Borrowing Agent for this one.');
+      await this.startJob(question, 'Borrowing Agent for this one.', use);
     } finally {
       // Only if they have not moved it themselves in the meantime: switching to
       // Unattended mid-run is a decision, and undoing it here would be this method
@@ -1023,6 +1036,7 @@ export class ChatService {
       patterns
     );
     this.codexMenu = new CodexMenu({ models, post: (message) => panel.post(message), log, taskRunning: () => this.runs.codexTaskRunning });
+    this.slashSkills = new SlashSkills({ lookup: () => runSkillsLookup(models), post: (message) => panel.post(message), log });
 
     this.panel.onDidAsk((question) => void this.ask(question));
     this.panel.onDidToggleMute(() => this.voice.toggleMute());
@@ -1051,6 +1065,15 @@ export class ChatService {
     this.panel.onDidOpenBowtieMenu(() => void this.codexMenu.opened());
     this.panel.onDidChooseCodex((picked) => void this.codexMenu.chose(picked));
     this.panel.onDidRequestMode(() => void this.actions.chooseMode());
+    // The suggestions pop-up's skills (15 Sep 2026; `slashSkills.ts`): read when the panel opens or is shown again, when
+    // the window regains focus and when the settings change (below), and while typing `/` at most once a minute.
+    this.panel.onDidOpenSlash(() => void this.slashSkills.refresh('typing'));
+    this.panel.onDidBecomeVisible(() => void this.slashSkills.refresh('opened'));
+    this.context.subscriptions.push(
+      vscode.window.onDidChangeWindowState((state) => {
+        if (state.focused) void this.slashSkills.refresh('focused');
+      })
+    );
 
     // Keep the bowtie's tooltip honest when the settings change underneath it —
     // including from the picker it opens, so it never describes the previous choice.
@@ -1059,6 +1082,8 @@ export class ChatService {
         if (event.affectsConfiguration('clarvis.chat') || event.affectsConfiguration('clarvis.agent') || event.affectsConfiguration('clarvis.codex')) {
           this.actions.postModelInfo();
           this.actions.postMode();
+          // The coding model decides whether there are skills at all.
+          void this.slashSkills.refresh('settings');
           // **A switch to Unattended answers the question already on the table.**
           // Found live: someone switched mid-run with a step waiting, and still had
           // to press the button — the mode took effect from the *next* step, which
@@ -1085,6 +1110,7 @@ export class ChatService {
       this.panel.post({ type: 'mute', muted: this.voice.isMuted });
       this.actions.postModelInfo();
       this.actions.postMode();
+      void this.slashSkills.refresh('opened');
     });
 
     this.voice.onMuteChange((muted) => this.panel.post({ type: 'mute', muted }));
@@ -1213,6 +1239,12 @@ export class ChatService {
    */
   private async somethingTook(question: string): Promise<boolean> {
     const claimants = [
+      // **A skill command before anything can take it as an answer** (the peer session's rule, 15 Sep 2026). Planning, a
+      // run and a waiting question would each swallow `/skill x …` as their answer or a correction — and a strict
+      // question would drop itself as "leave it there" on the way. It claims only a message whose first word starts
+      // with `/` and isn't a built-in, which is never a stop, so stopping still comes first in effect.
+      () => this.skillCommandTook(question),
+
       // **While planning runs, every message is an answer to the question just asked.**
       // Routing it — stop, action, job, question — would be four chances to misread
       // "yes" or "3" as something else entirely, so `ask()` gets out of the way.
@@ -1262,9 +1294,95 @@ export class ChatService {
     if (!action) return false;
 
     if (action === 'planProject') await this.startPlanning();
+    else if (action === 'listCommands') await this.listCommands();
     else await this.actions.run(action, question);
 
     return true;
+  }
+
+  /**
+   * A skill invoked with a slash command (the owner's decisions, 15 Sep 2026; `skillCommands.ts` decides). Checked against
+   * the skills switched on **now**, read as the message is sent and never the pop-up's copy. A message that isn't a skill
+   * command routes on exactly as before.
+   */
+  private async skillCommandTook(question: string): Promise<boolean> {
+    const attempt = slashAttempt(question);
+    if (!attempt) return false;
+    const step = planSkillCommand(attempt, await this.slashSkills.listNow(), this.skillCommandState());
+    if (step.kind === 'pass') return false;
+    this.log(`chat: ${attempt.word} — ${step.log}`);
+    if (step.kind === 'say') await this.note(step.line);
+    else await this.useSkill(step.use);
+    return true;
+  }
+
+  /** The engine a job would go to, and what else is going on: planning, a question waiting for its answer, a run. */
+  private skillCommandState(): SkillCommandState {
+    return {
+      engine: chatRunDecision(currentEngineChoice(this.models)).run === 'codex' ? 'codex' : 'clarvis',
+      planning: Boolean(this.planningIO),
+      questionWaiting:
+        this.offers.isWaiting ||
+        this.runs.awaitingStep ||
+        this.runs.hasReviewFindings ||
+        this.awaitingPlanAnswer ||
+        this.awaitingResume ||
+        Boolean(this.awaitingBlocked ?? this.awaitingScopeAnswer ?? this.awaitingBuildAnswer),
+      running: this.runs.isRunning,
+    };
+  }
+
+  /**
+   * Uses an invoked skill for its request, the way the request alone would go: a job when it reads as one in a mode that
+   * may edit, the offer to borrow Agent when the mode can't, and otherwise an answer. The skill rides along either way.
+   */
+  private async useSkill(use: SkillUse): Promise<void> {
+    const mode = this.actions.mode();
+    const decision = routeFor(use.request);
+    const job = await this.jobIn(use.request, mode, decision);
+    if (job) {
+      this.runs.setStepApproval(asksFirst(mode), () => asksFirst(this.actions.mode()));
+      this.runs.setFromPlan(false);
+      await this.startJob(job.task, job.because, use);
+      return;
+    }
+    if (decision.route === 'agent' && !canEdit(mode) && (await this.offerToBorrowAgent(use.request, mode, use))) return;
+    const invoked = await this.loadSkill(use);
+    if (invoked) await this.answerQuestion(use.request, mode, decision, invoked);
+  }
+
+  /**
+   * A job, with the skill the owner invoked when there is one. **Codex gets its own mention**, `$name`, after one line
+   * saying Clarvis can't see Codex's switches. **Clarvis's own engine gets SKILL.md loaded up front**, read now: a failed
+   * read says so, and nothing runs. Either way through the normal run path: Workspace Trust, the lock, the build-on
+   * question, approvals and wrap-up.
+   */
+  private async startJob(task: string, because: string, use?: SkillUse): Promise<void> {
+    if (!use) return this.runs.run(task, because);
+    if (use.engine === 'codex') {
+      await this.note(codexSkillNote(use));
+      return this.runs.run(codexSkillTask(use, task), because);
+    }
+    const invoked = await this.loadSkill(use);
+    if (invoked) await this.runs.run(task, because, false, invoked);
+  }
+
+  /** The invoked skill's SKILL.md, read from RAVIS now. Undefined, having said why in one line, when it can't be. */
+  private async loadSkill(use: SkillUse): Promise<InvokedSkill | undefined> {
+    if (!use.skill) {
+      await this.note(notForAnswersLine(use.name));
+      return undefined;
+    }
+    const loaded = await loadInvokedSkill(runSkillsLookup(this.models), use.skill, new AbortController().signal);
+    if (loaded.ok) return loaded.invoked;
+    this.log(loaded.log);
+    await this.note(loaded.line);
+    return undefined;
+  }
+
+  /** `/help`: the built-in commands, then the skills switched on now and how to type each. Written, never read aloud. */
+  private async listCommands(): Promise<void> {
+    await this.note(commandsHelp(await this.slashSkills.listNow(), this.skillCommandState().engine));
   }
 
   /**
@@ -1275,7 +1393,7 @@ export class ChatService {
    * question was asked. Handing the same facts to the model costs one cheap request
    * and gets an answer in Clarvis's voice that can also reason about them.
    */
-  private async answerQuestion(question: string, mode: ChatMode, decision: { because: string }): Promise<void> {
+  private async answerQuestion(question: string, mode: ChatMode, decision: { because: string }, invoked?: InvokedSkill): Promise<void> {
     this.log(`chat: routed to answer — ${decision.because}`);
     this.lastAnswered = question;
     const facts = await this.workspace.read();
@@ -1285,7 +1403,7 @@ export class ChatService {
       // first he answered questions about himself as a read-only tool that "reads and
       // remarks" — a description of the mode, delivered as a description of the self.
       const addendum = `${mode === 'plan' ? PLAN_ADDENDUM : ''}${capabilities(mode)}${factsBlock(facts)}`;
-      await this.replier.withModel(question, addendum);
+      await this.replier.withModel(question, addendum, invoked);
       return;
     }
 
@@ -1449,7 +1567,7 @@ export class ChatService {
     await this.clear();
   }
 
-  /** Opens the manual, for the command-palette route as well as `/help`. */
+  /** Opens the manual, for the command-palette route as well as `/manual`. */
   async openHelp(): Promise<void> {
     await this.actions.openManual();
   }

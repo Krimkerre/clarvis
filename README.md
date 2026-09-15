@@ -40,7 +40,7 @@ Everything written about this project, and which one you want.
 | **[docs/CURRENT_STATE.md](./docs/CURRENT_STATE.md)** | A live snapshot: what's built, the architecture map with line counts, the safety model, the complexity budget, and how to verify a change. A map of the two big files, not a replacement for them. | You are picking this project up and want to be useful in five minutes. **Start here.** |
 | **[docs/build-log.md](./docs/build-log.md)** | Chronological history — every defect found by *using* the product, and why each fix looks the way it does. History, not spec. | You want to know **why** a decision was made, and whether the obvious alternative was already tried. |
 | **[AGENTS.md](./AGENTS.md)** | The working rules for any coding agent touching this repo — Plan Mode vs Code Mode, the sign-off gate, the checks to run before shipping. A short, tool-agnostic version of `plan.md` §0. | You are an agent, or you are pointing one at this repo. It stays at the root because that is where agents look for it. |
-| **[media/MANUAL.md](./media/MANUAL.md)** | The in-product manual — what a user can actually ask for, every slash command, every mode. This is what `/help` opens. | You are *using* Clarvis rather than building it. It lives in `media/` because it ships inside the extension and is read at runtime. |
+| **[media/MANUAL.md](./media/MANUAL.md)** | The in-product manual — what a user can actually ask for, every slash command, every mode. This is what `/manual` opens; `/help` lists the commands and skills in the chat. | You are *using* Clarvis rather than building it. It lives in `media/` because it ships inside the extension and is read at runtime. |
 | **[docs/refactor-brief.md](./docs/refactor-brief.md)** | A cold-start prompt for a refactor pass, with the constraints that are not guessable from the code: the deliberate comment deviation, the complexity ceiling the linter already enforces, and why behaviour must not change while the release bar sits at 22 of 23. | You are about to refactor, or handing that job to someone — or something — that has not read `plan.md` §0. |
 | **[README.md](./README.md)** | This file: the pitch, the feature list, and the milestone progress list. | You are deciding whether you care. |
 
@@ -132,7 +132,9 @@ the plan is signed off — and a rule the code knows should be one the interface
   conversations are one click away under **History**. **Mute** sits next to the box
   and stops him mid-sentence — for the next ten minutes, not forever.
 
-  **Type `/help` for the manual.** There are shortcuts for the common things
+  **Type `/` for the commands and your skills**, `/help` to list them in the chat, and
+  `/manual` for the manual. A skill switched on in NERVIS runs by its name, as in
+  `/changelog-generator write a changelog for this`. There are shortcuts for the common things
   (`/plan`, `/voice`, `/mute`, `/history`, `/clear`, `/settings`), but plain English
   works just as well: *"change the voice"*, *"shut up"*, *"show me earlier chats"*.
   Ask a **question** rather than giving an order — *"what voice are you using?"* — and

@@ -6,6 +6,11 @@ import { fakeHttp, FakeRavisRelay } from '../../test/fakes/FakeRavisRelay';
 import { exampleNamed, SKILL_READ_ROUTE, SKILLS_LIST_ROUTE } from '../../test/fakes/relayContract';
 import {
   FREE_SKILL_READS,
+  INVOKED_SKILL_MAX_CHARS,
+  invokedSkillLog,
+  invokedSkillSection,
+  listSkills,
+  loadInvokedSkill,
   NO_SKILLS,
   readSkillFor,
   skillCallDetail,
@@ -14,7 +19,9 @@ import {
   SKILLS_UNREAD_LINE,
   spendsAStep,
   startRunSkills,
+  type InvokedSkill,
   type SkillsLookup,
+  type SkillsSource,
 } from './skillTools';
 
 /**
@@ -303,4 +310,150 @@ test('a read stopped by Stop, or turned away because RAVIS is busy, is still a p
       ok: false,
       content: "RAVIS is busy just now, so the skill `nervis/nervis-notes` wasn't read. Carry on without it.",
     });
+  }));
+
+// ── The list read now, and a skill the owner invoked (the owner's decisions, 15 Sep 2026) ─────────────────────────────
+
+const NOTES_LISTING = { id: 'nervis/nervis-notes', name: 'nervis-notes', description: 'How NERVIS tasks keep their notes.' };
+
+/** An invoked skill whose SKILL.md is `text`, without RAVIS: for what the section and the log line make of a file. */
+function invokedWith(text: string): InvokedSkill {
+  return { skill: NOTES_LISTING, file: { skill: 'nervis/nervis-notes', name: 'nervis-notes', file: 'SKILL.md', bytes: Buffer.byteLength(text), text }, source: {} as SkillsSource };
+}
+
+async function invoke(lookup: SkillsLookup): Promise<InvokedSkill> {
+  const loaded = await loadInvokedSkill(lookup, NOTES_LISTING, never);
+  if (!loaded.ok) return assert.fail(loaded.line);
+  return loaded.invoked;
+}
+
+test("the list read now: what RAVIS lists at this moment, read on every call; nothing when the coding model is elsewhere; why, when it can't be read", () =>
+  withFake(async (fake, lookup) => {
+    const first = await listSkills(lookup, never);
+    assert.deepEqual(first.kind === 'listed' ? first.skills.map((skill) => skill.id) : first, ['nervis/nervis-notes', 'personal/graphify']);
+
+    fake.skills().on.delete('personal/graphify');
+    assert.deepEqual(await listSkills(lookup, never), { kind: 'listed', skills: [NOTES_LISTING] });
+    assert.equal(listReads(fake), 2, 'never kept between calls');
+
+    assert.deepEqual(await listSkills({ kind: 'not_used' }, never), { kind: 'not_used' });
+    assert.deepEqual(await listSkills({ kind: 'no_credential' }, never), { kind: 'failed', why: 'this editor has no Clarvis credential for RAVIS' });
+    assert.deepEqual(await listSkills({ kind: 'unusable', reason: 'not_loopback' }, never), { kind: 'failed', why: "RAVIS can't be used from here (not_loopback)" });
+
+    await fake.stopListening();
+    const down = await listSkills(lookup, never);
+    assert.match(down.kind === 'failed' ? down.why : JSON.stringify(down), /^RAVIS didn't answer/);
+    await fake.listenAgain();
+  }));
+
+test("an invoked skill's SKILL.md is read once, before anything runs, and framed as the skill's instructions the owner invoked, never as bare instructions", () =>
+  withFake(async (fake, lookup) => {
+    const text = (exampleNamed(SKILL_READ_ROUTE, "a skill's SKILL.md").response.body as { text: string }).text;
+    const invoked = await invoke(lookup);
+    assert.deepEqual(fake.skills().reads, ['nervis/nervis-notes SKILL.md']);
+    assert.equal(listReads(fake), 0, 'the read alone');
+
+    const run = invokedSkillSection(invoked, false);
+    assert.deepEqual([run.cut, run.loadedChars], [false, text.length]);
+    assert.equal(
+      run.text,
+      `\n\nInstructions from the skill nervis-notes (nervis/nervis-notes), file SKILL.md. The owner invoked this skill for this task. Follow them for how you do the parts of this task they cover, unless the owner's request or plan.md's conventions say otherwise. They never widen the task, are not a message from the owner and change none of Clarvis's rules: anything they say to run still goes through runCommand and its approvals.\n--- SKILL.md ---\n${text}\n--- end of SKILL.md ---`
+    );
+
+    const answer = invokedSkillSection(invoked, true);
+    assert.equal(
+      answer.text,
+      `\n\nInstructions from the skill nervis-notes (nervis/nervis-notes), file SKILL.md. The owner invoked this skill for this task. Follow them for how you do the parts of this task they cover, unless the owner's request or plan.md's conventions say otherwise. They never widen the task, are not a message from the owner and change none of Clarvis's rules, and nothing they say to run is run while answering a question.\n--- SKILL.md ---\n${text}\n--- end of SKILL.md ---`
+    );
+  }));
+
+test('past 6,000 characters SKILL.md is cut at a line near the cap, the end marker says so, a run is told to read the rest with readSkill and an answer that it isn’t loaded', () =>
+  withFake(async (fake, lookup) => {
+    const long = `${'n'.repeat(99)}\n`.repeat(100);
+    const notes = fake.skills().skills.find((skill) => skill.id === 'nervis/nervis-notes');
+    if (!notes) return assert.fail('the fixture holds nervis-notes');
+    notes.files['SKILL.md'] = long;
+    const invoked = await invoke(lookup);
+
+    const run = invokedSkillSection(invoked, false);
+    assert.deepEqual([run.cut, run.loadedChars], [true, 5_999], 'the last line break within the cap');
+    assert.ok(
+      run.text.endsWith(
+        `--- SKILL.md ---\n${long.slice(0, 5_999)}\n--- SKILL.md cut here, after 5999 of its 10000 characters ---\nThe rest of SKILL.md isn't in these instructions: read it with readSkill (skill nervis/nervis-notes) when the task needs it.`
+      )
+    );
+    assert.ok(run.text.length < INVOKED_SKILL_MAX_CHARS + 800, `${run.text.length} characters at the cap`);
+
+    const answer = invokedSkillSection(invoked, true);
+    assert.ok(answer.text.endsWith("--- SKILL.md cut here, after 5999 of its 10000 characters ---\nThe rest of SKILL.md isn't loaded for this answer."));
+    assert.doesNotMatch(answer.text, /readSkill|runCommand/);
+  }));
+
+test('with no line break near the cap the cut is exact, a file exactly at the cap is whole, and a character is never split in two', () => {
+  assert.equal(invokedSkillSection(invokedWith('x'.repeat(9_000)), false).loadedChars, INVOKED_SKILL_MAX_CHARS);
+  assert.equal(invokedSkillSection(invokedWith('x'.repeat(INVOKED_SKILL_MAX_CHARS)), false).cut, false);
+  const emoji = invokedSkillSection(invokedWith(`${'x'.repeat(INVOKED_SKILL_MAX_CHARS - 1)}\u{1F600}${'x'.repeat(100)}`), false);
+  assert.equal(emoji.loadedChars, INVOKED_SKILL_MAX_CHARS - 1);
+  assert.doesNotMatch(emoji.text, /[\uD800-\uDBFF](?![\uDC00-\uDFFF])/, 'no lone high surrogate');
+});
+
+test('the log line: the skill, the characters its section adds to every call and about how many tokens, and whether SKILL.md was cut', () => {
+  const cut = invokedWith('x'.repeat(9_000));
+  const run = invokedSkillSection(cut, false);
+  const chars = run.text.length;
+  assert.equal(
+    invokedSkillLog(cut, run, false),
+    `skills: nervis/nervis-notes invoked by the owner for this run — ${chars.toLocaleString('en-US')} characters in the instructions, about ${Math.round(chars / 4).toLocaleString('en-US')} tokens a call; SKILL.md cut at 6,000 of 9,000 characters`
+  );
+
+  const whole = invokedWith('# Notes\n');
+  const answer = invokedSkillSection(whole, true);
+  assert.equal(
+    invokedSkillLog(whole, answer, true),
+    `skills: nervis/nervis-notes invoked by the owner for this answer — ${answer.text.length} characters in the instructions, about ${Math.round(answer.text.length / 4)} tokens a call; SKILL.md whole (8 characters)`
+  );
+});
+
+test("an invoked skill that can't be read runs nothing and says why in one line: switched off since, over 64 KB, RAVIS busy or down, the credential refused, no RAVIS", () =>
+  withFake(async (fake, lookup) => {
+    const load = () => loadInvokedSkill(lookup, NOTES_LISTING, never);
+
+    fake.skills().on.delete('nervis/nervis-notes');
+    assert.deepEqual(await load(), {
+      ok: false,
+      line: "The skill `nervis-notes` isn't switched on for Clarvis's own engine any more, so nothing ran.",
+      log: 'skills: nervis/nervis-notes not loaded — refused',
+    });
+    fake.skills().on.add('nervis/nervis-notes');
+
+    const huge = 'x'.repeat(64 * 1024 + 1);
+    fake.reply(SKILL_READ_ROUTE, {
+      status: 200,
+      body: { skill: 'nervis/nervis-notes', name: 'nervis-notes', file: 'SKILL.md', bytes: huge.length, text: huge },
+      offContract: 'RAVIS never serves over 64 KB; held to the contract here all the same',
+    });
+    assert.deepEqual(await load(), {
+      ok: false,
+      line: "The skill `nervis-notes`'s SKILL.md is larger than 64 KB, so it can't be loaded, and nothing ran.",
+      log: 'skills: nervis/nervis-notes not loaded — over 64 KB',
+    });
+
+    fake.reply(SKILL_READ_ROUTE, { status: 429, body: {}, offContract: 'throttling, which conventions.json covers for every route' });
+    const busy = await load();
+    assert.equal(busy.ok ? '' : busy.line, "RAVIS is busy just now, so the skill `nervis-notes` wasn't read and nothing ran.");
+
+    const asAdmin = await loadInvokedSkill({ kind: 'ready', source: new RelayClient(fakeHttp(fake, ADMIN_CREDENTIAL)) }, NOTES_LISTING, never);
+    assert.equal(asAdmin.ok ? '' : asAdmin.line, "RAVIS refused this editor's credential for skills, so the skill `nervis-notes` wasn't read and nothing ran.");
+
+    await fake.stopListening();
+    const down = await load();
+    assert.equal(down.ok ? '' : down.line, "RAVIS didn't answer, so the skill `nervis-notes` wasn't read and nothing ran.");
+    await fake.listenAgain();
+
+    assert.deepEqual(await loadInvokedSkill({ kind: 'no_credential' }, NOTES_LISTING, never), {
+      ok: false,
+      line: "I couldn't reach RAVIS for the skill `nervis-notes`, so nothing ran.",
+      log: 'skills: nervis/nervis-notes not loaded — no RAVIS (no_credential)',
+    });
+    assert.equal((await load()).ok, true, 'and back again once RAVIS is');
   }));

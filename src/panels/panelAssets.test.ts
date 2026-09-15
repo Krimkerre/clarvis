@@ -12,7 +12,7 @@ import * as fs from 'fs';
  * nothing. That is precisely how both M8 webview defects presented.
  *
  * **Scans all of `src/`, not just the panel.** It checked `ButlerViewProvider.ts`
- * alone at first, which left `media/MANUAL.md` — the manual `/help` opens, read by
+ * alone at first, which left `media/MANUAL.md` — the manual `/manual` opens, read by
  * `ChatActions.ts` — uncovered by a test whose name claimed otherwise. Reading the
  * names out of the source means a new asset is covered without anyone remembering to
  * add it here.
@@ -43,7 +43,7 @@ test('every media asset the extension reads at runtime is on disk', () => {
   );
 
   assert.ok(names.size >= 4, `expected at least four media assets, found ${names.size}`);
-  assert.ok(names.has('MANUAL.md'), 'the manual /help opens should be among them');
+  assert.ok(names.has('MANUAL.md'), 'the manual /manual opens should be among them');
 
   for (const name of names) {
     assert.ok(fs.existsSync(path.join(ROOT, 'media', name)), `media/${name} is read at runtime but missing`);

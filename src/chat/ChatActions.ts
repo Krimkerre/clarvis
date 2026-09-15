@@ -149,8 +149,9 @@ export class ChatActions {
     }
 
     // Planning is handed back to the caller rather than run here — it takes over the
-    // whole conversation, which is ChatService's call to make, not this class's.
-    if (guess === 'planProject') return guess;
+    // whole conversation, which is ChatService's call to make, not this class's. So is
+    // `/help`'s list: it needs the skills switched on, which ChatService reads.
+    if (guess === 'planProject' || guess === 'listCommands') return guess;
 
     await this.run(guess, question);
     return guess;

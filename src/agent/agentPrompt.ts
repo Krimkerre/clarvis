@@ -114,6 +114,16 @@ export function skillsSection(skills: readonly SkillListing[]): { text: string; 
   return { text: `\n\n${text.join('\n')}`, listed: lines.length, leftOut };
 }
 
+/** A skill's description as the chat shows it (`/help`, the suggestions pop-up): one line, cut at a word, as in the instructions. */
+export function skillDescriptionLine(description: string): string {
+  return cut(oneLine(description), SKILL_DESCRIPTION_MAX_CHARS);
+}
+
+/** A skill's name or id as the chat shows it: one line. */
+export function skillTextLine(value: string): string {
+  return oneLine(value);
+}
+
 /** RAVIS's text on one line: a line break or control character in it can't start a line of its own. */
 function oneLine(value: string): string {
   return value.replace(/[\p{Cc}\s]+/gu, ' ').trim();

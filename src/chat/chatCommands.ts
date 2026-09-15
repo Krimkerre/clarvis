@@ -24,6 +24,8 @@
  */
 export type ChatAction =
   | 'help'
+  /** `/help`: the commands and the skills switched on, listed in the chat (the owner's decision, 15 Sep 2026). */
+  | 'listCommands'
   | 'chooseVoice'
   | 'chooseEngine'
   | 'setKey'
@@ -42,20 +44,36 @@ export type ChatAction =
 
 interface Intent {
   action: ChatAction;
-  /** Exact slash form, always recognised. */
+  /** Exact slash form, always recognised. The first is the one `/help` and the suggestions pop-up lead with. */
   slash: string[];
+  /**
+   * One line saying what the command does, in the owner's words (15 Sep 2026). **The one list of descriptions:** `/help`
+   * and the chat box's suggestions pop-up both read it (`skillCommands.ts`), so the two can never describe a command
+   * differently.
+   */
+  description: string;
   /** Natural phrasings. Matched loosely, since nobody types the same request twice. */
   phrases: RegExp[];
 }
 
 /**
  * Order matters: the first match wins, so narrower intents come first. "Change the
- * voice engine" must not be caught by the voice rule on its way past.
+ * voice engine" must not be caught by the voice rule on its way past. It is also the order
+ * `/help` lists the commands in.
  */
 const INTENTS: Intent[] = [
   {
+    action: 'listCommands',
+    // **`/help` lists, `/manual` opens** (the owner's decision, 15 Sep 2026). `/help` used to open the manual; it now
+    // lists the commands and the skills switched on, in the chat, which the manual can't know.
+    slash: ['/help', '/?'],
+    description: 'List these commands and your skills',
+    phrases: [],
+  },
+  {
     action: 'help',
-    slash: ['/help', '/?', '/manual'],
+    slash: ['/manual'],
+    description: 'Open the full manual',
     // No phrases: `wantsManual()` owns every non-slash form. Leaving a bare /help/
     // pattern here meant "can you help with the failing test" matched — because
     // "test" counts as a request verb — and answered a debugging question with a
@@ -65,56 +83,67 @@ const INTENTS: Intent[] = [
   {
     action: 'chooseEngine',
     slash: ['/engine'],
+    description: 'Choose the speech engine',
     phrases: [/\b(engine|tts model|speech model)\b/],
   },
   {
     action: 'chooseModel',
     slash: ['/model'],
+    description: 'Choose models, providers and keys',
     phrases: [/\b(model|llm|provider|api key for (openai|anthropic|claude))\b/],
   },
   {
     action: 'setKey',
     slash: ['/key', '/setkey'],
+    description: 'Set an API key, one per provider',
     phrases: [/\b(set|add|change|enter|update).{0,20}\bkey\b/],
   },
   {
     action: 'clearKey',
     slash: ['/clearkey'],
+    description: 'Remove the stored Fish Audio key',
     phrases: [/\b(remove|delete|clear|forget).{0,20}\bkey\b/],
   },
   {
     action: 'testVoice',
     slash: ['/testvoice'],
+    description: 'Say a line, so you can hear the voice',
     phrases: [/\b(test|try|preview).{0,15}\b(voice|audio|sound)\b/],
   },
   {
     action: 'openCache',
     slash: ['/cache'],
+    description: 'Open the folder of saved audio',
     phrases: [/\b(cache|cached audio|voice files)\b/],
   },
   {
     action: 'chooseVoice',
     slash: ['/voice'],
+    description: 'Choose the voice',
     phrases: [/\b(voice|how you sound|accent|speaker)\b/],
   },
   {
     action: 'toggleMute',
     slash: ['/mute', '/unmute'],
+    description: 'Silence him, or bring him back',
     phrases: [/\b(mute|unmute|be quiet|shut up|silence|stop talking)\b/],
   },
   {
     action: 'clearConversation',
     slash: ['/clear'],
+    description: 'Delete this conversation',
     phrases: [/\b(clear|wipe|reset).{0,20}\b(chat|conversation|transcript|history)\b/],
   },
   {
     action: 'showHistory',
     slash: ['/history'],
+    description: 'Read earlier conversations',
     phrases: [/\b(earlier|previous|past|old).{0,20}\b(chat|conversation)s?\b/],
   },
   {
     action: 'forgetFailure',
     slash: ['/forget'],
+    description: 'Stop mentioning a failing job',
     // A job that fails *by design* — a probe, a known-broken example, a test someone is
     // leaving red on purpose — never clears itself, because the record only clears when
     // that same job succeeds. Without this it is mentioned every morning for a fortnight.
@@ -126,6 +155,7 @@ const INTENTS: Intent[] = [
   {
     action: 'planProject',
     slash: ['/plan'],
+    description: 'Plan a project: the interview, then a plan.md',
     // Deliberately narrow. "Plan" is a common enough word that a loose pattern would
     // hijack "what's the plan for this refactor?" — a question, not a request to spend
     // ten minutes being interviewed.
@@ -138,11 +168,13 @@ const INTENTS: Intent[] = [
   {
     action: 'explainGit',
     slash: ['/git', '/status', '/where'],
+    description: 'Where you are in git, in plain words',
     phrases: [/\bwhere am i\b/, /\bwhat'?s going on with git\b/, /\bexplain git\b/, /\bgit status\b/],
   },
   {
     action: 'switchBranch',
     slash: ['/branch', '/checkout'],
+    description: 'Switch branch, or say "switch to main"',
     // Deliberately below voice, engine and model: "switch to a different engine" is
     // about Clarvis, not about git, and those intents claim it first.
     phrases: [
@@ -159,9 +191,63 @@ const INTENTS: Intent[] = [
   {
     action: 'openSettings',
     slash: ['/settings', '/options', '/config'],
+    description: 'Open every Clarvis setting',
     phrases: [/\b(settings|options|preferences|configure|configuration)\b/],
   },
 ];
+
+/** A built-in command as `/help` and the suggestions pop-up show it: its slash forms, the first leading, and what it does. */
+export interface BuiltInCommand {
+  readonly slash: readonly string[];
+  readonly description: string;
+}
+
+/** Every built-in command, in `/help`'s order, from the one list of descriptions above. */
+export const BUILT_IN_COMMANDS: readonly BuiltInCommand[] = INTENTS.map(({ slash, description }) => ({ slash, description }));
+
+/**
+ * Every built-in slash form, aliases included, lowercased. **Clashes are checked against all of them** (the peer session's
+ * rule, 15 Sep 2026): a skill called `status`, `config` or `where` clashes with `/git`'s and `/settings`' aliases as surely
+ * as one called `plan` clashes with `/plan`.
+ */
+export const BUILT_IN_SLASHES: ReadonlySet<string> = new Set(INTENTS.flatMap((intent) => intent.slash));
+
+/** The long form that always reaches a skill, whatever it is called: `/skill <name or id> <request>`. */
+export const SKILL_COMMAND = '/skill';
+
+/** What `/skill` does, for `/help` and the pop-up. */
+export const SKILL_COMMAND_DESCRIPTION = 'Use one of your skills by name or full id, then say what to do';
+
+/**
+ * A message whose first word starts with `/` and might name a skill: the word as typed, and the rest.
+ *
+ * **Only the first word, and only a candidate.** Whether it is a skill is decided against the skills switched on
+ * (`skillCommands.planSkillCommand`); this only rules out what can never be one, so those route exactly as today:
+ * - a message that doesn't start with `/` (after leading spaces): a slash mid-sentence is text;
+ * - a built-in's first word, **whatever follows**: `/plan my project` and `/help me` route as they always did, and the
+ *   built-in wins over any skill of that name (the owner's decision, 15 Sep 2026);
+ * - a word with another `/` in it, `/src/app.ts` or `//comment`: a path, never a command;
+ * - a lone `/`.
+ *
+ * `rest` keeps the case it was typed in (the peer session's rule, 15 Sep): `/skill notes Fix README.md` must not reach
+ * the model as `fix readme.md`.
+ */
+export interface SlashAttempt {
+  /** The first word, slash included, as typed. */
+  readonly word: string;
+  /** Everything after it, trimmed, in its own case. */
+  readonly rest: string;
+}
+
+export function slashAttempt(message: string): SlashAttempt | undefined {
+  const text = message.trim();
+  if (!text.startsWith('/')) return undefined;
+  const space = text.search(/\s/);
+  const word = space === -1 ? text : text.slice(0, space);
+  if (word === '/' || word.indexOf('/', 1) !== -1) return undefined;
+  if (BUILT_IN_SLASHES.has(word.toLowerCase())) return undefined;
+  return { word, rest: space === -1 ? '' : text.slice(space).trim() };
+}
 
 /**
  * Recognises a request to open something, or returns null to let it be answered

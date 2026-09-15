@@ -168,10 +168,150 @@ const showChoices = (items) => {
   transcript.scrollTop = transcript.scrollHeight;
 };
 
+// ── The slash pop-up (the owner's decision, 15 Sep 2026) ────────────────────────
+//
+// Typing / at the start of the box lists the built-in commands and the skills switched on, each with one line saying
+// what it does, filtered as the first word grows. Up and Down move, Enter or Tab completes (the command and a space),
+// Escape closes it, and a click completes too. The rows come from the extension host (slash-list), which reads RAVIS:
+// this webview has no network. **Everything in a row is text, never markup**: skill names and descriptions come from
+// RAVIS. The host checks a skill again as the message is sent, so a row that is a minute stale can never start one.
+const slashBox = document.getElementById('clarvis-slash');
+let slashRows = [];
+let slashShown = [];
+let slashActive = 0;
+let slashOpen = false;
+// The first word Escape closed the pop-up on: it stays closed until that word changes.
+let slashDismissed = null;
+// Whether a slash word was being typed at the last look, so the host is asked once each time one starts.
+let slashTyping = false;
+
+// The first word, while the box starts with / and the caret is still inside that word; otherwise null.
+const slashWord = () => {
+  const value = String(input.value || '');
+  if (value.charAt(0) !== '/') return null;
+  const space = value.search(/\s/);
+  const end = space === -1 ? value.length : space;
+  const caret = typeof input.selectionStart === 'number' ? input.selectionStart : value.length;
+  return caret > end ? null : value.slice(0, end);
+};
+
+// **Plain text comparison, never a pattern built from what was typed**: "/?" is a command, not a regular expression.
+const slashMatches = (word) => {
+  const typed = word.toLowerCase();
+  if (typed === '/') return slashRows.filter((row) => row && row.primary);
+  return slashRows.filter((row) => row && Array.isArray(row.keys) && row.keys.some((key) => String(key).startsWith(typed)));
+};
+
+const closeSlash = () => {
+  slashOpen = false;
+  slashShown = [];
+  slashBox.hidden = true;
+  slashBox.replaceChildren();
+  input.setAttribute('aria-expanded', 'false');
+  input.removeAttribute('aria-activedescendant');
+};
+
+const renderSlash = () => {
+  slashBox.replaceChildren();
+  slashShown.forEach((row, index) => {
+    const option = document.createElement('div');
+    option.id = 'clarvis-slash-' + index;
+    option.className = 'clarvis-slash-option' + (index === slashActive ? ' active' : '');
+    option.setAttribute('role', 'option');
+    option.setAttribute('aria-selected', index === slashActive ? 'true' : 'false');
+    const label = document.createElement('span');
+    label.className = 'label';
+    // textContent, never innerHTML: a skill's name comes from RAVIS.
+    label.textContent = String(row.label);
+    option.appendChild(label);
+    const detail = document.createElement('span');
+    detail.className = 'detail';
+    detail.textContent = String(row.description || '');
+    option.appendChild(detail);
+    option.addEventListener('click', () => completeSlash(index));
+    slashBox.appendChild(option);
+    if (index === slashActive && typeof option.scrollIntoView === 'function') option.scrollIntoView({ block: 'nearest' });
+  });
+  // The box keeps focus while the rows change: a screen reader follows the active row through this.
+  input.setAttribute('aria-activedescendant', 'clarvis-slash-' + slashActive);
+};
+
+// Follows the first word as it is typed and the caret as it moves: shown while there is a slash word and a row for it.
+const updateSlash = () => {
+  const word = slashWord();
+  if (word !== null && !slashTyping) vscode.postMessage({ type: 'slash-open' });
+  slashTyping = word !== null;
+  if (word === null) slashDismissed = null;
+  if (word === null || word === slashDismissed) {
+    closeSlash();
+    return;
+  }
+  slashDismissed = null;
+  const rows = slashMatches(word);
+  if (!rows.length) {
+    closeSlash();
+    return;
+  }
+  // The active row stays active while it is still listed, so typing on doesn't move the highlight away from it.
+  const kept = slashOpen ? rows.indexOf(slashShown[slashActive]) : -1;
+  slashShown = rows;
+  slashActive = kept >= 0 ? kept : 0;
+  slashOpen = true;
+  slashBox.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+  renderSlash();
+};
+
+// The row's command in place of the first word, anything typed after it kept, and the caret after the space.
+const completeSlash = (index) => {
+  const row = slashShown[index];
+  if (!row) return;
+  const value = String(input.value || '');
+  const space = value.search(/\s/);
+  const after = space === -1 ? '' : value.slice(space).replace(/^\s+/, '');
+  const insert = String(row.insert);
+  input.value = insert + after;
+  input.focus();
+  input.setSelectionRange(insert.length, insert.length);
+  closeSlash();
+};
+
+// The pop-up's own keys, while it is open. True when the key was the pop-up's.
+const slashKey = (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    slashActive = (slashActive + step + slashShown.length) % slashShown.length;
+    renderSlash();
+    return true;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    slashDismissed = slashWord();
+    closeSlash();
+    return true;
+  }
+  if (e.key !== 'Tab' && !(e.key === 'Enter' && !e.shiftKey)) return false;
+  const row = slashShown[slashActive];
+  // Enter on a command already typed in full sends it: completing "/help" would only add a space to it.
+  if (e.key === 'Enter' && row && String(slashWord()).toLowerCase() === String(row.insert).trim().toLowerCase()) {
+    closeSlash();
+    return false;
+  }
+  e.preventDefault();
+  completeSlash(slashActive);
+  return true;
+};
+
+// A press on the pop-up never takes focus from the box, so a click lands on its row and typing carries on.
+slashBox.addEventListener('mousedown', (e) => e.preventDefault());
+
 const send = () => {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
+  slashTyping = false;
+  closeSlash();
   // Typing an answer retires the buttons offering the same question.
   clearChoices();
   vscode.postMessage({ type: 'ask', text });
@@ -179,9 +319,19 @@ const send = () => {
 
 // Enter sends, Shift+Enter makes a new line — the convention every chat box
 // uses, and getting it backwards is instantly infuriating.
+//
+// **Never while an input method is composing** (the peer session's rule, 15 Sep 2026): Japanese, Chinese and Korean
+// input confirm a word with Enter, and that Enter belongs to the input method, not to a send or a completion.
 input.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  if (slashOpen && slashKey(e)) return;
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
 });
+input.addEventListener('input', updateSlash);
+// The caret moving by key or click can leave the first word, or come back into it.
+input.addEventListener('keyup', updateSlash);
+input.addEventListener('click', updateSlash);
+input.addEventListener('blur', () => { slashTyping = false; closeSlash(); });
 
 muteButton.addEventListener('click', () => vscode.postMessage({ type: 'toggle-mute' }));
 // The host asks for confirmation before wiping — a webview button sitting next
@@ -269,6 +419,14 @@ window.addEventListener('message', (event) => {
     return;
   }
 
+  // The slash pop-up's rows, from the extension host (15 Sep 2026): the built-in commands, then the skills it read from
+  // RAVIS. While a slash word is being typed they are filtered again at once, whether or not the old rows matched it.
+  if (msg.type === 'slash-list') {
+    slashRows = Array.isArray(msg.rows) ? msg.rows : [];
+    if (slashOpen || slashTyping) updateSlash();
+    return;
+  }
+
   if (msg.type === 'choices-clear') {
     clearChoices();
     return;
@@ -280,6 +438,7 @@ window.addEventListener('message', (event) => {
     input.value = String(msg.text || '');
     input.focus();
     input.setSelectionRange(input.value.length, input.value.length);
+    updateSlash();
     return;
   }
 

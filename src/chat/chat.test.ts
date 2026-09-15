@@ -115,7 +115,9 @@ test('a session is labelled by the first thing asked', () => {
 import { chatAction } from './chatCommands';
 
 test('slash commands open the thing they name', () => {
-  assert.equal(chatAction('/help'), 'help');
+  // `/help` lists the commands and skills in the chat, and `/manual` opens the manual (the owner's decision, 15 Sep 2026).
+  assert.equal(chatAction('/help'), 'listCommands');
+  assert.equal(chatAction('/manual'), 'help');
   assert.equal(chatAction('/voice'), 'chooseVoice');
   assert.equal(chatAction('/engine'), 'chooseEngine');
   assert.equal(chatAction('/mute'), 'toggleMute');

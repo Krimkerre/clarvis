@@ -59,6 +59,9 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
     // type, fire an emitter. Anything unrecognised is ignored rather than throwing, so
     // an older webview build never crashes a newer extension host.
     webviewView.webview.onDidReceiveMessage((msg) => this.dispatch(msg));
+    webviewView.onDidChangeVisibility(() => {
+      if (webviewView.visible) this.becameVisible.fire();
+    });
 
     // A freshly resolved view is blank: it has no idea what was said before it
     // existed. Announcing that lets the host replay the stored thread, so moving
@@ -106,6 +109,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       'choose-mode': () => this.modeRequested.fire(),
       // Every 10 s while the panel is open (M15 C2a): a Codex task followed from here counts it attached.
       'panel-ping': () => this.pinged.fire(),
+      // The slash pop-up opened (15 Sep 2026): its skills are read again, at most once a minute (`slashSkills.ts`).
+      'slash-open': () => this.slashOpened.fire(),
     };
   }
 
@@ -127,6 +132,8 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   private readonly modeRequested = new vscode.EventEmitter<void>();
   private readonly viewReady = new vscode.EventEmitter<void>();
   private readonly pinged = new vscode.EventEmitter<void>();
+  private readonly slashOpened = new vscode.EventEmitter<void>();
+  private readonly becameVisible = new vscode.EventEmitter<void>();
 
   /** A question typed into the chat box. */
   readonly onDidAsk = this.asked.event;
@@ -151,6 +158,10 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
   readonly onDidBecomeReady = this.viewReady.event;
   /** The panel's 10-second ping: it is open (M15 C2a; design §3.5.4). */
   readonly onDidPing = this.pinged.event;
+  /** Typing `/` opened the chat box's suggestions pop-up. */
+  readonly onDidOpenSlash = this.slashOpened.event;
+  /** The panel was shown again after being hidden: its webview kept its state, so `onDidBecomeReady` doesn't fire. */
+  readonly onDidBecomeVisible = this.becameVisible.event;
 
   private readonly speechFinished = new vscode.EventEmitter<{ id: string; error?: string }>();
   private readonly systemVoicesReported = new vscode.EventEmitter<{ name: string; lang: string }[]>();
@@ -257,7 +268,9 @@ export class ButlerViewProvider implements vscode.WebviewViewProvider {
       this.codexChosen,
       this.modeRequested,
       this.viewReady,
-      this.pinged
+      this.pinged,
+      this.slashOpened,
+      this.becameVisible
     );
   }
 
@@ -348,7 +361,11 @@ ${fs.readFileSync(vscode.Uri.joinPath(extensionUri, 'media', 'chat.css').fsPath,
             <path fill="currentColor" d="M2 6l8 4.2v3.6L2 18V6zm20 0v12l-8-4.2v-3.6L22 6zM12 10.5a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3z"/>
           </svg>
         </button>
-        <textarea id="clarvis-input" rows="2" placeholder="Ask. Enter sends."></textarea>
+        <!-- The slash pop-up (15 Sep 2026): commands and skills while the first word starts with /, filled by
+             media/chat.js. The box keeps focus; the active row is named by aria-activedescendant. -->
+        <div id="clarvis-slash" class="clarvis-slash" role="listbox" aria-label="Commands and skills" hidden></div>
+        <textarea id="clarvis-input" rows="2" placeholder="Ask. Enter sends."
+                  aria-autocomplete="list" aria-haspopup="listbox" aria-controls="clarvis-slash" aria-expanded="false"></textarea>
         <!-- Sits with the prompt, not with the controls above: stopping is something
              you do *while typing was the last thing you did*, so it belongs where the
              hand already is. Hidden until there is something to stop. -->

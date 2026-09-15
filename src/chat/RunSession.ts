@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import { AvatarController } from '../AvatarController';
 import { ModelService } from '../model/ModelService';
 import { AgentRunner } from '../agent/AgentRunner';
+import type { InvokedSkill } from '../agent/tools/skillTools';
 import { AgentTerminal, runCommand } from '../agent/tools/commandTools';
 import { mergeRunBack, reviewRun } from '../agent/reviewWizard';
 import { detectTestCommand } from '../agent/testCommand';
@@ -376,7 +377,9 @@ export class RunSession {
     task: string,
     because: string,
     /** A task carried on after git was set up for it (`offerGitSetup`): `because` is its opening line as it stands. */
-    carriedOn = false
+    carriedOn = false,
+    /** A skill the owner invoked with a slash command, already read (15 Sep 2026): loaded into a run of Clarvis's own engine. */
+    invoked?: InvokedSkill
   ): Promise<void> {
     const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
     const decision = chatRunDecision(currentEngineChoice(this.models));
@@ -405,6 +408,8 @@ export class RunSession {
     // rebuilt on the answer. Unanswered, stopped, dropped or refused: nothing runs, and nothing was promised yet.
     const placed = await this.whereClarvisWorks(opened, root, task);
     if (!placed) return opened.release();
+    // On the runner the run actually uses: Build on rebuilds it above.
+    if (invoked) this.loadInvoked(placed.runner, invoked);
 
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
@@ -417,6 +422,15 @@ export class RunSession {
     this.avatar.setState('thinking', 'chat');
 
     await this.follow(placed, task, (signal) => this.startOrBuildOn(placed.runner, where, task, signal));
+  }
+
+  /**
+   * An invoked skill, handed to a run of Clarvis's own engine before it starts. A job for Codex was sent Codex's own mention
+   * instead (`ChatService.startJob`), so a Codex runner here means the engine changed in between: logged, and not loaded.
+   */
+  private loadInvoked(runner: CodingRun, invoked: InvokedSkill): void {
+    if (runner instanceof AgentRunner) runner.invokeSkill(invoked);
+    else this.log(`skills: ${invoked.skill.id} not loaded — the run went to Codex`);
   }
 
   /**

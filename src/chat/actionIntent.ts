@@ -26,6 +26,7 @@ import { ChatAction } from './chatCommands';
  */
 export const ACTION_QUESTIONS: Record<ChatAction, string> = {
   help: 'Open the manual?',
+  listCommands: 'List the commands and your skills?',
   chooseVoice: 'Open the voice picker?',
   chooseEngine: 'Open the speech-engine picker?',
   setKey: 'Set up an API key?',

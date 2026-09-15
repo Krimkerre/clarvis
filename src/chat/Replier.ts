@@ -14,6 +14,7 @@ import { Busy } from './Busy';
 import { afterReply, spokenPart } from './replyDelivery';
 import { newTraceId } from '../model/lineage';
 import { chatModelRefusal } from './codingRunFactory';
+import { invokedSkillLog, invokedSkillSection, type InvokedSkill } from '../agent/tools/skillTools';
 
 /**
  * Answering: the two paths a question can take once a model is involved.
@@ -80,13 +81,18 @@ export class Replier {
     return false;
   }
 
-  async withModel(question: string, addendum = ''): Promise<void> {
+  async withModel(
+    question: string,
+    addendum = '',
+    /** A skill the owner invoked for this answer with a slash command (15 Sep 2026): the one skill an answer ever gets. */
+    invoked?: InvokedSkill
+  ): Promise<void> {
     if (!(await this.readyToAnswer())) return;
 
     // With a tool-capable chat model, questions get to *look* at the project rather
     // than guess — reading a file to answer a question needs no branch and no commit.
     if (await this.models.supportsTools('chat')) {
-      await this.withTools(question, addendum);
+      await this.withTools(question, addendum, invoked);
       return;
     }
 
@@ -111,7 +117,7 @@ export class Replier {
         // the required closing line of his own is what makes a reply his rather than an
         // assistant's, and a model without tool support was getting the character
         // described to it and never asked for one. Ollama users had a politer Clarvis.
-        system: `${this.systemPrompt() + addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`,
+        system: `${this.systemPrompt() + this.invokedText(invoked) + addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`,
         messages: this.transcript.forModel(),
         signal: controller.signal,
         traceId,
@@ -209,7 +215,7 @@ export class Replier {
     return grown;
   }
 
-  async withTools(question: string, addendum = ''): Promise<void> {
+  async withTools(question: string, addendum = '', invoked?: InvokedSkill): Promise<void> {
     // Minted before the activity starts, so `clarvis.chat.started` and the
     // runner's steps name one operation. This is the tool-capable chat turn,
     // which is the path most conversations actually take — the trace was
@@ -231,6 +237,8 @@ export class Replier {
       this.busy.reported
     );
     runner.useTrace(traceId);
+    // The one skill an answer can have: the one the owner invoked, loaded up front (15 Sep 2026).
+    if (invoked) runner.invokeSkill(invoked);
 
     this.avatar.setState('thinking', 'chat');
     this.panel.post({ type: 'chat-stream-start' });
@@ -273,6 +281,14 @@ export class Replier {
     }
 
     await this.deliver(spoken, controller.signal.aborted);
+  }
+
+  /** An invoked skill's section for an answer from a model without tools, logged once as the answer starts. */
+  private invokedText(invoked: InvokedSkill | undefined): string {
+    if (!invoked) return '';
+    const section = invokedSkillSection(invoked, true);
+    this.log(invokedSkillLog(invoked, section, true));
+    return section.text;
   }
 
   /**

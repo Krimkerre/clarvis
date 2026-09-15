@@ -1247,7 +1247,173 @@ a short list in its instructions, and a skill's text only when it fits.
   import `vscode`, and were read, not run. No run of the own engine has read a skill from the live RAVIS, in VS Code or
   in code-server.
 
-#### Git for people who don't know git
+#### Skills as slash commands, and the chat box's suggestions (15 Sep 2026)
+
+The owner's decisions of 15 September, with the peer session's rules the same day. Built for Clarvis 0.17.7, which the
+lead releases.
+
+- **The syntax.** `/skill-name …` uses a switched-on skill by its own name, and `/skill <name or id> …` always reaches
+  one.
+  - A built-in command wins over a skill of the same name, every alias counted: `/help /? /manual`, `/key /setkey`,
+    `/mute /unmute`, `/git /status /where`, `/branch /checkout`, `/settings /options /config`, and the rest. The skill is
+    reached with `/skill <name>`.
+  - Built-ins still match the whole message, exactly as before, so `what does /voice do?` is still a question.
+- **Parsing** (`chatCommands.slashAttempt`, then `skillCommands.planSkillCommand`; pure and `vscode`-free). Only the
+  message's first word counts, and only when the message starts with `/`.
+  - **Routes exactly as before:** a built-in's first word, whatever follows it (`/plan my project`), a word with another
+    `/` in it (`/src/app.ts`, `//comment`), and a lone `/`.
+  - **Ids are namespaced** (`nervis/nervis-notes`). The short form matches a skill's name when exactly one switched-on
+    skill has it, in any case. `/skill` takes the full id, exactly and then in any case, or a unique name. When two
+    switched-on skills share a name, the short form gets one line naming both full forms, and nothing runs.
+  - **The request** is everything after the name, in the case it was typed.
+  - **An unknown command** is a command-shaped word (`/`, a letter, then letters, digits, `_`, `-` or `:`) that names
+    nothing. It gets *"There's no command or switched-on skill called /x. /help lists them."* and is never sent to a
+    model. A word that isn't command-shaped, or a top-level folder (`/tmp`, `/usr`, `/Users` and the like), routes as a
+    message when no skill has that name.
+  - **A skill named without a request** gets *"What should `/x` do? Type it again with the request after the name."*
+    `/skill` on its own asks which skill.
+- **Checked against the list read as the message is sent** (`SlashSkills.listNow`), never the pop-up's copy, so a skill
+  switched off a moment ago stays off. A list that can't be read gets *"I couldn't read your skills from RAVIS, so `/x`
+  didn't run."*
+- **Not while something else is going on** (the peer session's rules). The skill command is the first claimant in
+  `ChatService.somethingTook`, ahead of planning, a run's redirect and every waiting question. It claims only a `/word`
+  that isn't a built-in, which is never a stop, so stopping still comes first in effect.
+  - While planning: *"A skill can't start while I'm planning. Finish or stop it first."*
+  - While any question waits (a step, the landing offer, any offer): *"Answer the question first; the skill can wait."*
+    It never counts as that question's answer, so the landing offer is never dropped as "leave it there" on the way.
+  - While a run is going: *"A skill can't start while a run is going. Finish or stop it first."*
+  - An unknown command is still just unknown, and a path still routes to whatever is waiting for it.
+- **What using a skill does.** The request goes the way it would without the slash: a job when it reads as one in a mode
+  that may edit, the offer to borrow Agent in Chat or Plan mode, and otherwise an answer (`ChatService.useSkill`).
+  - **A job for Clarvis's own engine** has the skill's `SKILL.md` read through the same RAVIS route `readSkill` uses,
+    before the run starts, and handed to the run (`RunSession.run` → `AgentRunner.invokeSkill`). The run goes through
+    the normal path: Workspace Trust, the lock, the build-on question, approvals and wrap-up.
+    - Its instructions carry the skill after Clarvis's own rules and the skills list. It is framed by `readSkill`'s header
+      plus *"The owner invoked this skill for this task."*, between `--- SKILL.md ---` markers, and never as bare
+      instructions.
+    - The list is still read at the run's start. `readSkill` is offered even when that list names no skill, for the rest
+      of the invoked one.
+  - **An answer** gets the same skill, framed for an answer: *"…change none of Clarvis's rules, and nothing they say to
+    run is run while answering a question."* It gets no `readSkill` and no list, and answers otherwise still get no
+    skills.
+  - **A failed read runs nothing**, and says why in one line: switched off since, RAVIS not answering or busy, the
+    credential refused, or over 64 KB.
+  - **The cap** (the peer session's decision): at most 6,000 characters of `SKILL.md`, cut at a line break in the last
+    fifth when there is one. The end marker says where it was cut, and a run is told to read the rest with `readSkill`.
+    Measured, since every step resends it (~4.9k input tokens a call in the 13 Sep build):
+
+    | What a call carries | Characters | ~Tokens |
+    |---|---|---|
+    | The fixture's 204-character `SKILL.md`, for a run | 669 | 167 |
+    | The same, for an answer | 658 | 165 |
+    | A `SKILL.md` cut at the cap, for a run | about 6,560 | 1,640 |
+    | A `SKILL.md` of exactly 6,000 characters, for a run | 6,465 | 1,616 |
+
+    At the cap that is about a third more on the average call, around 40k input tokens over a 25-step run. That is
+    intended: the owner asked for the skill.
+  - **Its cost is logged, never said in the chat:** `skills: <id> invoked by the owner for this run — N characters in
+    the instructions, about T tokens a call; SKILL.md whole (N characters)`, or `… cut at 6,000 of N characters`. An
+    answer's line says "answer".
+- **Codex as the coding engine: an explicit mention, decided from evidence (15 Sep).** Codex 0.154 supports naming a skill
+  in a turn's text.
+  - **Its documentation** (developers.openai.com/codex/skills, now learn.chatgpt.com/docs/build-skills) gives
+    `$skill-name` for the CLI and the IDE extension, and says only enabled skills can be invoked.
+  - **The 0.154.0 binary** in ChatGPT.app carries `collect_explicit_skill_mentions`, and instructions reading "If the user
+    names a skill (with $SkillName or plain text)…".
+  - **Its source at `rust-v0.154.0`** (`ext/skills/src/selection.rs`, `skills/src/mentions.rs`) collects `$name` from plain
+    text inputs. A name is letters, digits, `_`, `-` and `:`, and common environment variables such as `$PATH` are
+    skipped. Only enabled skills are selected, by exact name.
+  - **RAVIS** sends a new task's text as its brief (`start: {kind: 'brief', text}`).
+  - **So a Codex job with a skill is sent `$name <request>`**, after one line: *"Asking Codex to use the skill `x`. Codex
+    uses it if it's switched on for Codex on the Skills page."* Clarvis can't read Codex's switches: `GET /api/v1/skills`
+    is NERVIS's and the admin's. RAVIS and Codex decide.
+  - The short form needs a skill Clarvis can see switched on for the models that aren't Codex. `/skill <name>` reaches a
+    skill only Codex has, even when the list can't be read. A name Codex's mentions can't carry is refused in one line.
+  - An answer in that window is still Clarvis's own chat model, so it loads only a skill switched on for that model.
+- **The suggestions pop-up** (`media/chat.js`, its rows from `skillCommands.slashRows`):
+  - **When it shows:** while the box starts with `/` and the caret is in the first word. It is filtered by plain prefix
+    comparison, never a pattern (`/?` is a command). A lone `/` shows each command's first form and every skill; an
+    alias shows once its letters are typed.
+  - **Keys:** Up and Down move, wrapping at either end. Enter or Tab completes the command and a space, keeping anything
+    typed after the first word. Escape closes it for that word. A click completes too.
+    - **Decided here:** Enter on a command already typed in full sends it, since completing `/help` would only add a
+      space.
+    - Enter while an input method is composing (`isComposing`, or keyCode 229) belongs to the input method, for sending
+      as well as completing.
+  - **Accessibility:** `role="listbox"` on the pop-up, `role="option"` and `aria-selected` on each row, and the box's
+    `aria-activedescendant`, `aria-expanded` and `aria-controls`. The active row has an outline as well as a colour.
+  - **Safety:** skill names and descriptions come from RAVIS, so they are text nodes, never markup.
+  - **Clashes:** a skill named like a built-in shows as `/skill <name>`, and one whose name two skills share as
+    `/skill <id>`.
+- **When the pop-up's list is read** (`slashSkills.ts`, decided here):
+  - when the panel opens, whether its webview is created or shown again;
+  - when the window regains focus;
+  - when Clarvis's settings change;
+  - and while typing `/`, at most once a minute (the webview asks once each time a slash word starts).
+
+  A read under way is waited for rather than repeated. A failed read keeps the last skills and logs why. The built-in
+  rows are posted at once, before any read.
+- **`/help`** now lists the built-in commands with their descriptions, then the skills switched on and how to type each,
+  clashes explained, and what Codex does with them in a Codex window. The descriptions are one list,
+  `INTENTS[].description` in `chatCommands.ts`, which the pop-up reads too. `/manual` opens the manual, as the natural
+  phrasings ("open the manual", a bare "help") still do. A new chat action, `listCommands`, carries it, with a question
+  for the action classifier ("List the commands and your skills?").
+- [x] Check, in the fast suite: 46 new tests (2108 passing).
+  - `skillCommands.test.ts` (21):
+    - the built-in wins, every alias in any case and with words after it;
+    - `/help` lists and `/manual` opens;
+    - one short description per built-in;
+    - the short form by name in any case, with the request's case kept;
+    - `/skill` by id, by id in any case, by name, and one named like a built-in;
+    - a skill switched off since the pop-up listed it stays off;
+    - a shared name named by both ids;
+    - no request, and `/skill` on its own;
+    - an unknown command, with the coding model elsewhere too;
+    - paths, folders, a lone `/` and slashes mid-sentence;
+    - a list that can't be read;
+    - planning, a question and a run, and which wins;
+    - Codex's mention and its line;
+    - a skill only Codex has;
+    - a name Codex can't carry;
+    - how each skill is typed;
+    - the pop-up's rows, their text and their keys;
+    - `/help`, including a clash, a shared name, no skills, a failed list, no RAVIS, and Codex.
+  - `chatRender.test.ts` (13, `media/chat.js` in a script context):
+    - `/` shows the first forms and asks the host once;
+    - the markup's listbox and the box's aria attributes;
+    - plain-text filtering, `/?` included, and a clash shown as `/skill name`;
+    - a shared name shown by id;
+    - Up and Down wrapping, with `aria-activedescendant`, `aria-selected` and the active class;
+    - Enter and Tab completing, Enter sending a command typed in full, and Shift+Enter;
+    - Escape closing it for that word;
+    - only while the caret is in the first word, by key or click, and blur;
+    - a click completing and keeping the rest;
+    - RAVIS's words as text nodes;
+    - Enter while composing;
+    - rows arriving mid-word;
+    - a prefill.
+  - `slashSkills.test.ts` (6): the built-ins at once and the skills after; once a minute while typing, and always when the
+    panel opens, the window regains focus or the settings change; a read under way waited for; a command's list read
+    fresh every time; a failed read keeping the last skills; no RAVIS, nothing read.
+  - `skillTools.test.ts` (6): the list read now; the invoked skill read once and framed for a run and for an answer; the
+    cut at a line with its marker and note; an exact cut, a file at the cap, no half a character; the log line; every
+    failed read in one line.
+- [x] Check, in the extension host (`branchContinuation.spec.ts`; 30 host tests passing): the real `AgentRunner`, with a
+  stand-in model and the fake RAVIS.
+  - A run whose start lists no skill carries the invoked `SKILL.md` in its first call's instructions, framed and marked,
+    after Clarvis's own rules. It is offered `readSkill`, reads the list once and `SKILL.md` never again, and logs its
+    one line.
+  - An answer carries it framed for an answer, with no `readSkill`, no RAVIS call and its own log line.
+- [x] Guard proof: 124 of 124 new guards, each broken on its own in a scratch copy and caught by a failing test.
+  - **Fast suite (118):** 9 in `chatCommands.ts`, 37 in `skillCommands.ts`, 8 in `slashSkills.ts`, 21 in `skillTools.ts`,
+    41 in `media/chat.js` and 2 in the panel's markup.
+  - **Extension host (6), in `AgentRunner`:** the run's and the answer's instructions, `readSkill` for a run, the answer
+    loading it, the log line, and `invokeSkill` keeping it.
+  - The first pass caught 117. The one it missed, that the pop-up needs the box to *start* with `/`, was covered by no
+    case the caret rule didn't already close; a test with the caret at the start of ` /help` now catches it.
+- Not verified here: `ChatService` (the claimant order, the state it reads, `useSkill`, `startJob`, `/help`),
+  `RunSession.run`'s hand-off, `Replier`'s two answer paths and the panel's refresh events import `vscode`, and were read,
+  not run. No skill command has run in VS Code or code-server, against the live RAVIS, or with Codex.
 
 §6's audience are not git users. Most of git's vocabulary describes its
 *implementation* — detached HEAD, index, working tree, unstaged, unmerged — and none of

@@ -15,6 +15,8 @@ import { RelayClient } from '../engine/relay/relayClient';
 import type { ModelMessage } from '../model/ModelProvider';
 import type { ModelService } from '../model/ModelService';
 import { fakeHttp, FakeRavisRelay } from './fakes/FakeRavisRelay';
+import { invokedSkillLog, invokedSkillSection, loadInvokedSkill } from '../agent/tools/skillTools';
+import { exampleNamed, SKILL_READ_ROUTE } from './fakes/relayContract';
 
 /**
  * Branch continuation against the real Git extension (plan.md M15 C3; review B2). After Codex commits on `clarvis/x`,
@@ -142,6 +144,12 @@ suite('branch continuation in the extension host (M15 C3)', () => {
   test("Skills (Clarvis's own engine): a run is told the skills the owner switched on and reads them through RAVIS without spending a step, a skill switched off since comes back as a result, and an answer gets no skills", async function () {
     this.timeout(60_000);
     await ownEngineReadsSkills(root, git);
+  });
+
+  // A skill the owner invoked with a slash command (15 Sep 2026): loaded up front, in a run and in an answer.
+  test("Skills (Clarvis's own engine): a skill the owner invoked is in a run's and an answer's instructions before the first model call, a run is offered readSkill for the rest of it, and each logs what it costs", async function () {
+    this.timeout(60_000);
+    await ownEngineLoadsAnInvokedSkill(root, git);
   });
 });
 
@@ -329,6 +337,81 @@ async function ownEngineReadsSkills(root: string, git: (...args: string[]) => st
     );
   } finally {
     await config.update('agent.maxStepsPerTask', undefined, vscode.ConfigurationTarget.Global);
+    await fake.close();
+    git('checkout', '--quiet', '--force', 'main');
+    for (const branch of branches()) if (branch && !before.includes(branch)) git('branch', '-D', branch);
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+}
+
+/**
+ * **A skill the owner invoked** (the owner's decisions, 15 Sep 2026). Reading it, framing it, the cap and the log line are
+ * tested in the fast suite (`skillTools.test.ts`). This checks what only the real `AgentRunner` decides: the invoked
+ * skill's SKILL.md is in the first model call's instructions, after Clarvis's own rules; a run is offered `readSkill` even
+ * when no skill was listed at its start; an answer carries the skill too, framed for an answer, with no `readSkill` and no
+ * list read; and each writes its one log line. No model is called.
+ */
+async function ownEngineLoadsAnInvokedSkill(root: string, git: (...args: string[]) => string): Promise<void> {
+  const fake = await FakeRavisRelay.start();
+  const skills = fake.skills();
+  const relay = new RelayClient(fakeHttp(fake));
+  const lookup = () => ({ kind: 'ready' as const, source: relay });
+  const branches = () => git('for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');
+  const before = branches();
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-invoked-storage-'));
+  const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const logs: string[] = [];
+  const runnerFor = (model: { models: ModelService }) =>
+    new AgentRunner(context, root, model.models, standInTerminal(), (line) => void logs.push(line), undefined, undefined, undefined, {}, lookup);
+  await context.workspaceState.update('clarvis.agent.baseBranch', 'main');
+
+  try {
+    await gitCaughtUp(root, () => true);
+    const text = (exampleNamed(SKILL_READ_ROUTE, "a skill's SKILL.md").response.body as { text: string }).text;
+    const loaded = await loadInvokedSkill(lookup(), { id: 'nervis/nervis-notes', name: 'nervis-notes', description: 'How NERVIS tasks keep their notes.' }, new AbortController().signal);
+    if (!loaded.ok) throw new Error(loaded.line);
+    // Switched off for the list the run reads at its start: the invoked skill is loaded all the same, with readSkill.
+    skills.on.clear();
+    fake.seen.length = 0;
+
+    const model = standInSkillReader([], () => undefined);
+    const runner = runnerFor(model);
+    runner.invokeSkill(loaded.invoked);
+    const events = await drain(runner.run('Keep notes on this task', new AbortController().signal));
+
+    assert.strictEqual(model.requests.length, 1, JSON.stringify(events));
+    const [first] = model.requests;
+    const framed = 'The owner invoked this skill for this task. Follow them for how you do the parts of this task they cover';
+    assert.ok(first.system.includes(`Instructions from the skill nervis-notes (nervis/nervis-notes), file SKILL.md. ${framed}`), first.system);
+    assert.ok(first.system.includes(`--- SKILL.md ---\n${text}\n--- end of SKILL.md ---`), 'SKILL.md between its markers');
+    assert.ok(first.system.indexOf(framed) > first.system.indexOf('Never pretend something worked'), "after Clarvis's own rules");
+    assert.doesNotMatch(first.system, /Skills the owner switched on/, 'no skill was listed at the start');
+    assert.ok(first.tools.includes('readSkill'), `readSkill, for the rest of it: ${first.tools.join(',')}`);
+    assert.strictEqual(fake.seen.filter((seen) => seen.path === '/api/v1/skills/models').length, 1, 'the list is still read once');
+    assert.deepStrictEqual(skills.reads, ['nervis/nervis-notes SKILL.md'], 'SKILL.md was read once, before the run');
+    assert.deepStrictEqual(
+      logs.filter((line) => line.includes('invoked by the owner')),
+      [invokedSkillLog(loaded.invoked, invokedSkillSection(loaded.invoked, false), false)],
+      'one log line of what it costs'
+    );
+
+    // An answer: the invoked skill too, framed for an answer; no list read and no readSkill.
+    fake.seen.length = 0;
+    const answering = standInSkillReader([], () => undefined);
+    const answerer = runnerFor(answering);
+    answerer.invokeSkill(loaded.invoked);
+    await drain(answerer.answer('What do the notes say about headings?', new AbortController().signal));
+
+    assert.strictEqual(answering.requests.length, 1);
+    const [answer] = answering.requests;
+    assert.ok(answer.system.includes(framed), answer.system);
+    assert.ok(answer.system.includes("change none of Clarvis's rules, and nothing they say to run is run while answering a question."));
+    assert.ok(answer.system.includes(`--- SKILL.md ---\n${text}\n--- end of SKILL.md ---`));
+    assert.ok(!answer.tools.includes('readSkill'), answer.tools.join(','));
+    assert.deepStrictEqual(fake.seen, [], 'an answer reads no list, and its skill was read before it started');
+    assert.ok(logs.includes(invokedSkillLog(loaded.invoked, invokedSkillSection(loaded.invoked, true), true)), logs.join('\n'));
+    assert.deepStrictEqual(fake.violations, []);
+  } finally {
     await fake.close();
     git('checkout', '--quiet', '--force', 'main');
     for (const branch of branches()) if (branch && !before.includes(branch)) git('branch', '-D', branch);

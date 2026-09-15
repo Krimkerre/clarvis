@@ -28,7 +28,18 @@ import { applyEdit, writeFile } from './tools/editTools';
 import { AgentTerminal, CommandResult, gitDiff, gitStatus, readDiagnostics, runCommand } from './tools/commandTools';
 import { mayRunUnconfined, spawnFor } from './tools/sandbox';
 import { confinementNote } from './tools/confinement';
-import { NO_SKILLS, readSkillFor, skillCallDetail, spendsAStep, startRunSkills, type RunSkills, type SkillsLookup } from './tools/skillTools';
+import {
+  invokedSkillLog,
+  invokedSkillSection,
+  NO_SKILLS,
+  readSkillFor,
+  skillCallDetail,
+  spendsAStep,
+  startRunSkills,
+  type InvokedSkill,
+  type RunSkills,
+  type SkillsLookup,
+} from './tools/skillTools';
 import {
   activeBlocker,
   BLOCKER_KEY,
@@ -154,6 +165,10 @@ export class AgentRunner implements CodingRun {
   private skillReads = 0;
   /** The owner's skills for this run, read at its start. None for an answer (plan.md §4.6, "Skills"). */
   private runSkills: RunSkills = NO_SKILLS;
+  /** The skill the owner invoked with a slash command, its SKILL.md already read (15 Sep 2026). Set by `invokeSkill`. */
+  private invoked: InvokedSkill | undefined;
+  /** The invoked skill's section of the instructions, built once as the run or answer begins. */
+  private invokedText = '';
   /** Whether the run ended because it used every step it was allowed. See `endedAtStepCap`. */
   private stepCapped = false;
 
@@ -426,9 +441,10 @@ export class AgentRunner implements CodingRun {
   private systemFor(options: { readOnly: boolean; addendum: string }): string {
     // A run's skills section follows Clarvis's own rules and comes before a Build on's earlier work (plan.md §4.6,
     // "Skills"). An answer has none: `openSkills` is never called for one.
-    if (!options.readOnly) return this.systemPrompt(false) + this.runSkills.section + options.addendum;
+    // An invoked skill follows the list, after Clarvis's own rules in both (15 Sep 2026): never above them.
+    if (!options.readOnly) return this.systemPrompt(false) + this.runSkills.section + this.invokedText + options.addendum;
 
-    return `${this.systemPrompt(true) + options.addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`;
+    return `${this.systemPrompt(true) + this.invokedText + options.addendum}\n\n${ANSWER_SHAPE}\n\n${STATE_TAG_INSTRUCTION}`;
   }
 
   /**
@@ -442,6 +458,19 @@ export class AgentRunner implements CodingRun {
     this.runSkills = start.skills;
     if (start.log) this.log(start.log);
     if (start.chat) yield this.record({ kind: 'text', toChat: true, text: start.chat });
+  }
+
+  /**
+   * The invoked skill's section, built once as the turn begins, with its one log line of what it costs each call (the peer
+   * session's rule, 15 Sep 2026). A run is also offered `readSkill`, for the rest of a cut SKILL.md and the files it points
+   * to, even when the list at its start listed none. An answer never is: answers otherwise get no skills.
+   */
+  private openInvoked(readOnly: boolean): void {
+    if (!this.invoked) return;
+    const section = invokedSkillSection(this.invoked, readOnly);
+    this.invokedText = section.text;
+    this.log(invokedSkillLog(this.invoked, section, readOnly));
+    if (!readOnly && !this.runSkills.offered) this.runSkills = { section: this.runSkills.section, offered: true, source: this.invoked.source };
   }
 
   /** A turn's tools: the reading tools for an answer; for a run every tool, with `readSkill` only when skills are listed. */
@@ -661,6 +690,15 @@ export class AgentRunner implements CodingRun {
    * carried one, which is a span with only half its ends. The caller mints
    * first and tells the runner.
    */
+  /**
+   * A skill the owner invoked with a slash command, **loaded up front** (the owner's decision, 15 Sep 2026): its SKILL.md
+   * goes into this run's or answer's instructions before the first model call, so the model doesn't have to choose it.
+   * Set before `run` or `answer`, as `useTrace` is.
+   */
+  invokeSkill(invoked: InvokedSkill): void {
+    this.invoked = invoked;
+  }
+
   useTrace(traceId: string): void {
     this.givenTrace = traceId;
   }
@@ -705,6 +743,7 @@ export class AgentRunner implements CodingRun {
       // With the branch in place and before the first model call: the list is read once, for this run alone.
       yield* this.openSkills(signal);
     }
+    this.openInvoked(options.readOnly);
     return { checkpoint, branch };
   }
 

@@ -27,11 +27,16 @@ That's it. Everything else is opt-in.
 
 Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line.
 
-**Slash commands** — the fast path:
+**Slash commands** — the fast path. Type `/` at the start of the box and a list pops up
+with the commands and your skills, each with a line saying what it does. Keep typing to
+narrow it, **Up** and **Down** to move, **Enter** or **Tab** to fill one in, **Escape** to
+close it. A command you've already typed in full just sends when you press **Enter**.
 
 | Command | What it does |
 |---|---|
-| `/help` | Opens this manual |
+| `/help` | Lists these commands and your skills, right in the chat |
+| `/manual` | Opens this manual |
+| `/skill <name> …` | Uses one of your skills — see *Skills as commands* below |
 | `/plan` | Plan a project — the interview, then a `plan.md` |
 | `/voice` | Choose the voice |
 | `/engine` | Choose the speech engine |
@@ -46,6 +51,28 @@ Type in the box at the bottom. **Enter** sends, **Shift+Enter** makes a new line
 | `/branch` | Switch branch (or say "switch to main") |
 | `/settings` | Open every Clarvis setting |
 | `/model` | Choose models, providers and keys |
+
+**Skills as commands.** The skills switched on for Clarvis on NERVIS's Skills page (the
+switch for the models that aren't Codex) can be used by name. `/changelog-generator write
+a changelog for this` hands him the request with that skill's instructions already
+loaded, so he follows them without having to pick the skill himself. `/skill <name> …`
+always works too, and it's how you reach a skill named like one of the commands above
+(`/skill status …`) or like another skill (by its full name, `/skill personal/notes …`,
+as `/help` shows it).
+
+- **Only skills that are switched on.** A skill switched off stays off, even typed.
+- **Say what you want after the name.** `/changelog-generator` on its own just asks what
+  it should do.
+- **Not while something else is going on.** A skill can't start while he's planning,
+  while a run is going, or while he's waiting for your answer to a question: he says
+  so, and nothing happens.
+- **A question gets an answer, a job gets a run.** In Chat or Plan mode the skill shapes
+  his answer rather than a run.
+- **With Codex as the coding engine**, he asks Codex for the skill by name. Codex keeps
+  its own switches, so it uses the skill if it's switched on for Codex on the Skills page.
+- **Anything else starting with `/`** that isn't a command or a skill gets a short
+  "there's no command called that" and goes nowhere. A path like `/src/app.ts is broken`
+  is just a message.
 
 **Plain English works too.** "Change the voice", "mute", "show me earlier chats", and
 "open the settings" all do the obvious thing. Asking a *question* — "what voice are you

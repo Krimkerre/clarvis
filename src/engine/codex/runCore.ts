@@ -90,12 +90,14 @@ import {
 } from './siteAsks';
 import { notYetAllowed, type FoundSite } from './siteScan';
 import {
+  buildOnGoneLine,
   CODEX_LINES,
   codexModelLine,
   failureLine,
   feedbackLine,
   leftoverLine,
   modelFellBackLine,
+  modeNotChangedLine,
   reattachedLine,
   refusalCode,
   requestSummary,
@@ -132,8 +134,11 @@ export interface CodexGit {
   /**
    * A task switched to Codex (C3; review B2): its existing branch, checked out at the commit the other engine saved
    * or a descendant of it — never a new branch beside that work. Refused, with a line, otherwise.
+   *
+   * Also **Build on** (plan.md M15): the branch Codex's earlier task left, at the tip it had when the owner was asked.
+   * `task` is then the new request, which the commit and the undo snapshot name.
    */
-  continueOn(branch: string, headCommit: string): Promise<CodexBranch>;
+  continueOn(branch: string, headCommit: string, task?: string): Promise<CodexBranch>;
   /**
    * Commits Codex's work on the task branch at settle; `commit` is the tip the session settles at.
    * `branch` is the session's branch, so a window that didn't make it can check it stands on it.
@@ -183,6 +188,14 @@ export interface CodexCheckpointPort {
 }
 
 export type SwitchResult<T> = { ok: true; value: T } | { ok: false; line: string };
+
+/** Codex's earlier task, idle on its own branch, that a new request builds on (plan.md M15; `leftTasks.ts`). */
+export interface BuildOnTask {
+  sessionId: string;
+  branch: string;
+  /** The branch's tip when the owner was asked: the branch must still contain it. */
+  tip: string;
+}
 
 /** RAVIS's word on a stop for a switch: every process confirmed gone, what is left, or that it couldn't be told. */
 export type SwitchConfirmation = { gone: true } | { gone: false; leftover: string } | { gone: undefined; line: string };
@@ -464,6 +477,69 @@ export class CodexRunCore {
     this.noteDetails(view.value);
     const refused = await this.continueTurn(text, 'carry_on');
     return refused && refused !== CODEX_LINES.passedOn ? { line: refused, failed: false } : { cursor: view.value.last_event_id };
+  }
+
+  // ── Building on Codex's earlier work (plan.md M15; the owner's decision of 15 Sep 2026) ──
+
+  /**
+   * **Build on** Codex's earlier work, left on its branch: the idle session picked back up with a `continue` turn that
+   * carries the new request, so Codex adds to its own work and keeps the earlier conversation. Never a new session or a
+   * new branch.
+   *
+   * In this order, and nothing changes before the third step:
+   * 1. the session's key from the token file, and its view, which must still say `idle` on `left.branch`;
+   * 2. the task's mode brought to the chat's mode, refused when RAVIS won't. A task started in Unattended must not go on
+   *    answering Codex's requests itself after the owner chose Agent;
+   * 3. the window switched to the branch at `left.tip` or after it, refused when the branch moved away;
+   * 4. the turn, followed from where the session's stream stood before it, as "Carry on" is.
+   *
+   * The owner's uncommitted work is checked before this is called (`leftTasks.buildOnRefusal`).
+   */
+  async *buildOn(left: BuildOnTask, task: string, signal: AbortSignal): AsyncGenerator<AgentEvent> {
+    const started = await this.startBuildOn(left, task, signal);
+    if ('line' in started) {
+      yield started.failed ? this.failure(started.line) : this.doneEvent(started.line);
+      return;
+    }
+    yield* this.follow(signal, started.cursor);
+  }
+
+  private async startBuildOn(left: BuildOnTask, task: string, signal: AbortSignal): Promise<{ cursor: number } | { line: string; failed: boolean }> {
+    const view = await this.idleOn(left);
+    if ('line' in view) return view;
+    const modeRefused = await this.matchChatMode(view);
+    if (modeRefused) return { line: modeRefused, failed: true };
+    if (signal.aborted) return { line: CODEX_LINES.stopped, failed: false };
+    const branch = await this.options.git.continueOn(left.branch, left.tip, task);
+    if (!branch.ok) return { line: branch.line, failed: true };
+    const refused = await this.continueTurn(task, 'continue');
+    return refused && refused !== CODEX_LINES.passedOn ? { line: refused, failed: false } : { cursor: view.last_event_id };
+  }
+
+  /** The session, opened with its stored key, still idle on the branch the owner chose; or what to say instead. */
+  private async idleOn(left: BuildOnTask): Promise<SessionView | { line: string; failed: boolean }> {
+    const read = this.options.tokens.read(this.options.workspace.root, left.sessionId);
+    if (read.kind !== 'found') return { line: tokenLine(read), failed: true };
+    this.session = { id: left.sessionId, token: read.entry.token, taskId: read.entry.taskId };
+    const view = await this.options.relay.getSession(left.sessionId, read.entry.token);
+    if (!view.ok) return { line: failureLine(view.failure, 'start'), failed: true };
+    if (view.value.state !== 'idle' || view.value.branch?.name !== left.branch) return { line: buildOnGoneLine(left.branch), failed: false };
+    this.noteDetails(view.value);
+    return view.value;
+  }
+
+  /** The chat's mode for the task's turns from now on, when it was started in another. Undefined once they match. */
+  private async matchChatMode(view: SessionView): Promise<string | undefined> {
+    const mode = this.options.modeNow?.() ?? this.options.mode;
+    const session = this.session;
+    if (!session || view.mode === mode) return undefined;
+    const changed = await this.options.relay.setMode(session.id, session.token, mode);
+    if (!changed.ok) {
+      this.log(`codex: the earlier task's mode couldn't be set to ${mode} (${changed.failure.kind})`);
+      return modeNotChangedLine(mode);
+    }
+    this.log(`codex: the earlier task runs in ${mode} mode from its next turn (it was ${view.mode})`);
+    return undefined;
   }
 
   // ── Switching to Clarvis's own engine (C3; design §6.2) ─────────────────────

@@ -113,6 +113,23 @@ export function isRealBase(head: string, unborn: boolean): boolean {
 }
 
 /**
+ * The branch a new task's `clarvis/<task>` branch starts from: the one `AgentBranch.begin` branches from.
+ *
+ * **HEAD, when it is a real base**; otherwise the base remembered from an earlier run, when that branch still exists;
+ * otherwise whichever of `main`, `master` and `develop` exists. Never a literal `main`: a repository `git init` made
+ * with `master` starts from `master`.
+ *
+ * Shared, not copied, because two places have to agree on it: `AgentBranch.begin` makes the branch here, and the
+ * question before a Codex task names this branch in **Start fresh from …** (`codexLeftWork.ts`). A button naming one
+ * branch while the task starts from another is the mistake a copy of this rule would eventually make.
+ */
+export function startingBase(head: string | undefined, unborn: boolean, remembered: string | undefined, existing: readonly string[]): string | undefined {
+  if (head && isRealBase(head, unborn)) return head;
+  if (remembered && existing.includes(remembered)) return remembered;
+  return ['main', 'master', 'develop'].find((name) => existing.includes(name));
+}
+
+/**
  * What is wrong with git here, and what would fix it.
  *
  * §4.6 requires the *cause-specific* remedy rather than a generic "git is

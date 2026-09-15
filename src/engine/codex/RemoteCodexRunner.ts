@@ -37,7 +37,7 @@ import { checkpointFromCodex } from '../transfer/fromSource';
 import type { StoredCodexChoice } from '../codexChoice';
 import type { PromptShower } from './approvals';
 import { CodexGitGlue } from './codexGit';
-import { CodexRunCore, type CodexCheckpointPort, type CodexCursors, type CodexLockFloor } from './runCore';
+import { CodexRunCore, type BuildOnTask, type CodexCheckpointPort, type CodexCursors, type CodexLockFloor } from './runCore';
 import { projectFiles, scanSites } from './siteScan';
 
 const PRESENCE_TICK_MS = 5_000;
@@ -111,6 +111,14 @@ export class RemoteCodexRunner implements CodingRun {
   /** "Carry on" after the step cap: a new turn on the same Codex session, followed like the first (design §5.5). */
   carryOn(sessionId: string, text: string, signal: AbortSignal): AsyncIterable<AgentEvent> {
     return this.followed(this.core.carryOn(sessionId, text, signal));
+  }
+
+  /**
+   * **Build on** Codex's earlier work left on its branch: a `continue` turn with the new request on that idle session,
+   * on its branch, followed like any task (plan.md M15; the owner's decision of 15 Sep 2026).
+   */
+  buildOn(left: BuildOnTask, task: string, signal: AbortSignal): AsyncIterable<AgentEvent> {
+    return this.followed(this.core.buildOn(left, task, signal));
   }
 
   /** The task's last turn ended at RAVIS's step cap. */

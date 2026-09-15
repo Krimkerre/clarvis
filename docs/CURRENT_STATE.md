@@ -494,6 +494,37 @@ clears it.
 `vscode` and were read, not run; the refusal, the button and the carry-on haven't been seen together against a real Codex
 task.
 
+### What landed on 15 Sep: Codex builds on its earlier work, or starts fresh
+
+**Found live that day.** In `live-test-c` (trunk `master`), Codex built a greeter on its own branch and the owner answered
+"Leave it there". The follow-up, "Also add a --shout option to greet.py…", started a new Codex task on a new branch from
+`master`: `greet.py` wasn't there, Codex wrote a second greeter beside the first, and one more idle task was left in RAVIS.
+`plan.md`'s M15 has the owner's decision ("Ask each time"), the checks, the choices and the guard proof.
+
+**Now a Codex task asks first** when earlier Codex work was left on its branch: **Build on `<branch>`** (at most three,
+the branch the window is on first, then the most recent) or **Start fresh from `<branch>`** (`src/chat/codexLeftWork.ts`).
+Build on switches the window to that branch and starts a `continue` turn with the new request on the same idle RAVIS
+session, so Codex adds to its own work and keeps the conversation (`CodexRunCore.buildOn`); no session or branch is
+made, and the run ends like any Codex run. Start fresh is today's start, and the earlier task stays idle to be offered
+again. Typing "build on it", "continue" or "that branch", or "fresh", "start fresh" or "new branch", answers like the
+buttons and never reaches Codex; anything else typed is the message it is. Unanswered, stopped, or a mode switch while it
+shows: nothing runs. Unattended doesn't ask: it builds on the window's branch when that is left work, otherwise starts
+fresh, and says which in one line.
+
+**What counts as left** (`src/engine/codex/leftTasks.ts`): Codex may run; RAVIS lists the session as `idle`; this Mac's
+token file holds its key and RAVIS accepts it for a view naming its branch (a task without a stored key isn't offered,
+and no key is reissued to find out); the branch exists and isn't merged into the project's trunk. The trunk is the plan's
+declared one, else the branch a fresh task starts from (`branchNames.startingBase`, now shared with `AgentBranch.begin`),
+so a `master` project is asked about `master`, never `main`. **Refused in plain words:** switching to another branch while
+the owner has uncommitted or untracked files, since the switch would carry them along. The earlier task is given the
+chat's mode before its turn, and starts nothing if RAVIS won't.
+
+**Clarvis's own engine** still starts every new task from the trunk; it has the same gap, left as it is.
+
+**Checked by breaking it:** 34 of 34 new guards, each broken in a scratch copy and caught by a test. A host test in `branchContinuation.spec.ts` moved a checkout from the trunk to the
+branch Codex left through the real Git extension and committed the next change there (26 host tests passing). Not verified here: `RunSession`'s wiring
+imports `vscode` and was read, not run; nothing has run against a real RAVIS or Codex task.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

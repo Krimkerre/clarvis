@@ -16,7 +16,7 @@ import { takeProjectLock } from '../lock/projectLock';
 import { createSessionKey, freshKey } from '../relay/idempotency';
 import { RelayClient } from '../relay/relayClient';
 import { RelayHttp, relayEndpoint } from '../relay/relayHttp';
-import type { CodexState, CreateSessionBody, RunningCommand, SessionMode, SessionSummary } from '../relay/relayTypes';
+import type { CodexState, CreateSessionBody, RunningCommand, SessionMode, SessionState, SessionSummary } from '../relay/relayTypes';
 import { K1_FILE_CHANGE, K2_COMMANDS, K11_FOR_THE_SESSION } from '../../test/fakes/calibrationRequests';
 import { TokenStore } from '../relay/tokenStore';
 import {
@@ -30,7 +30,7 @@ import {
 } from './runCore';
 import type { PromptShower, RequestPrompt } from './approvals';
 import { SITE_LINES } from './siteAsks';
-import { CODEX_LINES } from './translate';
+import { buildOnGoneLine, CODEX_LINES, modeNotChangedLine } from './translate';
 
 /**
  * The remote Codex runner against `FakeRavisRelay` and its session state machine: a whole task, Stop,
@@ -77,8 +77,12 @@ class FakeGit implements CodexGit {
     return this.refuseBegin ?? { ok: true, branch: 'clarvis/add-utc', headCommit: HEAD };
   }
 
-  async continueOn(branch: string, headCommit: string): Promise<CodexBranch> {
+  /** The task each continuation was given: the new request, for Build on (plan.md M15). */
+  readonly continuedFor: (string | undefined)[] = [];
+
+  async continueOn(branch: string, headCommit: string, task?: string): Promise<CodexBranch> {
     this.continued.push([branch, headCommit]);
+    this.continuedFor.push(task);
     return this.refuseContinuation ? { ok: false, line: this.refuseContinuation } : { ok: true, branch, headCommit };
   }
 
@@ -920,6 +924,103 @@ test('"carry on" after the step cap is a carry_on turn on the same session, foll
     assert.equal(done.text, 'Finished the rest.');
     assert.equal(session.settles.length, 2);
     assert.equal(next.endedAtStepCap, false);
+  }));
+
+// ── Building on Codex's earlier work (plan.md M15; the owner's decision of 15 Sep 2026) ──
+
+const SHOUT = 'Also add a --shout option to greet.py that prints the greeting in capitals, with a test for it.';
+
+/** An idle task Codex left on `clarvis/add-utc` (the fixtures' branch), its key kept, as a settle with `next: 'idle'` leaves it. */
+function leftIdle(h: Harness, options: { storeKey?: boolean; state?: SessionState } = {}): MachineSession {
+  const session = h.machine.seed({ state: options.state ?? 'idle', holdsLock: false, turnActive: false });
+  if (options.storeKey !== false) keepToken(h, session);
+  return session;
+}
+
+const leftOn = (session: MachineSession) => ({ sessionId: session.id, branch: 'clarvis/add-utc', tip: HEAD });
+
+test('Build on is a continue turn carrying the request on the same idle session, on its own branch: no new session, no new branch', () =>
+  withCodex(async (h) => {
+    const session = leftIdle(h);
+    const core = h.core();
+
+    const run = follow(core.buildOn(leftOn(session), SHOUT, new AbortController().signal));
+    await waitFor(() => session.turns.length === 1, 'the turn on the earlier task');
+    h.machine.completeItem(session, message('msg_shout', 'Added --shout, with a test.'));
+    h.machine.completeTurn(session);
+    const done = await run.next(isDone);
+
+    assert.deepEqual(session.turns, [{ text: SHOUT, kind: 'continue' }]);
+    assert.deepEqual(h.git.continued, [['clarvis/add-utc', HEAD]], 'the window is switched to its branch at the tip it was asked about');
+    assert.deepEqual(h.git.continuedFor, [SHOUT], 'the request is what its commit and undo name');
+    assert.deepEqual(h.git.begun, [], 'no new branch');
+    assert.equal(h.machine.all.length, 1, 'no new session');
+    assert.equal(h.sent.includes('POST /api/v1/agent-sessions'), false);
+    assert.equal(h.sent.some((line) => line.endsWith('/mode')), false, 'the same mode is left alone');
+    const read = h.sent.indexOf(`GET /api/v1/agent-sessions/${session.id}`);
+    assert.ok(read !== -1 && read < h.sent.indexOf(`POST /api/v1/agent-sessions/${session.id}/turns`), "the task's view is read before its turn");
+    assert.equal(done.text, 'Added --shout, with a test.');
+    assert.deepEqual(session.settles.map((settle) => settle.next), ['idle']);
+    assert.deepEqual(h.git.branches, ['clarvis/add-utc'], 'saved on its own branch');
+  }));
+
+test('Build on starts nothing and switches no branch when the key is missing, or the task is no longer idle on that branch', () =>
+  withCodex(async (h) => {
+    const keyless = leftIdle(h, { storeKey: false });
+    const running = leftIdle(h, { state: 'running' });
+    const elsewhere = leftIdle(h);
+
+    const missing = await follow(h.core().buildOn(leftOn(keyless), SHOUT, new AbortController().signal)).next(isDone);
+    const carriedOn = await follow(h.core().buildOn(leftOn(running), SHOUT, new AbortController().signal)).next(isDone);
+    const moved = await follow(h.core().buildOn({ ...leftOn(elsewhere), branch: 'clarvis/other' }, SHOUT, new AbortController().signal)).next(isDone);
+
+    assert.equal(missing.text, CODEX_LINES.tokenMissing);
+    assert.equal(carriedOn.text, buildOnGoneLine('clarvis/add-utc'));
+    assert.equal(moved.text, buildOnGoneLine('clarvis/other'));
+    assert.deepEqual(h.git.continued, [], 'no branch switched');
+    assert.deepEqual([keyless, running, elsewhere].map((session) => session.turns.length), [0, 0, 0]);
+  }));
+
+test("Build on gives the earlier task the chat's mode before its turn, and starts nothing when RAVIS won't", () =>
+  withCodex(async (h) => {
+    const session = leftIdle(h);
+    const run = follow(h.core({ mode: 'unattended' }).buildOn(leftOn(session), SHOUT, new AbortController().signal));
+    await waitFor(() => session.turns.length === 1, 'the turn');
+    const mode = h.sent.indexOf(`POST /api/v1/agent-sessions/${session.id}/mode`);
+    assert.ok(mode !== -1 && mode < h.sent.indexOf(`POST /api/v1/agent-sessions/${session.id}/turns`), 'the mode is set before the turn');
+    h.machine.completeTurn(session);
+    await run.ended();
+
+    const refused = leftIdle(h);
+    h.fake.reply('POST /api/v1/agent-sessions/{sid}/mode', 'not a mode');
+    const done = await follow(h.core({ modeNow: () => 'auto' }).buildOn(leftOn(refused), SHOUT, new AbortController().signal)).next(isDone);
+
+    assert.equal(done.text, modeNotChangedLine('auto'));
+    assert.equal(refused.turns.length, 0);
+    assert.deepEqual(h.git.continued, [['clarvis/add-utc', HEAD]], 'only the first task switched branch');
+  }));
+
+test('a Stop before Build on reaches the branch switches nothing and starts no turn', () =>
+  withCodex(async (h) => {
+    const session = leftIdle(h);
+    const controller = new AbortController();
+    controller.abort();
+
+    const done = await follow(h.core().buildOn(leftOn(session), SHOUT, controller.signal)).next(isDone);
+
+    assert.equal(done.text, CODEX_LINES.stopped);
+    assert.deepEqual([h.git.continued, session.turns], [[], []]);
+  }));
+
+test('Build on refuses when the branch moved away from the work the owner was asked about, and starts no turn', () =>
+  withCodex(async (h) => {
+    const session = leftIdle(h);
+    h.git.refuseContinuation = '`clarvis/add-utc` no longer contains the saved work (commit 3f9c2e1), so nothing was continued. Look at the branch, then switch again.';
+
+    const done = await follow(h.core().buildOn(leftOn(session), SHOUT, new AbortController().signal)).next(isDone);
+
+    assert.equal(done.text, h.git.refuseContinuation);
+    assert.equal(session.turns.length, 0);
   }));
 
 test('RAVIS restarting mid-turn says the last step may not have finished, and the work is still saved', () =>

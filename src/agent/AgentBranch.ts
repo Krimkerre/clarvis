@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { workspaceFolderPath } from './gitExtension';
 import { repositoryForFolder } from './repositoryForFolder';
 import { join } from 'path';
-import { branchNameFor, adviseOnGit, continuationDecision, GitProblem, isAgentBranch, isRealBase, stackedAdvice, type BranchContinuation } from './branchNames';
+import { branchNameFor, adviseOnGit, continuationDecision, GitProblem, isAgentBranch, stackedAdvice, startingBase, type BranchContinuation } from './branchNames';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
 import { atRiskPaths } from './atRisk';
@@ -27,8 +27,11 @@ export interface Isolation {
 }
 
 
-/** The branch runs start from, remembered so a second run does not stack on the first. */
-const BASE_BRANCH_KEY = 'clarvis.agent.baseBranch';
+/**
+ * The branch runs start from, remembered so a second run does not stack on the first. Exported for the question before
+ * a Codex task (`RunSession.whereCodexWorks`), which names the branch a fresh task would start from.
+ */
+export const BASE_BRANCH_KEY = 'clarvis.agent.baseBranch';
 
 /**
  * Keeping an agent run off the user's branch.
@@ -201,7 +204,8 @@ export class AgentBranch {
    * branched off run one.
    */
   private async baseFor(head: string | undefined, existing: string[], unborn: boolean): Promise<string | undefined> {
-    const base = head && isRealBase(head, unborn) ? head : this.rememberedBase(existing);
+    // The rule lives in `startingBase`, shared with the question that names this branch before a Codex task.
+    const base = startingBase(head, unborn, this.memento?.get(BASE_BRANCH_KEY), existing);
     if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
     return base;
   }
@@ -404,10 +408,8 @@ export class AgentBranch {
    * plausible base beats branching from the previous task's work.
    */
   private rememberedBase(existing: string[]): string | undefined {
-    const remembered = this.memento?.get(BASE_BRANCH_KEY);
-    if (remembered && existing.includes(remembered)) return remembered;
-
-    return ['main', 'master', 'develop'].find((name) => existing.includes(name));
+    // `startingBase` without a HEAD to start from: the remembered base, then main, master or develop.
+    return startingBase(undefined, false, this.memento?.get(BASE_BRANCH_KEY), existing);
   }
 
   private repository(): GitRepository | undefined {

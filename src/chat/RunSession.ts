@@ -9,6 +9,9 @@ import { detectTestCommand } from '../agent/testCommand';
 import { Busy } from './Busy';
 import { offerGitFix, setUpGitHere } from '../agent/gitOffer';
 import { CODEX_GIT_LINES, gitSetupChoice, gitSetupChoices, offerCodexGitSetup } from './codexGitSetup';
+import { whereCodexWorks, type CodexWhere } from './codexLeftWork';
+import { BASE_BRANCH_KEY } from '../agent/AgentBranch';
+import { findLeftWork } from '../engine/codex/leftTasks';
 import { QuipPicker } from '../personality/QuipPicker';
 import { matchStep, readStepMarkers } from '../agent/stepProgress';
 import { plannedMilestoneOffer, stepCapOffer, unplannedRunOffer } from '../planning/planUpdate';
@@ -229,6 +232,13 @@ export class RunSession {
    * is not a mode setting: `rm -rf` stops and asks in every mode, including this one.
    */
   modeStoppedAsking(): void {
+    // **Build on or start fresh** (plan.md M15): a mode switch while that question shows drops it, whichever mode it
+    // is, and never presses a button. The answer depended on the mode it was asked in (Unattended doesn't ask at all).
+    if (this.leftWorkAskedIn !== undefined && this.pending.isWaiting && chatModeSetting() !== this.leftWorkAskedIn) {
+      this.log('codex left work: the mode changed while asking, so the question is dropped and nothing runs');
+      this.pending.supply('Do it', false);
+      return;
+    }
     // M15 C2b: a Codex task's requests are its runner's. Unattended may answer the one on screen itself — the narrow
     // kinds only — and a "Do it" typed on its behalf would be words for Codex, not an answer.
     if (this.running instanceof RemoteCodexRunner) return this.running.modeChanged();
@@ -239,6 +249,9 @@ export class RunSession {
     // reading "Do it" as a yes to it — so a mode switch can't set git up (`codexGitSetup.ts`).
     this.pending.supply('Do it', false);
   }
+
+  /** The chat mode the build-on-or-start-fresh question was asked in, while it shows (plan.md M15). */
+  private leftWorkAskedIn: string | undefined;
 
   setStepApproval(on: boolean, live?: () => boolean): void {
     this.stepApproval = on;
@@ -374,6 +387,12 @@ export class RunSession {
     const opened = await this.openRun(root, task, decision);
     if ('refusal' in opened) return this.refused(opened);
 
+    // **Build on Codex's earlier work, or start fresh** (plan.md M15; the owner's decision of 15 Sep 2026): asked before
+    // a Codex task when earlier Codex work was left on its branch, once Workspace Trust, the engine's refusals and
+    // Codex's readiness have had their say. Unanswered, stopped or dropped: nothing runs, and nothing was promised yet.
+    const where = await this.whereCodexWorks(opened.runner, root);
+    if (where.kind === 'nothing') return opened.release();
+
     // Written for this job rather than the same sentence every time. It is the first
     // thing said in every run, which makes it the most repeated line in the product.
     // A task carried on after git was set up was asked for a moment ago, and says so instead.
@@ -384,7 +403,42 @@ export class RunSession {
     await this.note(opening);
     this.avatar.setState('thinking', 'chat');
 
-    await this.follow(opened, task, (signal) => opened.runner.run(task, signal));
+    await this.follow(opened, task, (signal) => this.startOrBuildOn(opened.runner, where, task, signal));
+  }
+
+  /**
+   * Where a Codex task goes when Codex left earlier work on its branch: the question, its answer, and the checks around
+   * it are `codexLeftWork.ts`'s and `leftTasks.ts`'s. Clarvis's own engine, and a window without RAVIS, start fresh as
+   * they always have (a Codex task without RAVIS was already refused by `openRun`).
+   */
+  private async whereCodexWorks(runner: CodingRun, root: string | undefined): Promise<CodexWhere> {
+    const ravis = ravisAccess(this.models);
+    if (!(runner instanceof RemoteCodexRunner) || !root || ravis.kind !== 'ready') return { kind: 'fresh' };
+    const relay = ravis.access.relay;
+    const folder: string = root;
+    const git = new GitFacts(folder);
+    try {
+      return await whereCodexWorks({
+        find: () => findLeftWork({ relay, tokens: new TokenStore(), git, root: folder, rememberedBase: this.context.workspaceState.get<string>(BASE_BRANCH_KEY), log: this.log }),
+        unattended: () => codexModeFor(chatModeSetting()) === 'unattended',
+        ask: (choices, accepts) => {
+          // Only its own buttons and words answer it; anything else typed is the message it is (`ChatService.runTook`).
+          this.leftWorkAskedIn = chatModeSetting();
+          return this.pending.ask(choices, 'where Codex should work', true, accepts);
+        },
+        note: (line) => this.note(line),
+        dirty: () => git.dirty(),
+        log: this.log,
+      });
+    } finally {
+      this.leftWorkAskedIn = undefined;
+    }
+  }
+
+  /** A new task; or, when the owner chose Build on, the request as a new turn on Codex's earlier task, on its branch. */
+  private startOrBuildOn(runner: CodingRun, where: CodexWhere, task: string, signal: AbortSignal): AsyncIterable<AgentEvent> {
+    if (where.kind === 'build_on' && runner instanceof RemoteCodexRunner) return runner.buildOn(where.task, task, signal);
+    return runner.run(task, signal);
   }
 
   /**

@@ -60,6 +60,8 @@ export interface MachineSession {
   readonly root: string;
   readonly taskId: string;
   readonly stream: FakeEventStream;
+  /** When RAVIS last changed it, as the session list shows it: a test sets it to order tasks by recency. */
+  updatedAt: string;
   state: SessionState;
   activeTurn: string | null;
   holdsLock: boolean;
@@ -191,7 +193,7 @@ export class FakeSessions {
   // ── Test controls ───────────────────────────────────────────────────────────
 
   /** A live session with a token, as if a window had created it. */
-  seed(options: { root?: string; taskId?: string; state?: SessionState; holdsLock?: boolean; turnActive?: boolean } = {}): MachineSession {
+  seed(options: { root?: string; taskId?: string; state?: SessionState; holdsLock?: boolean; turnActive?: boolean; updatedAt?: string } = {}): MachineSession {
     this.counter++;
     const id = `as_FAKE${String(this.counter).padStart(4, '0')}${randomBytes(4).toString('hex').toUpperCase()}`;
     const state = options.state ?? 'running';
@@ -203,6 +205,7 @@ export class FakeSessions {
       root: options.root ?? '/Users/owner/Documents/coding/add-utc-demo',
       taskId: options.taskId ?? randomUUID(),
       stream,
+      updatedAt: options.updatedAt ?? '2026-09-13T01:54:00Z',
       state,
       activeTurn: options.turnActive === false ? null : randomUUID(),
       holdsLock: options.holdsLock ?? true,
@@ -460,7 +463,7 @@ export class FakeSessions {
         state: session.state,
         clarvis_task_id: session.taskId,
         created_at: '2026-09-13T01:12:00Z',
-        updated_at: '2026-09-13T01:54:00Z',
+        updated_at: session.updatedAt,
         waiting_on_you: session.open.size > 0,
         attached_windows: 0,
       }));

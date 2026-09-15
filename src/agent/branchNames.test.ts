@@ -1,6 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { continuationDecision, isRealBase } from './branchNames';
+import { continuationDecision, isRealBase, startingBase } from './branchNames';
+
+// Where a new task's branch starts, shared by `AgentBranch.begin` and the build-on-or-start-fresh question before a Codex
+// task (plan.md M15), so the question's **Start fresh from …** names the branch the task really starts from.
+test('a fresh task starts from HEAD when it is a real base, else the remembered base, else main, master or develop: never a literal main', () => {
+  assert.equal(startingBase('feature', false, 'main', ['main', 'feature']), 'feature');
+  assert.equal(startingBase('clarvis/greeter', false, 'master', ['master', 'clarvis/greeter']), 'master');
+  assert.equal(startingBase('clarvis/greeter', false, undefined, ['master', 'clarvis/greeter']), 'master');
+  assert.equal(startingBase('clarvis/greeter', false, 'release-gone', ['develop', 'clarvis/greeter']), 'develop');
+  assert.equal(startingBase('master', true, undefined, []), undefined, 'an unborn master is nowhere to start from');
+  assert.equal(startingBase(undefined, false, undefined, ['clarvis/greeter']), undefined);
+});
 
 // F10's second edge: a brand-new repository (git init, zero commits) reports HEAD as
 // "master" even though nothing has ever been committed there — an unborn ref, not a

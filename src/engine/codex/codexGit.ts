@@ -90,7 +90,9 @@ export class CodexGitGlue implements CodexGit {
    * at or after the commit the other engine saved — refused, with the reason, when that branch is missing or moved.
    * The commit it stands on is read from git itself, not the Git extension's state, which catches up later.
    */
-  async continueOn(branch: string, headCommit: string): Promise<CodexBranch> {
+  async continueOn(branch: string, headCommit: string, task?: string): Promise<CodexBranch> {
+    // Build on (plan.md M15): the new request is the task its commit message and undo snapshot name.
+    if (task) this.task = task;
     await this.checkpoint.begin(this.task || `Carrying on ${branch}`);
     await this.checkpoint.captureAll(this.branch.atRisk());
     const repository = await workspaceRepository<Repository>();

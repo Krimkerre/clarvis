@@ -299,6 +299,20 @@ export function tokenLine(read: Exclude<TokenRead, { kind: 'found' }>): string {
   return `The file holding this editor's key to the Codex task isn't safe to use (${read.reason}), so it was left alone.`;
 }
 
+/** Build on (plan.md M15): the task chosen is no longer idle on its branch, because another editor carried it on, say. */
+export function buildOnGoneLine(branch: string): string {
+  return `Codex's earlier task on \`${branch}\` isn't waiting there any more, so nothing was started. Ask again to see what's there now.`;
+}
+
+/**
+ * Build on (plan.md M15): RAVIS wouldn't give the earlier task the chat's mode. It isn't carried on in the mode it had,
+ * since a task started in Unattended would go on answering Codex's requests itself.
+ */
+export function modeNotChangedLine(mode: string): string {
+  const named = mode.charAt(0).toUpperCase() + mode.slice(1);
+  return `RAVIS couldn't switch Codex's earlier task to ${named} mode, so it wasn't carried on in the mode it had. Nothing was started.`;
+}
+
 /** `HH:MM` in this Mac's time zone, or the text as it came when it isn't a time. */
 export function clockTime(iso: string): string {
   const date = new Date(iso);

@@ -1,5 +1,6 @@
 import { characterWith } from '../personality/character';
 import type { SkillListing } from '../engine/relay/relayTypes';
+import { TOOL_OUTPUT_RULE } from './toolFence';
 
 /**
  * The agent's brief, as a pure function.
@@ -37,6 +38,7 @@ export function agentSystemPrompt(readOnly = false, root?: string): string {
         // he replied that he could not run tests, execute code or fix anything.
         'The tools attached to this turn read the project — files, listings, search, diagnostics, git status and diffs. Writing and running things is not part of answering a question; it happens when they hand you a job.',
         'Look before you answer: read the file rather than guessing at what it probably contains.',
+        TOOL_OUTPUT_RULE,
         'If a question needs a change made, say so plainly and stop; the user asks for work in their own words.',
         // **Not every question is about the project.** Told only about the codebase and
         // handed a set of tools, the model treated "how do closures work" as something
@@ -52,6 +54,7 @@ export function agentSystemPrompt(readOnly = false, root?: string): string {
       where,
       'Work in small steps. Read before you edit. Verify with tests or diagnostics when you can.',
       'You can only touch files inside the workspace; anything outside it is refused.',
+      TOOL_OUTPUT_RULE,
       'Destructive, outward-facing and install commands stop and ask the user — expect that, and do not try to work around it.',
       'If a command says something it needs is missing from this computer — a module, a program, a library — Clarvis stops and asks the user what to do. Never try to install it, reinstall a language, or change how this computer is set up yourself.',
       // **Said before the first server, not after the second failure.** Found live, 13

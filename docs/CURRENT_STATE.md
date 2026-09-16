@@ -725,6 +725,16 @@ and the event cursor (`Activity.statusFacts`, `recordCheck`; `protocol.ts` `Stat
 listens to `onDidEndTaskProcess` while the Bridge runs). NERVIS 0.34.10 shows them on the window card.
 **Checked:** 6 new fast tests; each of 7 guards failed one.
 
+**16 Sep (0.17.16): the agent's reads are fenced.** CLARVIS.md §9 says retrieved content is evidence,
+never intent, and until now only one chat path used `chat/fence.ts`. `src/agent/toolFence.ts` wraps what
+`readFile`, `listFiles`, `search`, `readDiagnostics`, `gitStatus`, `gitDiff` and `runCommand`'s output hand
+back (`AgentRunner.invoke`, `reportCommand`) between the fence markers under a one-line heading; a marker
+inside the content is removed, a path in the heading is cleaned, and Clarvis's own words and `readSkill`
+stay outside. The rule is stated once in both system prompts (`TOOL_OUTPUT_RULE`). **Checked:** 5 fast
+tests and a host spec with a planted instruction (a read, a listing, two searches and `cat` through the
+real runner); each of 6 guards failed a fast test, and unfencing the file read or the command output each
+failed the host spec.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

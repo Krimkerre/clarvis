@@ -21,6 +21,7 @@ import {
 import { classifyPath } from './sensitivePath';
 import { gateOutcome } from './gateDecision';
 import { toolEnding, whileAwaiting, type Activity } from '../bridge/activity';
+import { evidence, label } from './toolFence';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
@@ -955,10 +956,12 @@ export class AgentRunner implements CodingRun {
     // tool does, so a new tool is one line here plus its entry in the registry — and
     // there is no order to get wrong.
     const tools: Record<ToolName, () => Promise<string> | string> = {
+      // Every read is fenced as data (CLARVIS.md §9, `toolFence.ts`); Clarvis's own words stay outside.
       readFile: async () => {
         await this.gateSensitiveRead(args.path);
         const result = await readFile(this.root, args.path);
-        return result.truncated ? `${result.text}\n\n[truncated at 512KB]` : result.text;
+        const body = evidence(`The contents of ${label(args.path)}`, result.text, '(the file is empty)');
+        return result.truncated ? `${body}\n\n[truncated at 512KB]` : body;
       },
 
       listFiles: async () => {
@@ -966,12 +969,12 @@ export class AgentRunner implements CodingRun {
           directory: args.directory,
           recursive: args.recursive !== false,
         });
-        return files.join('\n') || '(no files)';
+        return evidence('Files in the project', files.join('\n'), '(no files)');
       },
 
       search: async () => {
         const hits = await search(this.root, new RegExp(args.pattern), { directory: args.directory });
-        return hits.map((hit) => `${hit.file}:${hit.line}  ${hit.text}`).join('\n') || '(no matches)';
+        return evidence('Search results', hits.map((hit) => `${hit.file}:${hit.line}  ${hit.text}`).join('\n'), '(no matches)');
       },
 
       applyEdit: async () => {
@@ -986,10 +989,10 @@ export class AgentRunner implements CodingRun {
 
       runCommand: () => this.runGated(args.command, signal),
 
-      readDiagnostics: () => readDiagnostics(this.root, args.file).join('\n') || '(no problems reported)',
+      readDiagnostics: () => evidence("The editor's problems", readDiagnostics(this.root, args.file).join('\n'), '(no problems reported)'),
 
-      gitStatus: () => gitStatus(),
-      gitDiff: async () => (await gitDiff(args.staged === true)) || '(no changes)',
+      gitStatus: async () => evidence("git's status", await gitStatus(), '(git reported nothing)'),
+      gitDiff: async () => evidence('The diff', await gitDiff(args.staged === true), '(no changes)'),
 
       readSkill: () => this.readSkill(args.skill, args.file, signal),
     };
@@ -1183,7 +1186,7 @@ export class AgentRunner implements CodingRun {
   private async reportCommand(command: string, result: CommandResult, note: string | undefined): Promise<string> {
     const said = [
       `exit ${result.exitCode ?? 'killed'}${result.timedOut ? ' (timed out)' : ''}`,
-      result.output.trim() || '(no output)',
+      evidence(`The output of \`${label(command)}\``, result.output.trim(), '(no output)'),
       ...(note ? ['', note] : []),
     ].join('\n');
 

@@ -463,7 +463,8 @@ function standInSkillReader(turns: { skill: string; file?: string }[][], beforeS
     }
     yield { type: 'stop' as const, reason: 'tools' as const };
   }
-  const models = { isReady: async () => true, spec: () => ({ label: 'a stand-in model' }), streamWithTools };
+  // `sessionFor` because a runner given an `Activity` names the run's session on it.
+  const models = { isReady: async () => true, spec: () => ({ label: 'a stand-in model' }), sessionFor: () => 'stand-in-session', streamWithTools };
   return { models: models as unknown as ModelService, requests };
 }
 

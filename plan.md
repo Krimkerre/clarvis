@@ -5288,7 +5288,8 @@ which is a distinction this project has been caught by before.
 > - **Only the endings go on to NERVIS.** NERVIS's hub gives a service 120 events at once and
 >   12 a minute after (its owner-decided flood guard), and a 25-call run with both ends of
 >   every call forwarded sends about 130. `clarvis.model.requested` and `clarvis.tool.started`
->   stay on the Bridge's own stream; the ending carries `elapsed_ms`.
+>   stay on the Bridge's own stream; the ending carries `elapsed_ms`. A model event's request id
+>   is also put on the forwarded envelope (0.17.12), where RAVIS puts its own.
 > - **Not built:** `clarvis.task.*`. §6.4 names the family and nothing in the ecosystem says
 >   what a Clarvis "task" is — an agent run already has `clarvis.agent.*`, a NERVIS handoff has
 >   a file, and §6.3's "build and test outcome" suggests VS Code tasks. That is the owner's to

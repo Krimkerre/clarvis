@@ -132,3 +132,11 @@ test('the beginnings of model requests and tool calls stay on the Bridge; everyt
     assert.equal(forwarded(name), true, name);
   }
 });
+
+test("a model request's id travels on the envelope, where RAVIS puts its own", () => {
+  const body = eventBody(anEvent({ name: 'clarvis.model.completed', data: { request_id: 'f'.repeat(32), role: 'chat' } }), SOURCE);
+  assert.equal(body.request_id, 'f'.repeat(32));
+  assert.equal((body.data as Record<string, unknown>).request_id, 'f'.repeat(32), 'and stays in data');
+  assert.equal('request_id' in eventBody(anEvent(), SOURCE), false, 'an event about no request names none');
+  assert.equal('request_id' in eventBody(anEvent({ data: { request_id: '' } }), SOURCE), false, 'nor an empty one');
+});

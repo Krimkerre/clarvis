@@ -98,6 +98,12 @@ export function eventBody(event: ForwardedEvent, source: EventSource): Record<st
   // conversation whose id is the empty string, and the hub would file every
   // untraced event under it.
   if (event.sessionId) body.session_id = event.sessionId;
+  // **And the request, for an event about one.** `clarvis.model.*` names the
+  // `x-request-id` its request carried; on the envelope, where RAVIS puts its own
+  // (§4.4), NERVIS stores the two under the same id. Still in `data` too, for a
+  // reader of the Bridge's own stream.
+  const requestId = event.data.request_id;
+  if (typeof requestId === 'string' && requestId) body.request_id = requestId;
   return body;
 }
 

@@ -691,6 +691,9 @@ wiped by a later `noteTrace`, whole seconds again) failed one of them.
 - `Activity.note()` / `observeNotes()` is a second channel beside `observe()`; `publishNotes` in
   `publish.ts` maps it; `forwarded()` in `eventForwarding.ts` keeps the two beginnings off NERVIS.
 - `clarvis.task.*` is not built: what a Clarvis task is has not been decided.
+- **0.17.12, the same day:** a forwarded event with a `request_id` in its data carries it on the envelope
+  too (`eventBody`), where RAVIS puts its own, so NERVIS stores Clarvis's model event and RAVIS's route
+  decision under one request id.
 
 **Checked:** 26 new fast tests (`callWatch`, `problemCounts`, and additions to `activity`,
 `publish`, `eventForwarding`, `Bridge`, `lineage`), the real runner's tool events in

@@ -1,7 +1,7 @@
 import { randomBytes } from 'crypto';
 
 /**
- * The two correlation headers RAVIS joins on, and how Clarvis fills them.
+ * The correlation headers RAVIS joins on, and how Clarvis fills them.
  *
  * **Why this exists.** Runbook §8's fourth acceptance scenario asks that a chat
  * turn and an agent run each preserve one session and one trace. Clarvis sent
@@ -21,9 +21,22 @@ import { randomBytes } from 'crypto';
  * correlation key that encodes where it came from is an identifier for the
  * person, and §6.1 rules that out for exactly this reason.
  *
- * **Sent to every OpenAI-compatible endpoint, not only to RAVIS.** `traceparent`
- * is a W3C standard header carrying two random ids and no content, and
- * `x-session-id` is an opaque key; a provider that does not read them ignores
+ * **And a third, for the request itself.** Runbook §4.3 fixes `X-Request-ID` as
+ * the id of one request, created if absent, and CLARVIS.md §6.5 asks Clarvis to
+ * send it. Until 16 September 2026 it didn't, so RAVIS minted one of its own and
+ * nothing on Clarvis's side could name the request a route decision was about.
+ * RAVIS reads it as sent (`apply_admission_control`), so the id in its route
+ * decision, its events and its log lines is now the one Clarvis chose.
+ *
+ * **`workspace_id` is the one §6.5 names that does not travel.** The runbook's
+ * header list has no place for it and RAVIS reads no such header, so sending
+ * one would be a contract nobody agreed to (AGENTS.md's rule). Clarvis already
+ * publishes its salted workspace id to NERVIS with its registration, which is
+ * where a trace's Clarvis lane is identified.
+ *
+ * **Sent to every provider, not only to RAVIS.** `traceparent` is a W3C standard
+ * header carrying two random ids and no content, and `x-session-id` and
+ * `x-request-id` are opaque keys; a provider that does not read them ignores
  * them. Sniffing for RAVIS to decide would be a second thing to keep correct,
  * and it would fail exactly where RAVIS is reached through `custom` — which is
  * how it is reached, since Clarvis has no `ravis` provider of its own.
@@ -48,6 +61,11 @@ function newSpanId(): string {
   return randomBytes(8).toString('hex');
 }
 
+/** 16 bytes as 32 hex characters, the shape RAVIS mints when a caller sends none. */
+export function newRequestId(): string {
+  return randomBytes(16).toString('hex');
+}
+
 /**
  * One `traceparent` for a request belonging to `traceId`.
  *
@@ -63,13 +81,19 @@ export function traceparent(traceId: string): string {
 /**
  * The correlation headers for one outbound model request.
  *
- * Both are omitted rather than sent empty when there is nothing to say. An empty
- * `x-session-id` is a session whose id is the empty string, which RAVIS would
- * store and then correlate every anonymous request to — worse than no header,
- * because it looks like an answer.
+ * The trace and the session are omitted rather than sent empty when there is
+ * nothing to say. An empty `x-session-id` is a session whose id is the empty
+ * string, which RAVIS would store and then correlate every anonymous request to
+ * — worse than no header, because it looks like an answer. The request id is
+ * always sent: every request is one, whatever it belongs to, and a fresh one is
+ * minted per call so two requests never share it.
  */
-export function lineageHeaders(traceId: string, sessionId: string): Record<string, string> {
-  const headers: Record<string, string> = {};
+export function lineageHeaders(
+  traceId: string,
+  sessionId: string,
+  requestId: string = newRequestId()
+): Record<string, string> {
+  const headers: Record<string, string> = { 'x-request-id': requestId };
   if (traceId) headers.traceparent = traceparent(traceId);
   if (sessionId) headers['x-session-id'] = sessionId;
   return headers;

@@ -643,6 +643,22 @@ Not verified here: `ChatService`'s routing of a skill command, `RunSession.run`'
 panel's refresh events import `vscode`, and were read, not run. No skill command has run in VS Code or code-server,
 against the live RAVIS or against Codex.
 
+### What landed on 16 Sep: every model request names itself, on both adapters
+
+CLARVIS.md §6.5 asks Clarvis to send RAVIS `trace_id`, `request_id`, `session_id` and `workspace_id`. Two travelled, and
+only through the OpenAI-compatible adapter.
+
+- **`x-request-id` on every model request** (`lineageHeaders` in `src/model/lineage.ts`), a fresh 32-hex id per call,
+  the shape RAVIS mints for a caller that sends none. Unlike the trace and the session it is never omitted: every
+  request is one. RAVIS reads it as sent, so its route decision, events and log lines carry Clarvis's id.
+- **The Anthropic adapter sends the same three headers.** It sent none. It only ever reaches Anthropic — RAVIS serves
+  no `/v1/messages` — so nothing reads them yet, but a request is now the same request whichever adapter carries it.
+- **`workspace_id` still does not travel**, on purpose: runbook §4.3 lists no header for it and RAVIS reads none, so
+  sending one would be a contract nobody agreed to. The salted id already reaches NERVIS with the Bridge registration.
+
+**Checked:** 3 new tests and 2 updated in `src/model/lineage.test.ts`; breaking the request id, reusing one id, or
+dropping the Anthropic headers each failed them.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

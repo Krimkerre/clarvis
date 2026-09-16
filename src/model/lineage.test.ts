@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { lineageHeaders, newTraceId, traceparent } from './lineage';
+import { AnthropicProvider } from './AnthropicProvider';
+import { lineageHeaders, newRequestId, newTraceId, traceparent } from './lineage';
 import { OpenAiCompatibleProvider } from './OpenAiCompatibleProvider';
 import { providerSpec } from './providers';
 
@@ -49,9 +50,20 @@ test('nothing to say means no header, not an empty one', () => {
   // An empty `x-session-id` is a session whose id is the empty string. RAVIS
   // would store it and correlate every anonymous request to the same one —
   // worse than sending nothing, because it looks like an answer.
-  assert.deepEqual(lineageHeaders('', ''), {});
-  assert.deepEqual(Object.keys(lineageHeaders(newTraceId(), '')), ['traceparent']);
-  assert.deepEqual(Object.keys(lineageHeaders('', 'session-1')), ['x-session-id']);
+  // The request id is the exception: every request is one (runbook §4.3).
+  assert.deepEqual(Object.keys(lineageHeaders('', '')), ['x-request-id']);
+  assert.deepEqual(Object.keys(lineageHeaders(newTraceId(), '')), ['x-request-id', 'traceparent']);
+  assert.deepEqual(Object.keys(lineageHeaders('', 'session-1')), ['x-request-id', 'x-session-id']);
+});
+
+test('every request gets its own request id, in the shape RAVIS mints', () => {
+  const first = lineageHeaders('', '')['x-request-id'];
+  const second = lineageHeaders('', '')['x-request-id'];
+
+  assert.match(first, /^[0-9a-f]{32}$/);
+  assert.notEqual(first, second, 'two requests must never share an id');
+  assert.equal(lineageHeaders('', '', 'chosen')['x-request-id'], 'chosen');
+  assert.match(newRequestId(), /^[0-9a-f]{32}$/);
 });
 
 test('both headers travel when both are known', () => {
@@ -112,6 +124,7 @@ test('the correlation headers are actually on the outgoing request', async () =>
 
   assert.equal(sent.get('x-session-id'), 'session-7');
   assert.equal(sent.get('traceparent')?.split('-')[1], trace);
+  assert.match(sent.get('x-request-id') ?? '', /^[0-9a-f]{32}$/);
 });
 
 test('an uncorrelated request sends neither header', async () => {
@@ -121,6 +134,46 @@ test('an uncorrelated request sends neither header', async () => {
 
   assert.equal(sent.get('traceparent'), null);
   assert.equal(sent.get('x-session-id'), null);
+  assert.match(sent.get('x-request-id') ?? '', /^[0-9a-f]{32}$/, 'the request itself is still named');
+});
+
+test('the Anthropic adapter sends the same three headers', async () => {
+  // It sent none until 16 September 2026, so a request was a different kind of
+  // request depending on which adapter carried it (CLARVIS.md §6.5).
+  const spec = providerSpec('anthropic');
+  assert.ok(spec);
+  const provider = new AnthropicProvider(spec, async () => 'k', () => 'http://anthropic.invalid', () => {});
+
+  let seen: Headers | undefined;
+  const real = globalThis.fetch;
+  globalThis.fetch = (async (_url: string, init: RequestInit) => {
+    seen = new Headers(init.headers as Record<string, string>);
+    return new Response('event: message_stop\ndata: {"type":"message_stop"}\n\n', {
+      status: 200,
+      headers: { 'content-type': 'text/event-stream' },
+    });
+  }) as unknown as typeof fetch;
+
+  const trace = newTraceId();
+  try {
+    for await (const fragment of provider.stream({
+      system: 's',
+      messages: [{ role: 'user', content: 'hello' }],
+      model: 'claude-haiku-4-5',
+      traceId: trace,
+      sessionId: 'session-9',
+    })) {
+      void fragment;
+    }
+  } finally {
+    globalThis.fetch = real;
+  }
+
+  assert.ok(seen, 'no request was made');
+  assert.equal(seen.get('traceparent')?.split('-')[1], trace);
+  assert.equal(seen.get('x-session-id'), 'session-9');
+  assert.match(seen.get('x-request-id') ?? '', /^[0-9a-f]{32}$/);
+  assert.equal(seen.get('x-api-key'), 'k', 'the credential still travels');
 });
 
 test('chat and the agent do not share a session', async () => {

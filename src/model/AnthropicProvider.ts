@@ -9,6 +9,7 @@ import { StreamEvent, ToolCall } from './ModelProvider';
 import { ProviderSpec, resolveBaseUrl } from './providers';
 import { anthropicTools } from '../agent/toolRegistry';
 import { SseParser, decodeStream } from './sse';
+import { lineageHeaders } from './lineage';
 
 /** Wire version. Pinned, because an unpinned API version changes under you silently. */
 const API_VERSION = '2023-06-01';
@@ -245,10 +246,15 @@ export class AnthropicProvider implements ModelProvider {
     const response = await fetch(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       signal: request.signal,
+      // The same correlation headers the OpenAI-compatible adapter sends (§6.5).
+      // This adapter only ever reaches Anthropic — RAVIS serves no `/v1/messages`
+      // — so nothing in the ecosystem reads them yet; they are sent so a request
+      // is the same request whichever adapter carries it.
       headers: {
         'content-type': 'application/json',
         'x-api-key': key,
         'anthropic-version': API_VERSION,
+        ...lineageHeaders(request.traceId ?? '', request.sessionId ?? ''),
       },
       body: JSON.stringify({
         model: request.model,

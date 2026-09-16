@@ -1084,6 +1084,10 @@ test("Unattended, with this window's panel there, answers calibration's commands
     const core = h.core({ ask, mode: 'unattended', capture: async (paths) => void h.sent.push(`capture ${paths.join(' ')}`) });
     const { run, session } = await started(h, core);
     const requests = [...K2_COMMANDS.map((command) => h.machine.openCalibrationRequest(session, command)), h.machine.openCalibrationRequest(session, K1_FILE_CHANGE)];
+    // The second answer is slow on the wire. RAVIS says the first is resolved before its reply returns, and a window
+    // that took that as leave to send the next answer early had two on the wire at once, so the third overtook the
+    // second (seen once under load on 16 Sep 2026). One answer at a time keeps the order however slow each is.
+    h.fake.delayArrival(`/api/v1/agent-sessions/${session.id}/requests/${requests[1].id}/answer`, 50);
     await waitFor(() => session.answers.length === 5, 'every request to be answered');
 
     assert.equal(asked.length, 0, 'nobody was asked');

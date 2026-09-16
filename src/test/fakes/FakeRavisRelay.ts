@@ -108,6 +108,7 @@ export class FakeRavisRelay {
   private readonly scripts = new Map<string, FakeAnswer[]>();
   private readonly losses = new Map<string, number>();
   private readonly delays = new Map<string, number>();
+  private readonly arrivals = new Map<string, number>();
   private readonly remembered = new Map<string, { digest: string; answer: FakeAnswer }>();
   private readonly tokens = new Map<string, string>();
   private readonly revoked = new Map<string, string>();
@@ -152,6 +153,14 @@ export class FakeRavisRelay {
 
   delayResponses(routeKey: string, ms: number): void {
     this.delays.set(routeKey, ms);
+  }
+
+  /**
+   * The next request to exactly `pathname` is held for `ms` before anything is done with it — as if it were slow
+   * on the wire — so a request sent after it can be carried out first. Once.
+   */
+  delayArrival(pathname: string, ms: number): void {
+    this.arrivals.set(pathname, ms);
   }
 
   /** Another window took this lease's lock over: its heartbeats get `409 LEASE_REVOKED`. */
@@ -220,7 +229,7 @@ export class FakeRavisRelay {
     this.siteMachine = undefined;
     this.skillMachine = undefined;
     for (const stream of this.streams.values()) stream.disconnect();
-    for (const map of [this.scripts, this.losses, this.delays, this.remembered, this.revoked, this.streams, this.tokens]) map.clear();
+    for (const map of [this.scripts, this.losses, this.delays, this.arrivals, this.remembered, this.revoked, this.streams, this.tokens]) map.clear();
     this.tokens.set(FIXTURE_SESSION.id, FIXTURE_SESSION.token);
     this.seen.length = 0;
     this.violations.length = 0;
@@ -259,6 +268,11 @@ export class FakeRavisRelay {
     const url = new URL(request.url ?? '/', 'http://fake-ravis.invalid');
     const method = request.method ?? 'GET';
     const body = await readJsonBody(request);
+    const late = this.arrivals.get(url.pathname) ?? 0;
+    if (late > 0) {
+      this.arrivals.delete(url.pathname);
+      await new Promise((resolve) => setTimeout(resolve, late));
+    }
     this.seen.push({ method, path: url.pathname, query: Object.fromEntries(url.searchParams), headers: request.headers, body });
     if (url.pathname.startsWith('/ecosystem/')) return send(response, this.metadata(url.pathname));
     const route = matchRoute(method, url.pathname);

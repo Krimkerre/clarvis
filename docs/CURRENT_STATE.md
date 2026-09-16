@@ -695,6 +695,13 @@ wiped by a later `noteTrace`, whole seconds again) failed one of them.
   too (`eventBody`), where RAVIS puts its own, so NERVIS stores Clarvis's model event and RAVIS's route
   decision under one request id.
 
+**16 Sep (0.17.13): Codex answers can no longer overtake each other.** In Unattended, when several of
+Codex's requests arrived together, RAVIS's "resolved" event for one answer could start the next answer
+before the first had come back, and a slow answer was then overtaken (a `runCore.test.ts` failure, once,
+under full-suite load). `CodexApprovals` now sends one answer at a time (`sending`, `sendAlone`), and
+`FakeRavisRelay.delayArrival` makes the test fail every time without the fix. `npm run check` passed four
+runs in a row afterwards (2,145 each).
+
 **Checked:** 26 new fast tests (`callWatch`, `problemCounts`, and additions to `activity`,
 `publish`, `eventForwarding`, `Bridge`, `lineage`), the real runner's tool events in
 `branchContinuation.spec.ts`, and the real `ModelService` in `modelEvents.spec.ts`; each of 14

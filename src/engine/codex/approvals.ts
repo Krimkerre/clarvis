@@ -502,6 +502,14 @@ export class CodexApprovals {
   /** Site asks by group, and each ask's group by its request id (R5). */
   private readonly groups = new Map<string, SiteGroup>();
   private readonly groupOf = new Map<string, SiteGroup>();
+  /**
+   * An answer on its way to RAVIS. **Nothing else is asked or sent until it is back.** The slot on screen is free
+   * the moment an answer is decided, and RAVIS says the request is resolved before its reply to the answer arrives;
+   * taking that as leave to start the next request put two answers on the wire at once, and a slow one was overtaken
+   * (seen once under load on 16 Sep 2026: the third answer reached RAVIS before the second). The chain that sent
+   * this answer asks the next request itself once it returns.
+   */
+  private sending = false;
 
   constructor(private readonly ports: ApprovalPorts) {}
 
@@ -560,6 +568,7 @@ export class CodexApprovals {
   }
 
   private askNext(): void {
+    if (this.sending) return;
     const asking = this.board.next();
     if (asking) void this.handle(asking);
   }
@@ -574,7 +583,7 @@ export class CodexApprovals {
     // The last check before anything is sent (review M3): has anything ended this question meanwhile?
     const stopped = this.ports.stopping() || !this.board.stillAsking(request.id);
     this.board.answered(request.id);
-    if (engineDecisionAfterAsking(decision, stopped) === 'send') await this.send(request, decision as Decision);
+    if (engineDecisionAfterAsking(decision, stopped) === 'send') await this.sendAlone(request, decision as Decision);
     this.askNext();
   }
 
@@ -837,6 +846,16 @@ export class CodexApprovals {
     } catch (error) {
       // The task branch is still the undo; the copies only add to it.
       this.ports.log(`codex: files weren't copied for undo before the change (${String(error)})`);
+    }
+  }
+
+  /** `send`, with every other request held back until it is done (see `sending`). */
+  private async sendAlone(request: RequestView, decision: Decision): Promise<void> {
+    this.sending = true;
+    try {
+      await this.send(request, decision);
+    } finally {
+      this.sending = false;
     }
   }
 

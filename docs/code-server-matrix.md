@@ -21,6 +21,15 @@ observed.
 > records 0.12.0. Nothing else has been re-run, so a grade here is still not evidence about the
 > version that ships.
 >
+> **16 September 2026: code-server 4.137.0 (Code 1.137.0), Clarvis 0.17.15 — checked, not re-graded.**
+> The owner ruled out re-running this matrix after every upgrade. The ecosystem's
+> `tools/code_server_upgrade_check.py` compares code-server's login, proxy, origin, WebSocket and
+> webview-host files with the 4.135.0 install graded here (all identical; only `out/node/cli.js`
+> changed, a Windows-only default), runs Clarvis's host suite on Code 1.137.0 (31 passing), and checks
+> the live editor and open windows. The server- and webview-side grades below carry over on that
+> basis; the extension-API side is what the host suite exercises. Nothing below was re-run in a
+> browser, and the cells a changed file would touch are named in that tool.
+>
 > Six cells cite evidence under `~/.local/share/code-server/extensions/krimkerre.clarvis-0.0.1/`.
 > That directory is gone — each install replaces it — so those paths record where the evidence
 > *was* taken, not where it can be found now. Where nothing was observed the cell says `NOT_TESTED` and names the action that

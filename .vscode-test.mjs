@@ -23,7 +23,9 @@ process.on('exit', () => rmSync(userData, { recursive: true, force: true }));
 
 export default defineConfig({
   files: 'out/test/**/*.spec.js',
-  version: 'stable',
+  // `CLARVIS_CODE_VERSION` pins the VS Code release, so the suite can run on exactly the Code version a
+  // code-server bundles (the ecosystem's `tools/code_server_upgrade_check.py`, 16 Sep 2026).
+  version: process.env.CLARVIS_CODE_VERSION || 'stable',
   workspaceFolder: 'src/test/fixture-workspace',
   launchArgs: [`--user-data-dir=${userData}`],
 });

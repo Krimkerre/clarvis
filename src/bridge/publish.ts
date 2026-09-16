@@ -99,6 +99,6 @@ export function publishActivity(
 ): () => void {
   return activity.observe((change) => {
     const event = eventFor(change);
-    if (event) events.emit(event.name, event.data, change.traceId);
+    if (event) events.emit(event.name, event.data, change.traceId, change.sessionId);
   });
 }

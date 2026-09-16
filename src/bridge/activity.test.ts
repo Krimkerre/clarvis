@@ -266,6 +266,35 @@ test('a chat turn names one trace from start to finish', () => {
   );
 });
 
+test('a chat turn names one session from start to finish', () => {
+  const activity = new Activity(() => 0);
+  const seen: string[] = [];
+  activity.observe((change) => seen.push(change.sessionId));
+
+  activity.startChat('trace-one', 'session-chat');
+  activity.finish();
+
+  assert.deepEqual(seen, ['session-chat', 'session-chat']);
+});
+
+test('a run whose session is named later still reaches the completion with it', () => {
+  // The palette starts a run before the runner knows its role, so the session
+  // arrives with `noteTrace`; and a later `noteTrace` without one must not wipe
+  // a session a caller already gave.
+  const activity = new Activity(() => 0);
+  const seen: string[] = [];
+  activity.observe((change) => seen.push(change.sessionId));
+
+  activity.startRun();
+  activity.noteTrace('trace-two', 'session-agent');
+  activity.finish();
+  activity.startChat('trace-three', 'session-chat');
+  activity.noteTrace('trace-three');
+  activity.finish();
+
+  assert.deepEqual(seen, ['', 'session-agent', 'session-chat', 'session-chat']);
+});
+
 test('a run named after it started still reaches the completion', () => {
   // `noteTrace` exists because the palette route starts a run before the runner
   // has an id. The start event legitimately carries none there — what must not

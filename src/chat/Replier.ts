@@ -100,7 +100,8 @@ export class Replier {
     // One id for the turn, shared by the activity event and the model request:
     // the point of a trace is that those two are the same operation.
     const traceId = newTraceId();
-    const controller = this.busy.start('reply', traceId);
+    // And the session its request will carry, so the start event names it too.
+    const controller = this.busy.start('reply', traceId, this.models.sessionFor('chat'));
 
     this.avatar.setState('thinking', 'chat');
     const turn = this.transcript.begin('clarvis');

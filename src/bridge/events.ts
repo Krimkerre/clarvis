@@ -59,6 +59,12 @@ export interface BridgeEvent {
    */
   readonly trace_id: string;
   /**
+   * The model session the operation's requests carry, or '' when there is none.
+   * Top level for the same reason as `trace_id`: §4.4's envelope has the field,
+   * and NERVIS files an event under a conversation from it.
+   */
+  readonly session_id: string;
+  /**
    * Unique across the ecosystem, unlike `id`.
    *
    * `id` is this stream's cursor — it restarts at zero with the window, so two
@@ -96,17 +102,23 @@ export class EventStream {
    * one broken consumer must not stop the others hearing, and it certainly must
    * not propagate back into the editor work that emitted this.
    */
-  emit(name: EventName, data: EventData = {}, traceId = ''): void {
+  emit(name: EventName, data: EventData = {}, traceId = '', sessionId = ''): void {
     const event: BridgeEvent = {
       id: this.next++,
       name,
-      occurred_at: new Date(this.now()).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+      // **To the millisecond.** Whole seconds put a Clarvis bar on NERVIS's
+      // waterfall up to a second off either end, so a chat turn read as ending
+      // before the RAVIS call inside it did (seen 16 September 2026, trace
+      // 7886440e…). RFC 3339 allows the fraction and the hub reads it; RAVIS's
+      // stamps already carry one.
+      occurred_at: new Date(this.now()).toISOString(),
       data,
       event_id: randomUUID().replace(/-/g, ''),
       // Which operation this belongs to, for §11.2's waterfall. Empty for the
       // events that belong to no single one — a heartbeat is not part of a
       // request, and giving it a trace would put a bar in somebody's timeline.
       trace_id: traceId,
+      session_id: sessionId,
     };
 
     this.buffer.push(event);

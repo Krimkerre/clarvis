@@ -88,6 +88,23 @@ test('a step outside a run publishes nothing', () => {
 
 // ── Chat ────────────────────────────────────────────────────────────────────
 
+test('a published turn names its trace and its session at both ends', () => {
+  // What NERVIS joins on (runbook §4.3): the start and the completion must both
+  // carry the trace and the session the turn's model requests carry.
+  const it = watched();
+
+  it.activity.startChat('trace-9', 'session-9');
+  it.activity.finish();
+
+  assert.deepEqual(
+    it.events.since(0).map((event) => [event.name, event.trace_id, event.session_id]),
+    [
+      ['clarvis.chat.started', 'trace-9', 'session-9'],
+      ['clarvis.chat.completed', 'trace-9', 'session-9'],
+    ]
+  );
+});
+
 test('a chat turn is chat, not agent', () => {
   // §6.4 lists them separately because one edits files and the other does not.
   const it = watched();

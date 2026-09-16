@@ -101,7 +101,7 @@ export class Busy {
    * call sites start work that is not a model request — a probe and a briefing
    * — and inventing a trace for them would put empty spans in the waterfall.
    */
-  start(kind: 'reply' | 'run', traceId = ''): AbortController {
+  start(kind: 'reply' | 'run', traceId = '', sessionId = ''): AbortController {
     this.controller?.abort();
     this.controller = new AbortController();
 
@@ -113,8 +113,8 @@ export class Busy {
     // The one place the distinction is recorded, so a Bridge reader cannot see a
     // run and a chat turn as the same thing — and so the `'reply'`/`'run'` choice
     // at each call site is finally observable from a test.
-    if (kind === 'run') this.activity.startRun(traceId);
-    else this.activity.startChat(traceId);
+    if (kind === 'run') this.activity.startRun(traceId, sessionId);
+    else this.activity.startChat(traceId, sessionId);
 
     this.show(true);
     return this.controller;

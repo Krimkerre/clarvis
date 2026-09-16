@@ -659,6 +659,24 @@ only through the OpenAI-compatible adapter.
 **Checked:** 3 new tests and 2 updated in `src/model/lineage.test.ts`; breaking the request id, reusing one id, or
 dropping the Anthropic headers each failed them.
 
+**Then, the same day (0.17.10), what the first whole trace showed about Clarvis's own events.** A Clarvis chat turn
+was seen in NERVIS as one trace with RAVIS (trace `7886440e…`), and two things about Clarvis's side of it were off:
+
+- **Its events name the session too.** `clarvis.chat.*` and `clarvis.agent.*` now carry the `session_id` their model
+  requests send as `x-session-id` (runbook §4.3): `ModelService.sessionFor(role)` is read when a plain chat turn
+  starts (`Replier`) and when the tool loop knows its role (`AgentRunner`, chat for a read-only answer, agent for a
+  job), carried by `Activity` beside the trace, emitted by `EventStream.emit` and forwarded top-level by
+  `eventBody` — omitted when empty. A Codex run has no model session in Clarvis and names none.
+- **Its timestamps keep their milliseconds.** `occurred_at` was cut to whole seconds, so the Clarvis bar sat up to a
+  second off and the turn read as ending before the RAVIS call inside it. `timestamp()` for the MEP surface is
+  unchanged.
+- A request id is still not on these events, on purpose: a turn can make several requests, and its start event is
+  published before any of them.
+
+**Checked:** 5 new tests and 2 updated across `events`, `eventForwarding`, `activity` and `publish`; each of 7 guards
+(an event, the forwarding, the activity or the publisher dropping the session, an empty session sent, a session
+wiped by a later `noteTrace`, whole seconds again) failed one of them.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

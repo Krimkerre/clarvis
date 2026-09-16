@@ -108,6 +108,11 @@ export interface ActivityChange {
    * be placed beside the RAVIS call it caused.
    */
   readonly traceId: string;
+  /**
+   * The model session the operation's requests carry, or '' when it has none —
+   * a Codex run, or a change outside any operation (runbook §4.3).
+   */
+  readonly sessionId: string;
   readonly snapshot: ActivitySnapshot;
 }
 
@@ -129,6 +134,8 @@ export class Activity {
   private kind?: 'chat' | 'run';
   /** The trace the current operation belongs to; cleared when it ends. */
   private traceId = '';
+  /** The model session its requests carry, set with the trace. */
+  private sessionId = '';
   private readonly observers = new Set<(change: ActivityChange) => void>();
 
   constructor(private readonly now: Clock = Date.now) {
@@ -140,8 +147,9 @@ export class Activity {
    * `agent_running` separately because one edits files and the other does not,
    * and an operator glancing at a dashboard is entitled to that distinction.
    */
-  startChat(traceId = ''): void {
+  startChat(traceId = '', sessionId = ''): void {
     this.traceId = traceId;
+    this.sessionId = sessionId;
     this.kind = 'chat';
     this.enter('chatting', opaqueId());
   }
@@ -155,12 +163,14 @@ export class Activity {
    * than thread an id through both call sites, the runner names it once it has
    * one, and the completion event carries it either way.
    */
-  noteTrace(traceId: string): void {
+  noteTrace(traceId: string, sessionId = ''): void {
     this.traceId = traceId;
+    if (sessionId) this.sessionId = sessionId;
   }
 
-  startRun(traceId = ''): void {
+  startRun(traceId = '', sessionId = ''): void {
     this.traceId = traceId;
+    this.sessionId = sessionId;
     this.kind = 'run';
     this.enter('agent_running', opaqueId());
     this.steps = 0;
@@ -311,6 +321,7 @@ export class Activity {
       // still names the trace it belonged to — the completion event is half
       // the span, and a span with only a start has no duration.
       traceId: this.traceId,
+      sessionId: this.sessionId,
       snapshot: this.snapshot(),
     };
     for (const observer of [...this.observers]) {

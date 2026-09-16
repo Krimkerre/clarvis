@@ -13,7 +13,20 @@ test('an event gets a monotonic id and a timestamp', () => {
   const [first, second] = stream.since(0);
   assert.equal(first.id, 1);
   assert.equal(second.id, 2);
-  assert.match(first.occurred_at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/);
+  // To the millisecond: whole seconds drew a Clarvis bar up to a second off on
+  // NERVIS's waterfall (16 September 2026).
+  assert.match(first.occurred_at, /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+});
+
+test('an event names the session and the trace it was published under', () => {
+  const stream = held();
+
+  stream.emit('clarvis.chat.started', {}, 'trace-1', 'session-1');
+  stream.emit('clarvis.lifecycle.ready', {});
+
+  const [chat, ready] = stream.since(0);
+  assert.deepEqual([chat.trace_id, chat.session_id], ['trace-1', 'session-1']);
+  assert.deepEqual([ready.trace_id, ready.session_id], ['', ''], 'an event outside any operation names neither');
 });
 
 test('a listener hears what is published after it attaches', () => {
@@ -135,6 +148,7 @@ const anEvent = (data: BridgeEvent['data']): BridgeEvent => ({
   occurred_at: '2026-08-29T00:00:00Z',
   data,
   trace_id: '',
+  session_id: '',
   event_id: 'e'.repeat(32),
 });
 

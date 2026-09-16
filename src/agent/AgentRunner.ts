@@ -775,7 +775,9 @@ export class AgentRunner implements CodingRun {
     // `started` event and the steps name the same operation. Minted here only
     // when nobody did — the palette route starts a run without one.
     const traceId = this.givenTrace || newTraceId();
-    this.activity?.noteTrace(traceId);
+    // With the session this loop's requests carry, which depends on the role:
+    // a read-only answer runs on the chat model, a job on the agent's.
+    this.activity?.noteTrace(traceId, this.models.sessionFor(role));
 
     while (this.steps < cap) {
       if (signal.aborted) {

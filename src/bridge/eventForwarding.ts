@@ -29,6 +29,8 @@ export interface ForwardedEvent {
   readonly data: Record<string, unknown>;
   /** The operation this belongs to, or '' when it belongs to none. */
   readonly traceId: string;
+  /** The model session it belongs to, or '' when none (runbook §4.3). */
+  readonly sessionId?: string;
   /** When it happened, in the ISO form §4.4 requires. */
   readonly occurredAt: string;
   /** Unique per event. §4.4 requires it; the hub quarantines an envelope without one. */
@@ -71,6 +73,10 @@ export function eventBody(event: ForwardedEvent, source: EventSource): Record<st
     data: event.data,
   };
   if (event.traceId) body.trace_id = event.traceId;
+  // Omitted rather than sent empty, like the trace: an empty session is a
+  // conversation whose id is the empty string, and the hub would file every
+  // untraced event under it.
+  if (event.sessionId) body.session_id = event.sessionId;
   return body;
 }
 

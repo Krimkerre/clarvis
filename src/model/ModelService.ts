@@ -56,6 +56,19 @@ export class ModelService {
   private readonly sessions = new Map<ModelRole, string>();
 
   /** This window's session for one role, minted on first use. */
+  /**
+   * The session id this role's model requests carry as `x-session-id`.
+   *
+   * Public so the events a chat turn or a run publishes can name the same
+   * session its requests do (runbook §4.3, CLARVIS.md §6.5): NERVIS then files a
+   * Clarvis event and RAVIS's route decision under one conversation. Minted on
+   * first use, exactly as a request would, so an event published before the
+   * first request still names the id that request will send.
+   */
+  sessionFor(role: ModelRole): string {
+    return this.session(role);
+  }
+
   private session(role: ModelRole): string {
     const existing = this.sessions.get(role);
     if (existing) return existing;

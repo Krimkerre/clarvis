@@ -26,6 +26,20 @@ function recorder(status = 202) {
   return { sent, send };
 }
 
+test('the session is a top-level field when there is one, and absent when not', () => {
+  // Runbook §4.3: Clarvis's runs carry the session their requests do, so NERVIS
+  // files the event and RAVIS's route decision under one conversation. An empty
+  // one would file every untraced event under the same blank session.
+  const named = eventBody(anEvent({ traceId: 'abc', sessionId: 'session-7' }), SOURCE);
+  const unnamed = eventBody(anEvent({ traceId: 'abc', sessionId: '' }), SOURCE);
+  const absent = eventBody(anEvent({ traceId: 'abc' }), SOURCE);
+
+  assert.equal(named.session_id, 'session-7');
+  assert.equal('session_id' in unnamed, false);
+  assert.equal('session_id' in absent, false);
+  assert.equal('session_id' in (named.data as Record<string, unknown>), false, 'not buried in the data');
+});
+
 test('the trace is a top-level field, not buried in the data', () => {
   // NERVIS joins a waterfall on `trace_id`. Inside `data` it is an opaque
   // field the hub never reads, so the event would arrive, be stored, and still

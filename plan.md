@@ -5263,6 +5263,37 @@ which is a distinction this project has been caught by before.
 > the real `0600` secret and registered normally; the hostile path never reached the file
 > check, since `/etc/hosts` at `0644` would have logged a refusal and none appears.
 
+> **Amended 16 Sep (0.17.11) — model, tool and problem-count events.** §6.4 of the ecosystem's
+> `CLARVIS.md` lists `clarvis.model.*`, `clarvis.tool.*` and `clarvis.diagnostic.changed`, and
+> this milestone built only the families that are edges between §6.3's states, because
+> `publish.ts` was written as *transitions → §6.4 names*. The other three are not transitions:
+> a model request or a tool call happens inside a state without changing it. They now travel
+> on a second channel of `Activity` (`note()` / `observeNotes()`), mapped field by field in
+> `eventForNote`, which stays the one review surface for what a payload can carry:
+> identifiers, counts, timings and result classes, never an argument, a path or a reason.
+>
+> - **Model requests** are watched where every caller's stream passes (`ModelService` →
+>   `callWatch.ts`), so chat, the agent, titles and the voice check are covered without any of
+>   them knowing. Each request now carries a request id minted there, and the event names the
+>   same id RAVIS records. A stop, or a deadline Clarvis set, is `completed` with `cancelled`,
+>   not a failure — the rule `Activity.fail()` already keeps.
+> - **Tool calls** are told from `AgentRunner.dispatch`: the tool's registry name, whether it
+>   writes, its number in the run and its time. A name the model invented is published as
+>   `unknown`. **A call that asked the user ends as `completed` whichever way it went**,
+>   because `failed` straight after `clarvis.gate.resolved` would say the user refused — the
+>   one thing that event is built not to say.
+> - **Problem counts** by severity, and how many files have any, from
+>   `onDidChangeDiagnostics` while the Bridge runs — paced to one update after the editor
+>   settles, at most every 30 seconds, and only when the counts differ.
+> - **Only the endings go on to NERVIS.** NERVIS's hub gives a service 120 events at once and
+>   12 a minute after (its owner-decided flood guard), and a 25-call run with both ends of
+>   every call forwarded sends about 130. `clarvis.model.requested` and `clarvis.tool.started`
+>   stay on the Bridge's own stream; the ending carries `elapsed_ms`.
+> - **Not built:** `clarvis.task.*`. §6.4 names the family and nothing in the ecosystem says
+>   what a Clarvis "task" is — an agent run already has `clarvis.agent.*`, a NERVIS handoff has
+>   a file, and §6.3's "build and test outcome" suggests VS Code tasks. That is the owner's to
+>   decide, not this amendment's.
+
 ### M15 — Codex tasks through RAVIS *(signed off 13 Sep — C1 and C2a built; C3 built against the fake, with the Wait reminder and the host specs open; C2b built against the fake from calibration's transcripts on 14 Sep, with the owner's additions of that day under way)*
 
 External driver: the owner's decisions of 13 Sep, recorded in `ECOSYSTEM_RUNBOOK.md` §2.2.

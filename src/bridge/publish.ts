@@ -12,7 +12,7 @@
  * flat primitives with no field for any of the above.
  */
 
-import type { ActivityChange } from './activity';
+import type { ActivityChange, ModelNote, NoteChange, ProblemsNote, ToolNote } from './activity';
 import type { EventData, EventName, EventStream } from './events';
 
 /** One transition, as an event name and a payload — or nothing worth publishing. */
@@ -100,5 +100,73 @@ export function publishActivity(
   return activity.observe((change) => {
     const event = eventFor(change);
     if (event) events.emit(event.name, event.data, change.traceId, change.sessionId);
+  });
+}
+
+/**
+ * A note, as an event. Every field is named here, one by one, so this is the whole
+ * of what a model request, a tool call or a problem count can publish.
+ */
+export function eventForNote(note: NoteChange['note']): { name: EventName; data: EventData } {
+  if (note.kind === 'model') return { name: `clarvis.model.${note.phase}`, data: modelData(note) };
+  if (note.kind === 'tool') return { name: `clarvis.tool.${note.phase}`, data: toolData(note) };
+  return { name: 'clarvis.diagnostic.changed', data: problemsData(note) };
+}
+
+/**
+ * Clipped, because the model is a setting and a setting is free text. It is the id
+ * `GET /v1/config` already publishes, so the clip bounds its size rather than hiding it.
+ */
+const MODEL_ID_LENGTH = 128;
+
+function modelData(note: ModelNote): EventData {
+  return defined({
+    request_id: note.requestId,
+    role: note.role,
+    provider: note.provider.slice(0, 40),
+    model: note.model.slice(0, MODEL_ID_LENGTH),
+    elapsed_ms: note.elapsedMs,
+    first_output_ms: note.firstOutputMs,
+    text_chunks: note.textChunks,
+    tool_calls: note.toolCalls,
+    result: note.result,
+    retryable: note.retryable,
+  });
+}
+
+function toolData(note: ToolNote): EventData {
+  return defined({
+    tool: note.tool,
+    writes: note.writes,
+    call: note.call,
+    elapsed_ms: note.elapsedMs,
+    asked_user: note.asked,
+    reason: note.reason,
+  });
+}
+
+function problemsData(note: ProblemsNote): EventData {
+  return {
+    errors: note.errors,
+    warnings: note.warnings,
+    information: note.information,
+    hints: note.hints,
+    files: note.files,
+  };
+}
+
+/** Absent stays absent — §6.3's unknown values — rather than becoming `undefined` in JSON. */
+function defined(fields: Record<string, string | number | boolean | undefined>): EventData {
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as EventData;
+}
+
+/** Attach the notes to a stream, and return the way to detach. */
+export function publishNotes(
+  activity: { observeNotes(observer: (change: NoteChange) => void): () => void },
+  events: EventStream
+): () => void {
+  return activity.observeNotes((change) => {
+    const event = eventForNote(change.note);
+    events.emit(event.name, event.data, change.traceId, change.sessionId);
   });
 }

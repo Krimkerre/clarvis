@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { eventBody, forwardEvent } from './eventForwarding';
+import { eventBody, forwardEvent, forwarded } from './eventForwarding';
 
 /** The identity fields NERVIS attributes a span from. */
 const SOURCE = { service_id: 'clarvis-abc', instance_id: 'inst-1', machine_id: 'machine-1' };
@@ -119,4 +119,16 @@ test('a hub that is not there is reported, never thrown', async () => {
     await forwardEvent('http://nervis.invalid', 'token', anEvent({ name: 'x' }), SOURCE, exploding),
     false
   );
+});
+
+test('the beginnings of model requests and tool calls stay on the Bridge; everything else goes on', () => {
+  // NERVIS's hub allows a service 120 events at once and 12 a minute after that, and a
+  // run of 25 tool calls with both ends of everything forwarded sends about 130.
+  assert.equal(forwarded('clarvis.model.requested'), false);
+  assert.equal(forwarded('clarvis.tool.started'), false);
+  for (const name of ['clarvis.model.completed', 'clarvis.model.failed', 'clarvis.tool.completed',
+    'clarvis.tool.failed', 'clarvis.tool.refused', 'clarvis.diagnostic.changed', 'clarvis.chat.started',
+    'clarvis.agent.step', 'clarvis.gate.requested', 'clarvis.lifecycle.ready']) {
+    assert.equal(forwarded(name), true, name);
+  }
 });

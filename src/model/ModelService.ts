@@ -12,6 +12,8 @@ import { PROVIDERS, ProviderId, ProviderSpec, providerSpec, resolveBaseUrl } fro
 import { ModelRole, RoleSettings, resolveRole } from './roles';
 import { launcherCredential } from './ravisCredential';
 import { REASONING_DEADLINE_FACTOR, reasoningDeadline } from './deadline';
+import { newRequestId } from './lineage';
+import { watchedStream, type ModelCall, type WatchedCall } from './callWatch';
 import { randomUUID } from 'crypto';
 
 /** Secret-storage key per provider. Namespaced so one provider's key can't shadow another's. */
@@ -75,6 +77,18 @@ export class ModelService {
     const minted = randomUUID();
     this.sessions.set(role, minted);
     return minted;
+  }
+
+  /** Whoever is told about each model request (§6.4's `clarvis.model.*`). */
+  private readonly watchers = new Set<(call: WatchedCall) => void>();
+
+  /**
+   * Be told when a model request is made and how it ends — the Bridge's
+   * `clarvis.model.*` events. Returns the way to stop.
+   */
+  watchCalls(watcher: (call: WatchedCall) => void): () => void {
+    this.watchers.add(watcher);
+    return () => this.watchers.delete(watcher);
   }
 
   constructor(
@@ -208,16 +222,42 @@ export class ModelService {
       );
     }
 
-    return provider.streamWithTools({
-      ...request, model: this.model(role), sessionId: this.session(role),
-    });
+    const call = this.callFor(role, request.traceId);
+    return watchedStream(call, () => provider.streamWithTools!({
+      ...request, model: call.model, sessionId: call.sessionId, requestId: call.requestId,
+    }), (watched) => this.tell(watched));
   }
 
   /** Streams an answer. Errors arrive as `ModelError`, already phrased for a human. */
   stream(request: Omit<CompletionRequest, 'model'>, role: ModelRole = 'chat'): AsyncIterable<string> {
-    return this.provider(role).stream({
-      ...request, model: this.model(role), sessionId: this.session(role),
-    });
+    const provider = this.provider(role);
+    const call = this.callFor(role, request.traceId);
+    return watchedStream(call, () => provider.stream({
+      ...request, model: call.model, sessionId: call.sessionId, requestId: call.requestId,
+    }), (watched) => this.tell(watched));
+  }
+
+  /** The identity of one request about to be made: its own request id, its role's session. */
+  private callFor(role: ModelRole, traceId = ''): ModelCall {
+    return {
+      role: role === 'agent' ? 'agent' : 'chat',
+      provider: this.spec(role).id,
+      model: this.model(role),
+      requestId: newRequestId(),
+      traceId,
+      sessionId: this.session(role),
+    };
+  }
+
+  /** Tell every watcher, and never let one of them reach the request. */
+  private tell(call: WatchedCall): void {
+    for (const watcher of [...this.watchers]) {
+      try {
+        watcher(call);
+      } catch {
+        this.watchers.delete(watcher);
+      }
+    }
   }
 
   /** Stores a provider's key in the OS keychain — never in settings, never logged. */

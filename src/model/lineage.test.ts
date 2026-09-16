@@ -127,6 +127,14 @@ test('the correlation headers are actually on the outgoing request', async () =>
   assert.match(sent.get('x-request-id') ?? '', /^[0-9a-f]{32}$/);
 });
 
+test("a request id chosen by the caller is the one sent, so an event about the request names RAVIS's id", async () => {
+  // `ModelService` mints the id before the request and publishes it on
+  // `clarvis.model.*`; an adapter minting its own would make the two disagree.
+  const chosen = 'ab'.repeat(16);
+  const sent = await headersSentFor({ requestId: chosen });
+  assert.equal(sent.get('x-request-id'), chosen);
+});
+
 test('an uncorrelated request sends neither header', async () => {
   // Every provider that is not RAVIS still gets these, so the absent case has
   // to be genuinely absent rather than an empty string a peer would store.
@@ -162,6 +170,7 @@ test('the Anthropic adapter sends the same three headers', async () => {
       model: 'claude-haiku-4-5',
       traceId: trace,
       sessionId: 'session-9',
+      requestId: 'cd'.repeat(16),
     })) {
       void fragment;
     }
@@ -172,7 +181,7 @@ test('the Anthropic adapter sends the same three headers', async () => {
   assert.ok(seen, 'no request was made');
   assert.equal(seen.get('traceparent')?.split('-')[1], trace);
   assert.equal(seen.get('x-session-id'), 'session-9');
-  assert.match(seen.get('x-request-id') ?? '', /^[0-9a-f]{32}$/);
+  assert.equal(seen.get('x-request-id'), 'cd'.repeat(16), 'the id the caller chose');
   assert.equal(seen.get('x-api-key'), 'k', 'the credential still travels');
 });
 

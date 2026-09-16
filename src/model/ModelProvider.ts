@@ -79,6 +79,12 @@ export interface CompletionRequest {
    */
   traceId?: string;
   sessionId?: string;
+  /**
+   * The `x-request-id` to send. `ModelService` mints one per call so the event it
+   * publishes about the request names the id RAVIS recorded; absent, the adapter
+   * mints its own.
+   */
+  requestId?: string;
 }
 
 /**

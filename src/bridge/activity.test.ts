@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Activity, whileAwaiting } from './activity';
+import { Activity, toolEnding, whileAwaiting, type NoteChange } from './activity';
 
 /**
  * M14's read-only seam. These tests exist in the fast suite precisely because
@@ -308,4 +308,80 @@ test('a run named after it started still reaches the completion', () => {
   activity.finish();
 
   assert.deepEqual(seen, ['', 'trace-two']);
+});
+
+// ── Notes: what happens without changing the state (§6.4) ─────────────────
+
+const MODEL = {
+  kind: 'model', phase: 'requested', role: 'chat', provider: 'custom', model: 'm',
+  requestId: 'r', traceId: 'own-trace', sessionId: 'own-session',
+} as const;
+
+test('a tool call is filed under the operation in flight, a model request under its own ids', () => {
+  const activity = new Activity(() => 0);
+  const heard: NoteChange[] = [];
+  activity.observeNotes((change) => heard.push(change));
+  activity.startRun('run-trace', 'run-session');
+
+  activity.note({ kind: 'tool', phase: 'started', tool: 'readFile' });
+  activity.note(MODEL);
+  activity.note({ ...MODEL, traceId: '', sessionId: '' });
+  activity.note({ kind: 'problems', errors: 1, warnings: 0, information: 0, hints: 0, files: 1 });
+
+  assert.deepEqual(heard.map((c) => [c.note.kind, c.traceId, c.sessionId]), [
+    ['tool', 'run-trace', 'run-session'],
+    ['model', 'own-trace', 'own-session'],
+    // A title asked for during a run is not the run's request.
+    ['model', '', ''],
+    ['problems', '', ''],
+  ]);
+});
+
+test('a note changes nothing a status reader sees, and publishes no state change', () => {
+  const activity = new Activity(() => 0);
+  const changes: string[] = [];
+  activity.observe((change) => changes.push(change.to));
+  activity.startChat();
+  const before = activity.snapshot();
+
+  activity.note({ kind: 'tool', phase: 'completed', tool: 'search' });
+
+  assert.deepEqual(activity.snapshot(), before);
+  assert.deepEqual(changes, ['chatting']);
+});
+
+test('a note observer that throws is dropped, and the caller never hears of it', () => {
+  const activity = new Activity(() => 0);
+  let calls = 0;
+  activity.observeNotes(() => {
+    calls += 1;
+    throw new Error('broken consumer');
+  });
+  const heard: NoteChange[] = [];
+  activity.observeNotes((change) => heard.push(change));
+
+  assert.doesNotThrow(() => activity.note(MODEL));
+  activity.note(MODEL);
+
+  assert.equal(calls, 1);
+  assert.equal(heard.length, 2);
+});
+
+test('every gate opened is counted, so a tool call can tell whether it asked one', async () => {
+  const activity = new Activity(() => 0);
+  assert.equal(activity.gatesOpened, 0);
+  activity.startRun();
+  await whileAwaiting(activity, 'command', () => undefined);
+  await whileAwaiting(activity, 'sensitive_read', () => undefined);
+  assert.equal(activity.gatesOpened, 2);
+});
+
+test('a tool call that asked the user never ends as failed, so its ending cannot say what they answered', () => {
+  // A refused sensitive read comes back as an error. Published as `failed` straight
+  // after `clarvis.gate.resolved`, it would say the user said no.
+  assert.equal(toolEnding(true, true), 'completed');
+  assert.equal(toolEnding(false, true), 'completed');
+  assert.equal(toolEnding(true, false), 'failed');
+  assert.equal(toolEnding(false, false), 'completed');
+  assert.equal(toolEnding(undefined, false), 'completed');
 });

@@ -356,7 +356,7 @@ export class OpenAiCompatibleProvider implements ModelProvider {
   private async post(request: CompletionRequest, tools?: unknown[]): Promise<Response> {
     const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
       method: 'POST',
-      headers: { ...(await this.headers()), ...lineageHeaders(request.traceId ?? '', request.sessionId ?? '') },
+      headers: { ...(await this.headers()), ...lineageHeaders(request.traceId ?? '', request.sessionId ?? '', request.requestId) },
       signal: request.signal,
       body: JSON.stringify({
         model: request.model,

@@ -91,7 +91,12 @@ function heldTime() {
   };
 }
 
-function bridgeAgainst(url: string, time = heldTime(), logs: string[] = []) {
+function bridgeAgainst(
+  url: string,
+  time = heldTime(),
+  logs: string[] = [],
+  send: typeof fetch = (async () => new Response('', { status: 202 })) as unknown as typeof fetch
+) {
   const activity = new Activity(() => 0);
   const bridge = new Bridge({
     nervisUrl: url,
@@ -111,7 +116,7 @@ function bridgeAgainst(url: string, time = heldTime(), logs: string[] = []) {
     // whole run for eighteen minutes before this existed. What is forwarded is
     // asserted in `eventForwarding.test.ts`, where it can be observed without a
     // server at all.
-    send: (async () => new Response('', { status: 202 })) as unknown as typeof fetch,
+    send,
     log: (message) => logs.push(message),
     setTimer: time.setTimer,
     clearTimer: time.clearTimer,
@@ -656,4 +661,45 @@ test("one window's activity never appears under the other", async () => {
     await two.bridge.stop();
     await nerve.stop();
   }
+});
+
+test('model requests and tool calls reach the stream, and only their endings go on to NERVIS', async () => {
+  const fake = await nervis((call) => (call.method === 'DELETE' ? { status: 204 } : accepts()));
+  const posted: string[] = [];
+  const send = (async (_url: string, init: { body: string }) => {
+    posted.push(JSON.parse(init.body).event_type);
+    return new Response('', { status: 202 });
+  }) as unknown as typeof fetch;
+  const { bridge, activity } = bridgeAgainst(fake.url, heldTime(), [], send);
+  try {
+    await bridge.start();
+    activity.startRun('t', 's');
+    const model = { kind: 'model', role: 'agent', provider: 'custom', model: 'm', requestId: 'r', traceId: 't', sessionId: 's' } as const;
+    activity.note({ ...model, phase: 'requested' });
+    activity.note({ ...model, phase: 'completed', elapsedMs: 5, result: 'answered' });
+    activity.note({ kind: 'tool', phase: 'started', tool: 'readFile' });
+    activity.note({ kind: 'tool', phase: 'completed', tool: 'readFile', elapsedMs: 1 });
+    activity.note({ kind: 'problems', errors: 0, warnings: 0, information: 0, hints: 0, files: 0 });
+
+    const onStream = bridge.events.since(0).map((e) => e.name);
+    for (const name of ['clarvis.model.requested', 'clarvis.model.completed', 'clarvis.tool.started',
+      'clarvis.tool.completed', 'clarvis.diagnostic.changed']) {
+      assert.ok(onStream.includes(name as never), `${name} is on the Bridge's own stream`);
+    }
+    assert.deepEqual(posted.filter((name) => !name.startsWith('clarvis.lifecycle.') && name !== 'clarvis.agent.started'), [
+      'clarvis.model.completed', 'clarvis.tool.completed', 'clarvis.diagnostic.changed',
+    ]);
+  } finally {
+    await bridge.stop();
+    await fake.stop();
+  }
+});
+
+test('a stopped Bridge publishes no more notes', async () => {
+  const { bridge, activity } = bridgeAgainst('http://127.0.0.1:1');
+  await bridge.start();
+  await bridge.stop();
+  const before = bridge.events.cursor;
+  activity.note({ kind: 'tool', phase: 'started', tool: 'readFile' });
+  assert.equal(bridge.events.cursor, before);
 });

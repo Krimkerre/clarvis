@@ -18,11 +18,11 @@ import { identityFor, loadIdentity, type HostFacts, type Identity, type Storage 
 import { API_VERSION, CAPABILITIES, PROTOCOL_VERSION, voiceCapability, wireIdentifier,
   type Capability } from './protocol';
 import { deregister, heartbeat, heartbeatInterval, register, type Claim } from './registration';
-import { forwardEvent } from './eventForwarding';
+import { forwardEvent, forwarded } from './eventForwarding';
 import { BridgeServer } from './server';
 import type { ConfigSummary } from './config';
-import type { ActivityChange, ActivitySnapshot } from './activity';
-import { publishActivity } from './publish';
+import type { ActivityChange, ActivitySnapshot, NoteChange } from './activity';
+import { publishActivity, publishNotes } from './publish';
 
 export interface BridgeOptions {
   /** Where NERVIS is. Configuration, never assumed — §? of the runbook is explicit. */
@@ -58,6 +58,8 @@ export interface BridgeOptions {
   readonly activity: {
     snapshot(): ActivitySnapshot;
     observe(observer: (change: ActivityChange) => void): () => void;
+    /** Model requests, tool calls and problem counts (§6.4). */
+    observeNotes(observer: (change: NoteChange) => void): () => void;
   };
   readonly log: (message: string) => void;
   /**
@@ -104,6 +106,8 @@ export class Bridge {
   private running = false;
   /** Detaches the activity observer, so a stopped Bridge stops collecting. */
   private unpublish?: () => void;
+  /** The same, for model requests, tool calls and problem counts. */
+  private unpublishNotes?: () => void;
   /** Logged once rather than every retry: a dashboard that is off is not news. */
   private saidNotRegistered = false;
 
@@ -143,6 +147,7 @@ export class Bridge {
     // Attached before the socket, so an event fired during startup is buffered
     // rather than lost — the buffer is what a consumer replays on connect.
     this.unpublish = publishActivity(this.options.activity, this.events);
+    this.unpublishNotes = publishNotes(this.options.activity, this.events);
 
     // **And onward to NERVIS, so a trace has a caller in it.** Clarvis emitted
     // the right families all along into its own stream, which nothing reads —
@@ -161,7 +166,7 @@ export class Bridge {
       // timeout per event. The first version of this hung `node --test` for
       // eighteen minutes: every event opened a socket to an address nothing
       // answers, and each pending timer kept the loop alive.
-      if (!this.token) return;
+      if (!this.token || !forwarded(event.name)) return;
       void forwardEvent(
         this.options.nervisUrl,
         this.token,
@@ -233,8 +238,10 @@ export class Bridge {
 
     // Last, so the `stopping` event above still had somewhere to go.
     this.unpublish?.();
+    this.unpublishNotes?.();
     this.unforward?.();
     this.unpublish = undefined;
+    this.unpublishNotes = undefined;
   }
 
   /** Register, and schedule the next thing to do either way. */

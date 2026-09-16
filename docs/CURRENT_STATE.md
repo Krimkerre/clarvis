@@ -677,6 +677,26 @@ was seen in NERVIS as one trace with RAVIS (trace `7886440e…`), and two things
 (an event, the forwarding, the activity or the publisher dropping the session, an empty session sent, a session
 wiped by a later `noteTrace`, whole seconds again) failed one of them.
 
+**16 Sep (0.17.11): the rest of §6.4's events, except tasks.** The Bridge now publishes
+`clarvis.model.requested/completed/failed`, `clarvis.tool.started/completed/failed/refused` and
+`clarvis.diagnostic.changed` (plan.md M14, "Amended 16 Sep"). Where each comes from:
+
+- `src/model/callWatch.ts` (new, `vscode`-free) wraps every stream `ModelService.stream` and
+  `streamWithTools` hand out; `ModelService.watchCalls` is how `extension.ts` passes them to the
+  `Activity`. `CompletionRequest.requestId` carries the id both adapters now send.
+- `AgentRunner.dispatch` tells each tool call; `refusal()` and `execute()` were split out of it.
+  `toolEnding()` in `activity.ts` is the rule that a call which asked the user never ends as failed.
+- `src/bridge/problemCounts.ts` (new, `vscode`-free) counts and paces; `wire.ts` subscribes to
+  `onDidChangeDiagnostics` only while the Bridge runs.
+- `Activity.note()` / `observeNotes()` is a second channel beside `observe()`; `publishNotes` in
+  `publish.ts` maps it; `forwarded()` in `eventForwarding.ts` keeps the two beginnings off NERVIS.
+- `clarvis.task.*` is not built: what a Clarvis task is has not been decided.
+
+**Checked:** 26 new fast tests (`callWatch`, `problemCounts`, and additions to `activity`,
+`publish`, `eventForwarding`, `Bridge`, `lineage`), the real runner's tool events in
+`branchContinuation.spec.ts`, and the real `ModelService` in `modelEvents.spec.ts`; each of 14
+guards broken one at a time in the build failed a test.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

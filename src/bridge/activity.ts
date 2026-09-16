@@ -117,6 +117,92 @@ export interface ActivityChange {
 }
 
 /**
+ * One model request, as §6.4's `clarvis.model.*` describes it.
+ *
+ * **Its own trace and session, never the activity's.** A title or a voice check
+ * can be asked for while an agent run is in flight, and filing it under the run's
+ * trace would put a request the run never made into the run's waterfall. The ids
+ * are the ones the request itself carried, empty when it carried none.
+ */
+export interface ModelNote {
+  readonly kind: 'model';
+  readonly phase: 'requested' | 'completed' | 'failed';
+  readonly role: 'chat' | 'agent';
+  /** The provider's id from `providers.ts` — never its address. */
+  readonly provider: string;
+  readonly model: string;
+  /** The `x-request-id` the request was sent with. */
+  readonly requestId: string;
+  readonly traceId: string;
+  readonly sessionId: string;
+  /** From the request being made to its stream ending, measured. */
+  readonly elapsedMs?: number;
+  /** From the request being made to the first thing it streamed, when anything came. */
+  readonly firstOutputMs?: number;
+  readonly textChunks?: number;
+  readonly toolCalls?: number;
+  /**
+   * How it ended. `cancelled` is a stop — not a failure, the same rule `fail()`
+   * keeps — and `closed` is a reader that stopped reading before the stream ended.
+   */
+  readonly result?: 'answered' | 'cancelled' | 'closed' | 'error';
+  /** For a failure: whether trying again could plausibly work. Never the reason. */
+  readonly retryable?: boolean;
+}
+
+/**
+ * One tool call, as §6.4's `clarvis.tool.*` describes it: which tool, never its
+ * arguments — a path, a command and a search pattern are all forbidden payload.
+ */
+export interface ToolNote {
+  readonly kind: 'tool';
+  readonly phase: 'started' | 'completed' | 'failed' | 'refused';
+  /** A name from the tool registry, or `unknown` for one a model made up. */
+  readonly tool: string;
+  readonly writes?: boolean;
+  /** This call's number in the run, as the transcript numbers it. */
+  readonly call?: number;
+  readonly elapsedMs?: number;
+  /**
+   * The call put a question to the user. **Such a call ends as `completed`
+   * whichever way it went**: `failed` straight after a gate would say the user
+   * refused, which is the one thing `clarvis.gate.resolved` is built not to say.
+   */
+  readonly asked?: boolean;
+  /** Why a call never ran, as a category. */
+  readonly reason?: 'unknown_tool' | 'invalid_arguments' | 'project_taken';
+}
+
+/**
+ * How a tool call that ran is published as ending. One that asked the user is
+ * `completed` whichever way it went — see `ToolNote.asked`.
+ */
+export function toolEnding(isError: boolean | undefined, asked: boolean): 'completed' | 'failed' {
+  return isError && !asked ? 'failed' : 'completed';
+}
+
+/** The editor's problem counts (§6.3's aggregate diagnostic counts) — counts only, no file. */
+export interface ProblemsNote {
+  readonly kind: 'problems';
+  readonly errors: number;
+  readonly warnings: number;
+  readonly information: number;
+  readonly hints: number;
+  /** How many files have at least one problem. */
+  readonly files: number;
+}
+
+/** Something that happened inside Clarvis without changing its state. */
+export type ActivityNote = ModelNote | ToolNote | ProblemsNote;
+
+/** A note, with the operation it belongs to. */
+export interface NoteChange {
+  readonly note: ActivityNote;
+  readonly traceId: string;
+  readonly sessionId: string;
+}
+
+/**
  * The store. One per extension host, owned by the extension and handed to the
  * Bridge as a reader.
  *
@@ -137,6 +223,9 @@ export class Activity {
   /** The model session its requests carry, set with the trace. */
   private sessionId = '';
   private readonly observers = new Set<(change: ActivityChange) => void>();
+  private readonly noteObservers = new Set<(change: NoteChange) => void>();
+  /** Every gate ever opened here, so a tool call can tell whether it asked one. */
+  private gates = 0;
 
   constructor(private readonly now: Clock = Date.now) {
     this.since = now();
@@ -193,6 +282,44 @@ export class Activity {
   }
 
   /**
+   * Watch what happens without changing the state: model requests, tool calls,
+   * problem counts. A separate channel from `observe`, because none of these is
+   * an edge between §6.3's states, and `eventFor` reads every change as one.
+   */
+  observeNotes(observer: (change: NoteChange) => void): () => void {
+    this.noteObservers.add(observer);
+    return () => this.noteObservers.delete(observer);
+  }
+
+  /**
+   * Tell the note observers, and never let one of them reach the caller — the same
+   * rule as `announce`, for the same reason.
+   *
+   * A tool call happens inside the operation in flight, so it takes that
+   * operation's trace; a model request names its own (see `ModelNote`).
+   */
+  note(note: ActivityNote): void {
+    if (this.noteObservers.size === 0) return;
+    const change: NoteChange = note.kind === 'model'
+      ? { note, traceId: note.traceId, sessionId: note.sessionId }
+      : note.kind === 'tool'
+        ? { note, traceId: this.traceId, sessionId: this.sessionId }
+        : { note, traceId: '', sessionId: '' };
+    for (const observer of [...this.noteObservers]) {
+      try {
+        observer(change);
+      } catch {
+        this.noteObservers.delete(observer);
+      }
+    }
+  }
+
+  /** How many gates have opened in this host, so a caller can tell whether its work asked one. */
+  get gatesOpened(): number {
+    return this.gates;
+  }
+
+  /**
    * One agent step completed. Counted rather than estimated, and only ever
    * incremented from a real step boundary.
    */
@@ -216,6 +343,7 @@ export class Activity {
    */
   awaitApproval(kind: NonNullable<ActivitySnapshot['awaiting']>): void {
     const from = this.current;
+    this.gates += 1;
     if (this.current !== 'waiting_for_approval') this.resumeTo = this.current;
     this.awaiting = kind;
     this.current = 'waiting_for_approval';

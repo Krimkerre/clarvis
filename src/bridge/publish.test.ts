@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Activity } from './activity';
 import { EventStream } from './events';
-import { publishActivity } from './publish';
+import { eventForNote, publishActivity, publishNotes } from './publish';
 
 /**
  * What a dashboard would actually see. Driven through the real `Activity` rather
@@ -347,5 +347,78 @@ test('the event names are the ones §6.4 lists', () => {
     'clarvis.agent.completed',
     'clarvis.chat.started',
     'clarvis.chat.cancelled',
+  ]);
+});
+
+// ── Model requests, tool calls and problem counts ───────────────────────────
+
+test('a model request publishes its identity, timings and counts, and nothing else', () => {
+  const event = eventForNote({
+    kind: 'model', phase: 'completed', role: 'agent', provider: 'custom', model: 'x'.repeat(300),
+    requestId: 'r1', traceId: 't1', sessionId: 's1', elapsedMs: 900, firstOutputMs: 120,
+    textChunks: 12, toolCalls: 1, result: 'answered',
+  });
+  assert.equal(event.name, 'clarvis.model.completed');
+  assert.deepEqual(Object.keys(event.data).sort(), [
+    'elapsed_ms', 'first_output_ms', 'model', 'provider', 'request_id', 'result', 'role',
+    'text_chunks', 'tool_calls',
+  ]);
+  assert.equal(String(event.data.model).length, 128, 'a model id is clipped');
+  assert.equal('trace_id' in event.data, false, 'the trace travels on the envelope, not in data');
+});
+
+test('a model request that has only been made says only who it is', () => {
+  const event = eventForNote({
+    kind: 'model', phase: 'requested', role: 'chat', provider: 'anthropic', model: 'claude',
+    requestId: 'r2', traceId: '', sessionId: '',
+  });
+  assert.equal(event.name, 'clarvis.model.requested');
+  assert.deepEqual(event.data, { request_id: 'r2', role: 'chat', provider: 'anthropic', model: 'claude' });
+});
+
+test('a failed model request says whether retrying could work, never why', () => {
+  const event = eventForNote({
+    kind: 'model', phase: 'failed', role: 'chat', provider: 'openai', model: 'gpt',
+    requestId: 'r3', traceId: '', sessionId: '', elapsedMs: 5, result: 'error', retryable: false,
+  });
+  assert.equal(event.name, 'clarvis.model.failed');
+  assert.equal(event.data.retryable, false);
+  assert.equal(event.data.result, 'error');
+});
+
+test('a tool call publishes the tool and how it went, never its arguments', () => {
+  assert.deepEqual(eventForNote({ kind: 'tool', phase: 'started', tool: 'runCommand', writes: true, call: 4 }), {
+    name: 'clarvis.tool.started', data: { tool: 'runCommand', writes: true, call: 4 },
+  });
+  assert.deepEqual(
+    eventForNote({ kind: 'tool', phase: 'completed', tool: 'readFile', writes: false, call: 5, elapsedMs: 3, asked: true }),
+    { name: 'clarvis.tool.completed', data: { tool: 'readFile', writes: false, call: 5, elapsed_ms: 3, asked_user: true } }
+  );
+  assert.deepEqual(eventForNote({ kind: 'tool', phase: 'refused', tool: 'unknown', call: 6, reason: 'unknown_tool' }), {
+    name: 'clarvis.tool.refused', data: { tool: 'unknown', call: 6, reason: 'unknown_tool' },
+  });
+  assert.equal(eventForNote({ kind: 'tool', phase: 'failed', tool: 'applyEdit' }).name, 'clarvis.tool.failed');
+});
+
+test('problem counts publish as counts', () => {
+  assert.deepEqual(eventForNote({ kind: 'problems', errors: 3, warnings: 2, information: 1, hints: 0, files: 2 }), {
+    name: 'clarvis.diagnostic.changed',
+    data: { errors: 3, warnings: 2, information: 1, hints: 0, files: 2 },
+  });
+});
+
+test('notes reach the stream with the ids they were filed under, and stop when detached', () => {
+  const activity = new Activity(() => 0);
+  const events = new EventStream(() => 0);
+  const stop = publishNotes(activity, events);
+  activity.startRun('run-trace', 'run-session');
+
+  activity.note({ kind: 'tool', phase: 'started', tool: 'search' });
+  stop();
+  activity.note({ kind: 'tool', phase: 'completed', tool: 'search' });
+
+  const tools = events.since(0).filter((e) => e.name.startsWith('clarvis.tool.'));
+  assert.deepEqual(tools.map((e) => [e.name, e.trace_id, e.session_id]), [
+    ['clarvis.tool.started', 'run-trace', 'run-session'],
   ]);
 });

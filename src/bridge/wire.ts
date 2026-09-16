@@ -21,6 +21,7 @@ import { Bridge } from './Bridge';
 import { locality, summarise } from './config';
 import { VERDICT_REASON, verifySecretFile } from './secretFile';
 import type { Activity } from './activity';
+import { ProblemWatch, countProblems } from './problemCounts';
 
 declare const __CLARVIS_BUILD__: string;
 
@@ -112,7 +113,27 @@ export async function startBridge(
 
   await bridge.start();
 
-  const handle: BridgeHandle = { bridge, stop: () => bridge.stop() };
+  // The editor's problem counts, as `clarvis.diagnostic.changed` (§6.4). Only while the
+  // Bridge runs: with nobody to tell, counting every change would be work for no one.
+  const problems = new ProblemWatch(
+    () => countProblems(vscode.languages.getDiagnostics()),
+    (counts) => activity.note({ kind: 'problems', ...counts })
+  );
+  problems.start();
+  const listening = vscode.languages.onDidChangeDiagnostics(() => problems.changed());
+  const stopWatching = (): void => {
+    listening.dispose();
+    problems.dispose();
+  };
+  context.subscriptions.push({ dispose: stopWatching });
+
+  const handle: BridgeHandle = {
+    bridge,
+    stop: () => {
+      stopWatching();
+      return bridge.stop();
+    },
+  };
   // On `subscriptions` rather than a module-scoped variable: a reload that misses
   // `deactivate` still disposes these, and a listening socket surviving a reload
   // is a port held by a window that no longer exists.

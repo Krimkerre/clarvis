@@ -12,6 +12,8 @@ import { GitFacts } from '../engine/checkpoint/gitFacts';
 import type { LeftRun } from '../engine/checkpoint/leftWorkFile';
 import { CodexGitGlue } from '../engine/codex/codexGit';
 import { RelayClient } from '../engine/relay/relayClient';
+import { Activity, type NoteChange } from '../bridge/activity';
+import { eventForNote } from '../bridge/publish';
 import type { ModelMessage } from '../model/ModelProvider';
 import type { ModelService } from '../model/ModelService';
 import { fakeHttp, FakeRavisRelay } from './fakes/FakeRavisRelay';
@@ -277,8 +279,8 @@ async function ownEngineReadsSkills(root: string, git: (...args: string[]) => st
   const before = branches();
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-skills-storage-'));
   const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
-  const runnerFor = (model: { models: ModelService }) =>
-    new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, undefined, undefined, {}, lookup);
+  const runnerFor = (model: { models: ModelService }, activity?: Activity) =>
+    new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, activity, undefined, {}, lookup);
   await context.workspaceState.update('clarvis.agent.baseBranch', 'main');
   await config.update('agent.maxStepsPerTask', 1, vscode.ConfigurationTarget.Global);
 
@@ -286,7 +288,11 @@ async function ownEngineReadsSkills(root: string, git: (...args: string[]) => st
     await gitCaughtUp(root, () => true);
     const reads = [[{ skill: 'nervis/nervis-notes' }, { skill: 'nervis/nervis-notes', file: 'references/guide.md' }], [{ skill: 'personal/graphify' }]];
     const model = standInSkillReader(reads, () => skills.on.delete('personal/graphify'));
-    const runner = runnerFor(model);
+    // The Bridge's `clarvis.tool.*` (CLARVIS.md §6.4), as the real runner tells them.
+    const activity = new Activity();
+    const notes: NoteChange[] = [];
+    activity.observeNotes((change) => notes.push(change));
+    const runner = runnerFor(model, activity);
     const events = await drain(runner.run('Keep notes on this task', new AbortController().signal));
 
     assert.strictEqual(model.requests.length, 3, `three turns, none cut off by the one-step cap: ${JSON.stringify(events)}`);
@@ -312,6 +318,17 @@ async function ownEngineReadsSkills(root: string, git: (...args: string[]) => st
       'logged by skill and file, as RAVIS logs a read'
     );
     assert.deepStrictEqual(fake.violations, []);
+    const told = notes.map((change) => eventForNote(change.note));
+    assert.deepStrictEqual(
+      told.map((event) => [event.name, event.data.tool, event.data.call, event.data.writes]),
+      [
+        ['clarvis.tool.started', 'readSkill', 1, false], ['clarvis.tool.completed', 'readSkill', 1, false],
+        ['clarvis.tool.started', 'readSkill', 2, false], ['clarvis.tool.completed', 'readSkill', 2, false],
+        ['clarvis.tool.started', 'readSkill', 3, false], ['clarvis.tool.failed', 'readSkill', 3, false],
+      ],
+      'each call told as it starts and as it ends; the switched-off skill as failed, since nobody was asked'
+    );
+    assert.ok(told.every((event) => !/nervis-notes|graphify|guide\.md/.test(JSON.stringify(event))), 'no argument travels');
 
     // An answer: no list read, no section, no readSkill.
     const answering = standInSkillReader([], () => undefined);

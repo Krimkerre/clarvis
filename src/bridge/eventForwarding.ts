@@ -19,6 +19,27 @@
  * a bar in a diagram.
  */
 
+/**
+ * Kept on the Bridge's own stream and not sent to NERVIS: the beginnings of a
+ * model request and of a tool call.
+ *
+ * **NERVIS's hub has a budget per service** — 120 events at once, then 12 a minute
+ * (`nervis/src/nervis/config.py`, the owner's decision of 15 September 2026, sized
+ * on measured traffic) — and past it the guard holds events back and says so on the
+ * dashboard. A run stops to ask after 25 tool calls; with both ends of every call and
+ * every request forwarded, one such run sends about 130 events and trips the guard
+ * doing nothing wrong. The ending carries `elapsed_ms`, which says when the call
+ * began, and a trace's Clarvis bar already runs from the turn's start to its end —
+ * so sending only the ending halves the count and loses nothing NERVIS draws. A
+ * consumer of the Bridge's own stream still sees both.
+ */
+const LOCAL_ONLY: ReadonlySet<string> = new Set(['clarvis.model.requested', 'clarvis.tool.started']);
+
+/** Whether an event goes on to NERVIS's hub. */
+export function forwarded(name: string): boolean {
+  return !LOCAL_ONLY.has(name);
+}
+
 /** Long enough for a loopback POST, short enough never to be noticed. */
 const PUBLISH_TIMEOUT_MS = 1_500;
 

@@ -20,7 +20,7 @@ import {
 } from './Gate';
 import { classifyPath } from './sensitivePath';
 import { gateOutcome } from './gateDecision';
-import { whileAwaiting, type Activity } from '../bridge/activity';
+import { toolEnding, whileAwaiting, type Activity } from '../bridge/activity';
 import { Checkpoint } from './Checkpoint';
 import { AgentBranch } from './AgentBranch';
 import { readFile, listFiles, search } from './tools/fileTools';
@@ -863,24 +863,65 @@ export class AgentRunner implements CodingRun {
     checkpoint: Checkpoint,
     signal: AbortSignal
   ): Promise<ToolResult> {
+    const refused = await this.refusal(call);
+    if (refused) {
+      this.activity?.note({
+        kind: 'tool', phase: 'refused', tool: isToolName(call.name) ? call.name : 'unknown',
+        call: this.calls, reason: refused.reason,
+      });
+      return refused.result;
+    }
+
+    // §6.4's `clarvis.tool.*`: the tool's name and how it went, never its arguments.
+    const name = call.name as ToolName;
+    const writes = mutates(name);
+    const gates = this.activity?.gatesOpened ?? 0;
+    const began = Date.now();
+    this.activity?.note({ kind: 'tool', phase: 'started', tool: name, writes, call: this.calls });
+    const result = await this.execute(name, call, checkpoint, signal);
+    // A call that asked the user ends as `completed` either way (see `ToolNote.asked`).
+    const asked = (this.activity?.gatesOpened ?? 0) > gates;
+    this.activity?.note({
+      kind: 'tool', phase: toolEnding(result.isError, asked), tool: name, writes,
+      call: this.calls, elapsedMs: Math.max(0, Date.now() - began), ...(asked ? { asked } : {}),
+    });
+    return result;
+  }
+
+  /**
+   * Why a call cannot run, decided before any of it does — or nothing. Each reason is
+   * published as a category, and an invented tool's name is not published at all:
+   * it is whatever the model wrote.
+   */
+  private async refusal(
+    call: ToolCall
+  ): Promise<{ reason: 'unknown_tool' | 'invalid_arguments' | 'project_taken'; result: ToolResult } | undefined> {
     if (!isToolName(call.name)) {
       this.log(`agent [refused] unknown tool "${call.name}"`);
-      return { id: call.id, content: `There is no tool called "${call.name}".`, isError: true };
+      return { reason: 'unknown_tool', result: { id: call.id, content: `There is no tool called "${call.name}".`, isError: true } };
     }
 
-    const name: ToolName = call.name;
-    const validation = validateArgs(name, call.args);
+    const validation = validateArgs(call.name, call.args);
     if (!validation.ok) {
-      return { id: call.id, content: validation.error, isError: true };
+      return { reason: 'invalid_arguments', result: { id: call.id, content: validation.error, isError: true } };
     }
-
-    const args = call.args as Record<string, string & boolean>;
 
     // **The fence** (M15 C2a): a call that writes goes ahead only while this run still holds the
     // project. Lost to another window, the run ends here and writes nothing more.
-    if (!(await this.mayWrite(mutates(name)))) {
-      return { id: call.id, content: TAKEN_OVER_TOOL_RESULT, isError: true };
+    if (!(await this.mayWrite(mutates(call.name)))) {
+      return { reason: 'project_taken', result: { id: call.id, content: TAKEN_OVER_TOOL_RESULT, isError: true } };
     }
+    return undefined;
+  }
+
+  /** Runs a call already cleared to run. Every failure becomes a tool result. */
+  private async execute(
+    name: ToolName,
+    call: ToolCall,
+    checkpoint: Checkpoint,
+    signal: AbortSignal
+  ): Promise<ToolResult> {
+    const args = call.args as Record<string, string & boolean>;
 
     try {
       // Snapshot before the change, not after — the whole point of undo.

@@ -254,7 +254,7 @@ export class AnthropicProvider implements ModelProvider {
         'content-type': 'application/json',
         'x-api-key': key,
         'anthropic-version': API_VERSION,
-        ...lineageHeaders(request.traceId ?? '', request.sessionId ?? ''),
+        ...lineageHeaders(request.traceId ?? '', request.sessionId ?? '', request.requestId),
       },
       body: JSON.stringify({
         model: request.model,

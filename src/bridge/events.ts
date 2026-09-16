@@ -30,6 +30,14 @@ export type EventName =
   | 'clarvis.agent.completed'
   | 'clarvis.agent.failed'
   | 'clarvis.agent.cancelled'
+  | 'clarvis.tool.started'
+  | 'clarvis.tool.completed'
+  | 'clarvis.tool.failed'
+  | 'clarvis.tool.refused'
+  | 'clarvis.diagnostic.changed'
+  | 'clarvis.model.requested'
+  | 'clarvis.model.completed'
+  | 'clarvis.model.failed'
   | 'clarvis.capability.changed';
 
 /**

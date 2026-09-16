@@ -164,6 +164,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // Declared before the watcher, which reads it.
   const agentBusy: RunState = { running: false, activity: new Activity() };
 
+  // Every model request, told to the activity for the Bridge's `clarvis.model.*` events
+  // (CLARVIS.md §6.4). Nothing listens unless the Bridge is on, and then it costs a call.
+  const unwatchModels = models.watchCalls((call) => agentBusy.activity.note({ kind: 'model', ...call }));
+  context.subscriptions.push({ dispose: unwatchModels });
+
   // **F14: said once, when the character has demonstrably gone quiet.** A missed
   // deadline falls back to the written bank and always has — correct, and until now
   // entirely silent, so choosing a slow local model turned the product's central

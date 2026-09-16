@@ -21,7 +21,6 @@
 
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
-import type { ActivitySnapshot } from './activity';
 import { GUIDANCE, settingIds, type ConfigSummary } from './config';
 import type { Identity } from './identity';
 import { EventStream, frame } from './events';
@@ -31,6 +30,7 @@ import {
   healthBody,
   identityBody,
   statusBody,
+  type StatusReport,
   timestamp,
   versionBody,
   type Capability,
@@ -54,7 +54,7 @@ export interface BridgeConfig {
    */
   readonly token: () => string | undefined;
   readonly identity: () => Identity;
-  readonly status: () => ActivitySnapshot;
+  readonly status: () => StatusReport;
   /** The published settings (§6.2's `clarvis.config.summary@1`), if the host reads any. */
   readonly summary?: () => ConfigSummary;
   readonly events: EventStream;

@@ -718,6 +718,13 @@ own handover records on its Clarvis screen. **Checked:** 9 new fast tests (the t
 payload, the trace, forwarding); each of 7 guards failed a test. The `ChatService`/`RunSession` wiring is
 read, not tested.
 
+**16 Sep (0.17.15): the status says more.** `/v1/status` now adds, when known, the editor's problem
+counts, the last build and test run (VS Code tasks in the Build or Test group only, `src/bridge/checks.ts`),
+the last model request (its request id, model, provider and result), the handed-over task and its stage,
+and the event cursor (`Activity.statusFacts`, `recordCheck`; `protocol.ts` `StatusReport`; `wire.ts`
+listens to `onDidEndTaskProcess` while the Bridge runs). NERVIS 0.34.10 shows them on the window card.
+**Checked:** 6 new fast tests; each of 7 guards failed one.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

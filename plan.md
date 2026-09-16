@@ -5299,6 +5299,15 @@ which is a distinction this project has been caught by before.
 >   stage and outcome travel, never the task's words. A brief from before ids gets an id here.
 >   The wiring in `ChatService` and `RunSession` is read rather than tested: the tracker and the
 >   parsing are the fast suite's.
+> - **`/v1/status` carries §6.3's list, 16 Sep (0.17.15).** Beside the state: the editor's problem
+>   counts (`diagnostics_*`, from the problem watch), the last build and test run (`build_result`,
+>   `test_result` and when each ended — only VS Code tasks in the Build or Test group, since telling a
+>   test command from any other by its words would be a guess), the last model request
+>   (`last_request_id` — the reference to RAVIS's route decision — with its model, provider and
+>   result, absent while in flight), the handed-over task and its stage, and `event_cursor`.
+>   `Activity` keeps the latest of each whether or not anyone listens (`statusFacts`, `recordCheck`,
+>   `src/bridge/checks.ts`). The mode stays on `/v1/config`; a log reference is not published, since
+>   M13's log is a file in the workspace and §6.8 keeps it an approved raw aid, not status.
 
 ### M15 — Codex tasks through RAVIS *(signed off 13 Sep — C1 and C2a built; C3 built against the fake, with the Wait reminder and the host specs open; C2b built against the fake from calibration's transcripts on 14 Sep, with the owner's additions of that day under way)*
 

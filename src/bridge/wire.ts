@@ -22,6 +22,8 @@ import { locality, summarise } from './config';
 import { VERDICT_REASON, verifySecretFile } from './secretFile';
 import type { Activity } from './activity';
 import { ProblemWatch, countProblems } from './problemCounts';
+import { checkKind, checkResult } from './checks';
+import { timestamp } from './protocol';
 
 declare const __CLARVIS_BUILD__: string;
 
@@ -121,8 +123,14 @@ export async function startBridge(
   );
   problems.start();
   const listening = vscode.languages.onDidChangeDiagnostics(() => problems.changed());
+  // The last build and test run, for `/v1/status` (§6.3): tasks in VS Code's Build and Test groups only.
+  const checking = vscode.tasks.onDidEndTaskProcess((event) => {
+    const kind = checkKind(event.execution.task.group?.id);
+    if (kind) activity.recordCheck(kind, checkResult(event.exitCode), timestamp(Date.now()));
+  });
   const stopWatching = (): void => {
     listening.dispose();
+    checking.dispose();
     problems.dispose();
   };
   context.subscriptions.push({ dispose: stopWatching });

@@ -8,7 +8,7 @@
  * as empty, so this file's job is to match a document rather than to be pretty.
  */
 
-import type { ActivitySnapshot } from './activity';
+import type { ActivitySnapshot, StatusFacts } from './activity';
 import type { Identity } from './identity';
 
 /** The MEP version this Bridge speaks. Must match the ecosystem's `PROTOCOL_VERSION`. */
@@ -271,9 +271,15 @@ export function versionBody(buildVersion: string): unknown {
  * `JSON.stringify` on the way out, which is how "unknown stays unknown" reaches
  * the wire — an absent field means nobody knows, and a `null` would be a value.
  */
-export function statusBody(snapshot: ActivitySnapshot, now: string): unknown {
+export function statusBody(snapshot: StatusReport, now: string): unknown {
   return { ...snapshot, observed_at: now };
 }
+
+/**
+ * The state and what is known beside it (§6.3), plus the newest event id — the cursor a reader resumes
+ * the event stream from. `JSON.stringify` drops the facts nobody knows yet.
+ */
+export type StatusReport = ActivitySnapshot & StatusFacts & { readonly event_cursor?: number };
 
 /**
  * §4.3's error envelope, which is the same shape all three sibling services

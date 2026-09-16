@@ -703,3 +703,31 @@ test('a stopped Bridge publishes no more notes', async () => {
   activity.note({ kind: 'tool', phase: 'started', tool: 'readFile' });
   assert.equal(bridge.events.cursor, before);
 });
+
+test("the status carries what is known beside the state, and the event cursor", async () => {
+  const fake = await nervis((call) => (call.method === 'DELETE' ? { status: 204 } : accepts()));
+  const { bridge, activity } = bridgeAgainst(fake.url);
+  try {
+    await bridge.start();
+    activity.note({ kind: 'problems', errors: 2, warnings: 1, information: 0, hints: 0, files: 1 });
+    activity.recordCheck('test', 'failed', '2026-09-16T12:00:00Z');
+    activity.note({ kind: 'task', phase: 'started', taskId: 'nt_0123456789abcdef', stage: 'building' });
+
+    const response = await fetch(`http://127.0.0.1:${bridge.port}/v1/status`, {
+      headers: { Authorization: 'Bearer issued' },
+    });
+    const body = (await response.json()) as Record<string, unknown>;
+
+    assert.equal(response.status, 200);
+    assert.equal(body.state, 'idle');
+    assert.equal(body.diagnostics_errors, 2);
+    assert.equal(body.test_result, 'failed');
+    assert.equal('build_result' in body, false, 'no build seen is no build reported');
+    assert.equal(body.task_stage, 'building');
+    assert.equal(body.event_cursor, bridge.events.cursor);
+    assert.ok((body.event_cursor as number) > 0);
+  } finally {
+    await bridge.stop();
+    await fake.stop();
+  }
+});

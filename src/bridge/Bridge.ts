@@ -21,7 +21,7 @@ import { deregister, heartbeat, heartbeatInterval, register, type Claim } from '
 import { forwardEvent, forwarded } from './eventForwarding';
 import { BridgeServer } from './server';
 import type { ConfigSummary } from './config';
-import type { ActivityChange, ActivitySnapshot, NoteChange } from './activity';
+import type { ActivityChange, ActivitySnapshot, NoteChange, StatusFacts } from './activity';
 import { publishActivity, publishNotes } from './publish';
 
 export interface BridgeOptions {
@@ -60,6 +60,8 @@ export interface BridgeOptions {
     observe(observer: (change: ActivityChange) => void): () => void;
     /** Model requests, tool calls and problem counts (§6.4). */
     observeNotes(observer: (change: NoteChange) => void): () => void;
+    /** Problem counts, the last build and test, the last model request, the task (§6.3). */
+    statusFacts(): StatusFacts;
   };
   readonly log: (message: string) => void;
   /**
@@ -190,7 +192,11 @@ export class Bridge {
     const server = new BridgeServer({
       token: () => this.token,
       identity: () => this.identity as Identity,
-      status: () => this.options.activity.snapshot(),
+      status: () => ({
+        ...this.options.activity.snapshot(),
+        ...this.options.activity.statusFacts(),
+        event_cursor: this.events.cursor,
+      }),
       summary: this.options.settings,
       events: this.events,
       capabilities: () => this.capabilities(),

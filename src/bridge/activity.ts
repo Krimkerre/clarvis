@@ -205,6 +205,36 @@ export interface TaskNote {
   readonly outcome?: 'built';
 }
 
+/** How a build or test run in the editor ended: exit 0, anything else, or no exit code at all. */
+export type CheckResult = 'passed' | 'failed' | 'unknown';
+
+/**
+ * What `/v1/status` reports beside the state (§6.3's list, Clarvis 0.17.15): the editor's problem
+ * counts, the last build and test run, the last model request, and the task handed over. Flat
+ * primitives, each absent until it is known — §6.3's "unknown values stay unknown".
+ */
+export interface StatusFacts {
+  readonly diagnostics_errors?: number;
+  readonly diagnostics_warnings?: number;
+  readonly diagnostics_information?: number;
+  readonly diagnostics_hints?: number;
+  readonly diagnostics_files?: number;
+  readonly build_result?: CheckResult;
+  readonly build_finished_at?: string;
+  readonly test_result?: CheckResult;
+  readonly test_finished_at?: string;
+  /** The `x-request-id` of the last model request — the reference to RAVIS's route decision for it. */
+  readonly last_request_id?: string;
+  readonly last_request_model?: string;
+  readonly last_request_provider?: string;
+  /** How it ended; absent while it is still in flight. */
+  readonly last_request_result?: string;
+  readonly task_id?: string;
+  readonly task_stage?: string;
+}
+
+type Facts = { -readonly [K in keyof StatusFacts]: StatusFacts[K] };
+
 /** Something that happened inside Clarvis without changing its state. */
 export type ActivityNote = ModelNote | ToolNote | ProblemsNote | TaskNote;
 
@@ -213,6 +243,34 @@ export interface NoteChange {
   readonly note: ActivityNote;
   readonly traceId: string;
   readonly sessionId: string;
+}
+
+/** Keeps the latest of each kind of note for the status. Nothing here can fail. */
+function remember(facts: Facts, note: ActivityNote): void {
+  if (note.kind === 'model') return rememberRequest(facts, note);
+  if (note.kind === 'problems') return rememberProblems(facts, note);
+  if (note.kind === 'task') rememberTask(facts, note);
+}
+
+function rememberRequest(facts: Facts, note: ModelNote): void {
+  facts.last_request_id = note.requestId;
+  facts.last_request_model = note.model;
+  facts.last_request_provider = note.provider;
+  facts.last_request_result = note.phase === 'requested' ? undefined : note.result;
+}
+
+function rememberProblems(facts: Facts, note: ProblemsNote): void {
+  facts.diagnostics_errors = note.errors;
+  facts.diagnostics_warnings = note.warnings;
+  facts.diagnostics_information = note.information;
+  facts.diagnostics_hints = note.hints;
+  facts.diagnostics_files = note.files;
+}
+
+/** A finished task is no longer the current one. */
+function rememberTask(facts: Facts, note: TaskNote): void {
+  facts.task_id = note.phase === 'completed' ? undefined : note.taskId;
+  facts.task_stage = note.phase === 'completed' ? undefined : note.stage;
 }
 
 /**
@@ -249,6 +307,8 @@ export class Activity {
   private readonly noteObservers = new Set<(change: NoteChange) => void>();
   /** Every gate ever opened here, so a tool call can tell whether it asked one. */
   private gates = 0;
+  /** The latest of each note and check, for `/v1/status`. */
+  private readonly facts: Facts = {};
 
   constructor(private readonly now: Clock = Date.now) {
     this.since = now();
@@ -322,6 +382,7 @@ export class Activity {
    * operation's trace; a model request names its own (see `ModelNote`).
    */
   note(note: ActivityNote): void {
+    remember(this.facts, note);
     if (this.noteObservers.size === 0) return;
     const change = noteChange(note, this.traceId, this.sessionId);
     for (const observer of [...this.noteObservers]) {
@@ -331,6 +392,17 @@ export class Activity {
         this.noteObservers.delete(observer);
       }
     }
+  }
+
+  /** A build or test run in the editor ended (a VS Code task in the Build or Test group). */
+  recordCheck(kind: 'build' | 'test', result: CheckResult, finishedAt: string): void {
+    this.facts[`${kind}_result`] = result;
+    this.facts[`${kind}_finished_at`] = finishedAt;
+  }
+
+  /** What `/v1/status` adds to the state. A fresh object each time. */
+  statusFacts(): StatusFacts {
+    return { ...this.facts };
   }
 
   /** How many gates have opened in this host, so a caller can tell whether its work asked one. */

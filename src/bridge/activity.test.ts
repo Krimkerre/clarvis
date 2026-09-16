@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { Activity, toolEnding, whileAwaiting, type NoteChange } from './activity';
+import { checkKind, checkResult } from './checks';
 
 /**
  * M14's read-only seam. These tests exist in the fast suite precisely because
@@ -393,4 +394,70 @@ test('a NERVIS task spans many operations and names none of them', () => {
   activity.startRun('run-trace', 'run-session');
   activity.note({ kind: 'task', phase: 'started', taskId: 'nt_0123456789abcdef', stage: 'building' });
   assert.deepEqual([heard[0].traceId, heard[0].sessionId], ['', '']);
+});
+
+// ── What the status reports beside the state (§6.3) ─────────────────────────
+
+test('nothing is reported until it is known', () => {
+  assert.deepEqual(new Activity(() => 0).statusFacts(), {});
+});
+
+test('the status keeps the latest problem counts, request and task, heard or not', () => {
+  const activity = new Activity(() => 0);
+  // No note observer: the Bridge may attach later, and the status still knows.
+  activity.note({ kind: 'problems', errors: 1, warnings: 4, information: 2, hints: 0, files: 3 });
+  activity.note({ ...MODEL, requestId: 'r1', phase: 'requested' });
+  let facts = activity.statusFacts();
+  assert.deepEqual(
+    [facts.diagnostics_errors, facts.diagnostics_warnings, facts.diagnostics_information, facts.diagnostics_hints, facts.diagnostics_files],
+    [1, 4, 2, 0, 3]
+  );
+  assert.deepEqual([facts.last_request_id, facts.last_request_model, facts.last_request_provider], ['r1', 'm', 'custom']);
+  assert.equal(facts.last_request_result, undefined, 'still in flight');
+
+  activity.note({ ...MODEL, requestId: 'r1', phase: 'completed', result: 'answered' });
+  activity.note({ kind: 'task', phase: 'started', taskId: 'nt_0123456789abcdef', stage: 'planning' });
+  facts = activity.statusFacts();
+  assert.equal(facts.last_request_result, 'answered');
+  assert.deepEqual([facts.task_id, facts.task_stage], ['nt_0123456789abcdef', 'planning']);
+
+  activity.note({ ...MODEL, requestId: 'r2', phase: 'requested' });
+  assert.deepEqual(
+    [activity.statusFacts().last_request_id, activity.statusFacts().last_request_result],
+    ['r2', undefined],
+    'a new request in flight has no result yet, whatever the last one ended as'
+  );
+  activity.note({ kind: 'task', phase: 'completed', taskId: 'nt_0123456789abcdef', outcome: 'built' });
+  facts = activity.statusFacts();
+  assert.equal('task_id' in facts && facts.task_id !== undefined, false, 'a finished task is no longer current');
+  assert.equal(facts.task_stage, undefined);
+});
+
+test('a tool call changes nothing the status reports', () => {
+  const activity = new Activity(() => 0);
+  activity.note({ kind: 'tool', phase: 'completed', tool: 'readFile' });
+  assert.deepEqual(activity.statusFacts(), {});
+});
+
+test('the last build and the last test are kept apart, each with when it ended', () => {
+  const activity = new Activity(() => 0);
+  activity.recordCheck('build', 'passed', '2026-09-16T10:00:00Z');
+  activity.recordCheck('test', 'failed', '2026-09-16T10:05:00Z');
+  activity.recordCheck('build', 'unknown', '2026-09-16T10:09:00Z');
+  const facts = activity.statusFacts();
+  assert.deepEqual(
+    [facts.build_result, facts.build_finished_at, facts.test_result, facts.test_finished_at],
+    ['unknown', '2026-09-16T10:09:00Z', 'failed', '2026-09-16T10:05:00Z']
+  );
+  assert.notEqual(activity.statusFacts(), activity.statusFacts(), 'a fresh object each time');
+});
+
+test("only VS Code's own Build and Test groups count, and no exit code is not a pass", () => {
+  assert.equal(checkKind('build'), 'build');
+  assert.equal(checkKind('test'), 'test');
+  for (const other of [undefined, 'clean', 'rebuild', 'none', 'Build']) assert.equal(checkKind(other), undefined, String(other));
+  assert.equal(checkResult(0), 'passed');
+  assert.equal(checkResult(1), 'failed');
+  assert.equal(checkResult(137), 'failed');
+  assert.equal(checkResult(undefined), 'unknown');
 });

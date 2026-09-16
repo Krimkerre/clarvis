@@ -252,10 +252,14 @@ const updateSlash = () => {
     closeSlash();
     return;
   }
+  // **A command typed out in full takes the highlight**, over the row that had it and over the order the
+  // host sent: typing "/clear" used to leave "/clearkey" highlighted, a row above it that starts with the
+  // same letters, and Enter then completed that one instead of running what was typed.
+  const exact = rows.findIndex((row) => String(row.insert).trim().toLowerCase() === word.toLowerCase());
   // The active row stays active while it is still listed, so typing on doesn't move the highlight away from it.
   const kept = slashOpen ? rows.indexOf(slashShown[slashActive]) : -1;
   slashShown = rows;
-  slashActive = kept >= 0 ? kept : 0;
+  slashActive = exact >= 0 ? exact : kept >= 0 ? kept : 0;
   slashOpen = true;
   slashBox.hidden = false;
   input.setAttribute('aria-expanded', 'true');

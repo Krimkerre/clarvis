@@ -627,6 +627,9 @@ chat box's suggestions", has the design, every choice made building it, and the 
 - **The suggestions pop-up** (`media/chat.js`, rows from the host):
   - It shows while the box's first word starts with `/`.
   - Up and Down move, Enter or Tab completes, Escape closes, and a click completes too.
+  - **Since 0.17.8:** the row whose command is exactly what has been typed takes the highlight, wherever it sits, so
+    Enter runs it. Found live on 16 Sep: `/clearkey` is listed above `/clear`, so `/clear` and Enter filled in
+    `/clearkey`, which removes the stored Fish Audio key. A partly typed word still takes the first row.
   - It is a listbox with `aria-activedescendant`, and RAVIS's words are text nodes.
   - Its skills are read when the panel opens, when the window regains focus, when the settings change, and while typing
     at most once a minute (`src/chat/slashSkills.ts`).

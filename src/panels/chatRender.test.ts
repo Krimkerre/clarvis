@@ -365,6 +365,25 @@ test('Enter or Tab completes the active row with a space after it; Enter on a co
   assert.deepEqual([panel.input.value, panel.slash.hidden], ['', true]);
 });
 
+test('a command typed out in full takes the highlight from a row above it, so Enter runs what was typed', () => {
+  const panel = panelWithRows();
+
+  // `/clearkey` is listed above `/clear` and starts with the same letters: before this, typing `/clear`
+  // in full left `/clearkey` highlighted and Enter filled that in, which removes the stored Fish Audio key.
+  panel.type('/clear');
+  assert.deepEqual(panel.labels(), ['/clearkey', '/clear'], 'the row above still matches the letters');
+  assert.equal(panel.active(), '/clear', 'the one typed out in full is the active row');
+  panel.press('Enter');
+  assert.deepEqual(panel.posted('ask'), [{ type: 'ask', text: '/clear' }], 'Enter runs it');
+  assert.deepEqual([panel.input.value, panel.slash.hidden], ['', true]);
+
+  // Still only the exact one: a partly typed word leaves the first row active and completes as before.
+  panel.type('/clea');
+  assert.equal(panel.active(), '/clearkey');
+  panel.press('Enter');
+  assert.equal(panel.input.value, '/clearkey ');
+});
+
 test('Escape closes the pop-up, which stays closed for that word and comes back when the word changes', () => {
   const panel = panelWithRows();
   panel.type('/st');

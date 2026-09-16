@@ -1337,7 +1337,9 @@ lead releases.
   - **Keys:** Up and Down move, wrapping at either end. Enter or Tab completes the command and a space, keeping anything
     typed after the first word. Escape closes it for that word. A click completes too.
     - **Decided here:** Enter on a command already typed in full sends it, since completing `/help` would only add a
-      space.
+      space. For that to hold, the row whose command is exactly the typed word takes the highlight, wherever it sits in
+      the list and over the row that had it — found live on 16 Sep 2026, where `/clearkey` sits above `/clear` and
+      `/clear` typed in full filled that in instead. A partly typed word still takes the first row.
     - Enter while an input method is composing (`isComposing`, or keyCode 229) belongs to the input method, for sending
       as well as completing.
   - **Accessibility:** `role="listbox"` on the pop-up, `role="option"` and `aria-selected` on each row, and the box's

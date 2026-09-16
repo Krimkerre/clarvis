@@ -5290,10 +5290,15 @@ which is a distinction this project has been caught by before.
 >   every call forwarded sends about 130. `clarvis.model.requested` and `clarvis.tool.started`
 >   stay on the Bridge's own stream; the ending carries `elapsed_ms`. A model event's request id
 >   is also put on the forwarded envelope (0.17.12), where RAVIS puts its own.
-> - **Not built:** `clarvis.task.*`. §6.4 names the family and nothing in the ecosystem says
->   what a Clarvis "task" is — an agent run already has `clarvis.agent.*`, a NERVIS handoff has
->   a file, and §6.3's "build and test outcome" suggests VS Code tasks. That is the owner's to
->   decide, not this amendment's.
+> - **`clarvis.task.*`, 16 Sep (0.17.14), once the owner decided a Clarvis task is a handover
+>   from NERVIS.** NERVIS writes an id into the brief (`<!-- nervis-task-id: nt_… -->`, read by
+>   `parseNervisTask`); `NervisTaskTrack` remembers it per workspace, since the brief is deleted once
+>   planning has begun, and tells `started` with the stage — `planning` when the handover is picked
+>   up, `building` and `paused` around each run of its plan (`RunSession.onPlanRun`) — and
+>   `completed` with `built` when the project is finished (`announceProjectFinished`). Only the id,
+>   stage and outcome travel, never the task's words. A brief from before ids gets an id here.
+>   The wiring in `ChatService` and `RunSession` is read rather than tested: the tracker and the
+>   parsing are the fast suite's.
 
 ### M15 — Codex tasks through RAVIS *(signed off 13 Sep — C1 and C2a built; C3 built against the fake, with the Wait reminder and the host specs open; C2b built against the fake from calibration's transcripts on 14 Sep, with the owner's additions of that day under way)*
 

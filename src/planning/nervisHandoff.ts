@@ -44,7 +44,16 @@ export interface NervisTask {
   askedOn: string;
   /** The NERVIS conversation it came from, when there was one. */
   conversation?: string;
+  /**
+   * NERVIS's id for this handover (`nt_` and sixteen hex digits), when it wrote one — the id Clarvis's
+   * `clarvis.task.*` events carry, so NERVIS can follow the task it handed over. Anything else in that
+   * comment is ignored: the id reaches an event, and an event carries no free text.
+   */
+  taskId?: string;
 }
+
+/** How NERVIS writes a handover's id, matching `nervis/src/nervis/handoff.py`. */
+const TASK_ID = /<!-- nervis-task-id: (nt_[0-9a-f]{16}) -->/;
 
 /**
  * Parse a handoff file, or return nothing.
@@ -66,7 +75,8 @@ export function parseNervisTask(text: string): NervisTask | undefined {
   // actually wrote, not the fixture, which had always had a conversation.
   const askedOn = /on (\d{4}-\d{2}-\d{2} \d{2}:\d{2} UTC)/.exec(text)?.[1] ?? '';
   const conversation = /conversation `([^`]+)`/.exec(text)?.[1];
-  return { task, askedOn, conversation };
+  const taskId = TASK_ID.exec(text)?.[1];
+  return { task, askedOn, conversation, ...(taskId ? { taskId } : {}) };
 }
 
 /**

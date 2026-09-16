@@ -361,6 +361,13 @@ export class RunSession {
     this.blockedHandler = handler;
   }
 
+  /** Told when a run from an approved plan begins, and when it has ended (a NERVIS task's stage). */
+  private planRunHandler?: (phase: 'building' | 'paused') => Promise<void>;
+
+  onPlanRun(handler: (phase: 'building' | 'paused') => Promise<void>): void {
+    this.planRunHandler = handler;
+  }
+
   setFromPlan(on: boolean, steps: string[] = []): void {
     this.fromPlan = on;
     this.steps = steps;
@@ -421,7 +428,20 @@ export class RunSession {
     await this.note(opening);
     this.avatar.setState('thinking', 'chat');
 
-    await this.follow(placed, task, (signal) => this.startOrBuildOn(placed.runner, where, task, signal));
+    await this.withPlanStage(() => this.follow(placed, task, (signal) => this.startOrBuildOn(placed.runner, where, task, signal)));
+  }
+
+  /** A run, with a NERVIS task's stage told around it when the run builds an approved plan. */
+  private async withPlanStage(work: () => Promise<void>): Promise<void> {
+    // Read before the run: its ending turns `fromPlan` off.
+    const planRun = this.fromPlan;
+    if (planRun) await this.planRunHandler?.('building');
+    try {
+      await work();
+    } finally {
+      // A finished project has already ended the task, and `paused` then changes nothing.
+      if (planRun) await this.planRunHandler?.('paused');
+    }
   }
 
   /**

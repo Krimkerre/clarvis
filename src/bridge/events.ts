@@ -35,6 +35,8 @@ export type EventName =
   | 'clarvis.tool.failed'
   | 'clarvis.tool.refused'
   | 'clarvis.diagnostic.changed'
+  | 'clarvis.task.started'
+  | 'clarvis.task.completed'
   | 'clarvis.model.requested'
   | 'clarvis.model.completed'
   | 'clarvis.model.failed'

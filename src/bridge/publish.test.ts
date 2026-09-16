@@ -422,3 +422,12 @@ test('notes reach the stream with the ids they were filed under, and stop when d
     ['clarvis.tool.started', 'run-trace', 'run-session'],
   ]);
 });
+
+test('a NERVIS task publishes its id and stage or outcome, nothing else', () => {
+  assert.deepEqual(eventForNote({ kind: 'task', phase: 'started', taskId: 'nt_0123456789abcdef', stage: 'building' }), {
+    name: 'clarvis.task.started', data: { task_id: 'nt_0123456789abcdef', stage: 'building' },
+  });
+  assert.deepEqual(eventForNote({ kind: 'task', phase: 'completed', taskId: 'nt_0123456789abcdef', outcome: 'built' }), {
+    name: 'clarvis.task.completed', data: { task_id: 'nt_0123456789abcdef', outcome: 'built' },
+  });
+});

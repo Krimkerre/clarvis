@@ -90,3 +90,16 @@ test('the origin is in the offer itself, which is what ships', () => {
   // and a rewrite that survived could have dropped where the task came from.
   assert.ok(handoffOffer({ task: 'Add a retry', askedOn: '' }).startsWith('This came from NERVIS'));
 });
+
+test("a handover's id is read when NERVIS wrote one, and only in NERVIS's shape", () => {
+  const id = 'nt_0123456789abcdef';
+  const withId = `<!-- authored-by: nervis -->\n<!-- nervis-task-id: ${id} -->\n# Task from NERVIS\n\nAdd a retry.\n\n---\n`;
+  assert.equal(parseNervisTask(withId)?.taskId, id);
+  assert.equal(parseNervisTask(withId)?.task, 'Add a retry.', 'the id line is not part of the task');
+
+  for (const odd of ['nt_ABC<img>', 'nt_0123456789ABCDEF', 'nt_0123456789abcdef0', 'nt_ and some words']) {
+    assert.equal(parseNervisTask(withId.replace(id, odd))?.taskId, undefined, odd);
+  }
+  const older = withId.replace(`<!-- nervis-task-id: ${id} -->\n`, '');
+  assert.equal('taskId' in (parseNervisTask(older) ?? {}), false, 'a handover from before ids has none');
+});

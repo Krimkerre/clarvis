@@ -385,3 +385,12 @@ test('a tool call that asked the user never ends as failed, so its ending cannot
   assert.equal(toolEnding(false, false), 'completed');
   assert.equal(toolEnding(undefined, false), 'completed');
 });
+
+test('a NERVIS task spans many operations and names none of them', () => {
+  const activity = new Activity(() => 0);
+  const heard: NoteChange[] = [];
+  activity.observeNotes((change) => heard.push(change));
+  activity.startRun('run-trace', 'run-session');
+  activity.note({ kind: 'task', phase: 'started', taskId: 'nt_0123456789abcdef', stage: 'building' });
+  assert.deepEqual([heard[0].traceId, heard[0].sessionId], ['', '']);
+});

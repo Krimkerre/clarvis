@@ -690,10 +690,15 @@ wiped by a later `noteTrace`, whole seconds again) failed one of them.
   `onDidChangeDiagnostics` only while the Bridge runs.
 - `Activity.note()` / `observeNotes()` is a second channel beside `observe()`; `publishNotes` in
   `publish.ts` maps it; `forwarded()` in `eventForwarding.ts` keeps the two beginnings off NERVIS.
-- `clarvis.task.*` is not built: what a Clarvis task is has not been decided.
+- `clarvis.task.*` was not built then: what a Clarvis task is had not been decided (see 0.17.14).
 - **0.17.12, the same day:** a forwarded event with a `request_id` in its data carries it on the envelope
   too (`eventBody`), where RAVIS puts its own, so NERVIS stores Clarvis's model event and RAVIS's route
   decision under one request id.
+
+**Checked:** 26 new fast tests (`callWatch`, `problemCounts`, and additions to `activity`,
+`publish`, `eventForwarding`, `Bridge`, `lineage`), the real runner's tool events in
+`branchContinuation.spec.ts`, and the real `ModelService` in `modelEvents.spec.ts`; each of 14
+guards broken one at a time in the build failed a test.
 
 **16 Sep (0.17.13): Codex answers can no longer overtake each other.** In Unattended, when several of
 Codex's requests arrived together, RAVIS's "resolved" event for one answer could start the next answer
@@ -702,10 +707,16 @@ under full-suite load). `CodexApprovals` now sends one answer at a time (`sendin
 `FakeRavisRelay.delayArrival` makes the test fail every time without the fix. `npm run check` passed four
 runs in a row afterwards (2,145 each).
 
-**Checked:** 26 new fast tests (`callWatch`, `problemCounts`, and additions to `activity`,
-`publish`, `eventForwarding`, `Bridge`, `lineage`), the real runner's tool events in
-`branchContinuation.spec.ts`, and the real `ModelService` in `modelEvents.spec.ts`; each of 14
-guards broken one at a time in the build failed a test.
+**16 Sep (0.17.14): a handover from NERVIS is followed to the end.** The owner decided that a Clarvis
+"task" is a task NERVIS handed over. NERVIS now writes an id into `clarvis-task.md`
+(`<!-- nervis-task-id: nt_… -->`); `parseNervisTask` reads it, and `src/planning/nervisTaskTrack.ts`
+remembers it in `workspaceState` (`clarvis.nervisTask`) because the brief is deleted once planning has
+begun. The Bridge publishes `clarvis.task.started` with the stage (`planning` at pickup, `building` and
+`paused` around each run of the plan, via `RunSession.onPlanRun`) and `clarvis.task.completed` with
+`built` when the project is finished (`ChatService.announceProjectFinished`). NERVIS joins these with its
+own handover records on its Clarvis screen. **Checked:** 9 new fast tests (the tracker, the id, the
+payload, the trace, forwarding); each of 7 guards failed a test. The `ChatService`/`RunSession` wiring is
+read, not tested.
 
 ## The complexity budget, and where it stands
 

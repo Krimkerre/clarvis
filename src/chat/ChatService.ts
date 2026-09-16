@@ -50,6 +50,7 @@ import { fixFindingsTask } from '../planning/reviewFollowUp';
 import { addFindingsToPlan } from '../planning/recordMilestone';
 import { handoffOffer } from '../planning/nervisHandoff';
 import { clearNervisTask, waitingNervisTask } from '../planning/nervisTaskFile';
+import { NervisTaskTrack } from '../planning/nervisTaskTrack';
 import { interruptedBuild, pendingBuild, PendingBuild } from '../planning/pendingBuild';
 import { judgeScope, recordScopeChange } from '../planning/kickback';
 import { ScopeVerdict } from '../planning/scopeChange';
@@ -98,6 +99,18 @@ function interviewMemoryFor(memory: InterviewMemory, decided?: PlanningStart): I
 }
 
 export class ChatService {
+  /** Where a task NERVIS handed over has got to, for the Bridge's `clarvis.task.*`. */
+  private readonly nervisTask: NervisTaskTrack;
+
+  /** A task's stage, remembered and told — never at the cost of the work if remembering fails. */
+  private async followTask(step: () => Promise<void>): Promise<void> {
+    try {
+      await step();
+    } catch (error) {
+      this.log(`chat: couldn't note the NERVIS task's progress (${String(error)})`);
+    }
+  }
+
   /** Whether he is doing something, and how to make him stop. */
   private readonly busy: Busy;
 
@@ -411,6 +424,7 @@ export class ChatService {
     if (!waiting) return false;
 
     this.log(`chat: a task arrived from NERVIS${waiting.conversation ? ` (${waiting.conversation})` : ''} — planning it`);
+    await this.followTask(() => this.nervisTask.pickedUp(waiting.taskId));
     await this.note(handoffOffer(waiting));
     await this.startPlanning({ brief: waiting.task });
     return true;
@@ -587,6 +601,7 @@ export class ChatService {
   async announceProjectFinished(lines: string[]): Promise<void> {
     const [headline, ...rest] = lines;
     this.log(`planning: project finished — ${headline}`);
+    await this.followTask(() => this.nervisTask.finished());
 
     await this.remark(headline);
     if (rest.length) await this.note(rest.join('\n'));
@@ -997,6 +1012,7 @@ export class ChatService {
     this.workspace = new WorkspaceFactsReader(context, tracker, recentFiles, patterns);
     this.transcript = new Transcript(context, panel, log);
     this.busy = new Busy(panel, agentBusy);
+    this.nervisTask = new NervisTaskTrack(context.workspaceState, (note) => agentBusy.activity.note(note));
     this.runs = new RunSession(
       context,
       avatar,
@@ -1012,6 +1028,7 @@ export class ChatService {
       log
     );
     this.runs.onBlocked((missing, proposal) => this.offerAfterMissing(missing.name, proposal));
+    this.runs.onPlanRun((phase) => this.followTask(() => (phase === 'building' ? this.nervisTask.building() : this.nervisTask.paused())));
     this.replier = new Replier(
       panel,
       avatar,

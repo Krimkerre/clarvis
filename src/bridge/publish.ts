@@ -12,7 +12,7 @@
  * flat primitives with no field for any of the above.
  */
 
-import type { ActivityChange, ModelNote, NoteChange, ProblemsNote, ToolNote } from './activity';
+import type { ActivityChange, ModelNote, NoteChange, ProblemsNote, TaskNote, ToolNote } from './activity';
 import type { EventData, EventName, EventStream } from './events';
 
 /** One transition, as an event name and a payload — or nothing worth publishing. */
@@ -110,6 +110,7 @@ export function publishActivity(
 export function eventForNote(note: NoteChange['note']): { name: EventName; data: EventData } {
   if (note.kind === 'model') return { name: `clarvis.model.${note.phase}`, data: modelData(note) };
   if (note.kind === 'tool') return { name: `clarvis.tool.${note.phase}`, data: toolData(note) };
+  if (note.kind === 'task') return { name: `clarvis.task.${note.phase}`, data: taskData(note) };
   return { name: 'clarvis.diagnostic.changed', data: problemsData(note) };
 }
 
@@ -143,6 +144,11 @@ function toolData(note: ToolNote): EventData {
     asked_user: note.asked,
     reason: note.reason,
   });
+}
+
+/** The id NERVIS wrote, never the task's words: they are the prompt §6.4 keeps on this machine. */
+function taskData(note: TaskNote): EventData {
+  return defined({ task_id: note.taskId, stage: note.stage, outcome: note.outcome });
 }
 
 function problemsData(note: ProblemsNote): EventData {

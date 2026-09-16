@@ -128,6 +128,7 @@ test('the beginnings of model requests and tool calls stay on the Bridge; everyt
   assert.equal(forwarded('clarvis.tool.started'), false);
   for (const name of ['clarvis.model.completed', 'clarvis.model.failed', 'clarvis.tool.completed',
     'clarvis.tool.failed', 'clarvis.tool.refused', 'clarvis.diagnostic.changed', 'clarvis.chat.started',
+    'clarvis.task.started', 'clarvis.task.completed',
     'clarvis.agent.step', 'clarvis.gate.requested', 'clarvis.lifecycle.ready']) {
     assert.equal(forwarded(name), true, name);
   }

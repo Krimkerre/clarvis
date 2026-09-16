@@ -192,14 +192,37 @@ export interface ProblemsNote {
   readonly files: number;
 }
 
+/**
+ * A task NERVIS handed over (§6.4's `clarvis.task.*`, the owner's decision of 16 Sep 2026): its id and
+ * where it has got to. `started` is said again each time the stage changes — picked up and planning,
+ * building, paused between runs — and `completed` once, when the whole plan is built.
+ */
+export interface TaskNote {
+  readonly kind: 'task';
+  readonly phase: 'started' | 'completed';
+  readonly taskId: string;
+  readonly stage?: 'planning' | 'building' | 'paused';
+  readonly outcome?: 'built';
+}
+
 /** Something that happened inside Clarvis without changing its state. */
-export type ActivityNote = ModelNote | ToolNote | ProblemsNote;
+export type ActivityNote = ModelNote | ToolNote | ProblemsNote | TaskNote;
 
 /** A note, with the operation it belongs to. */
 export interface NoteChange {
   readonly note: ActivityNote;
   readonly traceId: string;
   readonly sessionId: string;
+}
+
+/**
+ * A note with the operation it belongs to. A task spans many operations and a problem count none, so
+ * neither names one.
+ */
+function noteChange(note: ActivityNote, traceId: string, sessionId: string): NoteChange {
+  if (note.kind === 'model') return { note, traceId: note.traceId, sessionId: note.sessionId };
+  if (note.kind === 'tool') return { note, traceId, sessionId };
+  return { note, traceId: '', sessionId: '' };
 }
 
 /**
@@ -300,11 +323,7 @@ export class Activity {
    */
   note(note: ActivityNote): void {
     if (this.noteObservers.size === 0) return;
-    const change: NoteChange = note.kind === 'model'
-      ? { note, traceId: note.traceId, sessionId: note.sessionId }
-      : note.kind === 'tool'
-        ? { note, traceId: this.traceId, sessionId: this.sessionId }
-        : { note, traceId: '', sessionId: '' };
+    const change = noteChange(note, this.traceId, this.sessionId);
     for (const observer of [...this.noteObservers]) {
       try {
         observer(change);

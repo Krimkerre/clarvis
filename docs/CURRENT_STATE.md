@@ -755,7 +755,8 @@ NERVIS-ecosystem runbook's §15 E2E item has the record).
 **Checked:** 17 new fast tests (2,182 passing) and one host spec (33 passing on Code 1.137.0), where a real
 Codex save with an unasked edit, an added file and a file copied at the start was undone; with the
 starting-commit copy switched off it failed (1 restored, 0 deleted). The elapsed-time test failed at 0
-before the fix. Not yet seen live: the deregistration and the trust start under code-server.
+before the fix. **Both seen live since:** the deregistration (0.17.18, below), and the trust start — in
+Safari on 17 Sep the Bridge started and registered the moment the folder was trusted, with no reload.
 
 **17 Sep (0.17.18): the deregistration, for real.** Tried live in code-server, 0.17.17 still left a closed
 tab listed as live. VS Code calls `deactivate` and then disposes the subscriptions without waiting; the

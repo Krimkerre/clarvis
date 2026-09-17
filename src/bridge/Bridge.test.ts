@@ -414,6 +414,24 @@ test('stopping deregisters, releases the port and cancels the timer', async () =
   await fake.stop();
 });
 
+test('a second stop waits for the first, deregistration included', async () => {
+  // Found live on 17 Sep 2026 (0.17.17): VS Code calls `deactivate` and then disposes the extension's
+  // subscriptions at once. The subscription's stop started the deregistration; `deactivate`'s own stop
+  // found the Bridge already stopping, returned at once, and the host ended before the DELETE left.
+  const fake = await nervis((call) => (call.method === 'DELETE' ? { status: 204 } : accepts()));
+  const { bridge } = bridgeAgainst(fake.url);
+  await bridge.start();
+
+  const first = bridge.stop();
+  try {
+    await bridge.stop();
+    assert.equal(fake.seen.at(-1)?.method, 'DELETE', 'the second stop returned before NERVIS heard');
+  } finally {
+    await first;
+    await fake.stop();
+  }
+});
+
 test('a stopping event is published before the streams end', async () => {
   const fake = await nervis((call) => (call.method === 'DELETE' ? { status: 204 } : accepts()));
   const { bridge } = bridgeAgainst(fake.url);

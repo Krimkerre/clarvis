@@ -166,9 +166,11 @@ out, then showed it `live: false` — the lease, not a deregistration. The cause
 was Clarvis's: `deactivate` started the Bridge's stop without returning it, so
 the host ended before the `DELETE` left.
 
-**Limitation.** Clarvis 0.17.17 returns that stop from `deactivate`
-(`src/bridge/slot.ts`), which VS Code waits for; a closed tab's instance should
-now leave the registry at once. That is covered by `slot.test.ts` and not yet
+**Limitation.** Clarvis 0.17.17 returned that stop from `deactivate`
+(`src/bridge/slot.ts`), and a live try the same day still left the closed tab
+listed: VS Code disposes the subscriptions right after calling `deactivate`, and
+that second stop made the first one return early. 0.17.18 shares one stop between
+callers (`Bridge.stop`); a closed tab's instance should now leave the registry at once. That is covered by `slot.test.ts` and not yet
 observed live under code-server — closing a tab while watching
 `GET /api/v1/registry/instances` settles it. A crashed host still relies on the
 lease, by design.

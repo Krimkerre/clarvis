@@ -5731,7 +5731,8 @@ without the fix (0.17.17).
 - [x] Undo Last Agent Run covers a Codex change made without an approval prompt; one shared undo record; the
       outcome is said in the chat too
 - [x] **Clarvis: Turn the Bridge On or Off** — the Bridge switch where code-server's settings screen hides it
-- [x] A closing window deregisters from NERVIS (`deactivate` waits for the Bridge's stop)
+- [x] A closing window deregisters from NERVIS (`deactivate` waits for the Bridge's stop; 0.17.18: every stop
+      waits for the same one, found when 0.17.17 still failed live)
 - [x] `docs/code-server-matrix.md`: Bridge teardown graded from the session; the 56-cell count explained
 - [ ] Seen live under code-server: a closed tab leaving NERVIS's registry at once, and the Bridge starting
       when a folder is trusted

@@ -757,6 +757,13 @@ Codex save with an unasked edit, an added file and a file copied at the start wa
 starting-commit copy switched off it failed (1 restored, 0 deleted). The elapsed-time test failed at 0
 before the fix. Not yet seen live: the deregistration and the trust start under code-server.
 
+**17 Sep (0.17.18): the deregistration, for real.** Tried live in code-server, 0.17.17 still left a closed
+tab listed as live. VS Code calls `deactivate` and then disposes the subscriptions without waiting; the
+subscription's `Bridge.stop()` started the `DELETE`, and `deactivate`'s own stop found the Bridge already
+stopping and returned at once. `Bridge.stop()` now hands every caller the same in-flight stop.
+**Checked:** a new `Bridge.test.ts` case (two stops at once, the second must not return before NERVIS has
+the `DELETE`) failed before the fix; 2,183 fast tests and 33 host tests pass.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

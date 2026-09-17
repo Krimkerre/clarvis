@@ -142,6 +142,7 @@ export class Bridge {
   async start(): Promise<void> {
     if (this.running) return;
     this.running = true;
+    this.stopping = undefined;
 
     const stored = await loadIdentity(this.options.storage);
     this.identity = identityFor(stored, this.options.facts);
@@ -219,7 +220,18 @@ export class Bridge {
    * stream ends; then deregistration; then the socket. Disposing the socket
    * first would close the stream the `stopping` event was meant to travel down.
    */
-  async stop(): Promise<void> {
+  stop(): Promise<void> {
+    // **One stop, however many callers.** VS Code calls `deactivate` and then disposes the
+    // subscriptions without waiting, so two stops start together; the second must wait for the
+    // first's deregistration, or `deactivate` resolves and the host ends before the DELETE leaves
+    // (found live under code-server, 17 September 2026).
+    this.stopping ??= this.stopOnce();
+    return this.stopping;
+  }
+
+  private stopping?: Promise<void>;
+
+  private async stopOnce(): Promise<void> {
     if (!this.running) return;
     this.running = false;
 

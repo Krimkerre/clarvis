@@ -76,9 +76,10 @@ macOS arm64, **Clarvis 0.0.1**, served over plain HTTP on loopback — **direct*
 also through a **spike reverse proxy** at a `/code/` base path. The spike is not NERVIS's proxy:
 it forwards bytes and does none of §13.3's security work, so what it grades is Clarvis and
 code-server *under a proxy*, never NERVIS's own route. Everything behind code-server's login
-remains ungraded, because the password is the operator's to type. Browser axis: two points, and only for the
-webview question — Firefox, where the panel renders, posts back and takes the keyboard, and a
-Chromium-based agent with service workers blocked, where no webview can load at all.
+remains ungraded, because the password is the operator's to type. Browser axis: three points, and only for the
+webview question — Firefox, where the panel renders, posts back and takes the keyboard; a
+Chromium-based agent with service workers blocked, where no webview can load at all; and, since
+17 September 2026, Safari (see below).
 
 **Every cell was graded as of 30 August 2026 — `NOT_TESTED` was zero that day.** It reads 3
 below: §7.1's coverage check later added four capabilities that had no cell at all, which is
@@ -148,6 +149,21 @@ the same machine, same NERVIS) appeared in the same registry query with its
 own distinct `instance_id` and port, incidental confirmation that code-server
 and desktop instances coexist under one NERVIS with no cross-talk, consistent
 with the M8a/M9 isolation evidence elsewhere in this repository.
+
+### `PASS` — Safari, through NERVIS's Code tab
+
+**Observed 17 September 2026**, Clarvis 0.17.19 in code-server 4.137.0, the owner at the keyboard.
+The workbench was opened from NERVIS's own Code tab
+(`http://127.0.0.1:8790/index.html#/clarvis/Workspace`, which frames code-server at its own
+address — the Code tab's default path). The Clarvis panel rendered; the folder was trusted and the
+Bridge started **without a window reload** (`bridge: the folder is trusted now…`, listening and
+registered with NERVIS at 18:10:24Z, Clarvis 0.17.17's fix seen live); and a chat turn typed in the
+panel went out through RAVIS to `claude-haiku-4-5` and came back, NERVIS recording
+`clarvis.chat.started` → `completed` with a real 1,221 ms. So in Safari the webview renders, posts
+back to the extension host, reaches RAVIS and returns.
+
+**Limitation.** One chat turn and the panel: no agent run, no voice and no keyboard-focus check was
+made in Safari, and the earlier cells below were graded in Firefox.
 
 ### `PASS` — Bridge teardown under code-server
 
@@ -238,7 +254,7 @@ somebody to look at the window, which is a person's job rather than a log's.
 
 | | |
 |---|---|
-| PASS | 40 |
+| PASS | 41 |
 | PASS_WITH_LIMITATION | 16 |
 | FAIL | 0 |
 | NOT_TESTED | 0 |
@@ -254,7 +270,7 @@ windows both went to `PASS` by actually being run (see above); Bridge teardown
 under code-server was observed on 17 September 2026, fixed, and seen deregistering
 at once with 0.17.18 (`PASS`).
 
-**56 cells: 51 original, the 4 above, and one VSCodium regression cell** (NERVIS
+**57 cells: 51 original, the 4 above, one VSCodium regression cell and Safari (17 September 2026)** (NERVIS
 M15, below the four). The count used to be given as 51 plus 4, which is one short
 of this table.
 

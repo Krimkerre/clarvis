@@ -52,7 +52,7 @@ export async function startBridge(
   // that scope enforcement is ever wrong — a hostile repository still cannot
   // wake the Bridge by any settings path, trusted or not.
   if (!vscode.workspace.isTrusted) {
-    log('bridge: workspace is untrusted, so the Bridge stays inert regardless of settings');
+    log("bridge: this folder isn't trusted yet, so the Bridge stays off whatever the settings say; it starts once the folder is trusted");
     return undefined;
   }
 

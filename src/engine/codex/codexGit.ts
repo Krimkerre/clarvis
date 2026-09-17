@@ -53,6 +53,8 @@ export class CodexGitGlue implements CodexGit {
   /** Files already changed when this window started the task; unknown to a window that picked it up. */
   private dirtyAtStart: string[] | undefined;
   private savedOn: string | undefined;
+  /** The commit the task's work began from, in this window; the undo copies of what Codex changed come from it. */
+  private startCommit: string | undefined;
 
   constructor(
     context: vscode.ExtensionContext,
@@ -77,6 +79,7 @@ export class CodexGitGlue implements CodexGit {
     const isolation = await this.branch.begin(task);
     await this.checkpoint.noteBranch(this.branch.previous);
     const head = repository?.state.HEAD?.commit;
+    this.startCommit = isolation.isolated ? head : undefined;
     if (isolation.isolated && this.branch.current && head) return { ok: true, branch: this.branch.current, headCommit: head };
     await this.branch.discardIfEmpty();
     // No branch. When setting git up alone would fix it, the refusal says so plainly and the chat offers
@@ -100,6 +103,7 @@ export class CodexGitGlue implements CodexGit {
     const isolation = await this.branch.continueOn({ branch, headCommit, theirs: this.dirtyAtStart });
     await this.checkpoint.noteBranch(this.branch.previous);
     const head = isolation.isolated ? (await new GitFacts(this.root).head()).commit : undefined;
+    this.startCommit = head;
     if (head) return { ok: true, branch, headCommit: head };
     return { ok: false, line: isolation.advice ?? `Codex couldn't carry the task on on \`${branch}\`, so nothing was started.` };
   }
@@ -118,12 +122,38 @@ export class CodexGitGlue implements CodexGit {
     return expected && head === expected ? undefined : offBranchLine(expected, head);
   }
 
+  /**
+   * Copies a file for undo before an approved change reaches it — into the same record the task began, so the
+   * copies taken at the start survive. A window that picked the task up later has no record, and starts one.
+   */
+  async captureBeforeChange(paths: string[]): Promise<void> {
+    if (!this.checkpoint.begun) await this.checkpoint.begin(this.task || 'a Codex task');
+    for (const file of paths) await this.checkpoint.capture(path.join(this.root, file));
+  }
+
   private async commitWork(repository: Repository, work: SaveWork): Promise<CodexSave> {
     const files = this.filesToCommit(repository, work.files);
+    await this.copyFromStart(files);
     const hash = files.length > 0 ? await this.commit(repository, commitMessage(this.task, work), files) : undefined;
     this.savedOn = this.branch.current ?? work.branch;
     if (hash === undefined) return { ok: true, commit: headCommit(repository), committed: false, files: [] };
     return { ok: true, commit: hash, committed: true, files };
+  }
+
+  /**
+   * **Every file Codex changed can be undone, asked about or not.** An edit Codex made without an approval
+   * prompt was already on disk when Clarvis heard of it, so its copy is read from the commit the task began
+   * on. A file already copied — at-risk at the start, or before an approved change — keeps that copy.
+   */
+  private async copyFromStart(files: string[]): Promise<void> {
+    const start = this.startCommit;
+    if (!start || !this.checkpoint.begun) return;
+    const facts = new GitFacts(this.root);
+    for (const file of files) {
+      const before = await facts.fileAt(start, file);
+      if (before === undefined) this.log(`codex: couldn't read ${file} as it was at the task's start, so undo can't restore it`);
+      else await this.checkpoint.captureContents(path.join(this.root, file), before);
+    }
   }
 
   async abandon(): Promise<void> {

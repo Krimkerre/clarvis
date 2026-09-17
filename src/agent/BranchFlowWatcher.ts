@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { workspaceFolderPath } from './gitExtension';
 import { repositoryForFolder } from './repositoryForFolder';
 import { gitAbsenceReason } from './gitAbsence';
+import { whenTrusted } from './afterTrust';
+import { hostTrust } from './hostTrust';
 import {
   BranchFlow,
   flowBranches,
@@ -108,11 +110,16 @@ export class BranchFlowWatcher {
   }
 
   private async attach(subscriptions: vscode.Disposable[]): Promise<void> {
+    if (this.attached) return;
     const api = await gitApi();
+    if (this.attached) return;
     if (!api) {
-      this.log(gitAbsenceReason(vscode.workspace.isTrusted));
+      const trusted = vscode.workspace.isTrusted;
+      this.log(gitAbsenceReason(trusted));
+      if (!trusted) subscriptions.push(whenTrusted(hostTrust, () => this.attachWhenGitArrives(subscriptions)));
       return;
     }
+    this.attached = true;
 
     // Repositories are discovered asynchronously, so a repository opened after this
     // point still needs wiring — including the common case of none existing yet.
@@ -121,6 +128,25 @@ export class BranchFlowWatcher {
 
     this.log(`branch flow: watching (${api.repositories.length} repository/ies at start)`);
     this.scheduleStartup();
+  }
+
+  /** Whether a Git extension is being watched, so a late start never wires it twice. */
+  private attached = false;
+
+  /**
+   * The folder was trusted after the window opened (attended session, 17 September 2026). VS Code switches the
+   * Git extension on at that point, perhaps a moment later, so this tries now and again as extensions change.
+   */
+  private attachWhenGitArrives(subscriptions: vscode.Disposable[]): void {
+    this.log('branch flow: the folder is trusted now, looking for the Git extension again');
+    const tryNow = async (): Promise<void> => {
+      if (this.attached || !(await gitApi())) return;
+      changes.dispose();
+      await this.attach(subscriptions);
+    };
+    const changes = vscode.extensions.onDidChange(() => void tryNow());
+    subscriptions.push(changes);
+    void tryNow();
   }
 
   private watch(repository: GitRepository, subscriptions: vscode.Disposable[]): void {

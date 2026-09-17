@@ -11,13 +11,13 @@
  *
  * **Approvals** (C2b). Codex's requests are asked in the chat by `approvals.ts`, one at a time, with RAVIS's
  * allowed decisions as buttons; the chat's own question mechanism shows them (`RunSession.askCodex`). Before an
- * approved file change, the files it touches are copied for **Clarvis: Undo Last Agent Run** (`undoCopies`).
+ * approved file change, the files it touches are copied for **Clarvis: Undo Last Agent Run**, and every file Codex
+ * changed without asking is copied from the task's starting commit when its work is saved — both into the one
+ * record the task began (`CodexGitGlue`).
  */
 
-import * as path from 'path';
 import * as vscode from 'vscode';
 import type { AgentEvent } from '../../agent/AgentRunner';
-import { Checkpoint } from '../../agent/Checkpoint';
 import type { MissingDependency } from '../../agent/missingDependency';
 import type { AgentTerminal } from '../../agent/tools/commandTools';
 import type { CodingRun } from '../CodingRun';
@@ -81,7 +81,7 @@ export class RemoteCodexRunner implements CodingRun {
       modeNow: deps.modeNow,
       maxSteps: deps.maxSteps,
       ask: deps.ask,
-      capture: undoCopies(deps),
+      capture: (paths) => this.git.captureBeforeChange(paths),
       // C2b+: the sites a task will likely need, asked about before it starts; and the owner's model and effort.
       sitesFor: (task) => scanSites(projectFiles(deps.root), task),
       codexChoice: deps.codexChoice,
@@ -207,23 +207,6 @@ export class RemoteCodexRunner implements CodingRun {
     if (!event.files?.length || !working || !startedFrom) return event;
     return { ...event, closing: `\n\nYour own work on \`${startedFrom}\` is untouched — Codex's changes are on \`${working}\`.` };
   }
-}
-
-/**
- * Copies each file before an approved Codex change touches it, so **Clarvis: Undo Last Agent Run** can put it back
- * (M15 C2b; design §5.2). The copies start at the task's first approved change, replacing the last run's the way a
- * run of Clarvis's own engine does; the task branch stays the undo for everything else, including whatever Codex
- * changed while no window was attached. `approvals.ts` hands only paths inside the project.
- */
-export function undoCopies(deps: Pick<RemoteCodexDeps, 'context' | 'root' | 'log'>): (paths: string[]) => Promise<void> {
-  let checkpoint: Checkpoint | undefined;
-  return async (paths) => {
-    if (!checkpoint) {
-      checkpoint = new Checkpoint(deps.context, deps.root, deps.log);
-      await checkpoint.begin('a Codex task');
-    }
-    for (const file of paths) await checkpoint.capture(path.join(deps.root, file));
-  };
 }
 
 /**

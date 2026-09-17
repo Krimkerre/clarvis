@@ -30,6 +30,13 @@ observed.
 > basis; the extension-API side is what the host suite exercises. Nothing below was re-run in a
 > browser, and the cells a changed file would touch are named in that tool.
 >
+> **17 September 2026: Clarvis 0.17.16 in code-server 4.137.0, in Firefox, attended.** The owner ran
+> Codex and Clarvis's own engine on a task in a trial project, undid it, switched the Bridge off and
+> on, and closed the tab. That settled the last `NOT_TESTED` cell (Bridge teardown) and found five
+> Clarvis defects fixed in 0.17.17 — among them the Bridge setting being absent from code-server's
+> settings screen, which **Clarvis: Turn the Bridge On or Off** now covers. Firefox is also the
+> owner's everyday browser for Clarvis in code-server.
+>
 > Six cells cite evidence under `~/.local/share/code-server/extensions/krimkerre.clarvis-0.0.1/`.
 > That directory is gone — each install replaces it — so those paths record where the evidence
 > *was* taken, not where it can be found now. Where nothing was observed the cell says `NOT_TESTED` and names the action that
@@ -96,7 +103,7 @@ which is the difference this document exists to make.
 
 **Found by checking coverage rather than by reading the document.** §7.1 lists
 what the spike must grade, and four of its capabilities appeared nowhere in the
-51 cells below — not as `NOT_TESTED`, which is the document's rule for something
+51 original cells — not as `NOT_TESTED`, which is the document's rule for something
 nobody ran, but not at all. An absent cell is worse than an untested one: it is
 invisible, and the exit criterion asks for *every* capability.
 
@@ -142,17 +149,29 @@ own distinct `instance_id` and port, incidental confirmation that code-server
 and desktop instances coexist under one NERVIS with no cross-talk, consistent
 with the M8a/M9 isolation evidence elsewhere in this repository.
 
-### `NOT_TESTED` — Bridge teardown under code-server
+### `PASS_WITH_LIMITATION` — Bridge teardown under code-server
 
-`Bridge.dispose()` deregisters with NERVIS and closes its server, and Stage 8
+`Bridge.stop()` deregisters with NERVIS and closes its server, and Stage 8
 settled that on the desktop host. Under code-server the extension host is a
 remote Node process with its own lifetime, and whether a browser tab closing
 runs `deactivate` promptly is exactly the kind of thing that differs.
 
-**What would settle it.** Close the browser tab and watch NERVIS's registry:
-a deregistered instance disappears, and one that merely stopped answering goes
-`unreachable` instead. The two are distinguishable from outside, which is what
-makes this observable rather than a matter of trust.
+**Observed on 17 September 2026** (Clarvis 0.17.16, code-server 4.137.0,
+Firefox, the owner at the keyboard; the NERVIS-ecosystem runbook's §15 E2E item
+has the session). A window reload and, separately, closing the tab: each time
+Clarvis's log said `Clarvis deactivated.` at that moment and the Bridge's port
+refused connections at once, so teardown under code-server is prompt. NERVIS's
+registry, though, kept each instance `live: true` until its 45-second lease ran
+out, then showed it `live: false` — the lease, not a deregistration. The cause
+was Clarvis's: `deactivate` started the Bridge's stop without returning it, so
+the host ended before the `DELETE` left.
+
+**Limitation.** Clarvis 0.17.17 returns that stop from `deactivate`
+(`src/bridge/slot.ts`), which VS Code waits for; a closed tab's instance should
+now leave the registry at once. That is covered by `slot.test.ts` and not yet
+observed live under code-server — closing a tab while watching
+`GET /api/v1/registry/instances` settles it. A crashed host still relies on the
+lease, by design.
 
 ### `PASS` — rollback to a prior `.vsix`
 
@@ -215,9 +234,9 @@ somebody to look at the window, which is a person's job rather than a log's.
 | | |
 |---|---|
 | PASS | 39 |
-| PASS_WITH_LIMITATION | 16 |
+| PASS_WITH_LIMITATION | 17 |
 | FAIL | 0 |
-| NOT_TESTED | 1 |
+| NOT_TESTED | 0 |
 
 **The `NOT_TESTED` cells came from a coverage fix, not a regression.** This
 read 0 for a while, which was true of the 51 cells that existed and false of
@@ -227,7 +246,12 @@ rollback. An absent cell is worse than an untested one: it is invisible, and
 the exit criterion asks for *every* capability. Debug went to `PASS` on the
 same static evidence the other reading-graded cells use; rollback and multiple
 windows both went to `PASS` by actually being run (see above); Bridge teardown
-under code-server is the one still saying what would settle it.
+under code-server was observed on 17 September 2026 and is `PASS_WITH_LIMITATION`
+until the deregistration fix is seen live.
+
+**56 cells: 51 original, the 4 above, and one VSCodium regression cell** (NERVIS
+M15, below the four). The count used to be given as 51 plus 4, which is one short
+of this table.
 
 **How to read the confidence.** 14 cells have now been
 settled by running Clarvis inside code-server; the rest were graded by reading code-server's

@@ -14,6 +14,10 @@ import { ChatService } from './chat/ChatService';
 import type { RunState } from './chat/Busy';
 import { Activity } from './bridge/activity';
 import { startBridge, type BridgeHandle } from './bridge/wire';
+import { BridgeSlot } from './bridge/slot';
+import { toggleBridge } from './bridge/toggle';
+import { whenTrusted } from './agent/afterTrust';
+import { hostTrust } from './agent/hostTrust';
 import { recordClip, peakDbfs, hasAudio, installHint, isRecorderMissing } from './voice/nativeRecorder';
 import { offerVoiceSetup, enableVoiceAfterKey } from './voice/firstRun';
 import { ModelService } from './model/ModelService';
@@ -43,6 +47,7 @@ import { Personality } from './personality/Personality';
 import { LiveQuips } from './personality/LiveQuips';
 import { Voice } from './personality/Voice';
 import { opening, phrase, setVoice } from './personality/Voice';
+import { undoLastRun } from './agent/undoCommand';
 import { SystemVoiceProvider } from './voice/SystemVoiceProvider';
 import { VoiceService } from './voice/VoiceService';
 import { FishAudioProvider, FISH_KEY_SECRET } from './voice/FishAudioProvider';
@@ -68,7 +73,7 @@ let log: ClarvisLog | undefined;
  * knows the window is going at all. The socket itself is disposed through
  * `context.subscriptions`, which survives a reload that skips `deactivate`.
  */
-let bridge: BridgeHandle | undefined;
+let bridge: BridgeSlot<BridgeHandle> | undefined;
 
 /**
  * Called once by VS Code when the extension activates (onStartupFinished).
@@ -252,16 +257,36 @@ export function activate(context: vscode.ExtensionContext): void {
   //
   // Not awaited: registration talks to another process, and an editor's activation
   // must not wait on whether a dashboard happens to be running.
-  void startBridge(context, agentBusy.activity, (message) => logger.write(message))
-    .then((started) => {
-      bridge = started;
-    })
-    .catch((failure: unknown) => {
-      // Caught rather than allowed to become an unhandled rejection: a Bridge that
-      // could not start must not take activation's error handling with it.
-      logger.write(`bridge: could not start (${failure instanceof Error ? failure.message : failure})`);
-    });
+  const write = (message: string) => logger.write(message);
+  const slot = new BridgeSlot(() => startBridge(context, agentBusy.activity, write), write);
+  bridge = slot;
+  slot.launch();
+  context.subscriptions.push(
+    vscode.commands.registerCommand('clarvis.toggleBridge', () =>
+      toggleBridge({
+        enabled: () => vscode.workspace.getConfiguration('clarvis.bridge').get<boolean>('enabled', false),
+        // The user value only: the scope that keeps a project from switching the Bridge on stays in force.
+        write: (value) =>
+          Promise.resolve(vscode.workspace.getConfiguration('clarvis.bridge').update('enabled', value, vscode.ConfigurationTarget.Global)),
+        confirm: async (question, detail, action) =>
+          (await vscode.window.showWarningMessage(question, { modal: true, detail }, action)) === action,
+        offerReload: async (text) => (await vscode.window.showInformationMessage(text, 'Reload Window')) === 'Reload Window',
+        reload: async () => void (await vscode.commands.executeCommand('workbench.action.reloadWindow')),
+        tell: toTranscriptSpoken,
+      })
+    )
+  );
+  // A folder trusted after the window opened: the start above found it untrusted and bound nothing.
+  if (!vscode.workspace.isTrusted) {
+    context.subscriptions.push(
+      whenTrusted(hostTrust, () => {
+        write('bridge: the folder is trusted now, so the Bridge is started if it is enabled');
+        slot.launch();
+      })
+    );
+  }
 }
+
 
 /**
  * Builds the avatar's two surfaces (webview panel + status-bar glyph) and the
@@ -801,17 +826,16 @@ function startPersonality(
  * before the write is flushed. That's expected, and it's why real teardown state
  * (from M4 onward) is written synchronously via workspace.fs, never via the log.
  */
-export function deactivate(): void {
+export async function deactivate(): Promise<void> {
   if (log) {
     stopTailing(log);
   }
-  // **Started, not awaited, and that is honest rather than sloppy.** `deactivate`
-  // returns void, so there is nothing to wait on it with, and the host often kills
-  // the process before an in-flight request completes. This is the fast path on
-  // top of NERVIS's 45-second lease, never the mechanism — a window that crashes
-  // has to disappear on its own anyway.
-  void bridge?.stop();
   log?.write('Clarvis deactivated.');
+  // **Returned, so VS Code waits for it.** Stopping tells NERVIS this window is gone;
+  // started and not awaited, the host ended first and a closed window stayed listed as
+  // live until NERVIS's 45-second lease ran out (attended session, 17 September 2026).
+  // The lease remains the mechanism for a window that crashes.
+  await bridge?.stop();
 }
 
 /**
@@ -1142,46 +1166,19 @@ function registerAgentCommands(
 
     // Undo for a whole agent run (M8d). Registered now rather than with M8e's loop so
     // the escape hatch exists before the thing it rescues you from.
-    vscode.commands.registerCommand('clarvis.undoLastRun', async () => {
-      const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-      const record = Checkpoint.stored(context);
-
-      if (!record || record.entries.length === 0) {
-        void vscode.window.showInformationMessage(await phrase('report', 'There is nothing to undo.'));
-        return;
-      }
-
-      const confirmed = await vscode.window.showWarningMessage(
-        `Undo the last run — "${record.task}"?`,
-        {
-          modal: true,
-          detail:
-            `${record.entries.length} file(s) go back to how they were before it started. ` +
-            'Anything you changed since then in those files goes too.' +
-            (record.startedOn ? ` You will be put back on \`${record.startedOn}\`.` : ''),
-        },
-        'Undo it'
-      );
-      if (confirmed !== 'Undo it') return;
-
-      const result = await Checkpoint.undo(context, root, (message) => logger.write(message));
-      const summary = await phrase(
-        result.failed.length > 0 ? 'warn' : 'report',
-        `Restored ${result.restored} file(s), removed ${result.deleted}` +
-          (result.failed.length > 0 ? `, and failed on ${result.failed.join(', ')}.` : '.'),
-        [String(result.restored), String(result.deleted)]
-      ) +
-        // Said plainly rather than phrased: being left somewhere you did not expect is
-        // the kind of thing a joke would bury.
-        (result.stuckOn
-          ? ` You are still on the run's branch — I could not switch back to \`${result.stuckOn}\` with unsaved changes in the way.`
-          : '');
-
-      // A partial restore is reported as a warning, not an information message: half
-      // undone is a state someone needs to look at rather than be reassured about.
-      if (result.failed.length > 0) void vscode.window.showWarningMessage(summary);
-      else void vscode.window.showInformationMessage(summary);
-    }),
+    vscode.commands.registerCommand('clarvis.undoLastRun', () =>
+      undoLastRun({
+        stored: () => Checkpoint.stored(context),
+        confirm: async (question, detail) =>
+          (await vscode.window.showWarningMessage(question, { modal: true, detail }, 'Undo it')) === 'Undo it',
+        undo: () =>
+          Checkpoint.undo(context, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath, (message) => logger.write(message)),
+        phrase: (purpose, fallback, keep) => phrase(purpose, fallback, keep),
+        notify: (kind, text) =>
+          void (kind === 'warning' ? vscode.window.showWarningMessage(text) : vscode.window.showInformationMessage(text)),
+        tell: toTranscriptSpoken,
+      })
+    ),
 
     // Reads his lines back before they reach anyone. Opened as a document rather than
     // logged, because the whole point is that a person sits and reads them.

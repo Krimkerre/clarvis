@@ -2,7 +2,7 @@
   "name": "clarvis",
   "displayName": "Clarvis",
   "description": "Clippy's presence. Jarvis's competence. A butler's disdain.",
-  "version": "0.17.16",
+  "version": "0.17.17",
   "publisher": "Krimkerre",
   "license": "MIT",
   "repository": {
@@ -90,6 +90,10 @@
       {
         "command": "clarvis.showLastRun",
         "title": "Clarvis: Show Last Run Summary"
+      },
+      {
+        "command": "clarvis.toggleBridge",
+        "title": "Clarvis: Turn the Bridge On or Off"
       },
       {
         "command": "clarvis.undoLastRun",

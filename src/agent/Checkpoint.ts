@@ -134,22 +134,55 @@ export class Checkpoint {
 
   async capture(absolutePath: string): Promise<void> {
     if (!this.record || !this.root) return;
-
-    const relative = path.relative(this.root, absolutePath);
-    if (this.record.entries.some((entry) => entry.file === relative)) return;
-
-    let entry: CheckpointEntry;
-
+    if (this.holds(absolutePath)) return;
+    let contents: Buffer | null;
     try {
-      const contents = await fs.readFile(absolutePath);
-      const copy = path.join(this.storeDir, `${this.record.entries.length}-${path.basename(relative)}`);
-
-      await fs.mkdir(this.storeDir, { recursive: true });
-      await fs.writeFile(copy, contents);
-      entry = { file: relative, copy, created: false };
+      contents = await fs.readFile(absolutePath);
     } catch {
       // No such file: the agent is about to create it, and undo means removing it.
-      entry = { file: relative, created: true };
+      contents = null;
+    }
+    await this.keep(absolutePath, contents);
+  }
+
+  /**
+   * Records a file as it was before the run from contents read elsewhere — `null` when it did not
+   * exist — once, like `capture`.
+   *
+   * **For changes that were already made when Clarvis heard of them.** A Codex task that edits a file
+   * without asking has written it on RAVIS's side before any event arrives, so the disk holds the new
+   * version; the task's starting commit still holds the old one (attended session, 17 September 2026).
+   */
+  async captureContents(absolutePath: string, contents: Buffer | null): Promise<void> {
+    if (!this.record || !this.root || this.holds(absolutePath)) return;
+    await this.keep(absolutePath, contents);
+  }
+
+  /** Whether a run is being recorded here; `capture` does nothing before `begin`. */
+  get begun(): boolean {
+    return this.record !== undefined;
+  }
+
+  private holds(absolutePath: string): boolean {
+    const relative = path.relative(this.root ?? '', absolutePath);
+    return this.record?.entries.some((entry) => entry.file === relative) ?? false;
+  }
+
+  private async keep(absolutePath: string, contents: Buffer | null): Promise<void> {
+    if (!this.record || !this.root) return;
+    const relative = path.relative(this.root, absolutePath);
+    let entry: CheckpointEntry = { file: relative, created: true };
+    if (contents !== null) {
+      const copy = path.join(this.storeDir, `${this.record.entries.length}-${path.basename(relative)}`);
+      try {
+        await fs.mkdir(this.storeDir, { recursive: true });
+        await fs.writeFile(copy, contents);
+      } catch (error) {
+        // Not recorded at all: an entry saying "created" would have undo delete a file that existed.
+        this.log(`checkpoint: could not copy ${relative} (${String(error)}), so undo leaves it alone`);
+        return;
+      }
+      entry = { file: relative, copy, created: false };
     }
 
     this.record.entries.push(entry);

@@ -271,6 +271,40 @@ test('a completion carries the measured elapsed time and no invented total', () 
   assert.equal('steps_total' in (it.last()?.data ?? {}), false);
 });
 
+test("an ending's elapsed time is the whole operation's, not the instant the idle state began", () => {
+  // Attended session, 17 September 2026: runs of 12–16 s were published as
+  // `elapsed_ms: 0`, because the ending read the clock of the state it had just
+  // entered. A gate and a stop in between must not restart the count either.
+  for (const [start, end, name] of [
+    ['run', 'finish', 'clarvis.agent.completed'],
+    ['run', 'fail', 'clarvis.agent.failed'],
+    ['run', 'stop', 'clarvis.agent.cancelled'],
+    ['chat', 'finish', 'clarvis.chat.completed'],
+  ] as const) {
+    let now = 1_000;
+    const activity = new Activity(() => now);
+    const events = new EventStream(() => 0);
+    publishActivity(activity, events);
+    if (start === 'run') activity.startRun();
+    else activity.startChat();
+    now += 4_000;
+    activity.awaitApproval('command');
+    now += 5_000;
+    activity.resolveApproval();
+    now += 3_000;
+    if (end === 'stop') {
+      activity.stopping();
+      now += 500;
+      activity.finish();
+    } else if (end === 'fail') activity.fail();
+    else activity.finish();
+
+    const ending = events.since(0).at(-1);
+    assert.equal(ending?.name, name);
+    assert.equal(ending?.data.elapsed_ms, end === 'stop' ? 12_500 : 12_000, name);
+  }
+});
+
 // ── Detaching ───────────────────────────────────────────────────────────────
 
 test('detaching stops the publishing', () => {

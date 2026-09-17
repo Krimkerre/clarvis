@@ -5,7 +5,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { CODEX_MENU_LINES } from '../chat/codexMenu';
 import { CodexMenu, storedCodexChoice } from '../chat/codexMenuHost';
-import { undoCopies } from '../engine/codex/RemoteCodexRunner';
+import { CodexGitGlue } from '../engine/codex/codexGit';
 import { ModelService } from '../model/ModelService';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 
@@ -90,7 +90,8 @@ suite('the bowtie fold-out and the undo copies in the extension host (M15 C2b+)'
       const memento = { get: (key: string) => kept.get(key), update: async (key: string, value: unknown) => void kept.set(key, value), keys: () => [...kept.keys()] };
       const context = { globalStorageUri: vscode.Uri.file(storage), workspaceState: memento, globalState: memento } as unknown as vscode.ExtensionContext;
 
-      const capture = undoCopies({ context, root, log: () => undefined });
+      const glue = new CodexGitGlue(context, root, () => undefined);
+      const capture = (paths: string[]) => glue.captureBeforeChange(paths);
       await capture(['app.ts', 'src/new.ts']);
       await capture(['app.ts']);
       fs.writeFileSync(path.join(root, 'app.ts'), 'after\n');

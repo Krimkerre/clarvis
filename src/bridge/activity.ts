@@ -114,6 +114,15 @@ export interface ActivityChange {
    */
   readonly sessionId: string;
   readonly snapshot: ActivitySnapshot;
+  /**
+   * Milliseconds since the operation in flight began, or undefined when none is.
+   *
+   * Separate from `snapshot.elapsed_ms`, which is the *state's* age: at an
+   * ending the state is the `idle` or `failed` just entered, so its age is about
+   * zero, and publishing that as the run's duration is how 12–16 s runs went out
+   * as `elapsed_ms: 0` (attended session, 17 September 2026).
+   */
+  readonly operationMs?: number;
 }
 
 /**
@@ -297,6 +306,8 @@ export class Activity {
   private steps?: number;
   private awaiting?: ActivitySnapshot['awaiting'];
   private since: number;
+  /** When the chat turn or run in flight began; a gate or a stop does not move it. */
+  private operationSince?: number;
   /** What is in flight, in the terms §6.4's event families are named in. */
   private kind?: 'chat' | 'run';
   /** The trace the current operation belongs to; cleared when it ends. */
@@ -323,6 +334,7 @@ export class Activity {
     this.traceId = traceId;
     this.sessionId = sessionId;
     this.kind = 'chat';
+    this.operationSince = this.now();
     this.enter('chatting', opaqueId());
   }
 
@@ -344,6 +356,7 @@ export class Activity {
     this.traceId = traceId;
     this.sessionId = sessionId;
     this.kind = 'run';
+    this.operationSince = this.now();
     this.enter('agent_running', opaqueId());
     this.steps = 0;
   }
@@ -469,6 +482,7 @@ export class Activity {
     // Cleared after the announcement, not before: the listener is being told what
     // ended, and by definition that is the kind which is on its way out.
     this.kind = undefined;
+    this.operationSince = undefined;
   }
 
   /**
@@ -495,6 +509,7 @@ export class Activity {
     this.steps = undefined;
     this.announce(from);
     this.kind = undefined;
+    this.operationSince = undefined;
   }
 
   /** What a reader sees. A fresh object each time, holding only primitives. */
@@ -542,6 +557,7 @@ export class Activity {
       traceId: this.traceId,
       sessionId: this.sessionId,
       snapshot: this.snapshot(),
+      ...(this.operationSince === undefined ? {} : { operationMs: Math.max(0, this.now() - this.operationSince) }),
     };
     for (const observer of [...this.observers]) {
       try {

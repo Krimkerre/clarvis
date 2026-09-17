@@ -55,7 +55,7 @@ export function eventFor(change: ActivityChange): { name: EventName; data: Event
  * ceiling — which is the ratchet noticing that this had become two decisions.
  */
 function endingFor(
-  { from, to, kind, snapshot }: ActivityChange,
+  { from, to, kind, operationMs }: ActivityChange,
   identity: EventData
 ): { name: EventName; data: EventData } | undefined {
   // `stopping` has no name of its own in §6.4 — the `cancelled` events are what
@@ -70,7 +70,8 @@ function endingFor(
   const chat = kind === 'chat';
   const data: EventData = {
     ...identity,
-    ...(snapshot.elapsed_ms === undefined ? {} : { elapsed_ms: snapshot.elapsed_ms }),
+    // The operation's duration, not the just-entered state's age, which is ~0.
+    ...(operationMs === undefined ? {} : { elapsed_ms: operationMs }),
   };
 
   // No reason, ever: a failure reason is composed from the thing that failed —

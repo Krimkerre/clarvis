@@ -228,10 +228,9 @@ export class Bridge {
 
     this.events.emit('clarvis.lifecycle.stopping', {});
 
-    // **Best-effort, and that is the design.** `deactivate()` returns `void` and
-    // the host often kills the process before an in-flight request finishes, so
-    // this rides on top of NERVIS's 45-second lease rather than replacing it. A
-    // window that crashes has to disappear on its own anyway.
+    // **On top of NERVIS's 45-second lease, never instead of it.** `deactivate()`
+    // waits for this (`BridgeSlot`), but a window that crashes never gets here and
+    // has to disappear on its own anyway.
     if (this.token && this.identity) {
       const outcome = await deregister(
         this.options.nervisUrl, this.token, this.identity.instance_id);

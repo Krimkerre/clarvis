@@ -5721,6 +5721,21 @@ None blocks the sign-off; each is settled by the increment named.
 - The full design (codex-design.md, 13 Sep) was written outside both repositories. The contract it
   defines is carried by the documents and fixtures cited above.
 
+### Fixes from the owner's attended session *(17 Sep 2026, asked for by the owner)*
+
+Clarvis 0.17.16 in code-server 4.137.0, driven in Firefox; five flaws, each fixed with a test that fails
+without the fix (0.17.17).
+
+- [x] A folder trusted after the window opened starts the Bridge and the branch flow then
+- [x] `clarvis.*.completed` / `failed` / `cancelled` carry the operation's real duration, not 0
+- [x] Undo Last Agent Run covers a Codex change made without an approval prompt; one shared undo record; the
+      outcome is said in the chat too
+- [x] **Clarvis: Turn the Bridge On or Off** — the Bridge switch where code-server's settings screen hides it
+- [x] A closing window deregisters from NERVIS (`deactivate` waits for the Bridge's stop)
+- [x] `docs/code-server-matrix.md`: Bridge teardown graded from the session; the 56-cell count explained
+- [ ] Seen live under code-server: a closed tab leaving NERVIS's registry at once, and the Bridge starting
+      when a folder is trusted
+
 ---
 
 ## 8. Risks

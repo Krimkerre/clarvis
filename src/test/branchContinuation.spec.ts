@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { AgentBranch } from '../agent/AgentBranch';
+import { Checkpoint } from '../agent/Checkpoint';
 import { AgentRunner, type AgentEvent } from '../agent/AgentRunner';
 import { placedRunOptions, type LeftRunTask } from '../agent/leftRuns';
 import type { AgentTerminal } from '../agent/tools/commandTools';
@@ -130,6 +131,12 @@ suite('branch continuation in the extension host (M15 C3)', () => {
       git('checkout', '--quiet', 'main');
       fs.rmSync(storage, { recursive: true, force: true });
     }
+  });
+
+  // Attended session, 17 Sep 2026: Codex edited notes.txt without asking, and Undo Last Agent Run had nothing to restore.
+  test('a Codex change made without asking is undone by Undo Last Agent Run, and a file copied at the start keeps that copy', async function () {
+    this.timeout(30_000);
+    await codexChangeIsUndone(root, git);
   });
 
   // Clarvis's own engine building on its earlier run, and Start fresh never stacking (plan.md M15, "Build on Clarvis's own
@@ -586,6 +593,48 @@ function standInTerminal(): AgentTerminal {
 }
 
 /** Only what `CodexGitGlue` reads of the extension's context: the two mementos and a storage folder for undo copies. */
+/** Codex changed files without asking, then Undo Last Agent Run (attended session, 17 Sep 2026). */
+async function codexChangeIsUndone(root: string, git: (...args: string[]) => string): Promise<void> {
+  const task = 'add a random comment to hello.py';
+  const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-codex-undo-storage-'));
+  const context = standInContext(storage);
+  git('checkout', '--quiet', 'main');
+  fs.writeFileSync(path.join(root, 'draft.txt'), "the owner's own draft\n");
+  const draft = path.join(root, 'draft.txt');
+  await gitCaughtUp(root, (state) => (state as { untrackedChanges?: { uri: vscode.Uri }[] }).untrackedChanges?.some((change) => change.uri.fsPath === draft) ?? false);
+  const glue = new CodexGitGlue(context, root, () => undefined);
+  try {
+    const began = await glue.begin(task);
+    assert.ok(began.ok, JSON.stringify(began));
+    const branch = git('symbolic-ref', '--short', 'HEAD');
+    // No approval was asked: RAVIS's Codex wrote these before Clarvis heard of them.
+    fs.writeFileSync(path.join(root, 'hello.py'), 'print("hello")  # a random comment\n');
+    fs.writeFileSync(path.join(root, 'added.py'), 'print("new")\n');
+    // An approved change later in the same task, to a file copied when the task began.
+    fs.writeFileSync(path.join(root, 'draft.txt'), 'overwritten by Codex\n');
+    await glue.captureBeforeChange(['draft.txt']);
+    await gitCaughtUp(root, (state) => state.workingTreeChanges.some((change) => change.uri.fsPath === path.join(root, 'hello.py')));
+    const saved = await glue.save({ summary: 'Added a comment.', stopped: false, files: ['hello.py', 'added.py'], branch });
+    assert.ok(saved.ok && saved.committed, JSON.stringify(saved));
+
+    const undone = await Checkpoint.undo(context, root, () => undefined);
+
+    assert.deepStrictEqual([undone.restored, undone.deleted, undone.failed], [2, 1, []], JSON.stringify(undone));
+    assert.strictEqual(fs.readFileSync(path.join(root, 'hello.py'), 'utf8'), 'print("hello")\n', 'as the task found it');
+    assert.strictEqual(fs.existsSync(path.join(root, 'added.py')), false, 'a file Codex added is removed');
+    assert.strictEqual(fs.readFileSync(path.join(root, 'draft.txt'), 'utf8'), "the owner's own draft\n", 'the copy from the start, not a later one');
+    assert.strictEqual(git('symbolic-ref', '--short', 'HEAD'), 'main', 'back where the owner started');
+  } finally {
+    git('checkout', '--quiet', '--force', 'main');
+    fs.rmSync(path.join(root, 'draft.txt'), { force: true });
+    fs.rmSync(path.join(root, 'added.py'), { force: true });
+    for (const name of git('for-each-ref', '--format=%(refname:short)', 'refs/heads/clarvis/add-a-random*').split('\n').filter(Boolean)) {
+      git('branch', '--quiet', '-D', name);
+    }
+    fs.rmSync(storage, { recursive: true, force: true });
+  }
+}
+
 function standInContext(storage: string): vscode.ExtensionContext {
   return { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
 }

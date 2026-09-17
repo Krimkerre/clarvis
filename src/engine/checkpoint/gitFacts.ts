@@ -17,6 +17,7 @@
  */
 
 import { execFile } from 'child_process';
+import * as path from 'path';
 import type { DiffStat } from './taskCheckpoint';
 
 export type GitRunner = (args: string[], cwd: string) => Promise<{ code: number | null; stdout: string; stderr: string }>;
@@ -106,6 +107,23 @@ export class GitFacts {
     return commit ? { ok: true, commit } : { ok: false, detail: 'no commit after committing' };
   }
 
+  /**
+   * A file as it was at `commit`: its bytes, `null` when that commit did not have it, or undefined when git
+   * could not say. `file` is relative to this checkout's root, which need not be the repository's top.
+   *
+   * **Bytes, and read with the git binary directly.** An image or a lock file has to come back unchanged, and
+   * the injectable runner speaks text; this is the one read that goes around it. Used to keep undo copies of
+   * what a Codex task changed without asking first (attended session, 17 September 2026).
+   */
+  async fileAt(commit: string, file: string): Promise<Buffer | null | undefined> {
+    if (!COMMIT.test(commit)) return undefined;
+    const spec = `${commit}:./${file.split(path.sep).join('/')}`;
+    if ((await this.run(['cat-file', '-e', spec], this.root)).code === 0) return readBlob(this.root, spec);
+    // `-e` fails alike for a path the commit lacks and for a commit that isn't there; only the first is "absent".
+    const known = await this.run(['cat-file', '-e', `${commit}^{commit}`], this.root);
+    return known.code === 0 ? null : undefined;
+  }
+
   private async line(args: string[]): Promise<string | undefined> {
     const answer = await this.run(args, this.root);
     const text = answer.stdout.trim();
@@ -152,6 +170,17 @@ export function parsePorcelainEntries(text: string): PorcelainEntry[] {
 
 export function parsePorcelain(text: string): string[] {
   return parsePorcelainEntries(text).map((entry) => entry.path);
+}
+
+function readBlob(cwd: string, spec: string): Promise<Buffer | undefined> {
+  return new Promise((resolve) => {
+    execFile(
+      'git',
+      ['-C', cwd, 'cat-file', 'blob', spec],
+      { encoding: 'buffer', env: { ...process.env, LC_ALL: 'C', GIT_TERMINAL_PROMPT: '0' }, timeout: 15_000, maxBuffer: 256 * 1024 * 1024 },
+      (error, stdout) => resolve(error ? undefined : stdout)
+    );
+  });
 }
 
 function runGit(args: string[], cwd: string): Promise<{ code: number | null; stdout: string; stderr: string }> {

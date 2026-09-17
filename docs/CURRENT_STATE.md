@@ -412,7 +412,8 @@ Codex's session approval outliving the step. RAVIS's refusals each do what `CLAR
 elsewhere clears and says who, stopping clears silently, a narrowed list is drawn again, a site Codex didn't add is
 asked again, and an answer RAVIS never received is asked again once it answers. **"Stop the run" is the Stop
 button's stop.** Typed words that aren't an answer go to Codex and the question stays. Before an approved file
-change, the files it touches are copied for **Clarvis: Undo Last Agent Run**.
+change, the files it touches are copied for **Clarvis: Undo Last Agent Run**; since 0.17.17 every file Codex
+changed without asking is copied from the task's starting commit when its work is saved (`CodexGitGlue`).
 
 **Unattended answers on its own only a quiet command or a change inside the project**, only while this window's
 panel is there, and only when RAVIS offers `once`. Codex wraps every command in a login shell
@@ -734,6 +735,27 @@ stay outside. The rule is stated once in both system prompts (`TOOL_OUTPUT_RULE`
 tests and a host spec with a planted instruction (a read, a listing, two searches and `cat` through the
 real runner); each of 6 guards failed a fast test, and unfencing the file read or the command output each
 failed the host spec.
+
+**17 Sep (0.17.17): five flaws from the owner's attended session** (code-server 4.137.0, Firefox; the
+NERVIS-ecosystem runbook's §15 E2E item has the record).
+- *A folder trusted after the window opened* now starts the Bridge and the branch flow then, instead of at
+  the next reload (`src/agent/afterTrust.ts`, `hostTrust.ts`; `BranchFlowWatcher.attachWhenGitArrives`).
+- *`clarvis.agent.completed` and the other endings carry the operation's duration* — they carried the
+  just-entered state's age, 0 (`ActivityChange.operationMs`).
+- *Undo covers every Codex change.* A change Codex made without an approval prompt was on disk before
+  Clarvis heard of it and had no copy; the copies now come from the task's starting commit
+  (`GitFacts.fileAt`, `Checkpoint.captureContents`), and an approved change's copy goes into the same
+  record instead of a second one that wiped the first (`undoCopies` is gone). The undo's outcome, and
+  "nothing to undo", are said in the chat as well as in a notification (`src/agent/undoCommand.ts`).
+- *`Clarvis: Turn the Bridge On or Off`* writes the user value of `clarvis.bridge.enabled`, which
+  code-server's settings screen doesn't show (`src/bridge/toggle.ts`); the setting stays machine-scoped.
+- *A closing window deregisters from NERVIS.* `deactivate` returns the Bridge's stop, so VS Code waits for
+  the `DELETE` (`src/bridge/slot.ts`); before, the host ended first and NERVIS kept the window live until
+  its lease ran out.
+**Checked:** 17 new fast tests (2,182 passing) and one host spec (33 passing on Code 1.137.0), where a real
+Codex save with an unasked edit, an added file and a file copied at the start was undone; with the
+starting-commit copy switched off it failed (1 restored, 0 deleted). The elapsed-time test failed at 0
+before the fix. Not yet seen live: the deregistration and the trust start under code-server.
 
 ## The complexity budget, and where it stands
 

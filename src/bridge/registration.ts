@@ -158,9 +158,9 @@ export async function heartbeat(
 /**
  * Say this window is going, rather than letting the lease run out.
  *
- * **Best-effort by design, not by neglect.** `deactivate()` returns `void` and
- * the extension host is often killed before an in-flight request completes, so
- * this is an optimisation on top of NERVIS's 45-second lease and never the
+ * **Best-effort by design, not by neglect.** `deactivate()` waits for it
+ * (`BridgeSlot`), but a host that crashes never sends it, so this is an
+ * optimisation on top of NERVIS's 45-second lease and never the
  * mechanism. Building it as the mechanism would mean a crashed window stayed
  * listed forever.
  */

@@ -163,3 +163,24 @@ test("a branch's files, and the subjects of the commits one branch has that anot
     assert.deepEqual(await facts.commitSubjects('main', 'clarvis/greeter', 1), ['Document it']);
     assert.deepEqual(await facts.commitSubjects('main', 'clarvis/missing'), []);
   }));
+
+test('a file as a commit had it: its bytes, null when the commit lacked it, undefined when git cannot say', () =>
+  withRepo(async (root, facts) => {
+    const first = git(root, 'rev-parse', 'HEAD');
+    const bytes = Buffer.from([0, 255, 10, 13, 128]);
+    fs.mkdirSync(path.join(root, 'sub'));
+    fs.writeFileSync(path.join(root, 'sub', 'blob.bin'), bytes);
+    git(root, 'add', '.');
+    git(root, 'commit', '--quiet', '-m', 'binary');
+    const second = git(root, 'rev-parse', 'HEAD');
+    fs.writeFileSync(path.join(root, 'hello.py'), 'changed on disk\n');
+
+    assert.equal((await facts.fileAt(first, 'hello.py'))?.toString(), 'print("hello")\n', 'the commit, not the disk');
+    assert.deepEqual(await facts.fileAt(second, path.join('sub', 'blob.bin')), bytes, 'byte for byte');
+    assert.equal(await facts.fileAt(first, path.join('sub', 'blob.bin')), null, 'added after that commit');
+    assert.equal(await facts.fileAt('0'.repeat(40), 'hello.py'), undefined, 'no such commit');
+    assert.equal(await facts.fileAt('not-a-commit', 'hello.py'), undefined);
+
+    // From a folder inside the repository, a path is relative to that folder, as the workspace root is.
+    assert.equal((await new GitFacts(path.join(root, 'sub')).fileAt(second, 'blob.bin'))?.length, bytes.length);
+  }));

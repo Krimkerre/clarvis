@@ -5734,8 +5734,8 @@ without the fix (0.17.17).
 - [x] A closing window deregisters from NERVIS (`deactivate` waits for the Bridge's stop; 0.17.18: every stop
       waits for the same one, found when 0.17.17 still failed live)
 - [x] `docs/code-server-matrix.md`: Bridge teardown graded from the session; the 56-cell count explained
-- [ ] Seen live under code-server: a closed tab leaving NERVIS's registry at once, and the Bridge starting
-      when a folder is trusted
+- [x] Seen live under code-server: a closed tab leaves NERVIS's registry at once (0.17.18, about a second)
+- [ ] Seen live under code-server: the Bridge starting when a folder is trusted
 
 ---
 

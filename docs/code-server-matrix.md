@@ -33,7 +33,7 @@ observed.
 > **17 September 2026: Clarvis 0.17.16 in code-server 4.137.0, in Firefox, attended.** The owner ran
 > Codex and Clarvis's own engine on a task in a trial project, undid it, switched the Bridge off and
 > on, and closed the tab. That settled the last `NOT_TESTED` cell (Bridge teardown) and found five
-> Clarvis defects fixed in 0.17.17 — among them the Bridge setting being absent from code-server's
+> Clarvis defects fixed in 0.17.17 and 0.17.18 — among them the Bridge setting being absent from code-server's
 > settings screen, which **Clarvis: Turn the Bridge On or Off** now covers. Firefox is also the
 > owner's everyday browser for Clarvis in code-server.
 >
@@ -149,7 +149,7 @@ own distinct `instance_id` and port, incidental confirmation that code-server
 and desktop instances coexist under one NERVIS with no cross-talk, consistent
 with the M8a/M9 isolation evidence elsewhere in this repository.
 
-### `PASS_WITH_LIMITATION` — Bridge teardown under code-server
+### `PASS` — Bridge teardown under code-server
 
 `Bridge.stop()` deregisters with NERVIS and closes its server, and Stage 8
 settled that on the desktop host. Under code-server the extension host is a
@@ -166,11 +166,14 @@ out, then showed it `live: false` — the lease, not a deregistration. The cause
 was Clarvis's: `deactivate` started the Bridge's stop without returning it, so
 the host ended before the `DELETE` left.
 
-**Limitation.** Clarvis 0.17.17 returned that stop from `deactivate`
-(`src/bridge/slot.ts`), and a live try the same day still left the closed tab
+**Fixed and observed, the same day.** Clarvis 0.17.17 returned that stop from
+`deactivate` (`src/bridge/slot.ts`), and a live try still left the closed tab
 listed: VS Code disposes the subscriptions right after calling `deactivate`, and
 that second stop made the first one return early. 0.17.18 shares one stop between
-callers (`Bridge.stop`); a closed tab's instance should now leave the registry at once. That is covered by `slot.test.ts` and not yet
+callers (`Bridge.stop`). With 0.17.18, closing the tab: `Clarvis deactivated.` at
+17:33:32.968Z, and NERVIS's registry, read every second, no longer listed the
+instance at 17:33:34.005Z — removed, not `live: false`, so by deregistration. A
+crashed host still relies on the lease, by design. That is covered by `slot.test.ts` and not yet
 observed live under code-server — closing a tab while watching
 `GET /api/v1/registry/instances` settles it. A crashed host still relies on the
 lease, by design.
@@ -235,8 +238,8 @@ somebody to look at the window, which is a person's job rather than a log's.
 
 | | |
 |---|---|
-| PASS | 39 |
-| PASS_WITH_LIMITATION | 17 |
+| PASS | 40 |
+| PASS_WITH_LIMITATION | 16 |
 | FAIL | 0 |
 | NOT_TESTED | 0 |
 
@@ -248,8 +251,8 @@ rollback. An absent cell is worse than an untested one: it is invisible, and
 the exit criterion asks for *every* capability. Debug went to `PASS` on the
 same static evidence the other reading-graded cells use; rollback and multiple
 windows both went to `PASS` by actually being run (see above); Bridge teardown
-under code-server was observed on 17 September 2026 and is `PASS_WITH_LIMITATION`
-until the deregistration fix is seen live.
+under code-server was observed on 17 September 2026, fixed, and seen deregistering
+at once with 0.17.18 (`PASS`).
 
 **56 cells: 51 original, the 4 above, and one VSCodium regression cell** (NERVIS
 M15, below the four). The count used to be given as 51 plus 4, which is one short

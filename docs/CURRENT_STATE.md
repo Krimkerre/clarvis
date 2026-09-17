@@ -762,7 +762,8 @@ tab listed as live. VS Code calls `deactivate` and then disposes the subscriptio
 subscription's `Bridge.stop()` started the `DELETE`, and `deactivate`'s own stop found the Bridge already
 stopping and returned at once. `Bridge.stop()` now hands every caller the same in-flight stop.
 **Checked:** a new `Bridge.test.ts` case (two stops at once, the second must not return before NERVIS has
-the `DELETE`) failed before the fix; 2,183 fast tests and 33 host tests pass.
+the `DELETE`) failed before the fix; 2,183 fast tests and 33 host tests pass. **Seen live:** closing a
+code-server tab, NERVIS's registry dropped the instance within about a second of `Clarvis deactivated.`
 
 ## The complexity budget, and where it stands
 

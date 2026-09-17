@@ -197,3 +197,32 @@ test('a stream that shows reasoning reports the model, once', async () => {
   assert.equal(said, 'Here it is.');
   assert.deepEqual(seen, ['google/gemini-3.8-flash']);
 });
+
+test("the probe names itself like every other model request: the caller's session and request id", async () => {
+  // Scenario review, 17 Sep 2026: RAVIS recorded a Clarvis chat request with no session id. It was this
+  // probe, which sent no lineage headers at all, so its route decision belonged to no conversation.
+  let sent: Headers | undefined;
+  const supported = await withFetch(
+    async (_url, init) => {
+      sent = new Headers(init?.headers);
+      return new Response('{}', { status: 200 });
+    },
+    async () => provider().supportsTools('some-model', { sessionId: 'session-1', requestId: 'a'.repeat(32) })
+  );
+  assert.equal(supported, true);
+  assert.equal(sent?.get('x-session-id'), 'session-1');
+  assert.equal(sent?.get('x-request-id'), 'a'.repeat(32));
+});
+
+test('a probe with no caller to name still sends a request id of its own', async () => {
+  let sent: Headers | undefined;
+  await withFetch(
+    async (_url, init) => {
+      sent = new Headers(init?.headers);
+      return new Response('{}', { status: 200 });
+    },
+    async () => provider().supportsTools('some-model')
+  );
+  assert.match(sent?.get('x-request-id') ?? '', /^[0-9a-f]{32}$/);
+  assert.equal(sent?.has('x-session-id'), false);
+});

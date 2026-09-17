@@ -113,14 +113,15 @@ export interface ModelProvider {
   streamWithTools?(request: CompletionRequest): AsyncIterable<StreamEvent>;
 
   /**
-   * Whether this provider *and this model* can call tools.
+   * Whether this provider *and this model* can call tools. The probe is a real model
+   * request, so it carries the caller's session and request id like any other.
    *
    * Probed, never assumed (§4.6): a model that chats well can still be useless in a
    * twelve-step tool loop, and local models vary wildly. The result gates whether the
    * agent path is offered — better to say "this model can't do that" than to start a
    * run that flails.
    */
-  supportsTools(model: string): Promise<boolean>;
+  supportsTools(model: string, lineage?: ProbeLineage): Promise<boolean>;
 
   /**
    * Models this provider offers, for the picker. Empty when it can't be listed.
@@ -196,4 +197,10 @@ export function describeHttpFailure(status: number, body: string, providerLabel:
     `${providerLabel} refused that request.`,
     `http ${status}: ${body.slice(0, 400)}`
   );
+}
+
+/** Who a tool probe belongs to: the role's session and the probe's own request id (runbook §4.3). */
+export interface ProbeLineage {
+  sessionId?: string;
+  requestId?: string;
 }

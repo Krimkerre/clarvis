@@ -5,7 +5,7 @@ import {
   ModelProvider,
   describeHttpFailure,
 } from './ModelProvider';
-import { StreamEvent, ToolCall } from './ModelProvider';
+import { StreamEvent, ToolCall, type ProbeLineage } from './ModelProvider';
 import { openAiTools } from '../agent/toolRegistry';
 import { buildCatalog } from './openrouterCatalog';
 import { buildOpenAiCatalog } from './openaiCatalog';
@@ -219,11 +219,11 @@ export class OpenAiCompatibleProvider implements ModelProvider {
    * accept a `tools` parameter and then ignore it. Cheap enough to run once per model
    * and cache upstream.
    */
-  async supportsTools(model: string): Promise<boolean> {
+  async supportsTools(model: string, lineage: ProbeLineage = {}): Promise<boolean> {
     try {
       const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
         method: 'POST',
-        headers: await this.headers(),
+        headers: { ...(await this.headers()), ...lineageHeaders('', lineage.sessionId ?? '', lineage.requestId) },
         signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({
           model,

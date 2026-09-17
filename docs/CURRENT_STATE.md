@@ -765,6 +765,12 @@ stopping and returned at once. `Bridge.stop()` now hands every caller the same i
 the `DELETE`) failed before the fix; 2,183 fast tests and 33 host tests pass. **Seen live:** closing a
 code-server tab, NERVIS's registry dropped the instance within about a second of `Clarvis deactivated.`
 
+**17 Sep (0.17.19): the tool probe names itself.** Scoring runbook §8's scenario 4, RAVIS held a Clarvis
+chat request with no session id: `supportsTools`' one-token probe sent no lineage headers at all. It now
+carries the role's session and its own request id (`ProbeLineage`, `ModelService.supportsTools`).
+**Checked:** 2 new tests in `toolProbe.test.ts`, both failing without the headers; 2,185 fast and 33 host
+tests pass.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

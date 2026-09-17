@@ -177,7 +177,8 @@ export class ModelService {
     if (cached !== undefined) return cached;
 
     try {
-      const supported = await this.provider(role).supportsTools(model);
+      const call = this.callFor(role);
+      const supported = await this.provider(role).supportsTools(model, { sessionId: call.sessionId, requestId: call.requestId });
       this.toolSupport.set(cacheKey, supported);
       this.log(`model: ${cacheKey} tool support = ${supported}`);
       return supported;

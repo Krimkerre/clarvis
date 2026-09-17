@@ -5736,6 +5736,8 @@ without the fix (0.17.17).
 - [x] `docs/code-server-matrix.md`: Bridge teardown graded from the session; the 56-cell count explained
 - [x] Seen live under code-server: a closed tab leaves NERVIS's registry at once (0.17.18, about a second)
 - [ ] Seen live under code-server: the Bridge starting when a folder is trusted
+- [x] The tool-support probe carries the session and a request id like every model request (0.17.19; found
+      scoring the ecosystem's scenario 4)
 
 ---
 

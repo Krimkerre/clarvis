@@ -144,6 +144,38 @@ test('a dangerous command inside a shell wrapper is still one the gate stops', (
   assert.equal(gateVerdictFor(K2_COMMANDS[3].payload.command as string), undefined, "calibration's own commands have no category");
 });
 
+test("Linux's wrapper is unwrapped as the Mac's is: Codex falls back from fish to `/usr/bin/bash -lc`", () => {
+  // The owner's CachyOS laptop, 19 September 2026: its login shell is fish, which Codex 0.155.1 doesn't
+  // support, so every command arrives as `/usr/bin/bash -lc "…"` — the form the Mac tests above never used.
+  const unattended = { mode: 'unattended' as SessionMode, attached: true };
+  const quiet = [
+    '/usr/bin/bash -lc "npm test"',
+    `/usr/bin/bash -lc "printf 'ravis-reproof\\n' > ran-1.txt"`,
+    // The dd false positive fixed in 51342a6: dd counts only in command position, inside the wrapper too.
+    '/usr/bin/bash -lc "git add -A && npm test"',
+    '/usr/bin/bash -lc "ls ./odd-dd"',
+  ];
+  for (const command of quiet) {
+    assert.deepEqual(autoAnswer(commandRequest(command), unattended), { kind: 'once' }, command);
+  }
+  assert.equal(shownCommand('/usr/bin/bash -lc "git add -A && npm test"'), 'git add -A && npm test');
+
+  const asks = [
+    '/usr/bin/bash -lc "dd if=/dev/zero of=/dev/sda bs=1M"',
+    '/usr/bin/bash -lc "npm test && dd if=/dev/zero of=/dev/nvme0n1"',
+    "/usr/bin/bash -lc 'mkfs.ext4 /dev/sdb1'",
+    '/usr/bin/bash -lc "npm test"; dd if=a of=/dev/sda',
+    '/usr/bin/bash -lc "/usr/bin/bash -lc \\"dd if=/dev/zero of=/dev/sda\\""',
+    '/usr/bin/fish -c "dd if=/dev/zero of=/dev/sda"',
+    '/usr/bin/bash -lc "rm -rf ~"',
+    '/usr/bin/bash -lc "git push --force origin main"',
+  ];
+  for (const command of asks) {
+    assert.ok(gateVerdictFor(command), `gate category for ${command}`);
+    assert.equal(autoAnswer(commandRequest(command), unattended), undefined, command);
+  }
+});
+
 test('a path is inside the project only when it is relative and never climbs above the root', () => {
   for (const inside of ['a.txt', 'src/app.ts', './src/../README.md', 'docs/']) assert.equal(insideProject(inside), true, inside);
   for (const outside of ['', '/etc/hosts', '~/x', '../x', 'src/../../x', 'C:\\x', 42, undefined]) assert.equal(insideProject(outside), false, String(outside));

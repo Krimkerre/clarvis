@@ -44,6 +44,57 @@ export function countProblems(
   return counts;
 }
 
+/** One checker's share of the problems, by severity. */
+export interface SourceCounts {
+  errors: number;
+  warnings: number;
+  information: number;
+  hints: number;
+}
+
+/** §6.2's `clarvis.diagnostics.summary@1`: the counts, and the same counts per checker. */
+export interface ProblemSummary extends ProblemCounts {
+  readonly by_source: Readonly<Record<string, SourceCounts>>;
+}
+
+/** Past this many checkers the rest are counted under `other`, so the document stays small. */
+export const MAX_SOURCES = 20;
+
+/**
+ * A checker's name as the editor reports it — `ts`, `eslint`, `Pylance` — or `other`.
+ *
+ * A diagnostic's `source` is set by whichever extension produced it, so it is text this code
+ * does not control. Only a short name made of letters, digits, spaces, dots, underscores and
+ * dashes is kept: no slash, so it cannot be a path, and no room for a sentence from the file.
+ */
+export function sourceName(source: unknown): string {
+  return typeof source === 'string' && /^[A-Za-z0-9 ._-]{1,40}$/.test(source) ? source : 'other';
+}
+
+/**
+ * The counts `countProblems` gives, plus each checker's share of them. Read when asked
+ * rather than paced: a read is one call, and pacing exists for what is pushed.
+ */
+export function summariseProblems(
+  byFile: ReadonlyArray<
+    readonly [unknown, ReadonlyArray<{ readonly severity: number; readonly source?: unknown }>]
+  >
+): ProblemSummary {
+  const bySource: Record<string, SourceCounts> = {};
+  for (const [, problems] of byFile) {
+    for (const { severity, source } of problems) {
+      let name = sourceName(source);
+      if (!(name in bySource) && Object.keys(bySource).length >= MAX_SOURCES) name = 'other';
+      const counts = (bySource[name] ??= { errors: 0, warnings: 0, information: 0, hints: 0 });
+      if (severity === ERROR) counts.errors += 1;
+      else if (severity === WARNING) counts.warnings += 1;
+      else if (severity === INFORMATION) counts.information += 1;
+      else counts.hints += 1;
+    }
+  }
+  return { ...countProblems(byFile), by_source: bySource };
+}
+
 function same(a: ProblemCounts | undefined, b: ProblemCounts): boolean {
   return a !== undefined && a.errors === b.errors && a.warnings === b.warnings
     && a.information === b.information && a.hints === b.hints && a.files === b.files;

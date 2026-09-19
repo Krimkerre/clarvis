@@ -15,12 +15,14 @@
 
 import { EventStream } from './events';
 import { identityFor, loadIdentity, type HostFacts, type Identity, type Storage } from './identity';
-import { API_VERSION, CAPABILITIES, PROTOCOL_VERSION, voiceCapability, wireIdentifier,
+import { API_VERSION, CAPABILITIES, DIAGNOSTICS_AVAILABLE, PROTOCOL_VERSION, voiceCapability,
+  wireIdentifier,
   type Capability } from './protocol';
 import { deregister, heartbeat, heartbeatInterval, register, type Claim } from './registration';
 import { forwardEvent, forwarded } from './eventForwarding';
 import { BridgeServer } from './server';
 import type { ConfigSummary } from './config';
+import type { ProblemSummary } from './problemCounts';
 import type { ActivityChange, ActivitySnapshot, NoteChange, StatusFacts } from './activity';
 import { publishActivity, publishNotes } from './publish';
 
@@ -45,6 +47,12 @@ export interface BridgeOptions {
    * configured" is a claim, and it would be a false one.
    */
   readonly settings?: () => ConfigSummary;
+  /**
+   * The editor's problems, counted by severity and by checker (§6.2's
+   * `clarvis.diagnostics.summary@1`, served on `/v1/diagnostics`). Optional for the same
+   * reason as `settings`; without it the capability says this host reads none.
+   */
+  readonly problems?: () => ProblemSummary;
   /**
    * What Clarvis is doing — the store itself, because the Bridge needs both
    * halves of it: `snapshot()` answers `/v1/status`, and `observe()` is the only
@@ -199,6 +207,7 @@ export class Bridge {
         event_cursor: this.events.cursor,
       }),
       summary: this.options.settings,
+      diagnostics: this.options.problems,
       events: this.events,
       capabilities: () => this.capabilities(),
       buildVersion: this.options.facts.buildVersion,
@@ -344,15 +353,17 @@ export class Bridge {
    * right now.
    */
   capabilities(): Readonly<Record<string, Capability>> {
-    if (!this.options.voice) return CAPABILITIES;
-    return {
-      ...CAPABILITIES,
-      'clarvis.voice@1': voiceCapability(
+    const resolved: Record<string, Capability> = { ...CAPABILITIES };
+    // Available only where the host hands over a reader, since that is when the route answers.
+    if (this.options.problems) resolved['clarvis.diagnostics.summary@1'] = DIAGNOSTICS_AVAILABLE;
+    if (this.options.voice) {
+      resolved['clarvis.voice@1'] = voiceCapability(
         this.options.voice.enabled,
         this.options.voice.remoteName,
         this.options.voice.playsInWebview
-      ),
-    };
+      );
+    }
+    return resolved;
   }
 
   private claim(): Claim {

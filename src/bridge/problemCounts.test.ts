@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ProblemWatch, countProblems, type Pacing, type ProblemCounts } from './problemCounts';
+import {
+  MAX_SOURCES, ProblemWatch, countProblems, sourceName, summariseProblems, type Pacing,
+  type ProblemCounts,
+} from './problemCounts';
 
 /** `clarvis.diagnostic.changed`: counts only, and paced so typing cannot flood the hub. */
 
@@ -114,4 +117,48 @@ test('a disposed watch tells nothing more', () => {
   watch.changed();
   watch.dispose();
   assert.equal(time.timers.length, 0);
+});
+
+// ── §6.2's `clarvis.diagnostics.summary@1`, 19 September 2026 ───────────────
+
+test('the summary splits the same counts by checker', () => {
+  const summary = summariseProblems([
+    ['/w/a.ts', [{ severity: 0, source: 'ts' }, { severity: 1, source: 'eslint' }]],
+    ['/w/b.ts', [{ severity: 0, source: 'ts' }, { severity: 3 }]],
+  ]);
+
+  assert.equal(summary.errors, 2);
+  assert.equal(summary.files, 2);
+  assert.deepEqual(summary.by_source, {
+    ts: { errors: 2, warnings: 0, information: 0, hints: 0 },
+    eslint: { errors: 0, warnings: 1, information: 0, hints: 0 },
+    other: { errors: 0, warnings: 0, information: 0, hints: 1 },
+  });
+});
+
+test('a checker name that could carry a path or a sentence is counted as other', () => {
+  assert.equal(sourceName('Pylance'), 'Pylance');
+  assert.equal(sourceName('/Users/someone/secret.ts'), 'other');
+  assert.equal(sourceName('token=abc; see https://x'), 'other');
+  assert.equal(sourceName('x'.repeat(41)), 'other');
+  assert.equal(sourceName(undefined), 'other');
+});
+
+test('past the limit, further checkers are folded into other', () => {
+  const problems = Array.from({ length: MAX_SOURCES + 5 }, (_, n) => ({
+    severity: 0, source: `checker${n}`,
+  }));
+
+  const summary = summariseProblems([['/w/a.ts', problems]]);
+
+  assert.equal(Object.keys(summary.by_source).length, MAX_SOURCES + 1);
+  assert.equal(summary.by_source.other.errors, 5);
+});
+
+test('the summary carries no file and no message', () => {
+  const summary = summariseProblems([
+    ['/w/private/plan.ts', [{ severity: 0, source: 'ts', message: 'secret words' } as never]],
+  ]);
+  const text = JSON.stringify(summary);
+  assert.doesNotMatch(text, /private|plan\.ts|secret words/);
 });

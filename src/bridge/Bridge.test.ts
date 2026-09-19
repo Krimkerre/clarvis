@@ -749,3 +749,18 @@ test("the status carries what is known beside the state, and the event cursor", 
     await fake.stop();
   }
 });
+
+// ── §6.2's `clarvis.diagnostics.summary@1`, 19 September 2026 ───────────────
+
+test('the diagnostics capability is available exactly where the host reads problems', () => {
+  const without = bridgeAgainst('http://127.0.0.1:9').bridge;
+  assert.equal(without.capabilities()['clarvis.diagnostics.summary@1'].state, 'unavailable');
+
+  const withReader = new Bridge({
+    ...(without as unknown as { options: ConstructorParameters<typeof Bridge>[0] }).options,
+    problems: () => ({
+      errors: 0, warnings: 0, information: 0, hints: 0, files: 0, by_source: {},
+    }),
+  });
+  assert.equal(withReader.capabilities()['clarvis.diagnostics.summary@1'].state, 'available');
+});

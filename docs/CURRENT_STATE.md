@@ -772,6 +772,16 @@ carries the role's session and its own request id (`ProbeLineage`, `ModelService
 **Checked:** 2 new tests in `toolProbe.test.ts`, both failing without the headers; 2,185 fast and 33 host
 tests pass.
 
+**19 Sep (0.17.20): the problems summary, `clarvis.diagnostics.summary@1`.** The capability had said "not
+built" since 12 Sep. `GET /v1/diagnostics` on the Bridge now answers with the editor's problems counted by
+severity and by checker (`ts`, `eslint`, …; `summariseProblems` in `problemCounts.ts`), read when asked,
+never a file or a message. A checker name that could be a path or a sentence is counted as `other`, and past
+20 checkers the rest are too. The capability is `available` wherever the host hands the Bridge a problem
+reader (every editor window; `Bridge.capabilities`), and `unavailable` with its reason otherwise. NERVIS
+0.34.51 shows the split on Diagnostics → Clarvis. **Checked:** 8 new fast tests; with the name rule loosened
+or the capability switch removed, 2 fail; 2,192 fast and 33 host tests pass. **Not yet seen live**, which
+needs a window reloaded onto 0.17.20.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

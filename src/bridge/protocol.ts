@@ -86,10 +86,16 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
     state: 'available',
     reason: '',
   },
+  /**
+   * `GET /v1/diagnostics`: the editor's problems counted by severity and by checker, never a
+   * file or a message (19 September 2026). Unavailable here because a Bridge with no problem
+   * reader serves no such route; `Bridge.capabilities` swaps in `DIAGNOSTICS_AVAILABLE` for a
+   * host that hands one over, which every editor window does.
+   */
   'clarvis.diagnostics.summary@1': {
     version: '1.0.0',
     state: 'unavailable',
-    reason: 'not built; the Bridge publishes status and events only',
+    reason: 'this host hands the Bridge no problem reader, so /v1/diagnostics is not served',
   },
   'clarvis.logs.reference@1': {
     version: '1.0.0',
@@ -122,6 +128,14 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
     state: 'unavailable',
     reason: 'set at startup from the host and the user setting; see voiceCapability()',
   },
+};
+
+
+/** `clarvis.diagnostics.summary@1` where the host supplies a problem reader. */
+export const DIAGNOSTICS_AVAILABLE: Capability = {
+  version: '1.0.0',
+  state: 'available',
+  reason: '',
 };
 
 /**

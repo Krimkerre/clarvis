@@ -21,7 +21,7 @@ import { Bridge } from './Bridge';
 import { locality, summarise } from './config';
 import { VERDICT_REASON, verifySecretFile } from './secretFile';
 import type { Activity } from './activity';
-import { ProblemWatch, countProblems } from './problemCounts';
+import { ProblemWatch, countProblems, summariseProblems } from './problemCounts';
 import { checkKind, checkResult } from './checks';
 import { timestamp } from './protocol';
 
@@ -100,6 +100,8 @@ export async function startBridge(
     // section reads the merged value — user, workspace and folder — which is
     // what is actually in force.
     settings: () => summarise((id) => vscode.workspace.getConfiguration().get(id)),
+    // §6.2's `clarvis.diagnostics.summary@1`: counted when `/v1/diagnostics` is read.
+    problems: () => summariseProblems(vscode.languages.getDiagnostics()),
     // Both halves of the voice answer live in `vscode`, so they are resolved
     // here — the one file in `src/bridge/` that is allowed to know.
     voice: {

@@ -23,6 +23,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { randomUUID, timingSafeEqual } from 'crypto';
 import { GUIDANCE, settingIds, type ConfigSummary } from './config';
 import type { Identity } from './identity';
+import type { ProblemSummary } from './problemCounts';
 import { EventStream, frame } from './events';
 import {
   capabilitiesBody,
@@ -57,6 +58,8 @@ export interface BridgeConfig {
   readonly status: () => StatusReport;
   /** The published settings (§6.2's `clarvis.config.summary@1`), if the host reads any. */
   readonly summary?: () => ConfigSummary;
+  /** The editor's problems, counted (§6.2's `clarvis.diagnostics.summary@1`), if the host reads them. */
+  readonly diagnostics?: () => ProblemSummary;
   readonly events: EventStream;
   /** The declared set, resolved for this host — see `Bridge.capabilities`. */
   readonly capabilities?: () => Readonly<Record<string, Capability>>;
@@ -207,7 +210,7 @@ export class BridgeServer {
     this.send(response, 200, body, requestId, traceId);
   }
 
-  /** The five metadata routes plus `/v1/status`, or `undefined` for anything else. */
+  /** The five metadata routes plus the `/v1/*` reads, or `undefined` for anything else. */
   private bodyFor(path: string): unknown {
     switch (path) {
       case '/ecosystem/health':
@@ -223,6 +226,11 @@ export class BridgeServer {
         return versionBody(this.config.buildVersion);
       case '/v1/status':
         return statusBody(this.config.status(), timestamp(this.now()));
+      case '/v1/diagnostics':
+        // Absent without a reader, like `/v1/config`: an empty document would say "no problems".
+        return this.config.diagnostics
+          ? { ...this.config.diagnostics(), read_at: timestamp(this.now()) }
+          : undefined;
       case '/v1/config':
         // Absent rather than empty when the host did not supply a reader: an
         // empty summary would say "nothing is configured", which is a claim.

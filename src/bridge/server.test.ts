@@ -4,6 +4,7 @@ import * as http from 'node:http';
 import { Activity } from './activity';
 import { EventStream } from './events';
 import { identityFor, type StoredIdentity } from './identity';
+import type { ProblemSummary } from './problemCounts';
 import { BridgeServer } from './server';
 
 /**
@@ -18,7 +19,9 @@ const stored: StoredIdentity = { service_id: 's', machine_id: 'm', workspace_sal
 const TOKEN = 'a-token-from-nervis';
 
 /** A Bridge on a real port, with everything injected so a test can move it. */
-async function bridge(options: { token?: string | undefined } = {}) {
+async function bridge(
+  options: { token?: string | undefined; diagnostics?: () => ProblemSummary } = {}
+) {
   const activity = new Activity(() => 1_000);
   const events = new EventStream(() => 0);
   const identity = identityFor(stored, {
@@ -34,6 +37,7 @@ async function bridge(options: { token?: string | undefined } = {}) {
     token: () => token,
     identity: () => identity,
     status: () => activity.snapshot(),
+    diagnostics: options.diagnostics,
     events,
     buildVersion: '0.0.1',
     startedAt: 0,
@@ -482,4 +486,36 @@ test('disposing twice is harmless', async () => {
 
   await it.server.dispose();
   await it.server.dispose();
+});
+
+// ── §6.2's `clarvis.diagnostics.summary@1`, 19 September 2026 ───────────────
+
+test('diagnostics are read when asked, with the time they were read', async () => {
+  let errors = 1;
+  const it = await bridge({
+    diagnostics: () => ({
+      errors, warnings: 0, information: 0, hints: 0, files: 1,
+      by_source: { ts: { errors, warnings: 0, information: 0, hints: 0 } },
+    }),
+  });
+  try {
+    assert.equal((await it.get('/v1/diagnostics')).body.errors, 1);
+    errors = 3;
+    const { status, body } = await it.get('/v1/diagnostics');
+    assert.equal(status, 200);
+    assert.equal(body.by_source.ts.errors, 3, 'read live, not copied at startup');
+    assert.equal(typeof body.read_at, 'string');
+  } finally {
+    await it.server.dispose();
+  }
+});
+
+test('diagnostics need the token, and a host without a reader serves no such route', async () => {
+  const it = await bridge();
+  try {
+    assert.equal((await it.raw('/v1/diagnostics')).status, 401);
+    assert.equal((await it.get('/v1/diagnostics')).status, 404);
+  } finally {
+    await it.server.dispose();
+  }
 });

@@ -5738,6 +5738,8 @@ without the fix (0.17.17).
 - [x] Seen live under code-server: the Bridge starting when a folder is trusted (Safari, 17 Sep 18:10:24Z, no reload)
 - [x] The tool-support probe carries the session and a request id like every model request (0.17.19; found
       scoring the ecosystem's scenario 4)
+- [x] `clarvis.diagnostics.summary@1`: `GET /v1/diagnostics`, problems counted by severity and checker,
+      never a file or message (0.17.20)
 
 ---
 

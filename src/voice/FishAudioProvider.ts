@@ -8,6 +8,7 @@ import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { audioDestination, audioDestinationReason } from './audioDestination';
 import { WebviewSpeech } from './WebviewSpeech';
 import { renderTimeout } from './renderTimeout';
+import { NervisLink, NervisProfile, NervisRender, nervisProfile, renderThroughNervis } from './nervisVoice';
 
 /** Where the key lives: the OS keychain, never settings.json, never logged. */
 export const FISH_KEY_SECRET = 'clarvis.fishAudio.key';
@@ -53,7 +54,9 @@ export class FishAudioProvider implements VoiceProvider {
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly log: (message: string) => void,
-    panel?: ButlerViewProvider
+    panel?: ButlerViewProvider,
+    /** This window's way to NERVIS, while the Bridge is registered (`Bridge.nervisSpeaker`). */
+    private readonly nervis?: () => Promise<NervisLink | undefined>
   ) {
     this.speech = panel ? new WebviewSpeech(panel) : undefined;
   }
@@ -75,8 +78,23 @@ export class FishAudioProvider implements VoiceProvider {
   }
 
   async isAvailable(): Promise<boolean> {
+    // NERVIS speaking for Clarvis counts, key or no key here — otherwise a window with no key of
+    // its own would drop straight to the system voice without ever asking NERVIS.
+    if (await this.throughNervis()) return true;
     const key = await this.context.secrets.get(FISH_KEY_SECRET);
     return Boolean(key) && this.withinDailyCap();
+  }
+
+  /**
+   * NERVIS's voice for Clarvis and the way to ask for it, when `clarvis.voice.source` is `nervis`
+   * (the default), the Bridge is registered, and NERVIS has a voice and a key for Clarvis.
+   */
+  private async throughNervis(): Promise<{ link: NervisLink; profile: NervisProfile } | undefined> {
+    const source = vscode.workspace.getConfiguration('clarvis').get<string>('voice.source', 'nervis');
+    if (source !== 'nervis' || !this.nervis) return undefined;
+    const link = await this.nervis();
+    const profile = link && (await nervisProfile(link));
+    return link && profile ? { link, profile } : undefined;
   }
 
   /**
@@ -91,6 +109,41 @@ export class FishAudioProvider implements VoiceProvider {
   }
 
   async speak(utterance: Utterance): Promise<void> {
+    const viaNervis = utterance.own ? undefined : await this.throughNervis();
+    if (viaNervis) {
+      // Keyed on the voice NERVIS will use, so a change in NERVIS's Settings is heard at once.
+      const { link, profile } = viaNervis;
+      const key = cacheKey(utterance.text, profile.voice_id, profile.engine);
+      if (!(await this.isCached(key))) {
+        const rendered = await this.renderByNervis(link, utterance.text);
+        if (rendered.kind === 'systemVoice') throw new Error(`NERVIS didn't speak: ${rendered.why}`);
+        if (rendered.kind === 'ownVoice') {
+          this.log(`voice: NERVIS can't speak this (${rendered.why}); Clarvis's own voice`);
+          return this.speakOwn(utterance);
+        }
+        await this.writeCache(key, rendered.bytes);
+        await this.noteInIndex(key, { ...utterance, voiceId: profile.voice_id }, profile.engine);
+      }
+      this.log(`voice: playing ${key} (NERVIS's voice for Clarvis)`);
+      await this.play(key);
+      return;
+    }
+    return this.speakOwn(utterance);
+  }
+
+  /** Rendered by NERVIS with its key and cap, within the same deadline as Clarvis's own render. */
+  private async renderByNervis(link: NervisLink, text: string): Promise<NervisRender> {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), renderTimeout(text.length));
+    try {
+      return await renderThroughNervis(link, text, abort.signal);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /** Clarvis's own Fish key and voice, as before 0.17.24. */
+  private async speakOwn(utterance: Utterance): Promise<void> {
     const engine = vscode.workspace
       .getConfiguration('clarvis')
       .get<string>('voice.fishAudio.engine', 's2.1-pro-free');
@@ -231,7 +284,7 @@ export class FishAudioProvider implements VoiceProvider {
    */
   async validateVoice(voiceId: string): Promise<boolean> {
     try {
-      await this.speak({ text: 'Testing.', voiceId });
+      await this.speak({ text: 'Testing.', voiceId, own: true });
       return true;
     } catch {
       return false;

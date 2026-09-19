@@ -45,6 +45,11 @@ export class BridgeSlot<H extends Stoppable> {
   }
 
   /** Stops it for good, resolving once the Bridge has stopped — deregistration included. */
+  /** The running handle, if one started and the slot isn't closed — for a read, never a stop. */
+  async current(): Promise<H | undefined> {
+    return this.closed ? undefined : this.running;
+  }
+
   async stop(): Promise<void> {
     this.closed = true;
     const handle = await this.running;

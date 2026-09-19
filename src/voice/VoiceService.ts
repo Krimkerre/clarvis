@@ -140,7 +140,7 @@ export class VoiceService {
     const voiceId = resolveVoiceId(selectedVoice);
     this.queue = this.queue
       .catch(() => undefined)
-      .then(() => this.speakWithFallback({ text: speakable(text), voiceId }));
+      .then(() => this.speakWithFallback({ text: speakable(text), voiceId, own: true }));
   }
 
   /**

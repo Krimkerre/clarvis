@@ -3,6 +3,11 @@ export interface Utterance {
   text: string;
   /** Voice model id, or undefined for the host's default system voice. */
   voiceId?: string;
+  /**
+   * This exact voice, never NERVIS's choice for Clarvis: a preview or a check of a pasted voice id,
+   * where hearing a different voice would answer the wrong question (19 September 2026).
+   */
+  own?: true;
 }
 
 /**

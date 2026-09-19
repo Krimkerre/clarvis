@@ -824,6 +824,19 @@ not asked)"; `data` stays an open question (it drives the safety review) and the
 not a recorded No. Constraints from the CLARVIS session's reading of §4.9. **Checked:** 12 new fast tests
 (3 fail with the verdict parser or the plan's default rendering broken); 2,207 fast and 34 host tests.
 
+**19 Sep (0.17.24): Clarvis's voice from NERVIS.** The owner keeps one voice list and one Fish Audio key
+in NERVIS, with a separate voice for Clarvis ("I don't want them to sound identical"). With
+`clarvis.voice.source` = `nervis` (the default) and the Bridge registered, Clarvis asks NERVIS which voice
+is Clarvis's and has NERVIS render each line (`src/voice/nervisVoice.ts`; routes under NERVIS's
+`/api/v1/registry/instances/clarvis/<id>/`, the window's own token). NERVIS never writes a Clarvis setting
+(§6.7) and its key never comes here. The cache key is the voice NERVIS answered with, so a change there is
+heard at once; NERVIS's cap counts its renders, Clarvis's its own. Falls back to Clarvis's own key when
+NERVIS isn't reachable, the window isn't registered, or NERVIS has no key or voice for Clarvis; to the system
+voice when NERVIS refuses on privacy or its cap, or times out (it may already have paid). Previews and
+voice-id checks keep the voice they name (`Utterance.own`). The CLARVIS session reviewed the plan first.
+**Checked:** 5 new tests in `nervisVoice.test.ts` (one fails if a privacy or cap refusal may be retried with
+Clarvis's own key); 2,212 fast and 34 host tests; on Linux 2,207 passed, 5 skipped.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

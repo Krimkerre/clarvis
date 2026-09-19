@@ -5745,6 +5745,7 @@ without the fix (0.17.17).
       dropped as not wanted
 - [x] "Clarvis: Open Log Copy", since the start message's button hides (0.17.22; found live)
 - [x] Planning asks less: "Draft it now" in every round, and a short way for small, clear tasks; defaults marked as defaults (0.17.23; found live)
+- [x] Clarvis's voice follows NERVIS (a separate Clarvis voice there, NERVIS's key), with its own voice as the fallback (0.17.24)
 
 ---
 

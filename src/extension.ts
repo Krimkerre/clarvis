@@ -106,7 +106,9 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
   // a curated voice exist, the system voice is the whole implementation.
   // The panel is handed over so Tier 1 can play through the webview when the
   // extension host is not the listener's machine — see `audioDestination`.
-  const fish = new FishAudioProvider(context, (message) => logger.write(message), panel);
+  // Clarvis's voice from NERVIS while the Bridge is registered (`clarvis.voice.source`, 0.17.24).
+  const fish = new FishAudioProvider(context, (message) => logger.write(message), panel,
+    async () => (await bridge?.current())?.bridge.nervisSpeaker());
   const voice = new VoiceService(
     avatar,
     fish,

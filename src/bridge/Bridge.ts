@@ -23,6 +23,7 @@ import { forwardEvent, forwarded } from './eventForwarding';
 import { BridgeServer } from './server';
 import type { ConfigSummary } from './config';
 import type { ProblemSummary } from './problemCounts';
+import type { NervisLink } from '../voice/nervisVoice';
 import type { ActivityChange, ActivitySnapshot, NoteChange, StatusFacts } from './activity';
 import { publishActivity, publishNotes } from './publish';
 
@@ -352,6 +353,16 @@ export class Bridge {
    * code-server, and §4.1 asks a capability to describe what this build can do
    * right now.
    */
+  /**
+   * Where and how this window may ask NERVIS for its voice (19 September 2026), or nothing while
+   * unregistered. NERVIS checks the token it issued; it's cleared on re-registration, so a 401
+   * means "not registered right now" rather than an error.
+   */
+  nervisSpeaker(): NervisLink | undefined {
+    if (!this.token || !this.identity) return undefined;
+    return { url: this.options.nervisUrl, instanceId: this.identity.instance_id, token: this.token };
+  }
+
   capabilities(): Readonly<Record<string, Capability>> {
     const resolved: Record<string, Capability> = { ...CAPABILITIES };
     // Available only where the host hands over a reader, since that is when the route answers.

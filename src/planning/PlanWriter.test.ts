@@ -195,3 +195,16 @@ test('the recorded comment decision lands in the conventions', () => {
 
   assert.match(renderPlan({ seed: 'x', state: decided, verdicts: [] }), /only where something is genuinely surprising/);
 });
+
+test('a default reads as a default, and a defaulted data question stays open', () => {
+  const withDefaults: InterviewState = {
+    answers: [
+      { topic: 'scope', text: 'Only what the description asks for.', question: 'Not asked', defaulted: true },
+      { topic: 'data', text: undefined, question: 'Not asked', defaulted: true },
+    ],
+  };
+  const plan = renderPlan({ seed: 'prints the date', state: withDefaults, verdicts: [] });
+  assert.match(plan, /## 4\. Scope\n\n\*\*Default \(not asked\):\*\* Only what the description asks for\./);
+  assert.doesNotMatch(plan, /\*\*Asked:\*\* Not asked/);
+  assert.match(plan, /## 5\. Data\n\n_Not asked — an open question/);
+});

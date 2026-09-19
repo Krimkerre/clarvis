@@ -157,3 +157,21 @@ test('the draft is read back from the editor, after a stop as well', async () =>
   io.cancel();
   assert.equal(await io.readDocument(), '# Plan, edited by hand');
 });
+
+test('a question can carry buttons, and a pressed one arrives as its label', async () => {
+  const { io, offered } = panel();
+  const answer = io.askText('Who runs this?', undefined, undefined, ['Draft it now']);
+  await waitingFor(io);
+  assert.deepEqual(offered.at(-1), ['Draft it now']);
+  io.supply('Draft it now');
+  assert.equal(await answer, 'Draft it now');
+});
+
+test('a question without buttons offers none', async () => {
+  const { io, offered } = panel();
+  const answer = io.askText('Who runs this?');
+  await waitingFor(io);
+  assert.equal(offered.length, 0);
+  io.supply('me');
+  assert.equal(await answer, 'me');
+});

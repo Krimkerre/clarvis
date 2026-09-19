@@ -1,7 +1,8 @@
 import { ModelService } from '../model/ModelService';
 import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { opening, phrase } from '../personality/Voice';
-import { Answer, InterviewState, knownFacts, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
+import { Answer, fillDefaults, InterviewState, knownFacts, nextTopic, openQuestions, readyToDraft, TopicId } from './interviewTopics';
+import { isSmallVerdict, smallTaskPrompt } from './smallTask';
 import { namedLanguage } from './conventions';
 import { FALLBACK_QUESTION, interviewQuestionPrompt, interviewSystemPrompt, ensureNamesChoice, looksLikeQuestionBack, answerBackPrompt } from './interviewPrompt';
 import { NameResult, namePrompt, parseNameResult } from './namePrompt';
@@ -71,6 +72,20 @@ function promptModel(
 }
 
 const UNKNOWN_ANSWER = /^(i )?don'?t know( yet)?$|^idk$|^no idea$|^not sure$/i;
+
+/**
+ * Skip the rest of the questions (19 September 2026): a button under every question in the
+ * chat panel and a choice in every menu, and the same words typed into an input box — the
+ * command-palette route has no buttons. Goes to the draft, never past the approval.
+ */
+export const DRAFT_NOW = 'Draft it now';
+/** The other button when a task looks small: the whole interview, as before. */
+export const ASK_THE_QUESTIONS = 'Ask me the questions';
+
+/** Whether a typed reply asks to skip to the draft rather than answering. */
+export function isDraftNow(reply: string | undefined): boolean {
+  return /^\s*(draft( it)? now|skip the (rest|questions)|that'?s enough( questions)?)\s*[.!]?\s*$/i.test(reply ?? '');
+}
 
 /**
  * Everything about *this* interview that is not the machinery for running one.
@@ -163,9 +178,58 @@ export async function runInterview(
     log(`planning: workspace — ${state.workspaceContext}`);
   }
 
+  // **A small, clearly described task is offered the short way** (19 September 2026): one
+  // question, whether to skip the rest. Judged on the seed the person sent — a brief from
+  // NERVIS is only prefilled, never taken as the answer until it is sent.
+  if (!namedByIdea && (await looksSmall(models, seed.trim(), log))) {
+    const choice = await io.confirm(
+      await phrase('ask', "This looks like a small job. I'd skip the questions and go straight to a draft.", []),
+      'The usual answers go in, each marked in the draft as a default rather than yours, and what it ' +
+        'reads or writes is left as an open question. The draft is still reviewed and waits for your approval.',
+      [DRAFT_NOW, ASK_THE_QUESTIONS]
+    );
+    if (choice === DRAFT_NOW || isDraftNow(choice)) {
+      state.projectName = await suggestedName(models, seed.trim(), log);
+      return draftNow(state, seed.trim(), io, log, remember);
+    }
+  }
+
   state.projectName = await resolveProjectName(models, io, seed.trim(), log, namedByIdea);
 
   return continueInterview(models, io, log, state, seed.trim(), remember);
+}
+
+/**
+ * Whether the model judges the task small and clear (`smallTask.ts`). No model, no reply, or
+ * any doubt is "no": a missed shortcut costs a few questions, a wrong one skips a review.
+ */
+async function looksSmall(models: ModelService, seed: string, log: (message: string) => void): Promise<boolean> {
+  if (!(await models.isReady('chat'))) return false;
+  try {
+    const reply = await promptModel(models, smallTaskPrompt(seed), 40);
+    const small = isSmallVerdict(reply);
+    log(`planning: size judged ${small ? 'small' : 'full'} (${reply.trim().slice(0, 20) || 'no reply'})`);
+    return small;
+  } catch (error) {
+    if (error instanceof PlanningPaused) throw error;
+    log(`planning: size — judging failed (${String(error)}), full interview`);
+    return false;
+  }
+}
+
+/** Every open topic gets its default, marked as one, and the interview ends in a draft. */
+async function draftNow(
+  state: InterviewState,
+  seed: string,
+  io: PlanningIO,
+  log: (message: string) => void,
+  remember?: (state: InterviewState, seed: string) => Promise<void>
+): Promise<{ state: InterviewState; seed: string }> {
+  const filled = fillDefaults(state, namedLanguage);
+  log(`planning: drafting now — defaults for ${filled.join(', ') || 'nothing'}`);
+  await io.say("Straight to a draft, then. Whatever I filled in is marked as a default in it; change anything that's wrong before you approve.");
+  await remember?.(state, seed);
+  return { state, seed };
 }
 
 /**
@@ -200,50 +264,25 @@ async function continueInterview(
     const question = await phraseQuestion(models, topic, state, log);
     log(`planning: "${topic}" asked — ${question}`);
 
-    let answer: Answer;
+    // **Said once, at the top.** Repeating "or say I don't know" under all six questions
+    // is a form telling you its own rules over and over; the point lands the first time.
+    const reply =
+      topic === 'language'
+        ? await askLanguageTopic(models, io, question, state, log)
+        : await askFreeTopic(models, io, topic, question, state, log, !unknownIsFine);
+    if (topic !== 'language') unknownIsFine = true;
 
-    if (topic === 'language') {
-      const resolved = await askLanguage(models, io, question, state, log);
-      // Cancelling (Escape) pauses the interview rather than answering "I don't know"
-      // on the user's behalf — same rule as the free-text path below.
-      if (!resolved) {
-        log(`planning: interview paused at "${topic}"`);
-        return { state, seed };
-      }
-      // The raw shortlist is `Name | advantage | cost` per line — real for a
-      // QuickPick, unreadable as "what was asked" in a written plan. A plain
-      // recap reads honestly instead of dumping the pipe-delimited format.
-      resolved.question = 'Which language should this be built in?';
-      answer = resolved;
-    } else {
-      // **Said once, at the top.** Repeating "or say I don't know" under all six
-      // questions is a form telling you its own rules over and over; the point lands
-      // the first time and is noise every time after.
-      const raw = await io.askText(question, unknownIsFine ? undefined : "\"I don't know yet\" is a perfectly good answer here.");
-      unknownIsFine = true;
-
-      // Cancelling the box (Escape) pauses the interview rather than answering "I
-      // don't know" on the user's behalf — those are different things, and only one
-      // of them should get written into the plan as a recorded unknown.
-      if (raw === undefined) {
-        log(`planning: interview paused at "${topic}"`);
-        return { state, seed };
-      }
-
-      // A question asked back (F3) is never an answer, however it parses — answer
-      // it, then loop back to the same topic rather than recording the question as
-      // "remains open" or pushing back on it as if it were vague.
-      if (looksLikeQuestionBack(raw)) {
-        log(`planning: "${topic}" — asked back — ${raw}`);
-        const reply = await answerQuestionBack(models, topic, raw, state, log);
-        await io.say(reply ?? "I don't have a good answer for that one — your call.");
-        continue;
-      }
-
-      answer = toAnswer(topic, raw);
-      answer.question = question;
+    // Cancelling (Escape) pauses the interview rather than answering "I don't know" on
+    // the user's behalf — those are different things, and only one of them should get
+    // written into the plan as a recorded unknown.
+    if (reply === undefined) {
+      log(`planning: interview paused at "${topic}"`);
+      return { state, seed };
     }
+    if (reply === DRAFT_NOW) return draftNow(state, seed, io, log, remember);
+    if (reply === ASKED_BACK) continue;
 
+    let answer: Answer = reply;
     answer = await challengeAnswer(models, io, topic, answer, state, log);
     log(`planning: "${topic}" answered — ${answer.text ?? '(recorded as unknown)'}`);
     state.answers.push(answer);
@@ -254,6 +293,57 @@ async function continueInterview(
 
   log(`planning: interview reached "enough to draft" — ${openQuestions(state).length} open question(s)`);
   return { state, seed };
+}
+
+/** A question asked back instead of answered (F3): answered, then the same topic again. */
+const ASKED_BACK = 'asked back';
+
+/** The language question, with the recap a written plan can read. */
+async function askLanguageTopic(
+  models: ModelService,
+  io: PlanningIO,
+  question: string,
+  state: InterviewState,
+  log: (message: string) => void
+): Promise<Answer | typeof DRAFT_NOW | undefined> {
+  const resolved = await askLanguage(models, io, question, state, log);
+  if (!resolved || resolved === DRAFT_NOW) return resolved;
+  // The raw shortlist is `Name | advantage | cost` per line — real for a QuickPick,
+  // unreadable as "what was asked" in a written plan. A plain recap reads honestly.
+  resolved.question = 'Which language should this be built in?';
+  return resolved;
+}
+
+/** One free-text topic: the answer, "Draft it now", a question asked back, or a pause. */
+async function askFreeTopic(
+  models: ModelService,
+  io: PlanningIO,
+  topic: TopicId,
+  question: string,
+  state: InterviewState,
+  log: (message: string) => void,
+  sayUnknownIsFine: boolean
+): Promise<Answer | typeof DRAFT_NOW | typeof ASKED_BACK | undefined> {
+  const hint = sayUnknownIsFine
+    ? `"I don't know yet" is a perfectly good answer here, and "${DRAFT_NOW}" skips the rest.`
+    : undefined;
+  const raw = await io.askText(question, hint, undefined, [DRAFT_NOW]);
+  if (raw === undefined) return undefined;
+  if (isDraftNow(raw)) return DRAFT_NOW;
+
+  // A question asked back (F3) is never an answer, however it parses — answer it, then
+  // loop back to the same topic rather than recording the question as "remains open" or
+  // pushing back on it as if it were vague.
+  if (looksLikeQuestionBack(raw)) {
+    log(`planning: "${topic}" — asked back — ${raw}`);
+    const reply = await answerQuestionBack(models, topic, raw, state, log);
+    await io.say(reply ?? "I don't have a good answer for that one — your call.");
+    return ASKED_BACK;
+  }
+
+  const answer = toAnswer(topic, raw);
+  answer.question = question;
+  return answer;
 }
 
 /**
@@ -580,6 +670,24 @@ async function resolveProjectName(
 }
 
 /**
+ * The short way's name (a small task): the one in the seed, else the model's first
+ * suggestion, never a question. Nothing on failure — the plan has a fallback for no name.
+ */
+async function suggestedName(models: ModelService, seed: string, log: (message: string) => void): Promise<string | undefined> {
+  if (!(await models.isReady('chat'))) return undefined;
+  try {
+    const result = parseNameResult(await promptModel(models, namePrompt(seed, false), 400));
+    const name = 'named' in result ? result.named : nameCandidates(result)[0]?.label;
+    log(`planning: name — short way, ${name ? `took ${name}` : 'none suggested'}`);
+    return name;
+  } catch (error) {
+    if (error instanceof PlanningPaused) throw error;
+    log(`planning: name — short way failed (${String(error)}), left unnamed`);
+    return undefined;
+  }
+}
+
+/**
  * The names worth offering: the working title first, then the alternatives.
  *
  * The title it arrived with leads because it is the one they have already seen —
@@ -659,11 +767,12 @@ async function askLanguage(
   question: string,
   state: InterviewState,
   log: (message: string) => void
-): Promise<Answer | undefined> {
+): Promise<Answer | typeof DRAFT_NOW | undefined> {
   const options = parseLanguageOptions(question);
   if (options.length === 0) {
     log('planning: "language" — shortlist did not parse, fell back to free text');
-    const raw = await io.askText(question, "Type your answer, or \"I don't know yet\" — that's a fine answer here.");
+    const raw = await io.askText(question, "Type your answer, or \"I don't know yet\" — that's a fine answer here.", undefined, [DRAFT_NOW]);
+    if (isDraftNow(raw)) return DRAFT_NOW;
     return raw === undefined ? undefined : toAnswer('language', raw);
   }
 
@@ -675,9 +784,11 @@ async function askLanguage(
       ...options.map((option) => ({ label: option.name, detail: `+ ${option.advantage}  —  ${option.cost}` })),
       { label: YOU_PICK, detail: "That's a first-class answer, not a fallback for someone who doesn't know." },
       { label: SOMETHING_ELSE },
+      { label: DRAFT_NOW, detail: 'Skip the rest of the questions; the usual answers go in, marked as defaults.' },
     ]
   );
   if (!picked) return undefined;
+  if (picked === DRAFT_NOW) return DRAFT_NOW;
 
   if (picked === SOMETHING_ELSE) {
     const raw = await io.askText(await phrase('ask', 'What language?', []));

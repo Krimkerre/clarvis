@@ -5744,6 +5744,7 @@ without the fix (0.17.17).
       approved per workspace with a revoke, appended and resumed (0.17.21); `clarvis.logs.reference@1`
       dropped as not wanted
 - [x] "Clarvis: Open Log Copy", since the start message's button hides (0.17.22; found live)
+- [x] Planning asks less: "Draft it now" in every round, and a short way for small, clear tasks; defaults marked as defaults (0.17.23; found live)
 
 ---
 

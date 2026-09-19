@@ -31,6 +31,13 @@ export interface Answer {
   reasoning?: string;
   /** What was actually asked, so a later reader has the context, not just the answer. */
   question?: string;
+  /**
+   * Filled in by Clarvis rather than answered — "Draft it now", or a small task's usual
+   * answers (19 September 2026). Kept apart from what the person said, because §4.9's plan
+   * "admits its unknowns": a default shown as their answer would be one invented to look
+   * complete, and every later prompt reads these as established facts.
+   */
+  defaulted?: true;
 }
 
 export interface InterviewState {
@@ -59,7 +66,7 @@ export interface InterviewState {
 export function knownFacts(state: InterviewState): string {
   const answers = state.answers
     .filter((answer) => answer.text)
-    .map((answer) => `${answer.topic}: ${answer.text}`)
+    .map((answer) => `${answer.topic}: ${answer.text}${answer.defaulted ? ' (a default, not asked)' : ''}`)
     .join('\n');
   return [state.workspaceContext, answers].filter(Boolean).join('\n');
 }
@@ -142,4 +149,52 @@ export function nextTopic(state: InterviewState): TopicId | undefined {
  */
 export function openQuestions(state: InterviewState): Answer[] {
   return state.answers.filter((answer) => answer.text === undefined);
+}
+
+/**
+ * The usual answers, for topics nobody was asked about (19 September 2026).
+ *
+ * Used by "Draft it now" and by a small, clearly described task. Each one is modest on
+ * purpose — what a person asking for a small thing almost always means — and each is
+ * recorded as `defaulted`, so the plan says it was not asked. Two are deliberately not
+ * answers:
+ *
+ * - **`data` stays unknown.** It drives every safety finding (§4.9), so it becomes an open
+ *   question in the plan rather than a guessed "nothing stored".
+ * - **The linter is "none for now", not "no".** §4.9 records a real No and never offers
+ *   again; a default must not spend that moment silently.
+ *
+ * `comment-style` defaults to explanatory comments, the owner's standing preference.
+ */
+export const DEFAULT_ANSWERS: Partial<Record<TopicId, string>> = {
+  'who-and-where': 'Whoever asked for it, on their own computer.',
+  scope: 'Only what the description asks for — nothing extra.',
+  'definition-of-done': 'It does what the description says, and running it shows that.',
+  linter: 'None for now — a default, not a decision; worth offering if this grows.',
+  'comment-style': 'Comments on most things, explaining what and why.',
+};
+
+/** The line a plan shows in place of a question for a defaulted answer. */
+export const DEFAULTED_QUESTION = 'Not asked — filled in by Clarvis; change it if it is wrong.';
+
+/**
+ * Settles every open topic with its default, leaving what was answered alone.
+ *
+ * `language` is taken from the words already given when they name one (the seed usually
+ * does: "a Python script…"), and otherwise left unknown — a guessed language would be the
+ * most consequential default of all. Returns the topics it filled, in order.
+ */
+export function fillDefaults(state: InterviewState, named: (text: string) => string | undefined): TopicId[] {
+  const filled: TopicId[] = [];
+  // Read from what the person said, before any default is added: the language check refuses
+  // text with a negation in it ("not Python"), and a default's own wording must not be what
+  // decides it.
+  const language = state.languageDetected ?? named(knownFacts(state));
+  for (const topic of [...CORE_TOPICS, 'language', 'linter', 'comment-style'] as TopicId[]) {
+    if (isSettled(state, topic)) continue;
+    const text = topic === 'language' ? language : DEFAULT_ANSWERS[topic];
+    state.answers.push({ topic, text, question: DEFAULTED_QUESTION, defaulted: true });
+    filled.push(topic);
+  }
+  return filled;
 }

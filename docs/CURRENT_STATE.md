@@ -810,6 +810,20 @@ the CLARVIS session's suggestion, which also confirmed an open editor tab is nev
 `remoteexthost.log`, confirming the code-server source on a real window. **Checked:** the host suite's
 every-declared-command test covers the new command; 2,195 fast and 34 host tests pass.
 
+**19 Sep (0.17.23): planning asks less — "Draft it now", and a short way for small tasks.** Found live by
+the owner on the first NERVIS handover test ("a Python script that prints today's date"): the interview
+walked all eight topics and took longer than writing the script. Two changes, both owner-chosen:
+**"Draft it now"** is a button under every question in the chat panel, a choice in the language menu, and
+the same words typed in an input box; it fills every unasked topic with a usual answer and goes to the
+draft (never past approval). **A small, clearly described task** — judged by the model (`smallTask.ts`),
+anything touching credentials, personal data, stored data, other files or the network, or any doubt,
+counts as full — is offered the short way in one question ("Draft it now" / "Ask me the questions"), and
+its name is taken from the seed or the first suggestion. Defaults (`interviewTopics.fillDefaults`) are
+marked `defaulted` and render in plan.md as **Default (not asked):**, and later prompts see "(a default,
+not asked)"; `data` stays an open question (it drives the safety review) and the linter is "none for now",
+not a recorded No. Constraints from the CLARVIS session's reading of §4.9. **Checked:** 12 new fast tests
+(3 fail with the verdict parser or the plan's default rendering broken); 2,207 fast and 34 host tests.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

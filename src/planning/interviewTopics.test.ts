@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { InterviewState, nextTopic, openQuestions, readyToDraft } from './interviewTopics';
+import { DEFAULTED_QUESTION, fillDefaults, InterviewState, knownFacts, nextTopic, openQuestions, readyToDraft } from './interviewTopics';
 
 const empty: InterviewState = { answers: [] };
 
@@ -124,4 +124,44 @@ test('open questions are the ones recorded as unknown, in order', () => {
     openQuestions(state).map((a) => a.topic),
     ['data', 'definition-of-done']
   );
+});
+
+// ── "Draft it now" and the short way (19 September 2026) ─────────────────────
+
+test('defaults fill only what nobody answered, each marked as a default, and the draft can start', () => {
+  const state: InterviewState = {
+    answers: [
+      { topic: 'what-it-does', text: "a Python script that prints today's date" },
+      { topic: 'scope', text: 'just the date, nothing else' },
+    ],
+  };
+
+  const filled = fillDefaults(state, (text) => (/python/i.test(text) ? 'Python' : undefined));
+
+  assert.deepEqual(filled, ['who-and-where', 'data', 'definition-of-done', 'language', 'linter', 'comment-style']);
+  assert.equal(state.answers.find((a) => a.topic === 'scope')?.text, 'just the date, nothing else', 'an answer is kept');
+  assert.equal(state.answers.find((a) => a.topic === 'scope')?.defaulted, undefined);
+  for (const answer of state.answers.filter((a) => filled.includes(a.topic))) {
+    assert.equal(answer.defaulted, true);
+    assert.equal(answer.question, DEFAULTED_QUESTION);
+  }
+  assert.equal(state.answers.find((a) => a.topic === 'language')?.text, 'Python', 'a language already named is used');
+  assert.equal(readyToDraft(state), true);
+});
+
+test('data stays an open question and the linter is not a recorded No', () => {
+  const state: InterviewState = { answers: [{ topic: 'what-it-does', text: 'a tiny tool' }] };
+  fillDefaults(state, () => undefined);
+
+  assert.equal(state.answers.find((a) => a.topic === 'data')?.text, undefined, 'data drives the safety review');
+  assert.ok(openQuestions(state).some((a) => a.topic === 'data'));
+  assert.equal(state.answers.find((a) => a.topic === 'language')?.text, undefined, 'no language guessed');
+  assert.doesNotMatch(state.answers.find((a) => a.topic === 'linter')?.text ?? '', /^no\b/i);
+});
+
+test('later prompts are told a default is a default', () => {
+  const state: InterviewState = { answers: [{ topic: 'what-it-does', text: 'a tiny tool' }] };
+  fillDefaults(state, () => undefined);
+  assert.match(knownFacts(state), /who-and-where: .+ \(a default, not asked\)/);
+  assert.doesNotMatch(knownFacts(state), /what-it-does: a tiny tool \(a default/);
 });

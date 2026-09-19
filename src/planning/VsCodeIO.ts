@@ -10,10 +10,13 @@ import { PlanningIO } from './PlanningIO';
  * interview that vanishes when you click away is an interview you have to restart).
  */
 export class VsCodeIO implements PlanningIO {
-  async askText(prompt: string, placeholder?: string, prefill?: string): Promise<string | undefined> {
+  async askText(prompt: string, placeholder?: string, prefill?: string, actions?: string[]): Promise<string | undefined> {
+    // An input box has no buttons, so the offered replies are named in the hint and
+    // recognised when typed (`isDraftNow`).
+    const typed = actions && actions.length > 0 ? `or type: ${actions.join(' / ')}` : undefined;
     return vscode.window.showInputBox({
       prompt,
-      placeHolder: placeholder,
+      placeHolder: [placeholder, typed].filter(Boolean).join(' — ') || undefined,
       // `value`, not `placeHolder`: one is editable text, the other is grey ghosting
       // that vanishes the moment you type. Modify was offering the second and calling
       // it an edit.

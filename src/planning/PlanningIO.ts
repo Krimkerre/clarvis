@@ -16,8 +16,12 @@ export interface PlanningIO {
    * only a hint. The difference matters: "Rewrite this finding" was passing the
    * finding as a placeholder, so changing three words of a two-line sentence meant
    * retyping the whole thing.
+   *
+   * `actions` are replies offered as buttons beside the box ("Draft it now"); choosing one
+   * returns its label. An IO with no buttons may leave them out — the interview also
+   * recognises the same words typed.
    */
-  askText(prompt: string, placeholder?: string, prefill?: string): Promise<string | undefined>;
+  askText(prompt: string, placeholder?: string, prefill?: string, actions?: string[]): Promise<string | undefined>;
 
   /** A menu. Returns the chosen item's label, or `undefined` if none was chosen. */
   askChoice(prompt: string, items: { label: string; detail?: string }[]): Promise<string | undefined>;

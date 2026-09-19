@@ -77,7 +77,7 @@ export class PlanningChatIO implements PlanningIO {
     waiting?.pause(new PlanningPaused());
   }
 
-  async askText(prompt: string, placeholder?: string, prefill?: string): Promise<string | undefined> {
+  async askText(prompt: string, placeholder?: string, prefill?: string, actions?: string[]): Promise<string | undefined> {
     // The placeholder is a hint, not part of the question — written, never spoken,
     // and without markdown, which the panel renders as literal asterisks.
     await this.talk(prompt);
@@ -86,6 +86,9 @@ export class PlanningChatIO implements PlanningIO {
     // Text to edit goes into the prompt box itself. Written into the transcript, it
     // would be something to copy by hand — which is what "Modify" asked for until now.
     if (prefill) this.fill(prefill);
+    // "Draft it now" and the like, as buttons under the question; the typed answer box
+    // stays the ordinary way to reply. A pressed button arrives as its label.
+    if (actions && actions.length > 0) this.offer(actions.map((label) => ({ label })));
     return this.nextMessage();
   }
 

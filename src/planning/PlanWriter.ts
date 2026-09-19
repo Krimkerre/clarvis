@@ -85,6 +85,11 @@ function answerText(state: InterviewState, topic: TopicId): string | undefined {
  * wasn't in the room for the interview.
  */
 function section(heading: string, answer: Answer | undefined): string {
+  // A default reads as one (19 September 2026): §4.9's plan admits what it was not told,
+  // and a default under "Asked:" would pass for the person's own answer.
+  if (answer?.defaulted) {
+    return [heading, '', answer.text ? `**Default (not asked):** ${answer.text}` : '_Not asked — an open question; say what it reads, writes, stores or sends._'].join('\n');
+  }
   if (!answer?.text) return [heading, '', '_Not yet determined._'].join('\n');
   return [heading, '', ...(answer.question ? [`**Asked:** ${answer.question}`, ''] : []), answer.text].join('\n');
 }

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { IDEA_TIMEOUT_MS, runInterview } from './Interview';
+import { ASK_THE_QUESTIONS, DRAFT_NOW, IDEA_TIMEOUT_MS, isDraftNow, runInterview } from './Interview';
 import { PlanningIO, PlanningPaused } from './PlanningIO';
 import { ModelService } from '../model/ModelService';
-import { InterviewState } from './interviewTopics';
+import { InterviewState, readyToDraft } from './interviewTopics';
 import { WorkspaceSignals } from './workspaceSignals';
 
 /**
@@ -58,9 +58,9 @@ function sitting(answers: (string | undefined)[]): Sitting {
   let next = 0;
 
   const io: PlanningIO = {
-    askText: async (prompt: string, ...rest: (string | undefined)[]) => {
+    askText: async (prompt: string, _placeholder?: string, prefill?: string) => {
       asked.push(prompt);
-      prefilled.push(rest[1]);
+      prefilled.push(prefill);
       return next < answers.length ? answers[next++] : undefined;
     },
     askChoice: async () => undefined,
@@ -319,4 +319,61 @@ test('the idea list waits longer than a phrased question does', async () => {
   await runInterview(models, io, () => {}, {});
 
   assert.ok(requested.includes(IDEA_TIMEOUT_MS), `deadlines asked for: ${requested.join(', ')}`);
+});
+
+// ── "Draft it now" and the short way (19 September 2026) ─────────────────────
+
+test('"Draft it now" typed at a question ends the interview in defaults, asking nothing more', async () => {
+  const { io, asked, said } = sitting(["a Python script that prints today's date", 'Draft it now', 'never asked']);
+
+  const result = await runInterview(noModel(), io, () => {});
+
+  assert.equal(asked.length, 2, 'the seed and one question, then straight to the draft');
+  assert.ok(result && readyToDraft(result.state));
+  assert.equal(result?.state.answers.find((a) => a.topic === 'language')?.text, 'Python');
+  assert.ok(result?.state.answers.filter((a) => a.defaulted).length >= 5);
+  assert.ok(said.some((line) => line.includes('marked as a default')));
+});
+
+test('the typed forms of "Draft it now" are recognised, and ordinary answers are not', () => {
+  for (const said of ['Draft it now', 'draft now', 'skip the rest', "that's enough", 'Draft it now.']) {
+    assert.equal(isDraftNow(said), true, said);
+  }
+  for (const said of ['draft a README now and then', 'now', 'a command-line tool', undefined]) {
+    assert.equal(isDraftNow(said), false, String(said));
+  }
+});
+
+/** A model that is there, and says SMALL to the size question and nothing to anything else. */
+function sizingModel(verdict: string): ModelService {
+  return {
+    isReady: async () => true,
+    deadline: (ms: number) => ms,
+    stream: async function* (request: { messages: { content: string }[] }) {
+      if (request.messages[0]?.content.includes('Reply with the one word SMALL or FULL')) yield verdict;
+    },
+  } as unknown as ModelService;
+}
+
+test('a small task is offered the short way, and taking it asks no questions', async () => {
+  const base = sitting(["a Python script that prints today's date"]);
+  const offered: string[][] = [];
+  const io: PlanningIO = { ...base.io, confirm: async (_t, _d, buttons) => (offered.push(buttons), DRAFT_NOW) };
+
+  const result = await runInterview(sizingModel('SMALL'), io, () => {});
+
+  assert.deepEqual(offered, [[DRAFT_NOW, ASK_THE_QUESTIONS]]);
+  assert.equal(base.asked.length, 1, 'only the seed was asked');
+  assert.ok(result && readyToDraft(result.state));
+});
+
+test('a full-size task is never offered the short way', async () => {
+  const base = sitting(['a shop floor app with logins and a stock database']);
+  let offeredShortWay = false;
+  const io: PlanningIO = { ...base.io, confirm: async () => ((offeredShortWay = true), undefined) };
+
+  await runInterview(sizingModel('FULL'), io, () => {});
+
+  assert.equal(offeredShortWay, false);
+  assert.ok(base.asked.length >= 2, 'the interview went on to its questions');
 });

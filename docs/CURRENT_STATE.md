@@ -801,6 +801,15 @@ both hosts, the resume point, `tail`'s offset), one failing with `remoteexthost.
 test finds the real editor's extension-host log; `tail -c +N -f` checked on macOS and GNU coreutils 9.4;
 2,195 fast and 34 host tests pass. **Not yet used live** by the owner.
 
+**19 Sep (0.17.22): "Clarvis: Open Log Copy".** Trying 0.17.21 live, the owner could not find the copy:
+the only way to it was the "Open the copy" button on the start message, which hides after a few seconds.
+A command now opens it (or says there is no copy yet), and "already copying" carries the same button. The copy
+opens read-only for the session (`setActiveEditorReadonlyInSession`), since `tail` is appending to it —
+the CLARVIS session's suggestion, which also confirmed an open editor tab is never fed to a model.
+**Seen live first (0.17.21, code-server):** the copy was written to workspace storage from
+`remoteexthost.log`, confirming the code-server source on a real window. **Checked:** the host suite's
+every-declared-command test covers the new command; 2,195 fast and 34 host tests pass.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

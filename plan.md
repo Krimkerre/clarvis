@@ -5743,6 +5743,7 @@ without the fix (0.17.17).
 - [x] M13's log copy fixed: this window's extension-host log on either host, kept outside the project,
       approved per workspace with a revoke, appended and resumed (0.17.21); `clarvis.logs.reference@1`
       dropped as not wanted
+- [x] "Clarvis: Open Log Copy", since the start message's button hides (0.17.22; found live)
 
 ---
 

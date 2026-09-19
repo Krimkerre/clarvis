@@ -2,7 +2,7 @@
   "name": "clarvis",
   "displayName": "Clarvis",
   "description": "Clippy's presence. Jarvis's competence. A butler's disdain.",
-  "version": "0.17.21",
+  "version": "0.17.22",
   "publisher": "Krimkerre",
   "license": "MIT",
   "repository": {
@@ -162,6 +162,10 @@
       {
         "command": "clarvis.stopLogTailing",
         "title": "Clarvis: Stop Copying This Window's Log"
+      },
+      {
+        "command": "clarvis.openLogCopy",
+        "title": "Clarvis: Open Log Copy"
       },
       {
         "command": "clarvis.revokeLogCopying",

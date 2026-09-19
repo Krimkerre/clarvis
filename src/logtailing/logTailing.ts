@@ -70,7 +70,7 @@ function setAside(file: string): void {
 /** Start copying. `quiet` for the resume at startup, which should not pop a message. */
 async function begin(context: vscode.ExtensionContext, log: ClarvisLog, quiet: boolean): Promise<void> {
   if (copying) {
-    if (!quiet) void vscode.window.showInformationMessage('Clarvis is already copying the log.');
+    if (!quiet) void offerToOpen(context, 'Clarvis is already copying the log.');
     return;
   }
   const target = copyUri(context);
@@ -103,10 +103,10 @@ async function begin(context: vscode.ExtensionContext, log: ClarvisLog, quiet: b
   copying = state;
   log.write(`log copy: from ${source} at byte ${offset} to ${target.fsPath}`);
 
-  if (!quiet) void announce(target);
+  if (!quiet) void announce(context);
 }
 
-async function announce(target: vscode.Uri): Promise<void> {
+async function announce(context: vscode.ExtensionContext): Promise<void> {
   // The copy the old version left inside the project, readable by the agent: said once.
   const folder = vscode.workspace.workspaceFolders?.[0]?.uri;
   const old = folder && vscode.Uri.joinPath(folder, '.clarvis', 'vscode.log');
@@ -118,10 +118,37 @@ async function announce(target: vscode.Uri): Promise<void> {
     ...(oldExists ? ['Move the old copy to the Trash'] : [])
   );
   if (choice === 'Open the copy') {
-    await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(target));
+    await openCopy(context);
   } else if (choice && old) {
     await vscode.workspace.fs.delete(old, { useTrash: true });
   }
+}
+
+/** A message with an "Open the copy" button, for when the first one has already hidden. */
+async function offerToOpen(context: vscode.ExtensionContext, message: string): Promise<void> {
+  if ((await vscode.window.showInformationMessage(message, 'Open the copy')) === 'Open the copy') {
+    await openCopy(context);
+  }
+}
+
+/**
+ * "Clarvis: Open Log Copy". Added 19 September 2026 (0.17.22): the only way to the copy was the
+ * button on the start message, and that notification hides after a few seconds.
+ */
+async function openCopy(context: vscode.ExtensionContext): Promise<void> {
+  const target = copyUri(context);
+  if (!target || !fs.existsSync(target.fsPath)) {
+    void vscode.window.showInformationMessage(
+      'Clarvis has no log copy for this workspace yet. Run "Clarvis: Start Copying This Window\'s Log" first.'
+    );
+    return;
+  }
+  await vscode.window.showTextDocument(await vscode.workspace.openTextDocument(target));
+  // Read-only for this session, so nobody types into a file `tail` is appending to. A workbench
+  // command rather than an API (there is none for a file on disk); an editor without it still opens.
+  await Promise.resolve(
+    vscode.commands.executeCommand('workbench.action.files.setActiveEditorReadonlyInSession')
+  ).catch(() => undefined);
 }
 
 /** Stop copying and remember how far it got. True if something was stopped. */
@@ -136,7 +163,7 @@ async function end(context: vscode.ExtensionContext, log: ClarvisLog): Promise<b
   return true;
 }
 
-/** The three commands, the stop on shutdown, and the resume where approved. */
+/** The four commands, the stop on shutdown, and the resume where approved. */
 export function registerLogTailing(context: vscode.ExtensionContext, log: ClarvisLog): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('clarvis.startLogTailing', async () => {
@@ -152,6 +179,7 @@ export function registerLogTailing(context: vscode.ExtensionContext, log: Clarvi
           : 'Clarvis is not copying the log.'
       );
     }),
+    vscode.commands.registerCommand('clarvis.openLogCopy', () => openCopy(context)),
     vscode.commands.registerCommand('clarvis.revokeLogCopying', async () => {
       await end(context, log);
       await context.workspaceState.update(APPROVED, undefined);

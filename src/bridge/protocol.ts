@@ -101,9 +101,9 @@ export const CAPABILITIES: Readonly<Record<string, Capability>> = {
     version: '1.0.0',
     state: 'unavailable',
     reason:
-      'log tailing exists but has no per-workspace approval step, and §6.8 requires ' +
-      'a reference rather than content — ClarvisLog records full command strings, ' +
-      'sensitive paths and tool arguments',
+      'not wanted (owner, 19 September 2026): nothing reads a log reference, and the ' +
+      "copy of the editor's log stays a local troubleshooting aid kept out of the " +
+      'project (CLARVIS.md §6.8)',
   },
   'clarvis.ravis_provider@1': {
     version: '1.0.0',

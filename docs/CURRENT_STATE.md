@@ -782,6 +782,25 @@ reader (every editor window; `Bridge.capabilities`), and `unavailable` with its 
 or the capability switch removed, 2 fail; 2,192 fast and 33 host tests pass. **Not yet seen live**, which
 needs a window reloaded onto 0.17.20.
 
+**19 Sep (0.17.21): the log copy (M13) fixed, and the log reference dropped.** The owner decided
+`clarvis.logs.reference@1` is not wanted — nothing reads it — so it stays `unavailable` with that
+reason. M13 had four defects, found by the CLARVIS session: it `find`-ed a desktop-only `1-main.log`
+(nothing on desktop, where the file is `main.log` and belongs to the main process; the desktop editor's
+folder under code-server; possibly another window's log); it wrote `.clarvis/vscode.log` inside the
+project, where the agent or a Codex task could read it and git could commit it; its approval was a
+modal on every start, forgotten on reload; and it truncated the copy on each start. Now
+(`src/logtailing/`): the source is this window's extension-host log beside `context.logUri`
+(`exthost.log` desktop, `remoteexthost.log` code-server); the copy is appended to
+`context.storageUri/vscode.log`, outside the project, resuming at the byte it reached and set aside once
+past 20 MB; approval is remembered per workspace until "Clarvis: Revoke Log Copying" (new), which stops
+the copy and offers to move it to the Trash; Stop holds across a reload until Start; the `tail` is a
+spawned child ended by a disposable (it was `execFile`, which buffers all output and kills the process
+past a megabyte); and a start that finds the old in-project copy says so and offers to move it to the
+Trash. Deactivation no longer pops "not currently tailing". **Checked:** 3 new fast tests (the source on
+both hosts, the resume point, `tail`'s offset), one failing with `remoteexthost.log` removed; a new host
+test finds the real editor's extension-host log; `tail -c +N -f` checked on macOS and GNU coreutils 9.4;
+2,195 fast and 34 host tests pass. **Not yet used live** by the owner.
+
 ## The complexity budget, and where it stands
 
 `eslint.config.mjs` enforces `complexity: 15`, `max-lines-per-function: 120` and

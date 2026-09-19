@@ -322,6 +322,12 @@ No login shell and no TTY is assumed on the command path. Confined: sandboxProfi
 
 **Limitation.** One genuine desktop assumption, in a diagnostic feature rather than the agent: logTailing.ts:11-22 `getLogDir()` hardcodes `~/Library/Application Support/Code/logs` on darwin and shells `find` at it (logTailing.ts:28) then `tail -f` (logTailing.ts:102). Under code-server the logs live at ~/.local/share/code-server/logs. That desktop directory does exist on this Mac (`ls -d` succeeds, desktop VS Code is installed), so `clarvis.startLogTailing` will not error — it will silently tail a different editor's logs. Separately, PATH: `shell:true` gives a non-login /bin/sh, so any command relying on shims added by ~/.zshrc (nvm, pyenv, rbenv) resolves only if the extension host's inherited PATH already carries them; that inheritance is unverified and is the main thing that could differ between a code-server started from a terminal and a desktop VS Code started from Finder.
 
+**Resolved in Clarvis 0.17.21 (19 September 2026), not yet re-graded live.** The copy now reads this
+window's extension-host log beside `context.logUri` — `exthost.log` on desktop, `remoteexthost.log`
+under code-server (`src/logtailing/logSource.ts`) — with no hard-coded folder and no `find`; a host
+test asserts the file is found in the real editor. The copy is kept in `context.storageUri`, outside
+the workspace.
+
 ### `PASS` — child_process and the command sandbox (end to end, inside code-server)
 
 **Settled 30 August 2026, and the filesystem is the evidence rather than the log line.** The

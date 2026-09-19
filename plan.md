@@ -5740,6 +5740,9 @@ without the fix (0.17.17).
       scoring the ecosystem's scenario 4)
 - [x] `clarvis.diagnostics.summary@1`: `GET /v1/diagnostics`, problems counted by severity and checker,
       never a file or message (0.17.20)
+- [x] M13's log copy fixed: this window's extension-host log on either host, kept outside the project,
+      approved per workspace with a revoke, appended and resumed (0.17.21); `clarvis.logs.reference@1`
+      dropped as not wanted
 
 ---
 

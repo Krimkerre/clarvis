@@ -59,7 +59,9 @@ import { runVoiceCheck } from './personality/voiceCheck';
 import { SlowModelWatch, slowModelLine } from './personality/slowModel';
 import { dropLoads, ourLoadedIds, staleLoads, tuneLoads } from './model/lmStudioTune';
 import { spokenPart } from './chat/replyDelivery';
-import { startTailing, stopTailing } from './logtailing/logTailing';
+import { registerLogTailing } from './logtailing/logTailing';
+import { hostLogFor } from './logtailing/logSource';
+import * as fs from 'fs';
 
 
 // Held at module scope only because deactivate() has no way to receive anything
@@ -81,7 +83,7 @@ let bridge: BridgeSlot<BridgeHandle> | undefined;
  * Composition root: builds the pieces, wires them together, registers them for
  * teardown. The actual behavior lives in the collaborators, not here.
  */
-export function activate(context: vscode.ExtensionContext): void {
+export function activate(context: vscode.ExtensionContext): ClarvisExports {
   // Local binding: `log` is module-scoped (deactivate() needs it) and therefore
   // mutable, which stops TypeScript narrowing it inside the closures below.
   const logger = new ClarvisLog(context.logUri);
@@ -243,12 +245,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // here, so the budget is what limits how much talking happens — not the scope.
   announcer.onAnnounce((message, occasion) => voice.say(message, occasion));
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.startLogTailing', () => startTailing(logger))
-  );
-  context.subscriptions.push(
-    vscode.commands.registerCommand('clarvis.stopLogTailing', () => stopTailing(logger))
-  );
+  // M13's log copy: its commands, its stop on shutdown, and its resume where approved.
+  registerLogTailing(context, logger);
 
   // **Last, and only if asked.** `clarvis.bridge.enabled` is false by default, and
   // `startBridge` returns undefined without binding anything when it is — no
@@ -285,6 +283,16 @@ export function activate(context: vscode.ExtensionContext): void {
       })
     );
   }
+  return { logCopySource: () => hostLogFor(context.logUri.fsPath, fs.existsSync) };
+}
+
+/**
+ * What activation hands back. Only the log copy's source today, so the host suite can check
+ * against the real editor that M13 finds this window's extension-host log (a renamed file
+ * would otherwise fail only when someone needed the log).
+ */
+export interface ClarvisExports {
+  readonly logCopySource: () => string | undefined;
 }
 
 
@@ -827,9 +835,8 @@ function startPersonality(
  * (from M4 onward) is written synchronously via workspace.fs, never via the log.
  */
 export async function deactivate(): Promise<void> {
-  if (log) {
-    stopTailing(log);
-  }
+  // The log copy stops through its own disposable (`registerLogTailing`); this used to call a
+  // stop that also popped "not currently tailing" on every window close.
   log?.write('Clarvis deactivated.');
   // **Returned, so VS Code waits for it.** Stopping tells NERVIS this window is gone;
   // started and not awaited, the host ended first and a closed window stayed listed as

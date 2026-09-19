@@ -2,7 +2,7 @@
   "name": "clarvis",
   "displayName": "Clarvis",
   "description": "Clippy's presence. Jarvis's competence. A butler's disdain.",
-  "version": "0.17.20",
+  "version": "0.17.21",
   "publisher": "Krimkerre",
   "license": "MIT",
   "repository": {
@@ -157,11 +157,15 @@
       },
       {
         "command": "clarvis.startLogTailing",
-        "title": "Clarvis: Start Tailing VS Code Logs"
+        "title": "Clarvis: Start Copying This Window's Log"
       },
       {
         "command": "clarvis.stopLogTailing",
-        "title": "Clarvis: Stop Tailing VS Code Logs"
+        "title": "Clarvis: Stop Copying This Window's Log"
+      },
+      {
+        "command": "clarvis.revokeLogCopying",
+        "title": "Clarvis: Revoke Log Copying"
       }
     ],
     "configuration": {

@@ -27,4 +27,12 @@ suite('extension activation', () => {
     const missing = declared.filter((command) => !registered.has(command));
     assert.deepEqual(missing, [], `declared but never registered: ${missing.join(', ')}`);
   });
+
+  test("M13 finds this window's extension-host log in the real editor", async () => {
+    const ext = vscode.extensions.getExtension('Krimkerre.clarvis')!;
+    const exports = (await ext.activate()) as { logCopySource: () => string | undefined };
+    const source = exports.logCopySource();
+    assert.ok(source, 'no exthost.log or remoteexthost.log beside the extension log folder');
+    assert.match(source, /(remote)?exthost\.log$/);
+  });
 });

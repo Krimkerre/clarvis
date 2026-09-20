@@ -32,6 +32,8 @@ import { currentEngineChoice, runSkillsLookup, takeRunLock } from './engine/engi
 import { gather, reviewRun } from './agent/reviewWizard';
 import { describeRun, ReviewAction } from './agent/runReview';
 import { LAST_RUN_KEY, renderRunSummary, RunRecord } from './agent/runLedger';
+import { BASE_BRANCH_KEY } from './agent/AgentBranch';
+import { MachineMemento } from './storage/machineMemento';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
@@ -92,6 +94,20 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
   log = logger;
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');
+
+  // **The two values that decide what happens to somebody's branches live on this machine**
+  // (20 September 2026): the base branch a run is merged back into, and the last run's file list
+  // that "Start fresh" commits. `workspaceState` is the browser's in code-server, so those were
+  // per browser profile. Everything else still goes there, untouched — `MachineMemento` passes it
+  // through. Loading is a file read; the copy is refreshed before anything acts on it.
+  const machine = new MachineMemento(context, [BASE_BRANCH_KEY, LAST_RUN_KEY],
+                                     context.workspaceState, (message) => logger.write(message));
+  void machine.load();
+  // The same context with that memento in place of `workspaceState`, so every service built below
+  // reads and writes these two keys through it without a constructor of its own for them.
+  const onMachine = Object.create(context, {
+    workspaceState: { value: machine, enumerable: true },
+  }) as vscode.ExtensionContext;
 
   const { avatar, panel } = createAvatar(context, logger);
   registerDebugStateCommand(context, avatar);
@@ -212,11 +228,11 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
   // because it reads the state those three own.
   startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
 
-  const agentTerminal = registerAgentCommands(context, logger, models, toTranscriptSpoken, agentBusy);
+  const agentTerminal = registerAgentCommands(onMachine, logger, models, toTranscriptSpoken, agentBusy);
   registerPlanningCommand(context, models, logger, liveLines);
   registerRecordMilestone(context, models, logger, () => chat);
 
-  chat = startChat(context, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
+  chat = startChat(onMachine, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
   chat.setLiveLines(liveLines);
   // One writer, reachable from every surface — see §2.2. Set as early as the model
   // layer exists, so the first dialog of a session is already in character.

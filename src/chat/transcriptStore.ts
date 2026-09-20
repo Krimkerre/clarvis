@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from 'crypto';
+import { randomUUID } from 'crypto';
 import * as vscode from 'vscode';
+import { WorkspaceFile } from '../storage/workspaceFile';
 import { Session } from './history';
 import {
   emptyFile,
@@ -18,14 +19,11 @@ const HISTORY_KEY = 'clarvis.chat.history';
 /**
  * Where a conversation is kept: a file under `globalStorageUri`, one per workspace.
  *
- * Named by a hash of the workspace folder, as `memory/PatternStore.ts` does for its notes, and
- * under `chats/` so the two cannot collide. The folder's own path is written inside the file, so a
- * moved project or a hash collision can be recognised rather than guessed at.
- *
- * **Every write re-reads first** (`transcriptFile.withSession`): two windows may hold the same
- * workspace, each with its own live session, and a whole-file write would drop the other's last
- * turn. The write itself is a temporary file renamed into place, so a crash mid-write leaves the
- * previous file rather than half of a new one.
+ * `storage/WorkspaceFile` puts it under `chats/`, named by a hash of the workspace folder, and
+ * does the re-read-and-rename that keeps two windows from overwriting each other; the folder's own
+ * path is written inside the file, so a moved project or a hash collision can be recognised rather
+ * than guessed at. **Every write replaces only this window's session** (`transcriptFile.withSession`):
+ * two windows may hold the same workspace, each with its own live one.
  *
  * **The old key-value store is read exactly once**, when this file does not exist yet, and never
  * written again: two records of one conversation diverge the moment somebody opens a second
@@ -37,29 +35,23 @@ export class TranscriptStore {
   /** This window's session, so its writes never disturb another window's. */
   readonly sessionId = randomUUID();
 
+  private readonly file: WorkspaceFile<TranscriptFile>;
+
   constructor(
     private readonly context: vscode.ExtensionContext,
     private readonly log: (message: string) => void,
     private readonly now: () => number = Date.now
-  ) {}
-
-  private get folder(): string {
-    return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? 'no-workspace';
+  ) {
+    this.file = new WorkspaceFile(context, 'chats', parseFile);
   }
 
-  private get fileUri(): vscode.Uri {
-    const key = createHash('sha256').update(this.folder).digest('hex').slice(0, 16);
-    return vscode.Uri.joinPath(this.context.globalStorageUri, 'chats', `${key}.json`);
+  private get folder(): string {
+    return this.file.folder;
   }
 
   /** What is on disk, or what the old keys hold when nothing is. Any failure reads as empty. */
   async read(): Promise<TranscriptFile> {
-    try {
-      const bytes = await vscode.workspace.fs.readFile(this.fileUri);
-      return parseFile(JSON.parse(new TextDecoder().decode(bytes)), this.folder);
-    } catch {
-      return this.migrated();
-    }
+    return this.file.read(() => this.migrated());
   }
 
   private migrated(): TranscriptFile {
@@ -67,21 +59,14 @@ export class TranscriptStore {
     const history = this.context.workspaceState.get(HISTORY_KEY);
     const file = fromMementos(this.folder, current, history, this.now());
     if (file.live.length > 0 || file.history.length > 0) {
-      this.log(`chat: moving ${file.history.length} earlier conversation(s) into ${this.fileUri.fsPath}`);
+      this.log(`chat: moving ${file.history.length} earlier conversation(s) into ${this.file.uri.fsPath}`);
     }
     return file;
   }
 
   /** The file with `change` applied, written whole through a temporary file. */
   async update(change: (file: TranscriptFile) => TranscriptFile): Promise<TranscriptFile> {
-    const next = change(await this.read());
-    const folder = vscode.Uri.joinPath(this.context.globalStorageUri, 'chats');
-    // The directory may not exist on a fresh installation, and `writeFile` will not make it.
-    await vscode.workspace.fs.createDirectory(folder);
-    const temporary = vscode.Uri.joinPath(folder, `.${this.sessionId}.writing`);
-    await vscode.workspace.fs.writeFile(temporary, new TextEncoder().encode(JSON.stringify(next)));
-    await vscode.workspace.fs.rename(temporary, this.fileUri, { overwrite: true });
-    return next;
+    return this.file.update(() => this.migrated(), change);
   }
 
   /** This window's live session, written on every turn. */

@@ -3,6 +3,7 @@ import { workspaceFolderPath } from './gitExtension';
 import { repositoryForFolder } from './repositoryForFolder';
 import { join } from 'path';
 import { branchNameFor, adviseOnGit, continuationBase, continuationDecision, freshStartRefusal, GitProblem, isAgentBranch, stackedAdvice, startingBase, type BranchContinuation } from './branchNames';
+import { refreshed } from '../storage/machineMemento';
 import { CommitPlan, planCommit } from './dirtyAtStart';
 import { hasGitBinary } from './gitBinary';
 import { atRiskPaths } from './atRisk';
@@ -197,7 +198,7 @@ export class AgentBranch {
     this.created = continuation.branch;
     // The base stays the branch the owner started from, so undo and "fold it back" still mean that branch. A Build on
     // names the branch its question offered (plan.md M15); the remembered base is never overwritten with anything.
-    this.previousBranch = this.baseOfContinuation(continuation, existing);
+    this.previousBranch = await this.baseOfContinuation(continuation, existing);
     this.log(`branch: continuing ${continuation.branch} at ${continuation.headCommit.slice(0, 7)}, based on ${this.previousBranch ?? 'nothing remembered'}`);
     if (continuation.leftoversMessage) await this.commitLeftovers(repository, continuation.leftoversMessage);
     return { isolated: true, branch: continuation.branch };
@@ -218,6 +219,9 @@ export class AgentBranch {
    * branched off run one.
    */
   private async baseFor(head: string | undefined, existing: string[], unborn: boolean): Promise<string | undefined> {
+    // From the file rather than a copy loaded at activation: the remembered base lives on this
+    // machine (`storage/machineMemento.ts`), and another window may have changed it since.
+    await refreshed(this.memento);
     // The rule lives in `startingBase`, shared with the question that names this branch before a Codex task.
     const base = startingBase(head, unborn, this.memento?.get(BASE_BRANCH_KEY), existing);
     if (base && !isAgentBranch(base)) await this.memento?.update(BASE_BRANCH_KEY, base);
@@ -421,7 +425,8 @@ export class AgentBranch {
    * on an agent branch with nothing remembered is a rare state, and branching from a
    * plausible base beats branching from the previous task's work.
    */
-  private baseOfContinuation(continuation: BranchContinuation, existing: string[]): string | undefined {
+  private async baseOfContinuation(continuation: BranchContinuation, existing: string[]): Promise<string | undefined> {
+    await refreshed(this.memento);
     // The base a Build on names, else `startingBase` without a HEAD to start from: the remembered base, then main,
     // master or develop (`continuationBase`).
     return continuationBase(continuation.base, existing, this.memento?.get(BASE_BRANCH_KEY));

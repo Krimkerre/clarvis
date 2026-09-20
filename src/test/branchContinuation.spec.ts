@@ -22,6 +22,9 @@ import type { ModelService } from '../model/ModelService';
 import { fakeHttp, FakeRavisRelay } from './fakes/FakeRavisRelay';
 import { invokedSkillLog, invokedSkillSection, loadInvokedSkill } from '../agent/tools/skillTools';
 import { exampleNamed, SKILL_READ_ROUTE } from './fakes/relayContract';
+import { BASE_BRANCH_KEY } from '../agent/AgentBranch';
+import { LAST_RUN_KEY } from '../agent/runLedger';
+import { MachineMemento } from '../storage/machineMemento';
 
 /**
  * Branch continuation against the real Git extension (plan.md M15 C3; review B2). After Codex commits on `clarvis/x`,
@@ -205,9 +208,8 @@ async function ownEngineBuildsOn(root: string, git: (...args: string[]) => strin
   await gitCaughtUp(root, () => true);
   const { engine } = await placedRunOptions(new GitFacts(root), { kind: 'build_on', task: found }, 'main');
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-own-build-on-storage-'));
-  const workspaceState = memento();
-  await workspaceState.update('clarvis.agent.baseBranch', 'main');
-  const context = { workspaceState, globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const context = standInContext(storage);
+  await context.workspaceState.update('clarvis.agent.baseBranch', 'main');
   const model = standInModel('farewell.py', 'import sys\nprint("BYE" if "--shout" in sys.argv else "bye")\n', 'Added --shout to farewell.py.');
   const runner = new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, undefined, undefined, engine);
   const events: AgentEvent[] = [];
@@ -222,7 +224,7 @@ async function ownEngineBuildsOn(root: string, git: (...args: string[]) => strin
     assert.match(model.systems[0] ?? '', /The earlier task, as it was asked: Add a farewell script/);
     assert.match(model.systems[0] ?? '', /What you said when it ended: Added farewell\.py, which prints bye\./);
     assert.deepStrictEqual(runner.branches, { working: left, startedFrom: 'main' }, 'the landing question offers main');
-    assert.strictEqual(workspaceState.get('clarvis.agent.baseBranch'), 'main', 'never overwritten with the clarvis branch');
+    assert.strictEqual(context.workspaceState.get('clarvis.agent.baseBranch'), 'main', 'never overwritten with the clarvis branch');
     assert.ok(!events.some((event) => /sits on top of/.test(event.text)), `no stacked-run line: ${JSON.stringify(events)}`);
   } finally {
     git('checkout', '--quiet', 'main');
@@ -248,7 +250,7 @@ async function freshStartNeverStacks(root: string, git: (...args: string[]) => s
   const memory = new Map<string, string>([['clarvis.agent.baseBranch', 'main']]);
   const remembered = { get: (key: string) => memory.get(key), update: async (key: string, value: string) => void memory.set(key, value) };
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-fresh-storage-'));
-  const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const context = standInContext(storage);
 
   try {
     const fresh = await new AgentBranch(() => undefined, remembered).begin('Start something new', { fresh: true });
@@ -293,7 +295,7 @@ async function ownEngineReadsSkills(root: string, git: (...args: string[]) => st
   const branches = () => git('for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');
   const before = branches();
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-skills-storage-'));
-  const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const context = standInContext(storage);
   const runnerFor = (model: { models: ModelService }, activity?: Activity) =>
     new AgentRunner(context, root, model.models, standInTerminal(), () => undefined, undefined, activity, undefined, {}, lookup);
   await context.workspaceState.update('clarvis.agent.baseBranch', 'main');
@@ -392,7 +394,7 @@ async function ownEngineLoadsAnInvokedSkill(root: string, git: (...args: string[
   const branches = () => git('for-each-ref', '--format=%(refname:short)', 'refs/heads').split('\n');
   const before = branches();
   const storage = fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-invoked-storage-'));
-  const context = { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+  const context = standInContext(storage);
   const logs: string[] = [];
   const runnerFor = (model: { models: ModelService }) =>
     new AgentRunner(context, root, model.models, standInTerminal(), (line) => void logs.push(line), undefined, undefined, undefined, {}, lookup);
@@ -635,8 +637,20 @@ async function codexChangeIsUndone(root: string, git: (...args: string[]) => str
   }
 }
 
-function standInContext(storage: string): vscode.ExtensionContext {
-  return { workspaceState: memento(), globalState: memento(), globalStorageUri: vscode.Uri.file(storage) } as unknown as vscode.ExtensionContext;
+/**
+ * A context shaped like the real one since 20 September 2026: the branch memory on this machine,
+ * everything else in the editor's own store.
+ *
+ * `activate` wraps `workspaceState` in a `MachineMemento` that owns `clarvis.agent.baseBranch` and
+ * `clarvis.agent.lastRun` (`storage/machineMemento.ts`), because in code-server the editor's store
+ * is the browser's — and a base branch read from the wrong browser profile merges a run into the
+ * wrong branch. These tests go through the same wrapper, so what they assert is what runs.
+ */
+function standInContext(storage: string, editorStore: vscode.Memento = memento()): vscode.ExtensionContext {
+  const base = { workspaceState: editorStore, globalState: memento(), globalStorageUri: vscode.Uri.file(storage) };
+  const machine = new MachineMemento(base as unknown as vscode.ExtensionContext,
+                                     [BASE_BRANCH_KEY, LAST_RUN_KEY], editorStore);
+  return { ...base, workspaceState: machine } as unknown as vscode.ExtensionContext;
 }
 
 function memento(): vscode.Memento {

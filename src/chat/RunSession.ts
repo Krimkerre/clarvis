@@ -13,6 +13,7 @@ import { CODEX_GIT_LINES, gitSetupChoice, gitSetupChoices, offerCodexGitSetup } 
 import { whereCodexWorks, type CodexWhere } from './codexLeftWork';
 import { whereClarvisWorks, type ClarvisWhere } from './clarvisLeftWork';
 import { BASE_BRANCH_KEY } from '../agent/AgentBranch';
+import { refreshed } from '../storage/machineMemento';
 import { isAgentBranch } from '../agent/branchNames';
 import type { LeftWorkFound } from '../agent/leftBranches';
 import { earlierRunPort, findLeftRuns, placedRunOptions, rememberLeftRun, type LeftRunTask } from '../agent/leftRuns';
@@ -466,7 +467,10 @@ export class RunSession {
     const git = new GitFacts(folder);
     try {
       return await whereCodexWorks({
-        find: () => findLeftWork({ relay, tokens: new TokenStore(), git, root: folder, rememberedBase: this.context.workspaceState.get<string>(BASE_BRANCH_KEY), log: this.log }),
+        find: async () => {
+          await refreshed(this.context.workspaceState);
+          return findLeftWork({ relay, tokens: new TokenStore(), git, root: folder, rememberedBase: this.context.workspaceState.get<string>(BASE_BRANCH_KEY), log: this.log });
+        },
         unattended: () => codexModeFor(chatModeSetting()) === 'unattended',
         ask: (choices, accepts) => this.askWhere(choices, accepts, 'where Codex should work'),
         note: (line) => this.note(line),
@@ -1343,6 +1347,9 @@ export class RunSession {
       'Show me first'
     );
 
+    // From the file rather than this window's copy of it: the branch a run is merged back into
+    // lives on the machine now, and another window may have changed it while this run went on.
+    await refreshed(this.context.workspaceState);
     const base = this.context.workspaceState.get<string>('clarvis.agent.baseBranch');
 
     if (answer === 'Check it works' && testCommand) {

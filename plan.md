@@ -1843,12 +1843,26 @@ instead of dead-ending in a notification.
     decides otherwise.
   - **In the browser case this writes conversation text to the server's disk**, where nothing was
     written before. Same as desktop, and the owner's own machine either way.
+  - **The branch memory followed on 20 September 2026**: `clarvis.agent.baseBranch` and
+    `clarvis.agent.lastRun` are on the machine too, through `storage/MachineMemento` — a `Memento`
+    that owns those two keys, keeps them in `globalStorageUri/state/<hash>.json`, and passes every
+    other key through to `workspaceState`. `activate` wraps the context in it once, so every
+    service reads and writes them through it without a constructor of its own. They moved first
+    because they decide what happens to branches rather than to text: the base branch is where a
+    run is merged back to, and the last run's file list is what "Start fresh" commits.
+    - **Written one key at a time**, for a failure a conversation does not have: window A loads at
+      activation, window B changes the base branch, A finishes a run and writes its last-run
+      record — a whole-file write would carry A's stale base branch back over B's. Last write wins
+      per key, which is the honest answer for a single value per workspace.
+    - **Re-read before acting**, not trusted from activation: `AgentBranch` before it picks a base
+      or continues a branch, and `RunSession` before merge-back and before finding left work
+      (`storage/machineMemento.refreshed`). A stale read here merges a run into the wrong branch.
+    - `keys()` answers with both stores, so code that enumerates them still sees these two.
   - **Still in `workspaceState`, and still per-browser in code-server**: a paused planning
     interview (`planning/interviewStore.ts`), the log-copy approval and its byte offset,
     `clarvis.branchFlow.seen`/`.kept`, `clarvis.planning.offerDeclined`, the last failing command,
-    the blocker record, the last run and `clarvis.agent.baseBranch`, and the NERVIS task track.
-    The last two matter most — "Start fresh"/"Build on" and the merge-back read them — and they
-    are the candidates for the same move, one at a time rather than in one sweep.
+    the blocker record, and the NERVIS task track. Each costs a repeated question rather than a
+    wrong branch, and they follow one at a time rather than in one sweep.
 - Rate limits (§7) do **not** apply — those govern *unsolicited* surfaces. A question
   asked is never an interruption, and neither is a task you started.
 - `Clarvis: Stop` aborts a running task at the next tool boundary, always available.

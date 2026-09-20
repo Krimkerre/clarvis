@@ -23,12 +23,9 @@ import { WorkspaceFile } from './workspaceFile';
 /**
  * The keys kept on this machine, and why each earns it.
  *
- * **Deliberately not here.** `clarvis.agent.allowUnconfinedCommands` is a permission the owner
- * grants for a project, and moving it would widen a grant made in one browser to every browser on
- * the machine — a decision for the owner, not a side effect of a storage change.
- * `clarvis.bridge.identity` holds the token a window registers to NERVIS with, and a credential
- * belongs where the editor puts credentials rather than in a plain file. `clarvis.recentFiles` and
- * `clarvis.agent.checkpoint` rebuild themselves from use.
+ * **Deliberately not here.** `clarvis.bridge.identity` holds the token a window registers to NERVIS
+ * with, and a credential belongs where the editor puts credentials rather than in a plain file.
+ * `clarvis.recentFiles` and `clarvis.agent.checkpoint` rebuild themselves from use.
  */
 export const MACHINE_KEYS = [
   // Wrong actions if read from the wrong browser: where a run is folded back to, and the file list
@@ -51,6 +48,13 @@ export const MACHINE_KEYS = [
   // What was in the way last time, which chat answers "why did that fail" from.
   'clarvis.agent.lastMissing',
   'clarvis.lastFailure',
+  // **A permission, moved on the owner's decision** (20 September 2026), and the one key here that
+  // widens something rather than restoring it: "this machine has no sandbox — run commands anyway?"
+  // answered in one browser now answers it in every browser on this machine, for this project. The
+  // question is about the machine, which is where a sandbox is or is not, so answering it once per
+  // browser was an accident of where the answer was kept. Still per project, still asked before
+  // each command, and files are still snapshotted first.
+  'clarvis.agent.allowUnconfinedCommands',
 ] as const;
 
 export class MachineMemento implements vscode.Memento {

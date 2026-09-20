@@ -72,7 +72,7 @@ suite('what a project remembers, kept on this machine', () => {
       'the old copy is left where it was — a migration must not be the thing that loses the data');
   });
 
-  test('a paused interview, an approval and a declined offer moved too, and a permission did not', async () => {
+  test('a paused interview, an approval and the sandbox answer all moved', async () => {
     const storage = storageFolder();
     const workspaceState = memento();
     await workspaceState.update('clarvis.planning.interview', { seed: 'a task', at: 1 });
@@ -89,10 +89,10 @@ suite('what a project remembers, kept on this machine', () => {
       'a half-answered interview is work in progress, not a question worth asking twice');
     assert.strictEqual(written.values['clarvis.logCopy.approvedAt'], 1_758_000_000);
     assert.strictEqual(written.values['clarvis.branchFlow.seen'], 'main');
-    assert.strictEqual('clarvis.agent.allowUnconfinedCommands' in written.values, false,
-      'a permission granted in one browser must not silently widen to every browser on the machine');
-    assert.strictEqual(machine.get('clarvis.agent.allowUnconfinedCommands'), true,
-      'it still works, through the editor’s own store');
+    assert.strictEqual(written.values['clarvis.agent.allowUnconfinedCommands'], true,
+      "the owner's decision, 20 September 2026: the sandbox question is about the machine, so its "
+      + 'answer belongs to the machine — once per project rather than once per browser');
+    assert.strictEqual(machine.get('clarvis.agent.allowUnconfinedCommands'), true);
   });
 
   test('what is on disk is there before anything can ask, without waiting for a load', async () => {
@@ -114,14 +114,14 @@ suite('what a project remembers, kept on this machine', () => {
     const machine = mementoOn(storage, workspaceState);
     await machine.load();
 
-    await machine.update('clarvis.recentFiles', ['src/app.ts']);
+    await machine.update('clarvis.bridge.identity', { instanceId: 'a window' });
     await machine.update(BASE_BRANCH_KEY, 'main');
 
-    assert.deepStrictEqual(workspaceState.get('clarvis.recentFiles'), ['src/app.ts'],
-      'a key this does not own is passed straight through');
-    assert.deepStrictEqual(machine.get('clarvis.recentFiles'), ['src/app.ts']);
+    assert.deepStrictEqual(workspaceState.get('clarvis.bridge.identity'), { instanceId: 'a window' },
+      'a credential stays where the editor keeps credentials, and is passed straight through');
+    assert.deepStrictEqual(machine.get('clarvis.bridge.identity'), { instanceId: 'a window' });
     assert.deepStrictEqual([...machine.keys()].sort(),
-      ['clarvis.agent.baseBranch', 'clarvis.recentFiles'],
+      ['clarvis.agent.baseBranch', 'clarvis.bridge.identity'],
       'code that walks the keys must still see the ones that moved');
   });
 

@@ -1866,13 +1866,19 @@ instead of dead-ending in a notification.
     answers "why did that fail" from. The file is also read synchronously when the memento is
     built, because `get` is synchronous and `activate` cannot await: a value that reads as absent
     for the first moments is a paused interview that looks abandoned.
+  - **The sandbox permission moved too, on the owner's decision the same day.**
+    `clarvis.agent.allowUnconfinedCommands` records the answer to "this machine has no sandbox —
+    run commands anyway?" (§4.7's unconfined path). It is the one key here that *widens* rather
+    than restores: answered in one browser it now answers for every browser on this machine, for
+    that project. The question is about the machine, which is where a sandbox is or is not, so
+    answering it once per browser was an accident of where the answer was kept — and it is still
+    per project, still asked before each command, with files snapshotted first. Offered as the
+    owner's call rather than made as a side effect of the storage change.
   - **Deliberately left in `workspaceState`**, and named in `MACHINE_KEYS`'s comment so the next
-    reader does not assume an oversight: `clarvis.agent.allowUnconfinedCommands` is a permission
-    the owner grants per project, and moving it would widen a grant made in one browser to every
-    browser on the machine — the owner's decision, not a side effect of a storage change;
-    `clarvis.bridge.identity` holds the token a window registers to NERVIS with, and a credential
-    belongs where the editor keeps credentials rather than in a plain file; `clarvis.recentFiles`
-    and `clarvis.agent.checkpoint` rebuild themselves from use.
+    reader does not assume an oversight: `clarvis.bridge.identity` holds the token a window
+    registers to NERVIS with, and a credential belongs where the editor keeps credentials rather
+    than in a plain file; `clarvis.recentFiles` and `clarvis.agent.checkpoint` rebuild themselves
+    from use.
 - Rate limits (§7) do **not** apply — those govern *unsolicited* surfaces. A question
   asked is never an interruption, and neither is a task you started.
 - `Clarvis: Stop` aborts a running task at the next tool boundary, always available.

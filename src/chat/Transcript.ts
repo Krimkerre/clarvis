@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import { ButlerViewProvider } from '../panels/ButlerViewProvider';
 import { appendTurn, turnsForModel, Turn } from './thread';
-import { archiveSession, describeSession, formatSession, parseHistory, Session } from './history';
+import { describeSession, formatSession, Session } from './history';
+import { TranscriptStore } from './transcriptStore';
 
 /**
  * The conversation: what was said, where it is kept, and what happens to it afterwards.
@@ -13,14 +14,16 @@ import { archiveSession, describeSession, formatSession, parseHistory, Session }
  *
  * **Persisted continuously rather than saved at shutdown.** `deactivate` is not
  * guaranteed to run — a crash, a force quit, or a killed extension host all skip it —
- * and a transcript that survives only clean exits is one you cannot rely on.
+ * and a transcript that survives only clean exits is one you cannot rely on. Proven on
+ * 20 September 2026: the extension host was killed 0.17 seconds into an answer, and the
+ * question was in the archive when the editor came back.
+ *
+ * **Kept in a file on this machine, not in `workspaceState`** (20 September 2026, same
+ * test). VS Code keeps workspace state in the *browser* when the editor is code-server,
+ * so a conversation belonged to one browser profile and a cleared browser lost it;
+ * `TranscriptStore` writes under `globalStorageUri`, which is the machine running the
+ * extension host in either editor.
  */
-
-/** The live session, written as it happens. */
-const CURRENT_KEY = 'clarvis.chat.current';
-
-/** Past sessions, newest first. */
-const HISTORY_KEY = 'clarvis.chat.history';
 
 export class Transcript {
   /**
@@ -36,11 +39,16 @@ export class Transcript {
   /** When this session began — the archive is ordered by it. */
   private readonly startedAt = Date.now();
 
+  private readonly store: TranscriptStore;
+
   constructor(
-    private readonly context: vscode.ExtensionContext,
+    context: vscode.ExtensionContext,
     private readonly panel: ButlerViewProvider,
-    private readonly log: (message: string) => void
-  ) {}
+    private readonly log: (message: string) => void,
+    store?: TranscriptStore
+  ) {
+    this.store = store ?? new TranscriptStore(context, log);
+  }
 
   /** Whether anything has been said yet, for the surfaces that ask before acting. */
   get isEmpty(): boolean {
@@ -99,7 +107,7 @@ export class Transcript {
 
   async persist(): Promise<void> {
     const session: Session = { startedAt: this.startedAt, turns: this.turns };
-    await this.context.workspaceState.update(CURRENT_KEY, session);
+    await this.store.save(session);
   }
 
   /**
@@ -109,20 +117,18 @@ export class Transcript {
    * happen — this way a crashed window's conversation is filed on next launch.
    */
   async rollOver(): Promise<void> {
-    const leftover = parseHistory([this.context.workspaceState.get(CURRENT_KEY)])[0];
-    if (!leftover || leftover.turns.length === 0) return;
-
-    const history = parseHistory(this.context.workspaceState.get(HISTORY_KEY));
-    await this.context.workspaceState.update(HISTORY_KEY, archiveSession(history, leftover));
-    await this.context.workspaceState.update(CURRENT_KEY, undefined);
-    this.log(`chat: filed previous session (${leftover.turns.length} turns)`);
+    const filed = await this.store.fileLeftovers(this.startedAt);
+    for (const session of filed) {
+      this.log(`chat: filed previous session (${session.turns.length} turns)`);
+    }
   }
 
   async clear(): Promise<void> {
     this.turns = [];
     // Clearing means *delete*, so this is not filed into the archive — otherwise the
-    // button labelled "there is no undo" would quietly keep a copy.
-    await this.context.workspaceState.update(CURRENT_KEY, undefined);
+    // button labelled "there is no undo" would quietly keep a copy. It goes from the
+    // file too: clearing only this window's memory comes back on the next reload.
+    await this.store.forget();
     this.panel.post({ type: 'chat-thread', turns: [] });
     this.log('chat: conversation cleared');
   }
@@ -139,7 +145,7 @@ export class Transcript {
    * exactly the way every other document does, and costs no UI to maintain.
    */
   async showHistory(emptyLine: string): Promise<void> {
-    const history = parseHistory(this.context.workspaceState.get(HISTORY_KEY));
+    const history = await this.store.history();
 
     if (history.length === 0) {
       void vscode.window.showInformationMessage(emptyLine);

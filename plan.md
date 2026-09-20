@@ -616,7 +616,7 @@ No spawned process, no IPC, no lifecycle code of our own: `activate()` subscribe
 | Diagnostics | `languages.onDidChangeDiagnostics` | Error patterns without parsing output |
 | Git state | `extensions.getExtension('vscode.git').exports.getAPI(1)` | Branch, dirty count, HEAD — no shelling out to `git` |
 | Rendering | Webview API (§3) | Avatar, quips, click-back |
-| Storage | `context.workspaceState`, `context.globalStorageUri` | Per-project memory (§4.2), cached voice audio (§4.4) |
+| Storage | `context.workspaceState`, `context.globalStorageUri` | Per-project memory (§4.2), cached voice audio (§4.4), conversations (§4.6 — in `globalStorageUri` since 20 September 2026, because `workspaceState` is the browser's in code-server) |
 | Secrets | `context.secrets` (`SecretStorage`) | OS keychain-backed; where the chat (§4.6) and Fish Audio (§4.4) keys live — never `settings.json` |
 | Chat UI | Same webview panel (§3) | Input + transcript under the avatar; no `chatParticipant` API — it's not in every fork |
 | Audio out | Webview `speechSynthesis` (Tier 0) + OS player via `child_process` (Tier 1) | **Revised at M7** — see §4.4. Webview `<audio>` is blocked by Chromium's autoplay policy until the panel has had a click, which the launch briefing can never satisfy |
@@ -1818,8 +1818,37 @@ instead of dead-ending in a notification.
 
 - Streamed replies; avatar `thinking` → `talking` → `neutral`. A running task holds
   `thinking` for its duration (§3), which is exactly what that state was for.
-- Thread persists per workspace in `workspaceState`, capped (last ~50 turns) and
-  clearable via `Clarvis: Clear Conversation`.
+- Thread persists per workspace, capped and clearable via `Clarvis: Clear Conversation`.
+
+  **Amended 20 September 2026: in a file, not in `workspaceState`.** VS Code keeps workspace
+  state in the *browser* when the editor is code-server, which nobody had noticed until the
+  ecosystem's E-C7 recovery test killed the extension host mid-answer and found that nothing had
+  been written on the machine at all; the same editor opened in a second browser showed an empty
+  history. So a conversation belonged to one browser profile, and clearing that browser's site
+  data lost it — a conversation is the owner's record, and losing it silently is the failure.
+  `chat/transcriptStore.ts` writes `globalStorageUri/chats/<hash of the workspace folder>.json`,
+  which is on the machine running the extension host in either editor; `chat/transcriptFile.ts`
+  holds the rules. What follows from the move:
+  - **Every write re-reads and replaces only its own session**, keyed by a session id, because two
+    windows can hold one workspace and a whole-file write would drop the other's last turn. The
+    write goes through a temporary file renamed into place.
+  - **A window still open keeps its conversation.** Only sessions last written before this window
+    started are filed as left behind, so two open windows no longer archive each other's live
+    thread — which the single-key version did.
+  - **`workspaceState` is read once**, when the file does not exist, and never written again; what
+    is there is left rather than deleted, since deleting the only other copy is how a migration
+    becomes the thing that lost the data.
+  - **The cap is now a choice, not a constraint.** §4.6's twenty sessions were a limit because a
+    key-value store is not a database; a file relaxes that, and the number stays until somebody
+    decides otherwise.
+  - **In the browser case this writes conversation text to the server's disk**, where nothing was
+    written before. Same as desktop, and the owner's own machine either way.
+  - **Still in `workspaceState`, and still per-browser in code-server**: a paused planning
+    interview (`planning/interviewStore.ts`), the log-copy approval and its byte offset,
+    `clarvis.branchFlow.seen`/`.kept`, `clarvis.planning.offerDeclined`, the last failing command,
+    the blocker record, the last run and `clarvis.agent.baseBranch`, and the NERVIS task track.
+    The last two matter most — "Start fresh"/"Build on" and the merge-back read them — and they
+    are the candidates for the same move, one at a time rather than in one sweep.
 - Rate limits (§7) do **not** apply — those govern *unsolicited* surfaces. A question
   asked is never an interruption, and neither is a task you started.
 - `Clarvis: Stop` aborts a running task at the next tool boundary, always available.

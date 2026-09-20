@@ -1,3 +1,4 @@
+import { readFileSync } from 'fs';
 import * as vscode from 'vscode';
 import { emptyState, MachineState, migrateInto, parseState, withValue } from './machineState';
 import { WorkspaceFile } from './workspaceFile';
@@ -6,14 +7,12 @@ import { WorkspaceFile } from './workspaceFile';
  * A `Memento` that keeps a named few keys on this machine, and passes everything else through.
  *
  * VS Code keeps `workspaceState` in the browser when the editor is code-server, so anything there
- * belongs to one browser profile (`workspaceFile.ts` has the measurement). For most keys that is a
- * repeated question at worst. For the two this owns it is a wrong action: `clarvis.agent.baseBranch`
- * is the branch a run is merged back into, and `clarvis.agent.lastRun` is the file list "Start
- * fresh" commits for you.
+ * belongs to one browser profile (`workspaceFile.ts` has the measurement) — absent in a second
+ * browser, gone when site data is cleared. `MACHINE_KEYS` is what that costs enough to move.
  *
- * **Owned keys only.** Everything else is handed to `workspaceState` untouched, so moving these two
+ * **Owned keys only.** Everything else is handed to `workspaceState` untouched, so moving these
  * cannot quietly move anything else, and `keys()` answers with both stores' keys — code that walks
- * the keys must still see these.
+ * the keys must still see them.
  *
  * **`get` stays synchronous**, which is what the `Memento` contract promises and what every caller
  * expects, so the file is loaded once at activation and kept in memory. That copy goes stale when
@@ -21,6 +20,39 @@ import { WorkspaceFile } from './workspaceFile';
  * starting a run, continuing one, merging back — call it first. Writes never rely on the copy:
  * they re-read and replace one key (`machineState.withValue`).
  */
+/**
+ * The keys kept on this machine, and why each earns it.
+ *
+ * **Deliberately not here.** `clarvis.agent.allowUnconfinedCommands` is a permission the owner
+ * grants for a project, and moving it would widen a grant made in one browser to every browser on
+ * the machine — a decision for the owner, not a side effect of a storage change.
+ * `clarvis.bridge.identity` holds the token a window registers to NERVIS with, and a credential
+ * belongs where the editor puts credentials rather than in a plain file. `clarvis.recentFiles` and
+ * `clarvis.agent.checkpoint` rebuild themselves from use.
+ */
+export const MACHINE_KEYS = [
+  // Wrong actions if read from the wrong browser: where a run is folded back to, and the file list
+  // "Start fresh" commits (20 September 2026).
+  'clarvis.agent.baseBranch',
+  'clarvis.agent.lastRun',
+  // Work in progress: a planning interview paused halfway, and the task NERVIS handed over.
+  'clarvis.planning.interview',
+  'clarvis.nervisTask',
+  // Answers already given, which a second browser would ask for again: the log copy's approval and
+  // how far it has been copied, the branch-flow question, a declined planning offer, a declined
+  // offer to set git up.
+  'clarvis.logCopy.approvedAt',
+  'clarvis.logCopy.progress',
+  'clarvis.logCopy.on',
+  'clarvis.branchFlow.seen',
+  'clarvis.branchFlow.kept',
+  'clarvis.planning.offerDeclined',
+  'clarvis.agent.gitOfferDeclined',
+  // What was in the way last time, which chat answers "why did that fail" from.
+  'clarvis.agent.lastMissing',
+  'clarvis.lastFailure',
+] as const;
+
 export class MachineMemento implements vscode.Memento {
   private state: MachineState;
   private readonly file: WorkspaceFile<MachineState>;
@@ -32,7 +64,19 @@ export class MachineMemento implements vscode.Memento {
     private readonly log: (message: string) => void = () => undefined
   ) {
     this.file = new WorkspaceFile(context, 'state', parseState);
-    this.state = emptyState(this.file.folder);
+    // **Read before anything can ask.** `get` is synchronous, `activate` cannot await, and a value
+    // that reads as absent for the first moments is a paused interview that looks abandoned or an
+    // approval that looks unasked. Node's own read, because this is the one moment the editor's
+    // asynchronous file API cannot serve; every write still goes through it.
+    this.state = this.readNow();
+  }
+
+  private readNow(): MachineState {
+    try {
+      return parseState(JSON.parse(readFileSync(this.file.uri.fsPath, 'utf8')), this.file.folder);
+    } catch {
+      return emptyState(this.file.folder);
+    }
   }
 
   /**
@@ -42,7 +86,7 @@ export class MachineMemento implements vscode.Memento {
    * fresh installation has no storage folder, and `writeFile` will not make one.
    */
   async load(): Promise<void> {
-    const held = await this.file.read(() => emptyState(this.file.folder));
+    const held = this.readNow();
     const { state, moved } = migrateInto(held, this.owned, (key) => this.fallback.get(key));
     if (moved.length === 0) {
       this.state = state;
@@ -58,6 +102,11 @@ export class MachineMemento implements vscode.Memento {
   /** What the file says now, for the moments that act on these values. */
   async refresh(): Promise<void> {
     this.state = await this.file.read(() => emptyState(this.file.folder));
+  }
+
+  /** The same, without waiting — for a caller that has no `await` to spare. */
+  refreshNow(): void {
+    this.state = this.readNow();
   }
 
   get<T>(key: string): T | undefined;

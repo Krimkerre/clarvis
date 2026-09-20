@@ -5,17 +5,18 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { BASE_BRANCH_KEY } from '../agent/AgentBranch';
 import { LAST_RUN_KEY } from '../agent/runLedger';
-import { MachineMemento } from '../storage/machineMemento';
+import { MACHINE_KEYS, MachineMemento } from '../storage/machineMemento';
 
 /**
- * The branch memory on this machine's disk, through the editor's own file API (20 September 2026).
+ * What a project remembers, on this machine's disk, through the editor's own file API (20 Sep 2026).
  *
- * `machineState.test.ts` pins the rules; this pins the part that touches disk, and the two things
- * a regression would quietly undo: that these keys no longer reach `workspaceState`, and that a
- * workspace which already had them keeps them.
+ * `machineState.test.ts` pins the rules; this pins the part that touches disk, and the things a
+ * regression would quietly undo: that the moved keys no longer reach `workspaceState`, that a
+ * workspace which already had them keeps them, that a key left behind on purpose stays behind, and
+ * that what is on disk is readable before anything can ask for it.
  */
 
-const OWNED = [BASE_BRANCH_KEY, LAST_RUN_KEY];
+const OWNED = MACHINE_KEYS;
 
 function storageFolder(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'clarvis-machine-state-'));
@@ -35,7 +36,7 @@ function stateFiles(storage: string): string[] {
   return fs.existsSync(folder) ? fs.readdirSync(folder).filter((name) => name.endsWith('.json')) : [];
 }
 
-suite('the branch memory, kept on this machine', () => {
+suite('what a project remembers, kept on this machine', () => {
   test('the base branch is written to a file here, and never to the browser-side store', async () => {
     const storage = storageFolder();
     const workspaceState = memento();
@@ -71,20 +72,56 @@ suite('the branch memory, kept on this machine', () => {
       'the old copy is left where it was — a migration must not be the thing that loses the data');
   });
 
+  test('a paused interview, an approval and a declined offer moved too, and a permission did not', async () => {
+    const storage = storageFolder();
+    const workspaceState = memento();
+    await workspaceState.update('clarvis.planning.interview', { seed: 'a task', at: 1 });
+    await workspaceState.update('clarvis.logCopy.approvedAt', 1_758_000_000);
+    await workspaceState.update('clarvis.agent.allowUnconfinedCommands', true);
+    const machine = mementoOn(storage, workspaceState);
+
+    await machine.load();
+    await machine.update('clarvis.branchFlow.seen', 'main');
+
+    const [file] = stateFiles(storage);
+    const written = JSON.parse(fs.readFileSync(path.join(storage, 'state', file), 'utf8'));
+    assert.deepStrictEqual(written.values['clarvis.planning.interview'], { seed: 'a task', at: 1 },
+      'a half-answered interview is work in progress, not a question worth asking twice');
+    assert.strictEqual(written.values['clarvis.logCopy.approvedAt'], 1_758_000_000);
+    assert.strictEqual(written.values['clarvis.branchFlow.seen'], 'main');
+    assert.strictEqual('clarvis.agent.allowUnconfinedCommands' in written.values, false,
+      'a permission granted in one browser must not silently widen to every browser on the machine');
+    assert.strictEqual(machine.get('clarvis.agent.allowUnconfinedCommands'), true,
+      'it still works, through the editor’s own store');
+  });
+
+  test('what is on disk is there before anything can ask, without waiting for a load', async () => {
+    const storage = storageFolder();
+    const first = mementoOn(storage, memento());
+    await first.load();
+    await first.update('clarvis.planning.interview', { seed: 'half answered', at: 2 });
+
+    // A window opening now: `get` is synchronous and `activate` cannot await.
+    const opening = mementoOn(storage, memento());
+
+    assert.deepStrictEqual(opening.get('clarvis.planning.interview'), { seed: 'half answered', at: 2 },
+      'an interview that reads as absent for the first moments is one that looks abandoned');
+  });
+
   test('everything else still goes to the editor, and keys() shows both', async () => {
     const storage = storageFolder();
     const workspaceState = memento();
     const machine = mementoOn(storage, workspaceState);
     await machine.load();
 
-    await machine.update('clarvis.planning.offerDeclined', true);
+    await machine.update('clarvis.recentFiles', ['src/app.ts']);
     await machine.update(BASE_BRANCH_KEY, 'main');
 
-    assert.strictEqual(workspaceState.get('clarvis.planning.offerDeclined'), true,
+    assert.deepStrictEqual(workspaceState.get('clarvis.recentFiles'), ['src/app.ts'],
       'a key this does not own is passed straight through');
-    assert.strictEqual(machine.get('clarvis.planning.offerDeclined'), true);
+    assert.deepStrictEqual(machine.get('clarvis.recentFiles'), ['src/app.ts']);
     assert.deepStrictEqual([...machine.keys()].sort(),
-      ['clarvis.agent.baseBranch', 'clarvis.planning.offerDeclined'],
+      ['clarvis.agent.baseBranch', 'clarvis.recentFiles'],
       'code that walks the keys must still see the ones that moved');
   });
 

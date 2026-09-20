@@ -1858,11 +1858,21 @@ instead of dead-ending in a notification.
       or continues a branch, and `RunSession` before merge-back and before finding left work
       (`storage/machineMemento.refreshed`). A stale read here merges a run into the wrong branch.
     - `keys()` answers with both stores, so code that enumerates them still sees these two.
-  - **Still in `workspaceState`, and still per-browser in code-server**: a paused planning
-    interview (`planning/interviewStore.ts`), the log-copy approval and its byte offset,
-    `clarvis.branchFlow.seen`/`.kept`, `clarvis.planning.offerDeclined`, the last failing command,
-    the blocker record, and the NERVIS task track. Each costs a repeated question rather than a
-    wrong branch, and they follow one at a time rather than in one sweep.
+  - **The rest followed the same day.** `storage/machineMemento.MACHINE_KEYS` is now the list, and
+    it says why each key earns a place: work in progress (a paused planning interview, the NERVIS
+    task handed over), answers already given (the log copy's approval and how far it has been
+    copied, the branch-flow question, a declined planning offer, a declined offer to set git up),
+    and what was in the way last time (the blocker record, the last failing command) which chat
+    answers "why did that fail" from. The file is also read synchronously when the memento is
+    built, because `get` is synchronous and `activate` cannot await: a value that reads as absent
+    for the first moments is a paused interview that looks abandoned.
+  - **Deliberately left in `workspaceState`**, and named in `MACHINE_KEYS`'s comment so the next
+    reader does not assume an oversight: `clarvis.agent.allowUnconfinedCommands` is a permission
+    the owner grants per project, and moving it would widen a grant made in one browser to every
+    browser on the machine — the owner's decision, not a side effect of a storage change;
+    `clarvis.bridge.identity` holds the token a window registers to NERVIS with, and a credential
+    belongs where the editor keeps credentials rather than in a plain file; `clarvis.recentFiles`
+    and `clarvis.agent.checkpoint` rebuild themselves from use.
 - Rate limits (§7) do **not** apply — those govern *unsolicited* surfaces. A question
   asked is never an interruption, and neither is a task you started.
 - `Clarvis: Stop` aborts a running task at the next tool boundary, always available.

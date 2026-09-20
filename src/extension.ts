@@ -32,8 +32,7 @@ import { currentEngineChoice, runSkillsLookup, takeRunLock } from './engine/engi
 import { gather, reviewRun } from './agent/reviewWizard';
 import { describeRun, ReviewAction } from './agent/runReview';
 import { LAST_RUN_KEY, renderRunSummary, RunRecord } from './agent/runLedger';
-import { BASE_BRANCH_KEY } from './agent/AgentBranch';
-import { MachineMemento } from './storage/machineMemento';
+import { MACHINE_KEYS, MachineMemento } from './storage/machineMemento';
 import { BranchFlowWatcher } from './agent/BranchFlowWatcher';
 import { FAILURE_KEY, parseRecord } from './briefing/lastFailure';
 import { forgetGitOfferAnswer } from './agent/gitOffer';
@@ -95,13 +94,13 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
   context.subscriptions.push(logger.disposable);
   logger.write('Clarvis activated.');
 
-  // **The two values that decide what happens to somebody's branches live on this machine**
-  // (20 September 2026): the base branch a run is merged back into, and the last run's file list
-  // that "Start fresh" commits. `workspaceState` is the browser's in code-server, so those were
-  // per browser profile. Everything else still goes there, untouched — `MachineMemento` passes it
-  // through. Loading is a file read; the copy is refreshed before anything acts on it.
-  const machine = new MachineMemento(context, [BASE_BRANCH_KEY, LAST_RUN_KEY],
-                                     context.workspaceState, (message) => logger.write(message));
+  // **What this project remembers lives on this machine** (20 September 2026). `workspaceState` is
+  // the browser's in code-server, so a paused interview, an approval already given or the branch a
+  // run folds back into were per browser profile — absent in a second browser, gone with its site
+  // data. `MACHINE_KEYS` says which keys moved and which deliberately did not; everything else is
+  // passed through to `workspaceState` untouched.
+  const machine = new MachineMemento(context, MACHINE_KEYS, context.workspaceState,
+                                     (message) => logger.write(message));
   void machine.load();
   // The same context with that memento in place of `workspaceState`, so every service built below
   // reads and writes these two keys through it without a constructor of its own for them.
@@ -210,7 +209,7 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
 
   const tracker = startTaskWatching(context, avatar, logger, announcer, () => agentBusy.running);
   const memory = startPatternMemory(context, tracker, logger, announcer);
-  const briefing = startBriefing(context, avatar, tracker, logger, memory, voice, models, toTranscript, noticeSlowModel);
+  const briefing = startBriefing(onMachine, avatar, tracker, logger, memory, voice, models, toTranscript, noticeSlowModel);
 
   const personality = startPersonality(context, tracker, logger, announcer, models, () => agentBusy.running);
   // **Wired, and deliberately never called.** ChatService has no call site for this: the
@@ -226,10 +225,10 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
 
   // Chat (M8a). Answers from what M3–M5 already know; no key, no network. Wired last
   // because it reads the state those three own.
-  startBranchFlow(context, logger, toTranscriptSpoken, toTranscript);
+  startBranchFlow(onMachine, logger, toTranscriptSpoken, toTranscript);
 
   const agentTerminal = registerAgentCommands(onMachine, logger, models, toTranscriptSpoken, agentBusy);
-  registerPlanningCommand(context, models, logger, liveLines);
+  registerPlanningCommand(onMachine, models, logger, liveLines);
   registerRecordMilestone(context, models, logger, () => chat);
 
   chat = startChat(onMachine, panel, avatar, tracker, memory, briefing, voice, models, agentTerminal, agentBusy, logger);
@@ -264,7 +263,7 @@ export function activate(context: vscode.ExtensionContext): ClarvisExports {
   announcer.onAnnounce((message, occasion) => voice.say(message, occasion));
 
   // M13's log copy: its commands, its stop on shutdown, and its resume where approved.
-  registerLogTailing(context, logger);
+  registerLogTailing(onMachine, logger);
 
   // **Last, and only if asked.** `clarvis.bridge.enabled` is false by default, and
   // `startBridge` returns undefined without binding anything when it is — no
